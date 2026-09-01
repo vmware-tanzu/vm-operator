@@ -278,38 +278,8 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 				By("Deploying a new VM from the published image")
 				// Use the published the vmi to deploy a new VM should succeed with VM powered on and IP assigned.
-				//
-				// The VM is built as a typed struct rather than rendered YAML
-				// because promoteDisksMode does not exist before v1alpha4, so
-				// the v1alpha2 fixture used elsewhere in this spec cannot set
-				// it -- the API server prunes fields absent from the requested
-				// version's schema.
 				newVmName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vm", capiutil.RandomString(4))
-				newVM := &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: input.WCPNamespaceName,
-						Name:      newVmName,
-					},
-					Spec: vmopv1.VirtualMachineSpec{
-						ClassName:    clusterResources.VMClassName,
-						ImageName:    publishedImageCRName,
-						StorageClass: clusterResources.StorageClassName,
-						PowerState:   vmopv1.VirtualMachinePowerStateOn,
-						Reserved: &vmopv1.VirtualMachineReservedSpec{
-							ResourcePolicyName: clusterResources.VMResourcePolicyName,
-						},
-						// Disable disk promotion. This VM has timed out
-						// waiting for an IP on a loaded testbed, and a
-						// promote running against its first boot is the
-						// likeliest culprit, though the logs don't prove
-						// it. Nothing here cares where the disks came
-						// from, so there is no reason to leave promotion
-						// running.
-						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
-					},
-				}
-				Expect(svClusterClient.Create(ctx, newVM)).To(Succeed(),
-					"failed to create virtualmachine from the published image %+v", newVM)
+				createVMWithPromotionDisabled(ctx, svClusterClient, input.WCPNamespaceName, newVmName, publishedImageCRName, *clusterResources, nil)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
 				vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, newVmName)
 			})
@@ -340,42 +310,15 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					sourceVAppProperties = append(sourceVAppProperties, vAppProp(p.Key, p.Value.Value))
 				}
 
-				// The source VM is built as a typed struct rather than rendered
-				// YAML because promoteDisksMode does not exist before v1alpha4,
-				// so the v1alpha2 fixture used elsewhere in this spec cannot set
-				// it -- the API server prunes fields absent from the requested
-				// version's schema.
 				sourceVMName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vapp-src", capiutil.RandomString(4))
-				sourceVM := &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      sourceVMName,
-						Namespace: input.WCPNamespaceName,
-					},
-					Spec: vmopv1.VirtualMachineSpec{
-						ClassName:    clusterResources.VMClassName,
-						ImageName:    sourceImageName,
-						StorageClass: clusterResources.StorageClassName,
-						PowerState:   vmopv1.VirtualMachinePowerStateOn,
-						Reserved: &vmopv1.VirtualMachineReservedSpec{
-							ResourcePolicyName: clusterResources.VMResourcePolicyName,
+				createVMWithPromotionDisabled(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName, sourceImageName, *clusterResources,
+					&vmopv1.VirtualMachineBootstrapSpec{
+						// LinuxPrep is needed here for the VM to get a valid IP address.
+						LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+							Properties: sourceVAppProperties,
 						},
-						// Suppress disk promotion so no background PromoteDisks
-						// task can leave the OVF capture queued past this spec's
-						// publish timeout. Publish has no dependency on disk
-						// promotion, and disk provenance is irrelevant to the
-						// vAppConfig behavior under test here.
-						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
-						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
-							// LinuxPrep is needed here for the VM to get a valid IP address.
-							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
-							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
-								Properties: sourceVAppProperties,
-							},
-						},
-					},
-				}
-				Expect(svClusterClient.Create(ctx, sourceVM)).To(Succeed(),
-					"failed to create source virtualmachine with vAppConfig %+v", sourceVM)
+					})
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, sourceVMName)
 				DeferCleanup(func() {
 					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName)
@@ -483,6 +426,13 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				// Publish the VM to the inventory library.
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, inventoryCL.Name)
 				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+
+				// Publishing to an Inventory library clones the source VM as a
+				// template via vSphere's CloneVM_Task, which can take far longer
+				// than publishing to a Content Library (an OVF export). Wait for
+				// that clone on its own generous budget before waiting on Complete,
+				// which follows quickly once Uploaded=True.
+				vmoperator.VerifyVirtualMachinePublishRequestUploaded(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, metav1.Condition{
 					Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
 					Status: metav1.ConditionTrue,
@@ -497,10 +447,19 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 				// Deploy a new VM from the published image and verify it powers on with an IP.
 				newVmName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vm", capiutil.RandomString(4))
-				newVMBuilder := generateVMBuilder(input.WCPNamespaceName, newVmName, publishedImageCRName, *clusterResources)
-				newVmYaml := manifestbuilders.GetVirtualMachineYamlA2(newVMBuilder)
-				Expect(clusterProxy.CreateWithArgs(ctx, newVmYaml)).NotTo(HaveOccurred(), "failed to create virtualmachine from the published image", string(newVmYaml))
-				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
+				createVMWithPromotionDisabled(ctx, svClusterClient, input.WCPNamespaceName, newVmName, publishedImageCRName, *clusterResources, nil)
+
+				// Wait for the image cache on its own generous budget before
+				// waiting on the rest of VM creation, rather than sharing one
+				// 5-minute window across both: caching the just-published
+				// item onto a datastore can take several minutes, and
+				// placement recommending a different datastore mid-flight
+				// forces a second, equally slow cache copy.
+				vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
+				vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
+				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
 				vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, newVmName)
 
 				// Clean up the first publish request; the published item remains in the inventory library.
@@ -665,6 +624,46 @@ func generateVMBuilder(
 		ResourcePolicy:   clusterResources.VMResourcePolicyName,
 		PowerState:       "PoweredOn",
 	}
+}
+
+// createVMWithPromotionDisabled creates a VirtualMachine with disk promotion
+// disabled and returns it once creation succeeds.
+//
+// The VM is built as a typed struct rather than rendered YAML because
+// PromoteDisksMode does not exist before v1alpha4, so the v1alpha2 fixture
+// used elsewhere in this spec cannot set it -- the API server prunes fields
+// absent from the requested version's schema.
+//
+// Nothing in these specs cares where a VM's disks came from, and leaving
+// promotion running risks a background PromoteDisks task colliding with a
+// deployed VM's first boot, or with a soon-to-be-published source VM's OVF
+// capture, on a loaded testbed.
+func createVMWithPromotionDisabled(
+	ctx context.Context,
+	svClusterClient ctrlclient.Client,
+	namespace, name, imageName string,
+	clusterResources e2eConfig.Resources,
+	bootstrap *vmopv1.VirtualMachineBootstrapSpec) *vmopv1.VirtualMachine {
+	vm := &vmopv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: vmopv1.VirtualMachineSpec{
+			ClassName:    clusterResources.VMClassName,
+			ImageName:    imageName,
+			StorageClass: clusterResources.StorageClassName,
+			PowerState:   vmopv1.VirtualMachinePowerStateOn,
+			Reserved: &vmopv1.VirtualMachineReservedSpec{
+				ResourcePolicyName: clusterResources.VMResourcePolicyName,
+			},
+			PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
+			Bootstrap:        bootstrap,
+		},
+	}
+	Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
+		"failed to create virtualmachine %q with disk promotion disabled", name)
+	return vm
 }
 
 func generateVMPublishRequestBuilder(

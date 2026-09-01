@@ -1031,3 +1031,61 @@ func powerStateTests() {
 		})
 	})
 }
+
+var _ = Describe("WrapHardPowerOpFailure", func() {
+
+	noCompatibleHostTaskInfoWithKey := func(key string) *vimtypes.TaskInfo {
+		return &vimtypes.TaskInfo{
+			Error: &vimtypes.LocalizedMethodFault{
+				Fault: &vimtypes.NoCompatibleHost{
+					Error: []vimtypes.LocalizedMethodFault{
+						{
+							Fault: &vimtypes.CustomizationFault{
+								VimFault: vimtypes.VimFault{
+									MethodFault: vimtypes.MethodFault{
+										FaultMessage: []vimtypes.LocalizableMessage{
+											{Key: key},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	origErr := errors.New("boom")
+
+	When("ti is nil", func() {
+		It("returns a plain wrapped error not satisfying errors.Is(ErrInfraMaintenanceFault)", func() {
+			err := vmutil.WrapHardPowerOpFailure(vimtypes.VirtualMachinePowerStatePoweredOn, nil, origErr)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, origErr)).To(BeTrue())
+			Expect(errors.Is(err, vmutil.ErrInfraMaintenanceFault)).To(BeFalse())
+		})
+	})
+
+	When("ti does not match the infra-maintenance fault", func() {
+		It("returns a wrapped error not satisfying errors.Is(ErrInfraMaintenanceFault)", func() {
+			ti := &vimtypes.TaskInfo{
+				Error: &vimtypes.LocalizedMethodFault{
+					Fault: &vimtypes.CustomizationFault{},
+				},
+			}
+			err := vmutil.WrapHardPowerOpFailure(vimtypes.VirtualMachinePowerStatePoweredOn, ti, origErr)
+			Expect(errors.Is(err, origErr)).To(BeTrue())
+			Expect(errors.Is(err, vmutil.ErrInfraMaintenanceFault)).To(BeFalse())
+		})
+	})
+
+	When("ti matches the infra-maintenance fault", func() {
+		It("returns an error satisfying errors.Is(ErrInfraMaintenanceFault) and wrapping the original error", func() {
+			ti := noCompatibleHostTaskInfoWithKey("com.vmware.cp.autoevac.HostInMaintenanceMode")
+			err := vmutil.WrapHardPowerOpFailure(vimtypes.VirtualMachinePowerStatePoweredOn, ti, origErr)
+			Expect(errors.Is(err, vmutil.ErrInfraMaintenanceFault)).To(BeTrue())
+			Expect(errors.Is(err, origErr)).To(BeTrue())
+		})
+	})
+})

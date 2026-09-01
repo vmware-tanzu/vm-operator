@@ -245,3 +245,98 @@ var _ = Describe("ErrorMessageFromTaskInfo", func() {
 		})
 	})
 })
+
+var _ = Describe("IsInfraMaintenanceFault", func() {
+
+	noCompatibleHostWithKeys := func(keys ...string) *vimtypes.LocalizedMethodFault {
+		msgs := make([]vimtypes.LocalizableMessage, 0, len(keys))
+		for _, k := range keys {
+			msgs = append(msgs, vimtypes.LocalizableMessage{Key: k})
+		}
+		return &vimtypes.LocalizedMethodFault{
+			Fault: &vimtypes.NoCompatibleHost{
+				Error: []vimtypes.LocalizedMethodFault{
+					{
+						Fault: &vimtypes.CustomizationFault{
+							VimFault: vimtypes.VimFault{
+								MethodFault: vimtypes.MethodFault{
+									FaultMessage: msgs,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	When("taskInfo is nil", func() {
+		It("returns false", func() {
+			Expect(task.IsInfraMaintenanceFault(nil)).To(BeFalse())
+		})
+	})
+
+	When("taskInfo.Error is nil", func() {
+		It("returns false", func() {
+			Expect(task.IsInfraMaintenanceFault(&vimtypes.TaskInfo{})).To(BeFalse())
+		})
+	})
+
+	When("the fault is not a NoCompatibleHost", func() {
+		It("returns false", func() {
+			taskInfo := &vimtypes.TaskInfo{
+				Error: &vimtypes.LocalizedMethodFault{
+					Fault: &vimtypes.CustomizationFault{},
+				},
+			}
+			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeFalse())
+		})
+	})
+
+	When("the NoCompatibleHost fault carries no matching fault-message key", func() {
+		It("returns false", func() {
+			taskInfo := &vimtypes.TaskInfo{Error: noCompatibleHostWithKeys("some.other.key")}
+			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeFalse())
+		})
+	})
+
+	When("the NoCompatibleHost fault has an empty nested error list", func() {
+		It("returns false", func() {
+			taskInfo := &vimtypes.TaskInfo{
+				Error: &vimtypes.LocalizedMethodFault{
+					Fault: &vimtypes.NoCompatibleHost{},
+				},
+			}
+			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeFalse())
+		})
+	})
+
+	When("the NoCompatibleHost fault carries the HostInMaintenanceMode key", func() {
+		It("returns true", func() {
+			taskInfo := &vimtypes.TaskInfo{
+				Error: noCompatibleHostWithKeys("com.vmware.cp.autoevac.HostInMaintenanceMode"),
+			}
+			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeTrue())
+		})
+	})
+
+	When("the NoCompatibleHost fault carries the RestartOnCurrentHostRequired key", func() {
+		It("returns true", func() {
+			taskInfo := &vimtypes.TaskInfo{
+				Error: noCompatibleHostWithKeys("com.vmware.cp.autoevac.RestartOnCurrentHostRequired"),
+			}
+			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeTrue())
+		})
+	})
+
+	When("the NoCompatibleHost fault carries the key alongside unrelated keys", func() {
+		It("returns true", func() {
+			taskInfo := &vimtypes.TaskInfo{
+				Error: noCompatibleHostWithKeys(
+					"some.other.key",
+					"com.vmware.cp.autoevac.HostInMaintenanceMode"),
+			}
+			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeTrue())
+		})
+	})
+})

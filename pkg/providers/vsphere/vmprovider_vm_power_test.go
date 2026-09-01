@@ -169,6 +169,13 @@ func vmPowerStateTests() {
 			It("should not return an error", func() {
 				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 			})
+			It("should set the VirtualMachinePowerStateSynced condition to True with reason Synced", func() {
+				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+				c := conditions.Get(vm, vmopv1.VirtualMachinePowerStateSynced)
+				Expect(c).ToNot(BeNil())
+				Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				Expect(c.Reason).To(Equal("Synced"))
+			})
 		})
 
 		When("powering off the VM", func() {
@@ -298,6 +305,10 @@ func vmPowerStateTests() {
 					vm.Spec.PowerOffMode = mode
 					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					c := conditions.Get(vm, vmopv1.VirtualMachinePowerStateSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionTrue))
+					Expect(c.Reason).To(Equal("Synced"))
 				},
 				Entry("hard", vmopv1.VirtualMachinePowerOpModeHard),
 				Entry("soft", vmopv1.VirtualMachinePowerOpModeSoft),

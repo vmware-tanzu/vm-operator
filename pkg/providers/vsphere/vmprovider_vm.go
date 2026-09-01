@@ -1493,9 +1493,13 @@ func (vs *vSphereVMProvider) reconcileBackupState(
 
 func (vs *vSphereVMProvider) reconcilePowerState(
 	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine) error {
+	vcVM *object.VirtualMachine) (retErr error) {
 
 	vmCtx.Logger.V(4).Info("Reconciling power state")
+
+	defer func() {
+		setPowerStateSyncedCondition(vmCtx, retErr)
+	}()
 
 	if err := verifyConnectionState(vmCtx); err != nil {
 		return err
@@ -1650,6 +1654,39 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 	}
 
 	return nil
+}
+
+// setPowerStateSyncedCondition sets the VirtualMachinePowerStateSynced
+// condition based on the outcome of this reconcile's attempt (in
+// reconcilePowerState) to converge spec.powerState. It runs after
+// reconcileStatusPowerState (pkg/providers/vsphere/vmlifecycle/update_status.go)
+// has already refreshed vmCtx.VM.Status.PowerState earlier in the same pass,
+// so comparing status against spec here reflects this pass's pre-op state for
+// every exit path of reconcilePowerState, including its early returns.
+func setPowerStateSyncedCondition(vmCtx pkgctx.VirtualMachineContext, err error) {
+	if vmCtx.VM.Status.PowerState == vmCtx.VM.Spec.PowerState || errors.Is(err, ErrSetPowerState) {
+		c := pkgcond.TrueCondition(vmopv1.VirtualMachinePowerStateSynced)
+		c.Reason = "Synced"
+		c.Message = string(vmCtx.VM.Spec.PowerState)
+		pkgcond.Set(vmCtx.VM, c)
+		return
+	}
+
+	if pkgcfg.FromContext(vmCtx).Features.VMEvacuation && errors.Is(err, vmutil.ErrInfraMaintenanceFault) {
+		pkgcond.MarkFalse(
+			vmCtx.VM,
+			vmopv1.VirtualMachinePowerStateSynced,
+			"InfraInMaintenance",
+			"VirtualMachine is powered off because its host is in infrastructure maintenance")
+		return
+	}
+
+	pkgcond.MarkFalse(
+		vmCtx.VM,
+		vmopv1.VirtualMachinePowerStateSynced,
+		"NotSynced",
+		"spec.powerState=%s != status.powerState=%s",
+		vmCtx.VM.Spec.PowerState, vmCtx.VM.Status.PowerState)
 }
 
 func (vs *vSphereVMProvider) reconcileCurrentSnapshot(

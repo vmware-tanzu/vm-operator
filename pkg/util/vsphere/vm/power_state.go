@@ -64,6 +64,12 @@ func (b PowerOpBehavior) String() string {
 	}
 }
 
+// ErrInfraMaintenanceFault is wrapped into the error returned by a failed
+// power-state-change task when the failure is a NoCompatibleHost fault
+// indicating the VM's host is in infrastructure maintenance. Callers use
+// errors.Is to detect this condition from any call-stack depth.
+var ErrInfraMaintenanceFault = errors.New("vm power op failed due to host infrastructure maintenance")
+
 // ErrInvalidPowerOpResult is returned if the channel returned by
 // SetPowerState and/or Restart receives a value that is a type other than
 // PowerOpResult or error.
@@ -320,6 +326,29 @@ func setPowerState(
 	}
 }
 
+// WrapHardPowerOpFailure builds the error returned by doAndWaitOnHardPowerOp
+// for a failed hard power op, wrapping it with ErrInfraMaintenanceFault when
+// ti indicates the failure is a NoCompatibleHost fault caused by the VM's
+// host being in infrastructure maintenance, and with the task's fault
+// message when one is available. Exported so its wrapping behavior can be
+// unit tested without driving a real vCenter power-op task failure.
+func WrapHardPowerOpFailure(
+	desiredPowerState vimtypes.VirtualMachinePowerState,
+	ti *vimtypes.TaskInfo,
+	err error) error {
+
+	if ti != nil {
+		if vspheretask.IsInfraMaintenanceFault(ti) {
+			err = fmt.Errorf("%w: %w", ErrInfraMaintenanceFault, err)
+		}
+		if errMsg := vspheretask.ErrorMessageFromTaskInfo(ti); errMsg != "" {
+			return fmt.Errorf("hard set power state to %s failed: %s: %w", desiredPowerState, errMsg, err)
+		}
+	}
+
+	return fmt.Errorf("hard set power state to %s failed %w", desiredPowerState, err)
+}
+
 func doAndWaitOnHardPowerOp(
 	ctx context.Context,
 	desiredPowerState vimtypes.VirtualMachinePowerState,
@@ -343,11 +372,8 @@ func doAndWaitOnHardPowerOp(
 		}
 		if ti != nil {
 			log.Error(err, "Change power state task failed", "taskInfo", ti)
-			if errMsg := vspheretask.ErrorMessageFromTaskInfo(ti); errMsg != "" {
-				return 0, fmt.Errorf("hard set power state to %s failed: %s: %w", desiredPowerState, errMsg, err)
-			}
 		}
-		return 0, fmt.Errorf("hard set power state to %s failed %w", desiredPowerState, err)
+		return 0, WrapHardPowerOpFailure(desiredPowerState, ti, err)
 	}
 
 	switch desiredPowerState {

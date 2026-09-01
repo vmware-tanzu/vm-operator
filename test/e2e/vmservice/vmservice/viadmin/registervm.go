@@ -331,7 +331,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Wait for backup to complete before reading the backup data.
 			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, "default")
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, nil)
 
 			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
 			vmObj := object.NewVirtualMachine(vCenterClient, vmMoRef)
@@ -476,7 +476,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Wait for backup to complete before reading the backup data.
 			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, "default")
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, nil)
 
 			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
 			vmObj := object.NewVirtualMachine(vCenterClient, vmMoRef)
@@ -685,7 +685,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Wait for backup to complete before reading the backup data.
 			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, "default")
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, nil)
 
 			// Delete the VM Service VM CR, keeping the vCenter VM in inventory.
 			vmMoID := vmservice.DeleteVMResource(ctx, existingVM.Name, existingVM.Namespace, nil, clusterProxy, config, svClusterClient)
@@ -925,7 +925,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Wait for backup to complete before powering off the VM.
 			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config, restoreDiskOnlyIntervalSpec)
+			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, vmNamespace, clusterProxy, config,
+				&vmoperator.IntervalOptions{Spec: ptr.To(restoreDiskOnlyIntervalSpec)})
 
 			vmMoID := existingVM.Status.UniqueID
 

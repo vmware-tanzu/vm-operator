@@ -374,23 +374,41 @@ func findBootDiskVolume(volumes []vmopv1.VirtualMachineVolume) *vmopv1.VirtualMa
 	return nil
 }
 
+// IntervalOptions customizes which config-file interval entry a wait helper
+// uses. A nil *IntervalOptions, or one with a nil Spec, selects the
+// "default" interval; passing a non-nil Spec looks up "<Spec>/<key>" first
+// and falls back to "default/<key>" (see config.GetIntervals). Use this when
+// a specific spec needs a different budget than every other caller of the
+// same helper.
+type IntervalOptions struct {
+	Spec *string
+}
+
+// spec returns the interval spec to use, defaulting to "default" for a nil
+// receiver or a nil Spec field.
+func (o *IntervalOptions) spec() string {
+	if o == nil || o.Spec == nil {
+		return "default"
+	}
+	return *o.Spec
+}
+
 // WaitForBootDiskPVC waits for the VirtualMachineUnmanagedVolumesBackfilled and
 // VirtualMachineUnmanagedVolumesRegistered conditions to become true, then polls
 // spec.volumes until the boot disk (ControllerBusNumber 0, UnitNumber 0) has a
 // non-empty PersistentVolumeClaim.ClaimName. Returns the boot-disk volume name.
 // Only call this when the AllDisksArePVCs capability is enabled.
 //
-// specName selects the "wait-virtual-machine-condition-update" interval via
-// config.GetIntervals(specName, ...), which falls back to the "default"
-// interval when no "<specName>/wait-virtual-machine-condition-update" entry
-// exists. Pass "default" unless a specific spec needs a longer budget for
-// boot-disk promotion (e.g. because it is known to trigger a live Storage
-// vMotion) without affecting every other caller of this function.
+// opts selects the "wait-virtual-machine-condition-update" interval; pass
+// nil unless a specific spec needs a longer budget for boot-disk promotion
+// (e.g. because it is known to trigger a live Storage vMotion) without
+// affecting every other caller of this function.
 func WaitForBootDiskPVC(
 	ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client,
-	ns, vmName, specName string,
+	ns, vmName string,
+	opts *IntervalOptions,
 ) (string, *vmopv1.VirtualMachine) {
 	By("Waiting on virtual machine conditions to become true")
 
@@ -425,7 +443,7 @@ func WaitForBootDiskPVC(
 		g.Expect(bootDiskVol.PersistentVolumeClaim.ClaimName).ToNot(BeEmpty(),
 			"Expected boot disk PVC to have a claim name")
 		bootDiskVolName = bootDiskVol.Name
-	}, config.GetIntervals(specName, "wait-virtual-machine-condition-update")...).
+	}, config.GetIntervals(opts.spec(), "wait-virtual-machine-condition-update")...).
 		Should(Succeed(), "Timed out waiting for boot disk to be found in spec.volumes")
 
 	return bootDiskVolName, vm

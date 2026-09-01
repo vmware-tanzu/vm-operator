@@ -838,7 +838,7 @@ func SetLastResizeAnnotations(
 	vm, oldVM *vmopv1.VirtualMachine) (bool, error) {
 
 	f := pkgcfg.FromContext(ctx).Features
-	if !f.VMResize && !f.VMResizeCPUMemory {
+	if !f.VMResizeCPUMemory {
 		return false, nil
 	}
 

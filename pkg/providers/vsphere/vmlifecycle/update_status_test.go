@@ -4868,21 +4868,6 @@ var _ = Describe("UpdateStatus", func() {
 			Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
 		})
 
-		Context("When FSS_WCP_VMSERVICE_RESIZE is not enabled", func() {
-			BeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.VMResize = false
-				})
-			})
-
-			Context("Has Class", func() {
-				It("Back fills Status.Class", func() {
-					Expect(vmCtx.VM.Status.Class).ToNot(BeNil())
-					Expect(vmCtx.VM.Status.Class.Name).To(Equal(builder.DummyClassName))
-				})
-			})
-		})
-
 		Context("When FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY is not enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {

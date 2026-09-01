@@ -252,11 +252,10 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 		"currentPowerState", currentPowerState,
 		"isOff", isOff,
 		"isOffToOn", isOffToOn,
-		"features.vmResize", features.VMResize,
 		"features.vmResizeCPUMemory", features.VMResizeCPUMemory)
 
 	if isOff && !isOffToOn {
-		useResizeArgs = features.VMResize || features.VMResizeCPUMemory
+		useResizeArgs = features.VMResizeCPUMemory
 	}
 
 	if useResizeArgs {
@@ -477,23 +476,13 @@ func (s *Session) poweredOffReconfigure(
 	config *vimtypes.VirtualMachineConfigInfo,
 	updateArgs *VMUpdateArgs) error {
 
-	var configSpec *vimtypes.VirtualMachineConfigSpec
-	var needsResize bool
-	var err error
-
-	if pkgcfg.FromContext(vmCtx).Features.VMResize {
-		configSpec, needsResize, err = s.getResizeConfigSpecForPoweredOffVM(
-			vmCtx, config, updateArgs)
-	} else {
-		configSpec, needsResize, err = s.getConfigSpecForPoweredOffVM(
-			vmCtx, config, updateArgs)
-	}
+	configSpec, needsResize, err := s.getConfigSpecForPoweredOffVM(
+		vmCtx, config, updateArgs)
 	if err != nil {
 		return err
 	}
 
 	// Overlay vm spec compute fields onto the ConfigSpec.
-	// This runs for both the VMResize and non-VMResize spec-building paths.
 	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, false, configSpec)
 	}
@@ -998,17 +987,10 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 			// For backward compatibility, sync class compute fields into spec
 			// before building the diff so that OverwriteSpecComputeConfig
 			// applies the class intent. Scope of sync matches the scope of the resize path.
-			if pkgcfg.FromContext(vmCtx).Features.VMResize {
-				if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
-					vmopv1util.SyncClassComputeToSpec(vmCtx.VM, resizeArgs.ConfigSpec)
-				}
-				configSpec, err = resize.CreateResizeConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
-			} else {
-				if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
-					vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, resizeArgs.ConfigSpec)
-				}
-				configSpec, err = resize.CreateResizeCPUMemoryConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
+			if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+				vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, resizeArgs.ConfigSpec)
 			}
+			configSpec, err = resize.CreateResizeCPUMemoryConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
 			if err != nil {
 				return err
 			}
@@ -1031,16 +1013,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.VMResize {
-		if err := vmopv1util.OverwriteResizeConfigSpec(
-			vmCtx,
-			*vmCtx.VM,
-			*moVM.Config,
-			&configSpec); err != nil {
-
-			return err
-		}
-	} else if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
+	if err := vmopv1util.OverwriteAlwaysResizeConfigSpec(
 		vmCtx,
 		*vmCtx.VM,
 		*moVM.Config,
@@ -1089,33 +1062,6 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 	}
 
 	return reconfigErr
-}
-
-func (s *Session) getResizeConfigSpecForPoweredOffVM(
-	vmCtx pkgctx.VirtualMachineContext,
-	config *vimtypes.VirtualMachineConfigInfo,
-	updateArgs *VMUpdateArgs) (*vimtypes.VirtualMachineConfigSpec, bool, error) {
-
-	var configSpec vimtypes.VirtualMachineConfigSpec
-
-	needsResize := vmopv1util.ResizeNeeded(*vmCtx.VM, updateArgs.VMClass)
-	if needsResize {
-		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
-			vmopv1util.SyncClassComputeToSpec(vmCtx.VM, updateArgs.ConfigSpec)
-		}
-		cs, err := resize.CreateResizeConfigSpec(vmCtx, *config, updateArgs.ConfigSpec)
-		if err != nil {
-			return nil, false, err
-		}
-
-		configSpec = cs
-	}
-
-	if err := vmopv1util.OverwriteResizeConfigSpec(vmCtx, *vmCtx.VM, *config, &configSpec); err != nil {
-		return nil, false, err
-	}
-
-	return &configSpec, needsResize, nil
 }
 
 func (s *Session) reconcileHardwareVersion(

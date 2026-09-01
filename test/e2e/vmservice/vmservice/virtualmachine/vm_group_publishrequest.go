@@ -90,6 +90,10 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 		Expect(err).NotTo(HaveOccurred())
 
 		user, nonAdminClient = setupNonAdminUserForTests(ctx, vimClient, vmSvcClusterProxy)
+		DeferCleanup(func() {
+			By("Deleting non admin user")
+			vcenter.DeleteUserOrFail(user)
+		})
 
 		inventoryFolderName := fmt.Sprintf("%s-%s-%s", vmPubSpecName, "folder", capiutil.RandomString(4))
 		inventoryCLName = fmt.Sprintf("%s-%s-%s", vmPubSpecName, "content-library", capiutil.RandomString(4))
@@ -318,9 +322,6 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 		By("create a vm group publish with target inventory library should succeed")
 		createInventoryContentLibrary()
 		vmGroupPublish(vmGroupPubName+"-inventory", inventoryCLName, []string{vm0Name})
-
-		By("Deleting non admin user")
-		vcenter.DeleteUserOrFail(user)
 	})
 }
 

@@ -132,6 +132,7 @@ func vmGroupTests() {
 						{
 							Name: vm.Name,
 							Kind: "VirtualMachine",
+							UID:  vm.UID,
 							Conditions: []metav1.Condition{
 								{
 									Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
@@ -180,6 +181,7 @@ func vmGroupTests() {
 						{
 							Name: vm.Name,
 							Kind: "VirtualMachine",
+							UID:  vm.UID,
 							Conditions: []metav1.Condition{
 								{
 									Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
@@ -410,6 +412,7 @@ func vmGroupTests() {
 						{
 							Name: vm.Name,
 							Kind: "VirtualMachine",
+							UID:  vm.UID,
 							Conditions: []metav1.Condition{
 								{
 									Type:   vmopv1.VirtualMachineGroupMemberConditionPlacementReady,

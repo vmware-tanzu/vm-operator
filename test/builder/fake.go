@@ -5,7 +5,12 @@
 package builder
 
 import (
+	"context"
+
+	"github.com/google/uuid"
+
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,6 +49,15 @@ func NewFakeClientWithInterceptors(
 	objs ...client.Object,
 ) client.Client {
 	scheme := NewScheme()
+
+	// Objects handed to WithObjects go straight into the tracker without
+	// passing through the Create interceptor below, so assign their UIDs here.
+	for _, obj := range objs {
+		ensureUID(obj)
+	}
+
+	funcs.Create = assignUIDOnCreate(funcs.Create)
+
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithInterceptorFuncs(funcs).
@@ -54,6 +68,44 @@ func NewFakeClientWithInterceptors(
 			kubeutil.VMSnapshotVMNameFieldIndex,
 			kubeutil.VMSnapshotVMNameIndexerFunc).
 		Build()
+}
+
+// assignUIDOnCreate wraps a Create interceptor so that every object created
+// through the fake client comes back with a UID, the way an object created
+// against a real API server does. The fake client assigns a resourceVersion but
+// no UID, which leaves code that derives a value from an object's UID — the
+// VM's directory on a datastore, a cloud-init instance ID, an owner reference —
+// looking at an empty string in tests but a real ID in production.
+//
+// A UID the caller set explicitly is left alone, since a spec that pins one is
+// usually asserting on it.
+func assignUIDOnCreate(next createFunc) createFunc {
+	return func(
+		ctx context.Context,
+		c client.WithWatch,
+		obj client.Object,
+		opts ...client.CreateOption) error {
+
+		ensureUID(obj)
+
+		if next != nil {
+			return next(ctx, c, obj, opts...)
+		}
+		return c.Create(ctx, obj, opts...)
+	}
+}
+
+type createFunc func(
+	ctx context.Context,
+	c client.WithWatch,
+	obj client.Object,
+	opts ...client.CreateOption) error
+
+// ensureUID assigns obj a unique UID if it does not already have one.
+func ensureUID(obj client.Object) {
+	if obj != nil && obj.GetUID() == "" {
+		obj.SetUID(types.UID(uuid.NewString()))
+	}
 }
 
 // KnownObjectTypes has the known VM operator types that will be

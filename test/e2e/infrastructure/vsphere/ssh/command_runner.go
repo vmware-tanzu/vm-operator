@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	sshRetryDuration = time.Minute
+	sshRetryDuration = 5 * time.Minute
 	sshRetryInterval = 5 * time.Second
 )
 
@@ -59,19 +59,29 @@ func NewSSHCommandRunnerFromHTTPProxy() (SSHCommandRunner, error) {
 }
 
 func newSSHDialerWithRetries(hostname string, port int, config *ssh.ClientConfig, interval time.Duration, timeout time.Duration) (*ssh.Client, error) {
-	var newClient *ssh.Client
+	var (
+		newClient *ssh.Client
+		lastErr   error
+	)
 
-	//nolint:staticcheck // E2E SSH dial retries; migration to PollUntilContextTimeout is tracked separately.
-	err := wait.PollWithContext(context.Background(), interval, timeout, func(ctx context.Context) (bool, error) {
+	pollErr := wait.PollUntilContextTimeout(context.Background(), interval, timeout, true, func(ctx context.Context) (bool, error) {
 		var err error
 		if newClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), config); err != nil {
-			return false, err
+			// Dial errors (e.g. transient network blips between the test
+			// runner and the testbed) are retried until the timeout elapses
+			// rather than aborting on the first failure.
+			lastErr = err
+			//nolint:nilerr // Intentional: keep polling on a dial error, lastErr carries it past the timeout.
+			return false, nil
 		}
 
 		return true, nil
 	})
+	if pollErr != nil {
+		return nil, lastErr
+	}
 
-	return newClient, err
+	return newClient, nil
 }
 
 // NewSSHCommandRunner returns a helper configured with the given host, for the given username and auth methods.

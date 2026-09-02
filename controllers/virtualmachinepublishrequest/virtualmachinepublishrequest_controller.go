@@ -27,7 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -89,7 +88,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx,
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
-		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorder(controllerNameShort)),
 		ctx.VMProvider,
 	)
@@ -147,7 +145,6 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	apiReader client.Reader,
-	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 
@@ -155,7 +152,6 @@ func NewReconciler(
 		Context:    ctx,
 		Client:     client,
 		apiReader:  apiReader,
-		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
 		Metrics:    metrics.NewVMPublishMetrics(),
@@ -167,7 +163,6 @@ type Reconciler struct {
 	client.Client
 	Context    context.Context
 	apiReader  client.Reader
-	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
 	Metrics    *metrics.VMPublishMetrics
@@ -1145,7 +1140,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 			res = metrics.PublishInProgress
 		}
 
-		r.Metrics.RegisterVMPublishRequest(r.Logger, vmPublishReq.Name, vmPublishReq.Namespace, res)
+		r.Metrics.RegisterVMPublishRequest(ctx, vmPublishReq.Name, vmPublishReq.Namespace, res)
 	}()
 
 	if completeCond := conditions.Get(vmPublishReq, vmopv1.VirtualMachinePublishRequestConditionComplete); completeCond != nil {
@@ -1219,7 +1214,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachinePublishRequestContext) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(ctx.VMPublishRequest, finalizerName) ||
 		controllerutil.ContainsFinalizer(ctx.VMPublishRequest, deprecatedFinalizerName) {
-		r.Metrics.DeleteMetrics(ctx.Logger, ctx.VMPublishRequest.Name, ctx.VMPublishRequest.Namespace)
+		r.Metrics.DeleteMetrics(ctx, ctx.VMPublishRequest.Name, ctx.VMPublishRequest.Namespace)
 		controllerutil.RemoveFinalizer(ctx.VMPublishRequest, finalizerName)
 		controllerutil.RemoveFinalizer(ctx.VMPublishRequest, deprecatedFinalizerName)
 	}

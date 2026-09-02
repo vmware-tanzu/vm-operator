@@ -178,16 +178,17 @@ func requeueResult(ctx *pkgctx.VirtualMachinePublishRequestContext) ctrl.Result 
 		return ctrl.Result{}
 	}
 
-	if conditions.GetReason(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded) == vmopv1.UploadItemIDInvalidReason {
-		return ctrl.Result{}
-	}
+	if cond := conditions.Get(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded); cond != nil {
+		if cond.Reason == vmopv1.UploadItemIDInvalidReason {
+			return ctrl.Result{}
+		}
 
-	// In case the item is uploaded but VMI is not available, or,
-	// the export task is not submitted to the vCenter task manager,
-	// requeue after a short wait time since we expect these issues to be resolved quickly.
-	if conditions.GetReason(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded) == vmopv1.UploadTaskNotStartedReason ||
-		conditions.IsTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
-		return ctrl.Result{RequeueAfter: 10 * time.Second}
+		// In case the item is uploaded but VMI is not available, or, the export task is not
+		// submitted to the vCenter task manager, requeue after a short wait time since we
+		// expect these issues to be resolved quickly.
+		if cond.Reason == vmopv1.UploadTaskNotStartedReason || cond.Status == metav1.ConditionTrue {
+			return ctrl.Result{RequeueAfter: 10 * time.Second}
+		}
 	}
 
 	// Skip checking ImageAvailable.

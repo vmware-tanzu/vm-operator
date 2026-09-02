@@ -2,6 +2,8 @@ module github.com/vmware-tanzu/vm-operator/hack/tools/kube-api-linter
 
 go 1.26.7
 
+require sigs.k8s.io/kube-api-linter v0.0.0-20260716143926-092fe0c72997
+
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
 	4d63.com/gochecknoglobals v0.2.2 // indirect
@@ -212,6 +214,5 @@ require (
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	mvdan.cc/gofumpt v0.9.1 // indirect
 	mvdan.cc/unparam v0.0.0-20250301125049-0df0534333a4 // indirect
-	sigs.k8s.io/kube-api-linter v0.0.0-20260716143926-092fe0c72997 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )

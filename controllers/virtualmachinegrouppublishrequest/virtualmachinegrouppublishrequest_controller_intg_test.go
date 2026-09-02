@@ -216,7 +216,7 @@ func intgTestsReconcile() {
 
 func verifyFalseCondition(g Gomega, req *vmopv1.VirtualMachineGroupPublishRequest, expectedPendingCnt int) {
 	g.Expect(req.Status.Conditions).To(HaveLen(1))
-	g.Expect(req.Status.Conditions[0].Type).To(Equal(vmopv1.VirtualMachinePublishRequestConditionComplete))
+	g.Expect(req.Status.Conditions[0].Type).To(Equal(vmopv1.VirtualMachineGroupPublishRequestConditionComplete))
 	g.Expect(req.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
 	g.Expect(req.Status.Conditions[0].Reason).To(Equal(vmopv1.VirtualMachineGroupPublishRequestConditionReasonPending))
 	g.Expect(req.Status.Conditions[0].Message).To(
@@ -225,7 +225,7 @@ func verifyFalseCondition(g Gomega, req *vmopv1.VirtualMachineGroupPublishReques
 
 func verifyTrueCondition(g Gomega, req *vmopv1.VirtualMachineGroupPublishRequest) {
 	g.Expect(req.Status.Conditions).To(HaveLen(1))
-	g.Expect(req.Status.Conditions[0].Type).To(Equal(vmopv1.VirtualMachinePublishRequestConditionComplete))
+	g.Expect(req.Status.Conditions[0].Type).To(Equal(vmopv1.VirtualMachineGroupPublishRequestConditionComplete))
 	g.Expect(req.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
 	g.Expect(req.Status.CompletionTime).ToNot(Equal(metav1.Time{}))
 }

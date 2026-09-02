@@ -495,7 +495,6 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 	}
 
 	item, err := r.getItemByName(ctx)
-
 	if err != nil {
 		return fmt.Errorf("failed to get item %q from library: %w", targetItemName, err)
 	}
@@ -726,10 +725,6 @@ func (r *Reconciler) checkIsImageAvailable(ctx *pkgctx.VirtualMachinePublishRequ
 // checkIsComplete checks if condition Complete can be marked to true.
 // The condition's status is set to true only when all other conditions present on the resource have a truthy status.
 func (r *Reconciler) checkIsComplete(ctx *pkgctx.VirtualMachinePublishRequestContext) bool {
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionComplete) {
-		return true
-	}
-
 	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
 		conditions.MarkFalse(ctx.VMPublishRequest,
 			vmopv1.VirtualMachinePublishRequestConditionComplete,
@@ -749,7 +744,9 @@ func (r *Reconciler) checkIsComplete(ctx *pkgctx.VirtualMachinePublishRequestCon
 	conditions.MarkTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionComplete)
 	ctx.VMPublishRequest.Status.Ready = true
 	ctx.VMPublishRequest.Status.CompletionTime = metav1.Now()
-	ctx.Logger.Info("VM publish request completed", "time", ctx.VMPublishRequest.Status.CompletionTime)
+	ctx.Logger.Info("VM publish request completed",
+		"imageName", ctx.VMPublishRequest.Status.ImageName,
+		"time", ctx.VMPublishRequest.Status.CompletionTime)
 
 	return true
 }
@@ -822,13 +819,13 @@ func (r *Reconciler) getPublishRequestTask(ctx *pkgctx.VirtualMachinePublishRequ
 // - task succeeded, mark Uploaded to true and return the uploaded item ID.
 // - task failed, mark Uploaded to false and retry the operation.
 func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMachinePublishRequestContext) (bool, error) {
+	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
+		return false, nil
+	}
+
 	if ctx.VMPublishRequest.Status.Attempts == 0 {
 		// No VM publish task has been attempted. return immediately.
 		return true, nil
-	}
-
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
-		return false, nil
 	}
 
 	actID := getPublishRequestActID(ctx.VMPublishRequest)
@@ -859,7 +856,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMach
 	if task == nil {
 		if time.Since(ctx.VMPublishRequest.Status.LastAttemptTime.Time) > waitForTaskTimeout {
 			// CreateOvf API failed to submit this task for some reason. In this case, retry VM publish.
-			ctx.Logger.Info("failed to create task, retry publishing this VM",
+			logger.Info("failed to create task, retry publishing this VM",
 				"taskName", OVFCaptureTaskDescriptionID,
 				"lastAttemptTime", ctx.VMPublishRequest.Status.LastAttemptTime.String())
 			return true, nil
@@ -1159,7 +1156,8 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 		}
 
 		// In case the .spec.ttlSecondsAfterFinished is not set, we can return early and no need to do any reconcile.
-		if isComplete = completeCond.Status == metav1.ConditionTrue; isComplete {
+		if vmPublishReq.Status.Ready && completeCond.Status == metav1.ConditionTrue {
+			isComplete = true
 			requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
 			isDeleted = deleted
 			return ctrl.Result{RequeueAfter: requeueAfter}, err

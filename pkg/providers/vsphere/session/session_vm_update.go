@@ -1795,7 +1795,7 @@ func isSnapshotDiskAttached(moVM mo.VirtualMachine, configSpec *vimtypes.Virtual
 	if moVM.Config != nil {
 		for _, dev := range moVM.Config.Hardware.Device {
 			if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
-				if getVirtualDiskUUID(disk) == diskID {
+				if strings.EqualFold(getVirtualDiskUUID(disk), diskID) {
 					if isSnapshotDisk(disk) {
 						return true
 					}
@@ -1804,7 +1804,7 @@ func isSnapshotDiskAttached(moVM mo.VirtualMachine, configSpec *vimtypes.Virtual
 					for _, devChange := range configSpec.DeviceChange {
 						if devChange.GetVirtualDeviceConfigSpec().Operation == vimtypes.VirtualDeviceConfigSpecOperationRemove {
 							if removedDisk, ok := devChange.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualDisk); ok {
-								if getVirtualDiskUUID(removedDisk) == diskID {
+								if strings.EqualFold(getVirtualDiskUUID(removedDisk), diskID) {
 									isBeingRemoved = true
 									break
 								}
@@ -1823,7 +1823,7 @@ func isSnapshotDiskAttached(moVM mo.VirtualMachine, configSpec *vimtypes.Virtual
 	for _, devChange := range configSpec.DeviceChange {
 		if devChange.GetVirtualDeviceConfigSpec().Operation == vimtypes.VirtualDeviceConfigSpecOperationAdd {
 			if disk, ok := devChange.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualDisk); ok {
-				if getVirtualDiskUUID(disk) == diskID {
+				if strings.EqualFold(getVirtualDiskUUID(disk), diskID) {
 					return true
 				}
 			}
@@ -1899,7 +1899,7 @@ func reconcileSnapshotVolume(
 	if targetDisk == nil && len(moSnap.Config.Hardware.Device) == 0 && moVM.Config != nil {
 		for _, dev := range moVM.Config.Hardware.Device {
 			if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
-				if getVirtualDiskUUID(disk) == diskID {
+				if strings.EqualFold(getVirtualDiskUUID(disk), diskID) {
 					targetDisk = disk
 					break
 				}
@@ -2006,7 +2006,7 @@ func isDetachedSnapshotDisk(disk *vimtypes.VirtualDisk, uuid string, vm *vmopv1.
 
 	// Check if it's in status
 	for _, volStatus := range vm.Status.Volumes {
-		if volStatus.DiskUUID == uuid {
+		if strings.EqualFold(volStatus.DiskUUID, uuid) {
 			// If it's a managed volume (PVC), it's never a snapshot disk we should remove
 			if volStatus.Type == vmopv1.VolumeTypeManaged {
 				return false
@@ -2066,7 +2066,7 @@ func removeDetachedSnapshotDisks(moVM mo.VirtualMachine, vm *vmopv1.VirtualMachi
 			})
 
 			for i, volStatus := range vm.Status.Volumes {
-				if volStatus.DiskUUID == uuid && volStatus.Type == vmopv1.VolumeTypeClassic {
+				if strings.EqualFold(volStatus.DiskUUID, uuid) && volStatus.Type == vmopv1.VolumeTypeClassic {
 					vm.Status.Volumes[i].Attached = false
 				}
 			}

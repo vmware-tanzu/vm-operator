@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -54,7 +53,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx,
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
-		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorder(controllerNameShort)),
 		ctx.VMProvider,
 	)
@@ -76,7 +74,6 @@ type Reconciler struct {
 	client.Client
 	Context    context.Context
 	apiReader  client.Reader
-	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
 }
@@ -85,7 +82,6 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	apiReader client.Reader,
-	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 
@@ -93,7 +89,6 @@ func NewReconciler(
 		Context:    ctx,
 		Client:     client,
 		apiReader:  apiReader,
-		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
 	}

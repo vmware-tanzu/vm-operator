@@ -89,7 +89,6 @@ func unitTestsReconcile() {
 			ctx,
 			ctx.Client,
 			ctx.Client,
-			ctx.Logger,
 			ctx.Recorder,
 			ctx.VMProvider,
 		)

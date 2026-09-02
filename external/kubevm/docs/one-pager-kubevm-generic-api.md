@@ -4,5 +4,5 @@
 
 This proposal is under active review as a pull request rather than as a
 single large file, so that reviewers can comment inline on specific
-sections. See the open pull requests against `feature/kube-vm` that touch
-this file for the current content and discussion.
+sections. See [#1893](https://github.com/vmware-tanzu/vm-operator/pull/1893)
+for the current content and discussion.

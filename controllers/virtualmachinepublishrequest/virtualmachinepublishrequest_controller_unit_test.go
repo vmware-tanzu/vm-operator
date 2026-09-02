@@ -147,6 +147,33 @@ func unitTestsReconcile() {
 			Expect(vmpubCtx.VMPublishRequest.GetFinalizers()).To(ContainElement(finalizerName))
 		})
 
+		When("Complete condition is true but Status.Ready is false", func() {
+			BeforeEach(func() {
+				conditions.MarkTrue(vmpub, vmopv1.VirtualMachinePublishRequestConditionComplete)
+				vmpub.Status.Ready = false
+
+				// If the short-circuit incorrectly triggered on condition status alone,
+				// a zero TTL would cause immediate deletion of the resource.
+				ttl := int64(0)
+				vmpub.Spec.TTLSecondsAfterFinished = &ttl
+			})
+
+			It("does not short-circuit into resource cleanup and continues reconciling", func() {
+				_, err := reconciler.ReconcileNormal(vmpubCtx)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Should NOT have been deleted since Status.Ready was never persisted as true.
+				newVMPub := &vmopv1.VirtualMachinePublishRequest{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmpub), newVMPub)).To(Succeed())
+				Expect(newVMPub.DeletionTimestamp.IsZero()).To(BeTrue())
+
+				// Reconciliation continued normally instead of short-circuiting.
+				Eventually(func() bool {
+					return fakeVMProvider.IsPublishVMCalled()
+				}).Should(BeTrue())
+			})
+		})
+
 		When("VMPubRequest update failed", func() {
 			JustBeforeEach(func() {
 				// mock update failure
@@ -1002,9 +1029,11 @@ func unitTestsReconcile() {
 							Expect(conditions.IsTrue(vmpub,
 								vmopv1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeTrue())
 							Expect(vmpub.Status.ImageName).To(Equal("dummy-image"))
-							Expect(conditions.IsTrue(vmpub,
-								vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+							completeCond := conditions.Get(vmpub, vmopv1.VirtualMachinePublishRequestConditionComplete)
+							Expect(completeCond).ToNot(BeNil())
+							Expect(completeCond.Status).To(Equal(metav1.ConditionTrue))
 							Expect(vmpub.Status.Ready).To(BeTrue())
+							Expect(vmpub.Status.CompletionTime.IsZero()).To(BeFalse())
 						})
 
 						It("backfills ImageName when ImageAvailable is true but ImageName is empty", func() {
@@ -1023,6 +1052,30 @@ func unitTestsReconcile() {
 							Expect(conditions.IsTrue(vmpub,
 								vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
 							Expect(vmpub.Status.Ready).To(BeTrue())
+						})
+
+						It("re-completes when the Complete condition is stale-true but Status.Ready was never persisted", func() {
+							staleTime := metav1.NewTime(time.Now().Add(-time.Hour).Truncate(time.Second))
+							conditions.Set(vmpub, &metav1.Condition{
+								Type:               vmopv1.VirtualMachinePublishRequestConditionComplete,
+								Status:             metav1.ConditionTrue,
+								Reason:             string(metav1.ConditionTrue),
+								LastTransitionTime: staleTime,
+							})
+							vmpub.Status.Ready = false
+							vmpub.Status.CompletionTime = metav1.Time{}
+
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).NotTo(HaveOccurred())
+
+							Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
+
+							completeCond := conditions.Get(vmpub, vmopv1.VirtualMachinePublishRequestConditionComplete)
+							Expect(completeCond).ToNot(BeNil())
+							Expect(completeCond.Status).To(Equal(metav1.ConditionTrue))
+							Expect(completeCond.LastTransitionTime).To(Equal(staleTime))
+							Expect(vmpub.Status.Ready).To(BeTrue())
+							Expect(vmpub.Status.CompletionTime.IsZero()).To(BeFalse())
 						})
 
 						It("Update item description failed once", func() {

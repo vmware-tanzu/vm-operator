@@ -168,7 +168,8 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineGroupPublishReque
 		return nil
 	}
 
-	if conditions.IsTrue(vmGroupPublishReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete) {
+	if !vmGroupPublishReq.Status.CompletionTime.IsZero() &&
+		conditions.IsTrue(vmGroupPublishReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete) {
 		return r.reconcileSpecTTL(ctx)
 	}
 
@@ -226,11 +227,12 @@ func (r *Reconciler) getVMPublishRequests(
 	completedReqsSet := sets.Set[string]{}
 	for _, req := range reqs.Items {
 		if metav1.IsControlledBy(&req, ctx.VMGroupPublishRequest) {
-			existReqsMap[req.Spec.Source.Name] = req
+			name := req.Spec.Source.Name
+			existReqsMap[name] = req
 			if req.Status.Ready {
-				completedReqsSet.Insert(req.Spec.Source.Name)
+				completedReqsSet.Insert(name)
 			} else {
-				pendingReqsSet.Insert(req.Spec.Source.Name)
+				pendingReqsSet.Insert(name)
 			}
 		}
 	}
@@ -336,7 +338,7 @@ func (r *Reconciler) reconcileStatusCompletedCondition(
 
 	conditions.MarkFalse(
 		ctx.VMGroupPublishRequest,
-		vmopv1.VirtualMachinePublishRequestConditionComplete,
+		vmopv1.VirtualMachineGroupPublishRequestConditionComplete,
 		vmopv1.VirtualMachineGroupPublishRequestConditionReasonPending,
 		"waiting %d more vm publish requests to be completed",
 		pendingReqsSet.Len())

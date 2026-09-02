@@ -6,6 +6,7 @@ package virtualmachinegrouppublishrequest_test
 
 import (
 	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -175,14 +176,53 @@ func unitTestsReconcile() {
 				}).Should(Succeed(), fmt.Sprintf("sets completed condition to false with %d pending",
 					len(vmGroupPubReq.Spec.VirtualMachines)))
 			})
+
+			It("marks the VirtualMachineGroupPublishRequestConditionComplete type with the pending reason", func() {
+				// first reconcile normal creates the vm requests
+				// second reconcile enters reconcileStatusCompletedCondition()
+				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(Succeed())
+				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(Succeed())
+
+				Expect(vmGroupPubReq.Status.Conditions).To(HaveLen(1))
+
+				// The pending false condition must be set on the group publish
+				// request's own Complete condition type, not the (child)
+				// VirtualMachinePublishRequest's Complete condition type.
+				cond := conditions.Get(vmGroupPubReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete)
+				Expect(cond).ToNot(BeNil())
+				Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				Expect(cond.Reason).To(Equal(vmopv1.VirtualMachineGroupPublishRequestConditionReasonPending))
+			})
 		})
 
 		When("vm group publish request is completed", func() {
 			BeforeEach(func() {
 				conditions.MarkTrue(vmGroupPubReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete)
+				vmGroupPubReq.Status.CompletionTime = conditions.Get(vmGroupPubReq,
+					vmopv1.VirtualMachineGroupPublishRequestConditionComplete).LastTransitionTime
 			})
 			It("should return nil when ttl is nil", func() {
 				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(BeNil())
+				// The reconcileSpecTTL short-circuit was taken, so no vm publish
+				// requests should have been created.
+				getVMPublishRequests(vmGroupPubReq, reconciler, 0)
+			})
+		})
+
+		When("Complete condition is true but Status.CompletionTime was never persisted", func() {
+			BeforeEach(func() {
+				// Simulate the conditions patch succeeding while the status patch that
+				// sets Status.CompletionTime failed (e.g. conflict). The stale true
+				// Complete condition alone must not short-circuit into reconcileSpecTTL.
+				conditions.MarkTrue(vmGroupPubReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete)
+				vmGroupPubReq.Status.CompletionTime = metav1.Time{}
+			})
+
+			It("does not short-circuit into reconcileSpecTTL and instead re-runs reconcileStatus", func() {
+				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(Succeed())
+				Expect(vmGroupPubReq.Status.StartTime).ToNot(Equal(metav1.Time{}))
+				// reconcileStatus ran and created the missing vm publish requests.
+				getVMPublishRequests(vmGroupPubReq, reconciler, len(vmGroupPubReq.Spec.VirtualMachines))
 			})
 		})
 	})

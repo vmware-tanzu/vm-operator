@@ -396,6 +396,7 @@ rules:
   - vsphere.policy.vmware.com
   resources:
   - computepolicies
+  - controlledrebalancingpolicies
   - tagpolicies
   verbs:
   - get
@@ -405,6 +406,7 @@ rules:
   - vsphere.policy.vmware.com
   resources:
   - computepolicies/status
+  - controlledrebalancingpolicies/status
   - tagpolicies/status
   verbs:
   - get

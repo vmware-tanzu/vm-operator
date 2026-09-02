@@ -37,7 +37,6 @@ import (
 const (
 	finalizerName         = "vmoperator.vmware.com/virtualmachinegrouppublishrequest"
 	undefinedSpecErrorMsg = "spec.%s is undefined"
-	invalidSpecErrorMsg   = "webhooks failed to mutate/validate spec. please delete and create again."
 	delTTLMsg             = "%s vm group publish request due to TTL expired"
 )
 
@@ -356,14 +355,13 @@ func (r *Reconciler) verifySpec(vmGroupPublishReq *vmopv1.VirtualMachineGroupPub
 	}
 
 	if len(errs) > 0 {
-		// in the rare case that webhooks were down when request was created
-		// set condition to failure
+		// Mutation and validation webhooks should prevent this.
+		err := fmt.Errorf("invalid spec: %w", errors.Join(errs...))
 		conditions.MarkError(vmGroupPublishReq,
 			vmopv1.VirtualMachineGroupPublishRequestConditionComplete,
-			invalidSpecErrorMsg,
-			errors.Join(errs...))
-
-		return pkgerr.NoRequeueError{Message: invalidSpecErrorMsg}
+			"Invalid",
+			err)
+		return pkgerr.NoRequeueError{Message: err.Error()}
 	}
 
 	return nil

@@ -104,15 +104,16 @@ func unitTestsReconcile() {
 			var (
 				specErr error
 			)
+
+			BeforeEach(func() {
+				specErr = nil
+			})
+
 			AfterEach(func() {
 				Expect(vmGroupPubReq.Status.Conditions).To(HaveLen(1))
 				Expect(vmGroupPubReq.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
-				Expect(specErr).To(Equal(pkgerr.NoRequeueError{
-					Message: "webhooks failed to mutate/validate spec. please delete and create again.",
-				}))
-			})
-			BeforeEach(func() {
-				specErr = nil
+				Expect(vmGroupPubReq.Status.Conditions[0].Reason).To(Equal("Invalid"))
+				Expect(specErr).To(BeAssignableToTypeOf(pkgerr.NoRequeueError{}))
 			})
 
 			It("should set complete condition false when spec source is missing", func() {

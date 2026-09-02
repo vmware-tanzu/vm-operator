@@ -231,7 +231,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s/%s: %w", vmPublishReq.Namespace, vmPublishReq.Name, err)
 	}
 
-	// the patch is skipped when the VirtualMachinePublishRequest.Status().Update
+	// VirtualMachinePublishRequest status has both conditions and other fields
+	// that convey completeness so they need to be patched together.
+	patchHelper.DisableSeparateConditionsPatch()
+
+	// The patch is skipped when the VirtualMachinePublishRequest.Status().Update
 	// is called during publishVirtualMachine().
 	defer func() {
 		if vmPublishCtx.SkipPatch {

@@ -120,6 +120,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			err)
 	}
 
+	// VirtualMachineGroupPublishRequest status has both conditions and other fields
+	// that convey completeness so they need to be patched together.
+	patchHelper.DisableSeparateConditionsPatch()
+
 	defer func() {
 		if err := patchHelper.Patch(ctx, vmGroupPublishRequest); err != nil {
 			if reterr == nil {

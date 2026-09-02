@@ -213,6 +213,75 @@ func snapshotVolumeIntgTests() {
 			})
 		})
 
+		It("Happy path: attaches snapshot disk from a different namespace successfully", func() {
+			var otherNS *corev1.Namespace
+			By("creating a different namespace and the snapshot there", func() {
+				otherNS = &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: "other-ns-",
+					},
+				}
+				Expect(vcSimCtx.Client.Create(ctx, otherNS)).To(Succeed())
+
+				snapID := snapCR.Status.UniqueID
+				// Delete the snapshot created in JustBeforeEach
+				Expect(vcSimCtx.Client.Delete(ctx, snapCR)).To(Succeed())
+
+				snapCR = &vmopv1.VirtualMachineSnapshot{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "my-snapshot",
+						Namespace: otherNS.Name,
+					},
+				}
+				Expect(vcSimCtx.Client.Create(ctx, snapCR)).To(Succeed())
+
+				snapCR.Status.UniqueID = snapID
+				snapCR.Status.Disks = []vmopv1.VirtualMachineSnapshotDiskStatus{
+					{
+						ID: diskUUID,
+					},
+				}
+				conditions.MarkTrue(snapCR, vmopv1.VirtualMachineSnapshotReadyCondition)
+				Expect(vcSimCtx.Client.Status().Update(ctx, snapCR)).To(Succeed())
+			})
+
+			By("updating VM to reference the snapshot volume", func() {
+				Eventually(func(g Gomega) {
+					g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
+					obj.Spec.Volumes = append(obj.Spec.Volumes, vmopv1.VirtualMachineVolume{
+						Name:      snapVolName,
+						DiskMode:  vmopv1.VolumeDiskModeIndependentNonPersistent,
+						Removable: ptr.To(true),
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							VirtualMachineSnapshot: &vmopv1.VirtualMachineSnapshotDiskSpec{
+								Namespace: otherNS.Name,
+								Name:      "my-snapshot",
+								DiskID:    diskUUID,
+							},
+						},
+					})
+					g.Expect(vcSimCtx.Client.Update(ctx, obj)).To(Succeed())
+				}).Should(Succeed())
+			})
+
+			By("waiting for volume to be attached", func() {
+				Eventually(func(g Gomega) {
+					g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
+					var snapVolStatus *vmopv1.VirtualMachineVolumeStatus
+					for i, v := range obj.Status.Volumes {
+						if v.Name == snapVolName {
+							snapVolStatus = &obj.Status.Volumes[i]
+							break
+						}
+					}
+					g.Expect(snapVolStatus).ToNot(BeNil(), "Volume status for snap-vol not found in VM status: %v, spec: %v", obj.Status.Volumes, obj.Spec.Volumes)
+					g.Expect(snapVolStatus.Attached).To(BeTrue())
+					g.Expect(snapVolStatus.DiskUUID).To(Equal(diskUUID))
+					g.Expect(snapVolStatus.Error).To(BeEmpty())
+				}).Should(Succeed())
+			})
+		})
+
 		It("Happy path: attaches snapshot disk successfully", func() {
 			By("updating VM to reference the snapshot volume", func() {
 				Eventually(func(g Gomega) {

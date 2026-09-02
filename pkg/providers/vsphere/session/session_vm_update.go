@@ -1845,10 +1845,14 @@ func reconcileSnapshotVolume(
 ) bool {
 	snapName := vol.VirtualMachineSnapshot.Name
 	diskID := vol.VirtualMachineSnapshot.DiskID
+	snapNamespace := vol.VirtualMachineSnapshot.Namespace
+	if snapNamespace == "" {
+		snapNamespace = vm.Namespace
+	}
 
 	snapshot := &vmopv1.VirtualMachineSnapshot{}
 	key := ctrlclient.ObjectKey{
-		Namespace: vm.Namespace,
+		Namespace: snapNamespace,
 		Name:      snapName,
 	}
 	if err := k8sClient.Get(ctx, key, snapshot); err != nil {

@@ -48,14 +48,18 @@ func TestReconcileSnapshotDisks_NotFound(t *testing.T) {
 
 func TestReconcileSnapshotDisks_NotReady(t *testing.T) {
 	vm := &vmopv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "vm-namespace",
+		},
 		Spec: vmopv1.VirtualMachineSpec{
 			Volumes: []vmopv1.VirtualMachineVolume{
 				{
 					Name: "snap-vol",
 					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
 						VirtualMachineSnapshot: &vmopv1.VirtualMachineSnapshotDiskSpec{
-							Name:   "not-ready-snap",
-							DiskID: "disk-123",
+							Name:      "not-ready-snap",
+							Namespace: "snap-namespace",
+							DiskID:    "disk-123",
 						},
 					},
 				},
@@ -66,7 +70,7 @@ func TestReconcileSnapshotDisks_NotReady(t *testing.T) {
 	snapshot := &vmopv1.VirtualMachineSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "not-ready-snap",
-			Namespace: vm.Namespace,
+			Namespace: "snap-namespace",
 		},
 	}
 

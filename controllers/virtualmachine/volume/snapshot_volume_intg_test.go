@@ -29,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func snapshotVolumeIntgTests() {
@@ -282,7 +283,7 @@ func snapshotVolumeIntgTests() {
 			})
 		})
 
-		It("Happy path: attaches snapshot disk successfully", func() {
+		It("Happy path: attaches snapshot disk with the same UUID successfully", func() {
 			By("updating VM to reference the snapshot volume", func() {
 				Eventually(func(g Gomega) {
 					g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
@@ -342,9 +343,9 @@ func snapshotVolumeIntgTests() {
 				Eventually(func(g Gomega) {
 					g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
 					var snapVolStatus *vmopv1.VirtualMachineVolumeStatus
-					for _, v := range obj.Status.Volumes {
+					for i, v := range obj.Status.Volumes {
 						if v.Name == snapVolName {
-							snapVolStatus = &v
+							snapVolStatus = &obj.Status.Volumes[i]
 							break
 						}
 					}

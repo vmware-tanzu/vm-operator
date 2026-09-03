@@ -1983,19 +1983,10 @@ func reconcileSnapshotDisks(
 
 	removeDetachedSnapshotDisks(moVM, vm, snapshotVolumes, configSpec)
 
-	vm.Status.Volumes = slices.DeleteFunc(vm.Status.Volumes, func(volStatus vmopv1.VirtualMachineVolumeStatus) bool {
-		if volStatus.Type == vmopv1.VolumeTypeClassic && !volStatus.Attached {
-			foundInSpec := false
-			for _, vol := range vm.Spec.Volumes {
-				if vol.Name == volStatus.Name {
-					foundInSpec = true
-					break
-				}
-			}
-			return !foundInSpec
-		}
-		return false
-	})
+	// We don't delete volumes from status here anymore, even if they are detached.
+	// `updateVolumeStatus` handles cleaning up stale classic volumes that are no longer in the VM's hardware.
+	// This prevents issues during restore where the boot disk (which is not in spec.volumes)
+	// might be temporarily unattached and erroneously deleted from status.
 
 	return nil
 }

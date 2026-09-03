@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -188,20 +190,67 @@ func WaitForVirtualMachineCreation(ctx context.Context, config *config.E2EConfig
 	WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
 }
 
-// Utility function to check Virtual Machine Status IP.
-func WaitForVirtualMachineIP(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
-	By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", ns, vmName))
-	Eventually(func() bool {
+// intervalDurations converts a config Eventually-style interval pair (as
+// returned by E2EConfig.GetIntervals, e.g. []any{"5m", "3s"}) into a
+// (timeout, poll) duration pair for wait.PollUntilContextTimeout.
+func intervalDurations(intervals []any) (timeout, poll time.Duration) {
+	timeout, err := time.ParseDuration(fmt.Sprint(intervals[0]))
+	Expect(err).ToNot(HaveOccurred())
+	poll, err = time.ParseDuration(fmt.Sprint(intervals[1]))
+	Expect(err).ToNot(HaveOccurred())
+	return timeout, poll
+}
+
+// hasVirtualMachineIP polls, without failing the spec, whether the
+// VirtualMachine has an IPv4 address within the given timeout.
+func hasVirtualMachineIP(ctx context.Context, svClusterClient ctrlclient.Client, ns, vmName string, timeout, poll time.Duration) bool {
+	err := wait.PollUntilContextTimeout(ctx, poll, timeout, true, func(ctx context.Context) (bool, error) {
 		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
 		if err != nil {
 			e2eframework.Logf("retry due to: %v", err)
-			return false
+			return false, nil
 		}
 
 		return vm.Status.Network != nil &&
 			vm.Status.Network.PrimaryIP4 != "" &&
-			net.ParseIP(vm.Status.Network.PrimaryIP4).To4() != nil
-	}, config.GetIntervals("default", "wait-virtual-machine-vmip")...).Should(BeTrue())
+			net.ParseIP(vm.Status.Network.PrimaryIP4).To4() != nil, nil
+	})
+	return err == nil
+}
+
+// WaitForVirtualMachineIP checks the VirtualMachine's Status IP. If the
+// first wait times out and disk promotion has started for this VM, that is
+// a plausible cause (promotion can reset guest networking), so it waits for
+// promotion to finish and checks the IP once more.
+func WaitForVirtualMachineIP(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
+	ipTimeout, ipPoll := intervalDurations(config.GetIntervals("default", "wait-virtual-machine-vmip"))
+
+	By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", ns, vmName))
+	if hasVirtualMachineIP(ctx, svClusterClient, ns, vmName, ipTimeout, ipPoll) {
+		return
+	}
+
+	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
+	Expect(err).ToNot(HaveOccurred())
+	if !meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionStarted) {
+		Fail(fmt.Sprintf("Timed out waiting for VirtualMachine %s to get an IPv4 address", vmName))
+	}
+
+	By(fmt.Sprintf("VirtualMachine '%s/%s' IP not ready yet; wait for disk promotion in case it's the cause", ns, vmName))
+	promoTimeout, promoPoll := intervalDurations(config.GetIntervals("default", "wait-virtual-machine-disk-promotion"))
+	_ = wait.PollUntilContextTimeout(ctx, promoPoll, promoTimeout, true, func(ctx context.Context) (bool, error) {
+		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
+		if err != nil {
+			e2eframework.Logf("retry due to: %v", err)
+			return false, nil
+		}
+
+		return meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced), nil
+	})
+
+	By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", ns, vmName))
+	Expect(hasVirtualMachineIP(ctx, svClusterClient, ns, vmName, ipTimeout, ipPoll)).To(BeTrue(),
+		"Timed out waiting for VirtualMachine %s to get an IPv4 address", vmName)
 }
 
 // GetVirtualMachineServiceEndpointsTargetRefNames returns the set of VM names

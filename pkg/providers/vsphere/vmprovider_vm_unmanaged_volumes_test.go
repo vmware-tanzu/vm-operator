@@ -11,6 +11,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/vmware/govmomi/object"
 	pbmmethods "github.com/vmware/govmomi/pbm/methods"
 	pbmsim "github.com/vmware/govmomi/pbm/simulator"
 	pbmtypes "github.com/vmware/govmomi/pbm/types"
@@ -19,23 +26,15 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	vmconfunmanagedvolsfil "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
@@ -59,10 +58,7 @@ func vmUnmanagedVolumesTests() {
 	)
 
 	BeforeEach(func() {
-		parentCtx = pkgcfg.NewContextWithDefaultConfig()
-		parentCtx = ctxop.WithContext(parentCtx)
-		parentCtx = ovfcache.WithContext(parentCtx)
-		parentCtx = cource.WithContext(parentCtx)
+		parentCtx = newVMTestParentContext()
 		parentCtx = vmconfig.WithContext(parentCtx)
 
 		// Enable AllDisksArePVCs feature
@@ -72,18 +68,9 @@ func vmUnmanagedVolumesTests() {
 			config.Features.AllDisksArePVCs = true
 		})
 
-		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
-		}
+		testConfig = newVMTestConfig()
 
-		vmClass = builder.DummyVirtualMachineClassGenName()
-		vm = builder.DummyBasicVirtualMachine("test-vm", "")
-
-		// Disable network for simplicity
-		if vm.Spec.Network == nil {
-			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
-		}
-		vm.Spec.Network.Disabled = true
+		vmClass, vm = newVMTestObjects("test-vm")
 	})
 
 	JustBeforeEach(func() {
@@ -140,26 +127,15 @@ func vmUnmanagedVolumesTests() {
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
 		nsInfo = ctx.CreateWorkloadNamespace()
 
-		vmClass.Namespace = nsInfo.Namespace
-		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
-
-		clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
-		Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name}, clusterVMImage)).To(Succeed())
-
-		vm.Namespace = nsInfo.Namespace
-		vm.Spec.ClassName = vmClass.Name
-		vm.Spec.ImageName = clusterVMImage.Name
-		vm.Spec.Image.Kind = cvmiKind
-		vm.Spec.Image.Name = clusterVMImage.Name
-		vm.Spec.StorageClass = ctx.StorageClassName
-
-		Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+		createVMTestObjects(
+			ctx, nsInfo, resolveVMTestImage(ctx, testConfig), vmClass, vm)
 	})
 
 	AfterEach(func() {
+		vmTestAfterEach(ctx, vm)
+
 		vmClass = nil
 		vm = nil
-		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
 		vmProvider = nil
@@ -167,6 +143,13 @@ func vmUnmanagedVolumesTests() {
 	})
 
 	When("VM has unmanaged disks from vSphere", func() {
+		JustBeforeEach(func() {
+			// Nothing in a provider test plays the part of the image cache
+			// controller, so report the image's files as cached for Fast
+			// Deploy. The context below builds its own cache instead.
+			ctx.MarkImageCacheReady(ctx.ContentLibraryItem1Cache)
+		})
+
 		It("should backfill unmanaged disk into spec.volumes", func() {
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).
 				To(MatchError(vsphere.ErrRegisterVolumes))
@@ -196,7 +179,22 @@ func vmUnmanagedVolumesTests() {
 			Expect(pvc.Spec.DataSourceRef.Kind).To(Equal("VirtualMachine"))
 			Expect(pvc.Spec.DataSourceRef.Name).To(Equal(vm.Name))
 			Expect(pvc.Spec.AccessModes).To(ContainElement(corev1.ReadWriteOnce))
-			expectedStorage := *kubeutil.BytesToResource(31457280)
+
+			// The PVC is sized from the disk the VM actually has, which
+			// differs by deploy path: Fast Deploy links the boot disk to the
+			// image's cached VMDK and inherits its capacity, whereas the
+			// content library deploy applies the size the OVF declares.
+			Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+			vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+			Expect(vcVM).ToNot(BeNil())
+			var moVM mo.VirtualMachine
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &moVM)).To(Succeed())
+			vmDisks := object.VirtualDeviceList(moVM.Config.Hardware.Device).
+				SelectByType(&vimtypes.VirtualDisk{})
+			Expect(vmDisks).To(HaveLen(1))
+
+			expectedStorage := *kubeutil.BytesToResource(
+				vmDisks[0].(*vimtypes.VirtualDisk).CapacityInBytes)
 			Expect(pvc.Spec.Resources.Requests[corev1.ResourceStorage].Equal(expectedStorage)).To(BeTrue())
 
 			// Verify OwnerReference.

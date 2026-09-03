@@ -11,11 +11,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/vim25/mo"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -37,10 +38,8 @@ func vmResizeTests() {
 	)
 
 	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
-			WithNetworkEnv:     builder.NetworkEnvNamed,
-		}
+		testConfig = newVMTestConfig()
+		testConfig.WithNetworkEnv = builder.NetworkEnvNamed
 	})
 
 	JustBeforeEach(func() {

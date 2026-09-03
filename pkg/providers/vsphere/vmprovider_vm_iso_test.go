@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/google/uuid"
+
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
@@ -26,13 +27,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
-	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -45,53 +42,35 @@ func vmISOTests() {
 		ctx         *builder.TestContextForVCSim
 		vmProvider  providers.VirtualMachineProviderInterface
 		nsInfo      builder.WorkloadNamespaceInfo
+
+		vm      *vmopv1.VirtualMachine
+		vmClass *vmopv1.VirtualMachineClass
 	)
 
 	BeforeEach(func() {
-		parentCtx = pkgcfg.NewContextWithDefaultConfig()
-		parentCtx = ctxop.WithContext(parentCtx)
-		parentCtx = ovfcache.WithContext(parentCtx)
-		parentCtx = cource.WithContext(parentCtx)
-		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
-			config.AsyncCreateEnabled = false
-			config.AsyncSignalEnabled = false
-		})
-		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
-		}
+		parentCtx = newVMTestParentContext()
+		testConfig = newVMTestConfig()
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSimWithParentContext(parentCtx, testConfig, initObjects...)
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.MaxDeployThreadsOnProvider = 1
-		})
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace()
+		ctx, vmProvider, nsInfo = newVMTestContext(
+			parentCtx, testConfig, initObjects...)
 	})
 
 	AfterEach(func() {
-		ctx.AfterEach()
+		vmTestAfterEach(ctx, vm)
+
+		vmClass = nil
+		vm = nil
+
 		ctx = nil
 		initObjects = nil
 		vmProvider = nil
 		nsInfo = builder.WorkloadNamespaceInfo{}
 	})
 
-	var (
-		vm      *vmopv1.VirtualMachine
-		vmClass *vmopv1.VirtualMachineClass
-	)
-
 	BeforeEach(func() {
-		vmClass = builder.DummyVirtualMachineClassGenName()
-		vm = builder.DummyBasicVirtualMachine("test-vm-iso", "")
-
-		// Reduce diff from old tests: by default don't create an NIC.
-		if vm.Spec.Network == nil {
-			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
-		}
-		vm.Spec.Network.Disabled = true
+		vmClass, vm = newVMTestObjects("test-vm-iso")
 	})
 
 	JustBeforeEach(func() {
@@ -126,6 +105,12 @@ func vmISOTests() {
 
 	Context("return config", func() {
 		JustBeforeEach(func() {
+			// Nothing in a provider test plays the part of the image cache
+			// controller, so report the ISO item's files as cached. The specs
+			// below that exercise the cache-not-ready paths build their own
+			// VirtualMachineImageCache instead.
+			ctx.MarkImageCacheReady(ctx.ContentLibraryIsoItemCache)
+
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 		})
 

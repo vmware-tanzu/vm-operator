@@ -5,7 +5,7 @@
 package vsphere_test
 
 import (
-	"fmt"
+	"path"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -54,21 +54,26 @@ var _ = Describe("VirtualMachine", Label(testlabels.VCSim), func() {
 	Describe("Location", vmLocationTests)
 })
 
-// getVMHomeDisk gets the VM's "home" disk. It makes some assumptions about the backing and disk name.
+// getVMHomeDisk gets the VM's "home" disk, i.e. disk-0.vmdk in the VM's own
+// directory on the datastore.
+//
+// The directory is read from the VM's VMX path rather than built from the VM's
+// name, because the two deploy paths name it differently: the content library
+// deploy names the directory after the VM, whereas Fast Deploy names it after
+// the VM's UID. See vmCreatePathNameFromDatastoreRecommendation in
+// pkg/providers/vsphere/vmprovider_vm.go.
 func getVMHomeDisk(
-	ctx *builder.TestContextForVCSim,
-	vcVM *object.VirtualMachine,
 	o mo.VirtualMachine) (*vimtypes.VirtualDisk, *vimtypes.VirtualDiskFlatVer2BackingInfo) {
 
-	ExpectWithOffset(1, vcVM.Name()).ToNot(BeEmpty())
-	ExpectWithOffset(1, o.Datastore).ToNot(BeEmpty())
-	var dso mo.Datastore
-	ExpectWithOffset(1, vcVM.Properties(ctx, o.Datastore[0], nil, &dso)).To(Succeed())
+	ExpectWithOffset(1, o.Config).ToNot(BeNil())
+	ExpectWithOffset(1, o.Config.Files).ToNot(BeNil())
+	ExpectWithOffset(1, o.Config.Files.VmPathName).ToNot(BeEmpty())
 
 	devList := object.VirtualDeviceList(o.Config.Hardware.Device)
 	l := devList.SelectByBackingInfo(&vimtypes.VirtualDiskFlatVer2BackingInfo{
 		VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-			FileName: fmt.Sprintf("[%s] %s/disk-0.vmdk", dso.Name, vcVM.Name()),
+			FileName: path.Join(
+				path.Dir(o.Config.Files.VmPathName), "disk-0.vmdk"),
 		},
 	})
 	ExpectWithOffset(1, l).To(HaveLen(1))

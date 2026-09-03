@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/google/uuid"
+
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -27,13 +28,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
-	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -57,26 +54,10 @@ func vmConfigSpecTests() {
 	)
 
 	BeforeEach(func() {
-		parentCtx = pkgcfg.NewContextWithDefaultConfig()
-		parentCtx = ctxop.WithContext(parentCtx)
-		parentCtx = ovfcache.WithContext(parentCtx)
-		parentCtx = cource.WithContext(parentCtx)
-		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
-			config.AsyncCreateEnabled = false
-			config.AsyncSignalEnabled = false
-		})
-		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
-		}
+		parentCtx = newVMTestParentContext()
+		testConfig = newVMTestConfig()
 
-		vmClass = builder.DummyVirtualMachineClassGenName()
-		vm = builder.DummyBasicVirtualMachine("test-vm", "")
-
-		// Reduce diff from old tests: by default don't create an NIC.
-		if vm.Spec.Network == nil {
-			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
-		}
-		vm.Spec.Network.Disabled = true
+		vmClass, vm = newVMTestObjects("test-vm")
 
 		testConfig.WithNetworkEnv = builder.NetworkEnvNamed
 
@@ -102,42 +83,8 @@ func vmConfigSpecTests() {
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSimWithParentContext(parentCtx, testConfig, initObjects...)
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.MaxDeployThreadsOnProvider = 1
-		})
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace()
-
-		vmClass.Namespace = nsInfo.Namespace
-		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
-
-		clusterVMI1 := &vmopv1.ClusterVirtualMachineImage{}
-
-		if testConfig.WithContentLibrary {
-			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryItem1Name}, clusterVMI1)).To(Succeed())
-
-		} else {
-			// BMV: VM creation without CL is broken - and has been for a long while - since we assume
-			// the VM Image will always point to a ContentLibrary item.
-			// Hack around that with this knob so we can continue to test the VM clone path.
-			vsphere.SkipVMImageCLProviderCheck = true
-
-			// Use the default VM created by vcsim as the source.
-			clusterVMI1 = builder.DummyClusterVirtualMachineImage("DC0_C0_RP0_VM0")
-			Expect(ctx.Client.Create(ctx, clusterVMI1)).To(Succeed())
-			conditions.MarkTrue(clusterVMI1, vmopv1.ReadyConditionType)
-			Expect(ctx.Client.Status().Update(ctx, clusterVMI1)).To(Succeed())
-		}
-
-		vm.Namespace = nsInfo.Namespace
-		vm.Spec.ClassName = vmClass.Name
-		vm.Spec.ImageName = clusterVMI1.Name
-		vm.Spec.Image.Kind = cvmiKind
-		vm.Spec.Image.Name = clusterVMI1.Name
-		vm.Spec.StorageClass = ctx.StorageClassName
-
-		Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+		ctx, vmProvider, nsInfo = setupVMTest(
+			parentCtx, testConfig, vmClass, vm, initObjects...)
 
 		if configSpec != nil {
 			var w bytes.Buffer
@@ -168,19 +115,12 @@ func vmConfigSpecTests() {
 		vcVM = nil
 		configSpec = nil
 
-		vsphere.SkipVMImageCLProviderCheck = false
-
-		if vm != nil && !pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
-			By("Assert vm.Status.Crypto is nil when BYOK is disabled", func() {
-				Expect(vm.Status.Crypto).To(BeNil())
-			})
-		}
+		vmTestAfterEach(ctx, vm)
 
 		vmClass = nil
 		vm = nil
 		skipCreateOrUpdateVM = false
 
-		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
 		vmProvider = nil
@@ -918,17 +858,18 @@ func vmConfigSpecTests() {
 			}
 		})
 
-		// FIXME: vcsim behavior needs to be closer to real VC here so there aren't dupes
 		It("Reconfigures the VM with all misc devices in ConfigSpec, including SCSI disk controller", func() {
 			var o mo.VirtualMachine
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 			devList := object.VirtualDeviceList(o.Config.Hardware.Device)
 
-			// VM already has a default pointing device and the spec adds one more
-			// info about the default device is unknown to assert on
+			// Fast Deploy creates the VM from the ConfigSpec directly, so the
+			// VM has exactly the devices the class asked for. The content
+			// library deploy path instead left a vcsim-supplied default
+			// pointing device and video card behind alongside these.
 			pointingDev := devList.SelectByType(&vimtypes.VirtualPointingDevice{})
-			Expect(pointingDev).To(HaveLen(2))
+			Expect(pointingDev).To(HaveLen(1))
 			dev := pointingDev[0].GetVirtualDevice()
 			backing, ok := dev.Backing.(*vimtypes.VirtualPointingDeviceDeviceBackingInfo)
 			Expect(ok).Should(BeTrue())
@@ -946,10 +887,8 @@ func vmConfigSpecTests() {
 			dev = pciControllers[0].GetVirtualDevice()
 			Expect(dev.Key).To(Equal(int32(100)))
 
-			// VM already has a default video card and the spec adds one more
-			// info about the default device is unknown to assert on
 			video := devList.SelectByType(&vimtypes.VirtualMachineVideoCard{})
-			Expect(video).To(HaveLen(2))
+			Expect(video).To(HaveLen(1))
 			dev = video[0].GetVirtualDevice()
 			Expect(dev.Key).To(Equal(int32(500)))
 			Expect(dev.ControllerKey).To(Equal(int32(100)))

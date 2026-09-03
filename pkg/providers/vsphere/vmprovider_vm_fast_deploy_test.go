@@ -38,14 +38,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
-	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
@@ -102,37 +98,22 @@ func vmFastDeployTests() {
 	)
 
 	BeforeEach(func() {
-		parentCtx = pkgcfg.NewContextWithDefaultConfig()
-		parentCtx = ctxop.WithContext(parentCtx)
-		parentCtx = ovfcache.WithContext(parentCtx)
-		parentCtx = cource.WithContext(parentCtx)
+		parentCtx = newVMTestParentContext()
 		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 			config.AsyncCreateEnabled = false
 			config.AsyncSignalEnabled = false
 			config.Features.FastDeploy = true
 		})
-		testConfig = builder.VCSimTestConfig{
-			WithContentLibrary: true,
-		}
+		testConfig = newVMTestConfig()
 
-		vmClass = builder.DummyVirtualMachineClassGenName()
-		vm = builder.DummyBasicVirtualMachine("test-vm", "")
-
-		if vm.Spec.Network == nil {
-			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
-		}
-		vm.Spec.Network.Disabled = true
+		vmClass, vm = newVMTestObjects("test-vm")
 
 		testConfig.WithNetworkEnv = builder.NetworkEnvNamed
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSimWithParentContext(parentCtx, testConfig, initObjects...)
-		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.MaxDeployThreadsOnProvider = 1
-		})
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
-		nsInfo = ctx.CreateWorkloadNamespace()
+		ctx, vmProvider, nsInfo = newVMTestContext(
+			parentCtx, testConfig, initObjects...)
 		libMgr = library.NewManager(ctx.RestClient)
 
 		vmClass.Namespace = nsInfo.Namespace
@@ -205,20 +186,11 @@ func vmFastDeployTests() {
 	})
 
 	AfterEach(func() {
+		vmTestAfterEach(ctx, vm)
+
 		expectedDiskNamesFromCache = nil
-
-		if vm != nil &&
-			!pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
-
-			By("Assert vm.Status.Crypto is nil when BYOK is disabled", func() {
-				Expect(vm.Status.Crypto).To(BeNil())
-			})
-		}
-
 		libMgr = nil
 		configSpec = nil
-
-		vsphere.SkipVMImageCLProviderCheck = false
 
 		vmClass = nil
 		vm = nil
@@ -227,7 +199,6 @@ func vmFastDeployTests() {
 		extraConfig = nil
 		useEncryptedStorageClass = false
 
-		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
 		vmProvider = nil

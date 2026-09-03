@@ -92,6 +92,7 @@ KUBEBUILDER        := $(TOOLS_BIN_DIR)/kubebuilder
 KUBECTL            := $(TOOLS_BIN_DIR)/kubectl
 ETCD               := $(TOOLS_BIN_DIR)/etcd
 GOVULNCHECK        := $(TOOLS_BIN_DIR)/govulncheck
+KUBE_API_LINTER    := $(TOOLS_BIN_DIR)/golangci-lint-kube-api-linter
 KIND               := $(TOOLS_BIN_DIR)/kind
 
 # Allow overriding manifest generation destination directory
@@ -284,7 +285,8 @@ $(VMCLASS): cmd/vmclass/main.go
 TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(CONVERSION_GEN) \
                     $(GOLANGCI_LINT) $(KUSTOMIZE) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) $(ETCD) \
-                    $(GINKGO) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK) $(KIND)
+                    $(GINKGO) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK) $(KIND) \
+                    $(KUBE_API_LINTER)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
 $(TOOLING_BINARIES):
 	make -C $(TOOLS_DIR) $(@F)
@@ -336,6 +338,13 @@ lint-go: ## Lint codebase
 .PHONY: lint-go-full
 lint-go-full: GOLANGCI_LINT_FLAGS = --fast-only=false
 lint-go-full: lint-go ## Run slower linters to detect possible issues
+
+# Not yet part of `lint`/`lint-all`: there are pre-existing findings in
+# api/v1alpha6 that have not been triaged/fixed. Run standalone until
+# that backlog is cleared, then fold this into `lint`.
+.PHONY: lint-kal
+lint-kal: | $(KUBE_API_LINTER) ## Run Kube API Linter (KAL) against the active API version (api/v1alpha6)
+	cd api && $(abspath $(KUBE_API_LINTER)) run --config ../.golangci.kal.yml ./v1alpha6/...
 
 .PHONY: lint-markdown
 lint-markdown: ## Lint the project's markdown

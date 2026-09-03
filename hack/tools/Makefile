@@ -40,6 +40,7 @@ KUBECTL           := $(BIN_DIR)/$(GOHOSTOSARCH)/kubectl
 KIND              := $(BIN_DIR)/$(GOHOSTOSARCH)/kind
 GOCOV             := $(BIN_DIR)/$(GOHOSTOSARCH)/gocov
 GOCOV_XML         := $(BIN_DIR)/$(GOHOSTOSARCH)/gocov-xml
+KUBE_API_LINTER   := $(BIN_DIR)/$(GOHOSTOSARCH)/golangci-lint-kube-api-linter
 GOVULNCHECK       := $(BIN_DIR)/$(GOHOSTOSARCH)/govulncheck
 GOIMPORTS         := $(BIN_DIR)/$(GOHOSTOSARCH)/goimports
 
@@ -83,6 +84,20 @@ kustomize: $(KUSTOMIZE) ## Install kustomize
 $(KUSTOMIZE): go.mod
 	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
 	go build -tags=vmop_tools -o $(@) sigs.k8s.io/kustomize/kustomize/v5
+
+# kube-api-linter vendors its own copy of golangci-lint, so it is kept in its
+# own module (kube-api-linter/go.mod) to avoid forcing an upgrade of the
+# golangci-lint version used by the golangci-lint target above.
+.PHONY: kube-api-linter
+kube-api-linter: $(KUBE_API_LINTER) ## Install golangci-lint-kube-api-linter
+
+# Kept as an alias so the root Makefile's tooling-binary delegation rule,
+# which derives this name from the built binary's filename, still resolves.
+.PHONY: golangci-lint-kube-api-linter
+golangci-lint-kube-api-linter: kube-api-linter
+$(KUBE_API_LINTER): kube-api-linter/go.mod
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go -C kube-api-linter build -tags=vmop_tools -o $(abspath $(@)) sigs.k8s.io/kube-api-linter/cmd/golangci-lint-kube-api-linter
 
 ginkgo: $(GINKGO) ## Install ginkgo
 $(GINKGO): go.mod

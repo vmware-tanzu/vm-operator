@@ -37,7 +37,7 @@ require (
 
 // The version of Ginkgo must match the version in hack/tools/go.mod and api/test/go.mod.
 // If updating one, please update the others.
-require github.com/onsi/ginkgo/v2 v2.28.1
+require github.com/onsi/ginkgo/v2 v2.32.1
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -46,7 +46,7 @@ require (
 	github.com/go-pkgz/expirable-cache/v3 v3.1.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
-	github.com/onsi/gomega v1.40.0
+	github.com/onsi/gomega v1.43.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250813160346-0f6259af5cbb
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20260619161849-aeb1b9769d4b
@@ -102,7 +102,7 @@ require (
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/google/cel-go v0.29.2 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
-	github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 // indirect
+	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

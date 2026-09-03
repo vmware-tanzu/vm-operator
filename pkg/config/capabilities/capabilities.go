@@ -139,6 +139,13 @@ const (
 	// extension compatibility constraint mechanism. It gates VM Operator
 	// registering INVARIANT constraints on VMs it creates.
 	CapabilityKeyExtensionCompatConstraint = "supports_extension_compat_constraint"
+
+	// CapabilityKeyVMEviction is the name of the capability key defined in
+	// the Supervisor capabilities CRD for VM eviction compute
+	// policies. It gates the AutomaticVMEvictionPolicy and
+	// BestEffortRestartPolicy CRDs as well as the VirtualMachinePowerStateSynced
+	// condition's InfraInMaintenance reason.
+	CapabilityKeyVMEviction = "supports_infrapolicy_vm_evacuation"
 )
 
 var (
@@ -317,6 +324,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.WorkloadNetworkConfiguration = capStatus.Activated
 		case CapabilityKeyExtensionCompatConstraint:
 			fs.ExtensionCompatConstraint = capStatus.Activated
+		case CapabilityKeyVMEviction:
+			fs.VMEviction = capStatus.Activated
 		}
 
 	}

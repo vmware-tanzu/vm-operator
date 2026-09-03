@@ -221,6 +221,7 @@ type FeatureStates struct {
 	VirtualMachineConfigPolicy   bool
 	WorkloadNetworkConfiguration bool
 	ExtensionCompatConstraint    bool
+	VMEviction                   bool
 }
 
 type InstanceStorage struct {

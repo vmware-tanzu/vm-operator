@@ -8,19 +8,19 @@
 
 ## Phase 1 — Setup
 
-- [ ] T001 [P] [vmop-4103] Scaffold `external/vsphere-policy/api/v1alpha1/automaticvmevictionpolicy_types.go`, cloning `controlledrebalancingpolicy_types.go`'s shape (spec: `description`, `policyID`, `enforcementMode`, `match`, `tags`; status: `observedGeneration`, `conditions`; same kubebuilder markers and `GetConditions`/`SetConditions` methods; register in `init()`).
-- [ ] T002 [P] [vmop-4103] Scaffold `external/vsphere-policy/api/v1alpha1/besteffortrestartpolicy_types.go`, identical shape to T001.
-- [ ] T003 [vmop-4103] Run `make generate-go` to regenerate `external/vsphere-policy/api/v1alpha1/zz_generated.deepcopy.go` for both new types.
-- [ ] T004 [vmop-4103] Run `make generate-external-manifests` to generate `config/crd/external-crds/vsphere.policy.vmware.com_automaticvmevictionpolicies.yaml` and `..._besteffortrestartpolicies.yaml`.
+- [x] T001 [P] [vmop-4103] Scaffold `external/vsphere-policy/api/v1alpha1/automaticvmevictionpolicy_types.go`, cloning `controlledrebalancingpolicy_types.go`'s shape (spec: `description`, `policyID`, `enforcementMode`, `match`, `tags`; status: `observedGeneration`, `conditions`; same kubebuilder markers and `GetConditions`/`SetConditions` methods; register in `init()`).
+- [x] T002 [P] [vmop-4103] Scaffold `external/vsphere-policy/api/v1alpha1/besteffortrestartpolicy_types.go`, identical shape to T001.
+- [x] T003 [vmop-4103] Run `make generate-go` to regenerate `external/vsphere-policy/api/v1alpha1/zz_generated.deepcopy.go` for both new types.
+- [x] T004 [vmop-4103] Run `make generate-external-manifests` to generate `config/crd/external-crds/vsphere.policy.vmware.com_automaticvmevictionpolicies.yaml` and `..._besteffortrestartpolicies.yaml`.
 
 ## Phase 2 — Foundational (feature flags, capabilities, CRD install gating)
 
-- [ ] T005 [vmop-4103] Add a single `VMEviction bool` to `FeatureStates` in `pkg/config/config.go`, gating both new CRDs and the status-condition behavior.
-- [ ] T006 [vmop-4103] Add `CapabilityKeyVMEviction = "supports_infrapolicy_vm_evacuation"` to `pkg/config/capabilities/capabilities.go`, plus the one `case` entry in `updateCapabilitiesFeaturesFromCRD`.
-- [ ] T007 [P] [vmop-4103] Unit tests for the new capability key in `pkg/config/capabilities/capabilities_test.go` (`UpdateCapabilitiesFeatures` and `WouldUpdateCapabilitiesFeatures` tables), mirroring the `ControlledRebalancingPolicy` cases.
-- [ ] T008 [vmop-4103] Add two new `case "AutomaticVMEvictionPolicy":`/`case "BestEffortRestartPolicy":` blocks in `pkg/crd/crd.go`'s `Install`, both gated on `features.VSpherePolicies && features.VMEviction` — the same single flag for both CRDs.
-- [ ] T009 [P] [vmop-4103] Unit tests for the new CRD-gating matrix in `pkg/crd/crd_test.go`, mirroring the existing `ControlledRebalancingPolicy` `When(...)` blocks (`VSpherePolicies`/`VMEviction` off, on, both on — both new CRDs install/don't install together since they share one flag).
-- [ ] T010 [P] [vmop-4103] Register `&vspherepolv1.AutomaticVMEvictionPolicy{}` and `&vspherepolv1.BestEffortRestartPolicy{}` in `test/builder/fake.go`'s `KnownObjectTypes()`.
+- [x] T005 [vmop-4103] Add a single `VMEviction bool` to `FeatureStates` in `pkg/config/config.go`, gating both new CRDs and the status-condition behavior.
+- [x] T006 [vmop-4103] Add `CapabilityKeyVMEviction = "supports_infrapolicy_vm_evacuation"` to `pkg/config/capabilities/capabilities.go`, plus the one `case` entry in `updateCapabilitiesFeaturesFromCRD`.
+- [x] T007 [P] [vmop-4103] Unit tests for the new capability key in `pkg/config/capabilities/capabilities_test.go` (`UpdateCapabilitiesFeatures` and `WouldUpdateCapabilitiesFeatures` tables), mirroring the `ControlledRebalancingPolicy` cases.
+- [x] T008 [vmop-4103] Add two new `case "AutomaticVMEvictionPolicy":`/`case "BestEffortRestartPolicy":` blocks in `pkg/crd/crd.go`'s `Install`, both gated on `features.VSpherePolicies && features.VMEviction` — the same single flag for both CRDs.
+- [x] T009 [P] [vmop-4103] Unit tests for the new CRD-gating matrix in `pkg/crd/crd_test.go`, mirroring the existing `ControlledRebalancingPolicy` `When(...)` blocks (`VSpherePolicies`/`VMEviction` off, on, both on — both new CRDs install/don't install together since they share one flag).
+- [x] T010 [P] [vmop-4103] Register `&vspherepolv1.AutomaticVMEvictionPolicy{}` and `&vspherepolv1.BestEffortRestartPolicy{}` in `test/builder/fake.go`'s `KnownObjectTypes()`.
 
 ## Phase 3 — User Story: CSP admin applies AutomaticVMEvictionPolicy
 

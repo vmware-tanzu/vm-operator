@@ -16,6 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
@@ -111,6 +112,20 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 			vmservice.DeployVMWithCloudInitA6(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, sourceVMName, "", nil)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName, "PoweredOn")
+
+			asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
+			Expect(err).NotTo(HaveOccurred())
+			allDisksArePVCapabilityEnabled := utils.IsSupervisorCapabilityEnabled(
+				ctx,
+				vmSvcClusterProxy.GetClientSet(),
+				vmSvcClusterProxy.GetDynamicClient(),
+				consts.AllDisksArePVCapabilityName,
+				asyncSupervisorFSSEnabled)
+
+			if allDisksArePVCapabilityEnabled {
+				vmoperator.WaitForBootDiskPVC(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName, nil)
+				vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName)
+			}
 
 			By("Creating VirtualMachineSnapshot")
 			vmservice.CreateVMSnapshotA6(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{

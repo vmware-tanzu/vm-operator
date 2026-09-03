@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -37,6 +38,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/lib"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -110,6 +112,30 @@ func deleteRegisteredVMAndPVCs(
 	}
 }
 
+// waitForNoActiveVCenterPromoteDisksTasks waits until vCenter reports no
+// currently-running VirtualMachine.promoteDisks task anywhere in inventory.
+// RegisterVM specs poll boot-disk promotion against a fixed budget, and that
+// budget can be blown by promotion tasks left over from other VMs sharing
+// the same datastore . vcenter.WaitForNoActiveTask identifies
+// the task the same way vm-operator itself does when deferring
+// unmanaged-volume registration during an in-progress promotion (see
+// pkg/vmconfig/volumes/unmanaged/register/unmanagedvolumes_register.go).
+func waitForNoActiveVCenterPromoteDisksTasks(
+	ctx context.Context,
+	clusterProxy *common.VMServiceClusterProxy,
+	intervals []any) bool {
+
+	vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+	defer vcenter.LogoutVimClient(vCenterClient)
+
+	return vcenter.WaitForNoActiveTask(
+		ctx,
+		vCenterClient,
+		diskpromo.PromoteDisksTaskKey,
+		"PromoteDisks",
+		intervals...)
+}
+
 type VIAdminRegisterVMSpecInput struct {
 	ClusterProxy     wcpframework.WCPClusterProxyInterface
 	Config           *config.E2EConfig
@@ -143,6 +169,13 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		incrementalRestoreEnabled     bool
 		linuxImageDisplayName         string
 		linuxVMIName                  string
+
+		// waitForPromoteDisksDrainOnce ensures the pre-existing-PromoteDisks
+		// drain below runs exactly once for this spec tree, not before every
+		// It. promoteDisksDrained caches its result so every spec's
+		// BeforeEach (not just the one that ran the drain) can act on it.
+		waitForPromoteDisksDrainOnce sync.Once
+		promoteDisksDrained          bool
 	)
 
 	BeforeEach(func() {
@@ -167,6 +200,23 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))
 		incrementalRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSIncrementalRestore"))
+
+		// Draining any already-running PromoteDisks tasks before RegisterVM specs start
+		// removes that specific, known source of contention. It can't
+		// prevent contention from tasks that start after this drain (e.g. a
+		// later, unrelated spec's own promotion), only from a backlog
+		// accumulated during suite setup.
+		waitForPromoteDisksDrainOnce.Do(func() {
+			promoteDisksDrained = waitForNoActiveVCenterPromoteDisksTasks(
+				ctx, clusterProxy,
+				config.GetIntervals("default", "wait-no-active-promote-disks-tasks"))
+		})
+
+		// The cached result is re-checked on every spec's BeforeEach
+		if !promoteDisksDrained {
+			Skip("timed out waiting for pre-existing PromoteDisks tasks to finish; " +
+				"skipping RegisterVM suite to avoid racing boot-disk promotion against known contention")
+		}
 	})
 
 	Context("Authorization test", func() {
@@ -1098,7 +1148,17 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Attach existing vmdk, rather than create a new backing
 			disk.CapacityInKB = 0
 			disk.CapacityInBytes = 0
-			Expect(vmObj.AddDeviceWithProfile(ctx, profile, disk)).To(Succeed())
+
+			// This reconfigure has been observed failing with a raw storage
+			// I/O error ("msg.disk.policyChangeFailure: Storage policy
+			// change failure: 5 (Input/output error)") under datastore
+			// contention from concurrent disk-heavy operations elsewhere in
+			// the suite (e.g. other VMs' PromoteDisks tasks). Retry briefly
+			// to absorb a transient storage-layer hiccup rather than failing
+			// the whole spec on it.
+			Eventually(func(g Gomega) {
+				g.Expect(vmObj.AddDeviceWithProfile(ctx, profile, disk)).To(Succeed())
+			}, 30*time.Second, 3*time.Second).Should(Succeed())
 
 			// Since we deleted (moved) the disk backing, this causes the FCD and CNS Volume objects to be
 			// removed on the vSphere side.. emulating what Veeam's restore flow does.

@@ -9,10 +9,13 @@ import (
 	"strings"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/history"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -96,6 +99,98 @@ func ExpectTaskToSucceed(client *vim25.Client, targetTask *VCTask) {
 	Expect(taskState).To(Equal(types.TaskInfoStateSuccess))
 }
 
+// WaitForNoActiveTask waits until no VM in vCenter inventory has a
+// currently-running task matching descriptionID (e.g.
+// "VirtualMachine.promoteDisks"), matched on DescriptionId -- not Name or
+// the localized Description message, neither of which reliably identifies
+// a task type.
+//
+// It reads each VM's recentTask property and resolves those refs' Info,
+// the same mechanism vm-operator's reconciler uses (see getRecentTaskInfo
+// in pkg/providers/vsphere/vmprovider_vm.go). vCenter's TaskHistoryCollector
+// API doesn't reliably surface tasks already running before the collector
+// was created, so it isn't used here.
+//
+// taskLabel is only for the By() step text. intervals is passed to
+// Eventually (typically config.GetIntervals).
+//
+// Returns whether the task drained within intervals; it does not fail the
+// spec itself -- callers decide what a non-drain means (e.g. Skip). This is
+// a point-in-time check, not a lock: it can't prevent a matching task from
+// starting right after it reports drained.
+func WaitForNoActiveTask(
+	ctx context.Context,
+	client *vim25.Client,
+	descriptionID, taskLabel string,
+	intervals ...any) bool {
+
+	By(fmt.Sprintf("Waiting for any in-progress %s tasks to finish", taskLabel))
+
+	// Use a local Gomega with a fail handler that just records the outcome
+	// instead of failing the spec, so a drain that never completes (timeout,
+	// or persistent query errors) is reported back to the caller instead.
+	drained := true
+	localG := NewGomega(func(_ string, _ ...int) {
+		drained = false
+	})
+
+	localG.Eventually(func(g Gomega) []string {
+		running, err := runningTasksMatching(ctx, client, descriptionID)
+		g.Expect(err).ToNot(HaveOccurred())
+		return running
+	}, intervals...).Should(BeEmpty())
+
+	return drained
+}
+
+// runningTasksMatching returns the moref value of every currently-running
+// task, across every VM in vCenter inventory, whose DescriptionId equals
+// descriptionID. It does this in two property-collector round trips
+// regardless of inventory size: one ContainerView.Retrieve to read every
+// VM's recentTask in a single batched call, and one property.Collector
+// Retrieve to resolve every one of those task refs' Info in a second
+// batched call -- not one call per VM.
+func runningTasksMatching(
+	ctx context.Context,
+	client *vim25.Client,
+	descriptionID string) ([]string, error) {
+
+	v, err := view.NewManager(client).CreateContainerView(
+		ctx, client.ServiceContent.RootFolder, []string{"VirtualMachine"}, true)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = v.Destroy(ctx) }()
+
+	var vms []mo.VirtualMachine
+	if err := v.Retrieve(ctx, []string{"VirtualMachine"}, []string{"recentTask"}, &vms); err != nil {
+		return nil, err
+	}
+
+	var taskRefs []types.ManagedObjectReference
+	for _, vm := range vms {
+		taskRefs = append(taskRefs, vm.RecentTask...)
+	}
+	if len(taskRefs) == 0 {
+		return nil, nil
+	}
+
+	var tasks []mo.Task
+	if err := property.DefaultCollector(client).Retrieve(
+		ctx, taskRefs, []string{"info"}, &tasks); err != nil {
+
+		return nil, err
+	}
+
+	var running []string
+	for _, t := range tasks {
+		if t.Info.State == types.TaskInfoStateRunning && t.Info.DescriptionId == descriptionID {
+			running = append(running, t.Info.Task.Value)
+		}
+	}
+	return running, nil
+}
+
 // getCurrentTime fetches the currentTime from the vCenter Server.
 func getCurrentTime(client soap.RoundTripper) *time.Time {
 	res, err := methods.GetCurrentTime(context.Background(), client)
@@ -125,30 +220,8 @@ func getTasksWithinTimeRange(client *vim25.Client, watch *types.ManagedObjectRef
 		}
 	}
 
-	ctx := context.Background()
-	taskReq := types.CreateCollectorForTasks{
-		This:   *client.ServiceContent.TaskManager,
-		Filter: filter,
-	}
-	res, err := methods.CreateCollectorForTasks(ctx, client, &taskReq)
+	taskInfo, err := fetchTaskInfoPage(context.Background(), client, filter)
 	Expect(err).NotTo(HaveOccurred())
-
-	collector := history.NewCollector(client, res.Returnval)
-	err = collector.Reset(ctx)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = collector.SetPageSize(ctx, maxPageSize)
-	Expect(err).NotTo(HaveOccurred())
-
-	var (
-		taskInfo             []types.TaskInfo
-		taskHistoryCollector mo.TaskHistoryCollector
-	)
-
-	err = collector.Properties(ctx, collector.Reference(), []string{"latestPage"}, &taskHistoryCollector)
-	Expect(err).NotTo(HaveOccurred())
-
-	taskInfo = append(taskInfo, taskHistoryCollector.LatestPage...)
 
 	tasks := []VCTask{}
 
@@ -183,11 +256,51 @@ func getTasksWithinTimeRange(client *vim25.Client, watch *types.ManagedObjectRef
 		})
 	}
 
-	err = collector.Destroy(ctx)
+	return tasks
+}
+
+// fetchTaskInfoPage creates a TaskHistoryCollector for the given filter,
+// resets it to the latest matching tasks, fetches that page, and destroys
+// the collector. This is the shared plumbing behind every task-query entry
+// point in this file (time-windowed history for RecentTasks/LookupTask,
+// state-only for WaitForNoActiveTask); callers apply their own
+// filtering/mapping semantics on top of the raw TaskInfo it returns.
+func fetchTaskInfoPage(
+	ctx context.Context,
+	client *vim25.Client,
+	filter types.TaskFilterSpec) ([]types.TaskInfo, error) {
+
+	taskReq := types.CreateCollectorForTasks{
+		This:   *client.ServiceContent.TaskManager,
+		Filter: filter,
+	}
+	res, err := methods.CreateCollectorForTasks(ctx, client, &taskReq)
 	if err != nil {
-		// Collectors should be cleaned up but an error here is not fatal.
-		framework.Logf("Failed to Destroy TaskHistoryCollector: %v", err)
+		return nil, err
 	}
 
-	return tasks
+	collector := history.NewCollector(client, res.Returnval)
+	defer func() {
+		if err := collector.Destroy(ctx); err != nil {
+			// Collectors should be cleaned up but an error here is not fatal.
+			framework.Logf("Failed to Destroy TaskHistoryCollector: %v", err)
+		}
+	}()
+
+	if err := collector.Reset(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := collector.SetPageSize(ctx, maxPageSize); err != nil {
+		return nil, err
+	}
+
+	var page mo.TaskHistoryCollector
+	if err := collector.Properties(
+		ctx, collector.Reference(), []string{"latestPage"}, &page); err != nil {
+
+		return nil, err
+	}
+
+	return page.LatestPage, nil
 }

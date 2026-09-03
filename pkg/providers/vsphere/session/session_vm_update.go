@@ -1982,7 +1982,6 @@ func reconcileSnapshotDisks(
 	}
 
 	removeDetachedSnapshotDisks(moVM, vm, snapshotVolumes, configSpec)
-	markDetachedSnapshotVolumes(vm, snapshotVolumes)
 
 	vm.Status.Volumes = slices.DeleteFunc(vm.Status.Volumes, func(volStatus vmopv1.VirtualMachineVolumeStatus) bool {
 		if volStatus.Type == vmopv1.VolumeTypeClassic && !volStatus.Attached {
@@ -2026,7 +2025,16 @@ func isDetachedSnapshotDisk(disk *vimtypes.VirtualDisk, uuid string, vm *vmopv1.
 
 			// If it's a classic volume and not in spec, it might be a detached snapshot disk
 			if volStatus.Type == vmopv1.VolumeTypeClassic {
-				return true
+				// Only consider it a detached snapshot disk if it's Independent_nonpersistent
+				switch backing := disk.Backing.(type) {
+				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+					return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+				case *vimtypes.VirtualDiskSeSparseBackingInfo:
+					return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+				case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+					return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+				}
+				return false
 			}
 		}
 	}
@@ -2079,30 +2087,3 @@ func removeDetachedSnapshotDisks(moVM mo.VirtualMachine, vm *vmopv1.VirtualMachi
 	}
 }
 
-func markDetachedSnapshotVolumes(vm *vmopv1.VirtualMachine, snapshotVolumes []vmopv1.VirtualMachineVolume) {
-	for i, volStatus := range vm.Status.Volumes {
-		if volStatus.Type == vmopv1.VolumeTypeClassic {
-			inSpecAsPVC := false
-			for _, vol := range vm.Spec.Volumes {
-				if vol.Name == volStatus.Name && vol.PersistentVolumeClaim != nil {
-					inSpecAsPVC = true
-					break
-				}
-			}
-			if inSpecAsPVC {
-				continue
-			}
-
-			foundInSpec := false
-			for _, vol := range snapshotVolumes {
-				if vol.Name == volStatus.Name {
-					foundInSpec = true
-					break
-				}
-			}
-			if !foundInSpec {
-				vm.Status.Volumes[i].Attached = false
-			}
-		}
-	}
-}

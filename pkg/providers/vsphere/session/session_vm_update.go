@@ -1967,6 +1967,11 @@ func reconcileSnapshotDisks(
 	}
 
 	if hasNewDisks {
+		configSpec.ExtraConfig = append(configSpec.ExtraConfig, &vimtypes.OptionValue{
+			Key:   constants.AllowDupDiskUUIDExtraConfigKey,
+			Value: constants.ExtraConfigTrue,
+		})
+
 		var devices []vimtypes.BaseVirtualDevice
 		if moVM.Config != nil {
 			devices = moVM.Config.Hardware.Device

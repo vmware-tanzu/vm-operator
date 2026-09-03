@@ -1746,10 +1746,6 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 					}
 				}
 			}
-			// ProvisioningMode is set later in a single pass for all volumes
-			// (both classic and managed); DiskMode and SharingMode may also
-			// be overridden there if vSphere reports an explicit value.
-			vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
 		}
 	}
 

@@ -24,6 +24,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+// ttlGracePeriod is how far in the future the completion workflow spec sets
+// spec.ttlSecondsAfterFinished. It is kept well under the suite's default
+// Eventually timeout so the spec exercises the requeue-then-delete path
+// without racing that budget.
+const ttlGracePeriod = 2 * time.Second
+
 func intgTests() {
 	Describe(
 		"Reconcile",
@@ -189,16 +195,27 @@ func intgTestsReconcile() {
 				verifyTrueCondition(g, req)
 			}).Should(Succeed(), "sets completed condition to true")
 
-			// sets ttl to a future time
+			// Set a TTL that expires a short while in the future. The controller
+			// measures the TTL from status.completionTime rather than from now, so
+			// the elapsed time since completion is added on. TTLSecondsAfterFinished
+			// is in seconds, so the duration must be converted before it is assigned.
 			req := getVMGroupPubReq(ctx, client.ObjectKeyFromObject(vmGroupPubReq))
 			Expect(req).ToNot(BeNil())
 			Expect(req.Spec.TTLSecondsAfterFinished).To(BeNil())
 			_, err := controllerutil.CreateOrPatch(ctx, ctx.Client, req, func() error {
-				newTTL := int64(time.Since(req.Status.CompletionTime.Time) + 10*time.Second)
+				newTTL := int64((time.Since(req.Status.CompletionTime.Time) + ttlGracePeriod).Seconds())
 				req.Spec.TTLSecondsAfterFinished = &newTTL
 				return nil
 			})
 			Expect(err).ToNot(HaveOccurred())
+
+			// The request must be retained until the TTL elapses. Without this the
+			// spec passes even when the controller treats the TTL as already expired
+			// and deletes the request on the very next reconcile.
+			Consistently(func() *vmopv1.VirtualMachineGroupPublishRequest {
+				return getVMGroupPubReq(ctx, client.ObjectKeyFromObject(vmGroupPubReq))
+			}, ttlGracePeriod/2, 100*time.Millisecond).ShouldNot(BeNil(),
+				"retains the request until the TTL expires")
 
 			verifyDeletionEventually()
 		})

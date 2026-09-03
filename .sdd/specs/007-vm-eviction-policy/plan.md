@@ -8,7 +8,7 @@
 
 Add two new `vsphere.policy.vmware.com/v1alpha1` compute-policy CRDs (`AutomaticVMEvictionPolicy`, `BestEffortRestartPolicy`), cloning `ControlledRebalancingPolicy`'s CRD *type* shape (PR #1787) for the schema, and add one new `Reason` to the existing `VirtualMachinePowerStateSynced` condition on `VirtualMachine` (`api/v1alpha6` on `main`; `api/v1alpha5` on `release/vc-9.1.0`) so tenants and VKS can tell a maintenance-mode-driven power-off apart from any other unsynced power state. VM Operator does not gain any new evacuation, restart, or power-management logic — it only exposes the policy CRDs into the existing tag-application pipeline and computes one explanatory status field.
 
-**Reconciler wiring deliberately does not follow PR #1842's per-kind-function precedent.** #1842 wires `ControlledRebalancingPolicy` into `policyevaluation_controller.go` by hand-adding a dedicated `Watches(...)`, `reconcileMandatory<Kind>Policies`, `add<Kind>PolicyRef`/`add<Kind>Policy`, mapper function, and switch case per kind (sharing only the innermost match/tag-resolve logic via kind-agnostic `addPolicyResult`/`resolvePolicyTags` helpers). This feature instead refactors the controller into a **table-driven registry**: a `matchableComputePolicy` interface plus a `computePolicyKindDescriptor` table that `AddToManager`, `reconcileMandatoryPolicies`, and `reconcileExplicitPolicies` all iterate over, so that adding a new policy kind is (mostly) appending one entry to the table rather than writing a new function per kind for each of these three call sites. See "Controller / webhook impact" below for the design and its limits.
+**Reconciler wiring follows PR #1842's per-kind-function precedent.** `policyevaluation_controller.go` gets one explicit, concrete function per new kind at each of the three places `ComputePolicy` already has one — `reconcileMandatory<Kind>Policies`, `add<Kind>PolicyRef`, and a gated `Watches(...)` entry in `AddToManager` — rather than a generic interface/table that all three iterate over. What's shared across kinds is only the kind-agnostic matching/recording logic: `matchesPolicy`/`evaluateMatchSpec` (operate on a `*MatchSpec` alone, already kind-agnostic), a `matchablePolicy` struct (`kind` string, `obj ctrlclient.Object`, `match`, `tagPolicyNames`) that each kind's explicit `List()`/`Get()` builds, and shared `addPolicyResult`/`resolvePolicyTags`/`addExplicitPolicyMatch` helpers that operate on it so the dedup/tag-lookup/append logic is written once. See "Controller / webhook impact" below for the full design.
 
 ## Technical context
 
@@ -57,29 +57,29 @@ pkg/crd/crd.go                                                     (modified: 2 
                                                                      && features.VMEviction)
 
 controllers/vspherepolicy/policyevaluation/policyevaluation_controller.go
-                                                                    (restructured: new matchableComputePolicy
-                                                                     interface + computePolicyKindDescriptor
-                                                                     table; AddToManager,
-                                                                     reconcileMandatoryPolicies, and
-                                                                     reconcileExplicitPolicies each become
-                                                                     one loop over the table via
-                                                                     apimeta.ExtractList, replacing the
-                                                                     existing ComputePolicy-only
-                                                                     reconcileMandatoryComputePolicies/
-                                                                     addComputePolicy/addComputePolicyRef/
+                                                                    (modified: one explicit
+                                                                     reconcileMandatory<Kind>Policies +
+                                                                     add<Kind>PolicyRef function per new
+                                                                     kind, plus one explicit gated Watches(...)
+                                                                     each in AddToManager — mirroring the
+                                                                     existing ComputePolicy shape and #1842's
+                                                                     ControlledRebalancingPolicy precedent.
                                                                      computePolicyToPolicyEvaluationMapperFn
-                                                                     and adding table entries — not new
-                                                                     per-kind functions — for the two new
-                                                                     kinds; see "Controller / webhook
-                                                                     impact")
+                                                                     renamed to policyToPolicyEvaluationMapperFn
+                                                                     since it is now reused, unmodified, across
+                                                                     all three kinds' watches. A new
+                                                                     matchablePolicy struct (kind, obj
+                                                                     ctrlclient.Object, match, tagPolicyNames)
+                                                                     is the one thing each kind's explicit
+                                                                     List() loop builds and hands to shared
+                                                                     addPolicyResult/resolvePolicyTags helpers,
+                                                                     so dedup/tag-lookup/append is written
+                                                                     once; see "Controller / webhook impact")
 
-external/vsphere-policy/api/v1alpha1/*_types.go                    (modified: ComputePolicy and both new
-                                                                     types each get 3 small accessor
-                                                                     methods — GetMatchSpec,
-                                                                     GetEnforcementMode, GetPolicyTags —
-                                                                     satisfying matchableComputePolicy, alongside
-                                                                     their existing GetConditions/
-                                                                     SetConditions methods)
+external/vsphere-policy/api/v1alpha1/*_types.go                    (no reconciler-facing accessor methods
+                                                                     needed — the controller reads
+                                                                     pol.Spec.Match/EnforcementMode/Tags
+                                                                     directly per kind, see above)
 
 api/v1alpha6/virtualmachine_types.go                               (modified: doc-comment update to
                                                                      "Valid policy types are: ..." — adds
@@ -120,11 +120,14 @@ pkg/providers/vsphere/vmlifecycle/update_status.go                  (modified: r
 test/builder/fake.go                                                (modified: register both new types
                                                                      in KnownObjectTypes)
 
-test/e2e/vmservice/...                                              (new — see Test strategy; exact path
-                                                                     TBD at implementation time, likely a
-                                                                     new file alongside
-                                                                     virtualmachinelcm.go's policy-related
-                                                                     coverage)
+test/e2e/vmservice/vmservice/computepolicies/vmevictionpolicy.go   (new — see Test strategy item 1;
+                                                                     package computepolicies, new home for
+                                                                     compute-policy-CRD e2e coverage since
+                                                                     none existed before this feature —
+                                                                     ComputePolicy itself is otherwise only
+                                                                     touched inline in
+                                                                     virtualmachinelcm.go's legacy-admin-API
+                                                                     mirroring, not a standalone suite)
 ```
 
 ## API / CRD strategy
@@ -136,15 +139,14 @@ test/e2e/vmservice/...                                              (new — see
 
 ## Controller / webhook impact
 
-- **`controllers/vspherepolicy/policyevaluation`**: restructured into a table-driven registry, not just extended. On `main` today, `ComputePolicy` is the only kind wired in, via `ComputePolicy`-specific `addComputePolicy`/`addComputePolicyRef`/`matchesPolicy`. Rather than repeat that per-kind shape twice more (or the PR #1842 variant of it, which still hand-adds a `Watches(...)`/mandatory-func/mapper/switch-case per kind), this feature introduces:
-  - **`matchableComputePolicy` interface**, embedding `ctrlclient.Object` (for `GetName()`/`GetGeneration()` for free) plus `GetMatchSpec() *vspherepolv1.MatchSpec`, `GetEnforcementMode() vspherepolv1.PolicyEnforcementMode`, `GetPolicyTags() []string`. Implemented by `ComputePolicy`, `AutomaticVMEvictionPolicy`, and `BestEffortRestartPolicy` — three trivial methods each, living next to their existing `GetConditions`/`SetConditions` methods in `external/vsphere-policy/api/v1alpha1/*_types.go`.
-  - **`computePolicyKindDescriptor` table**: one entry per kind (`kind` string constant, `newObj func() matchableComputePolicy`, `newList func() ctrlclient.ObjectList`, and the feature-gate check for that kind). `ComputePolicy`'s existing entry has no gate (always on, same as today); the two new kinds gate on `Features.VMEviction`.
-  - **`apimeta.ExtractList`** (`k8s.io/apimachinery/pkg/api/meta`) is the mechanism that makes the `client.List` step kind-agnostic — it extracts `[]runtime.Object` from any concrete `ctrlclient.ObjectList` via the standard k8s reflection-based accessor (the same one informers/generic clients use), which is what removes the need for a hand-written `reconcileMandatory<Kind>Policies` per kind.
-  - `AddToManager`, `reconcileMandatoryPolicies` (replacing `reconcileMandatoryComputePolicies`), and `reconcileExplicitPolicies` (replacing its kind switch) each become one loop over `computePolicyKinds` instead of one function/case per kind. `matchesPolicy`/`evaluateMatchSpec` already only need a `*MatchSpec` (no change needed there), and the existing `addPolicyResult`/`resolvePolicyTags`-shaped append logic collapses into one generic helper operating on `matchableComputePolicy` directly instead of on extracted scalar params.
-  - **Net effect on the stated goal** ("a new CRD comes, it should be just adding to the list of types this controller watches and reacts"): true for the reconciler — a 4th policy kind means one new `computePolicyKindDescriptor` entry (plus implementing `matchableComputePolicy` on its type) and nothing else in this file. **Not fully true end-to-end**: `pkg/crd/crd.go`'s install-gating switch and the `+kubebuilder:rbac` markers are still per-kind by nature (static markers processed by `controller-gen`, no dynamic registration hook exists for either) — those still need one new `case`/marker line per kind, same as today.
-  - This folds `ComputePolicy` into the same table rather than leaving it as a special case, so this PR touches `reconcileMandatoryComputePolicies`/`addComputePolicyRef`/`addComputePolicy`/`computePolicyToPolicyEvaluationMapperFn` (removing them in favor of the generic loop) in addition to adding the two new kinds. `ControlledRebalancingPolicy` remains CRD-install-gated only (unchanged, out of scope) since it still isn't wired into this reconciler on `main`.
-  - No extension hook is added to `matchableComputePolicy` speculatively. If a kind later needs behavior beyond match+tag, add a narrow optional interface checked via a type assertion in the generic loop (e.g. `if h, ok := pol.(postMatchHook); ok { ... }`, mirroring `io.ReaderFrom`/`http.Flusher`-style optional interfaces) rather than growing `matchableComputePolicy` or the descriptor table's shape.
-  - Both new kinds' watches/table entries gate on the same single `Features.VMEviction` flag (checked inside each descriptor's gate function, evaluated once when building the table/watch list) — matching `ControlledRebalancingPolicy`'s existing CRD-gating behavior, except both new kinds share one flag instead of each having its own.
+- **`controllers/vspherepolicy/policyevaluation`**: extended by repeating the existing per-kind shape twice more, following #1842's `ControlledRebalancingPolicy` precedent. `ComputePolicy` is wired in today via `ComputePolicy`-specific `addComputePolicy`/`addComputePolicyRef`/`matchesPolicy`, and `AutomaticVMEvictionPolicy`/`BestEffortRestartPolicy` each get their own equivalent concrete functions rather than a shared interface/table:
+  - **`reconcileMandatoryAutomaticVMEvictionPolicies`/`reconcileMandatoryBestEffortRestartPolicies`**: each does its own explicit `client.List` for its concrete `*List` type, builds a `[]matchablePolicy` (a plain struct: `kind` string, `obj ctrlclient.Object`, `match *MatchSpec`, `tagPolicyNames []string`) from the concrete items, and hands it to a shared `processMandatoryPolicies` helper that filters to `PolicyEnforcementModeMandatory`, calls the already-kind-agnostic `matchesPolicy`/`evaluateMatchSpec` (unchanged — they only ever took a `*MatchSpec`), and records a match via `addPolicyResult`.
+  - **`addAutomaticVMEvictionPolicyRef`/`addBestEffortRestartPolicyRef`**: each does its own explicit `client.Get` for its concrete type, then builds the same `matchablePolicy` and calls shared `addExplicitPolicyMatch` (match-or-error) → `addPolicyResult`.
+  - **`addPolicyResult`/`resolvePolicyTags`**: unchanged in spirit from `ComputePolicy`'s existing helpers, but now take/operate on `matchablePolicy` (reading `p.obj.GetName()`/`p.obj.GetGeneration()` via the standard `ctrlclient.Object`/`metav1.Object` accessors — no custom interface method needed for that part) instead of separate scalar params, since three call sites now build that struct anyway.
+  - **`AddToManager`**: one new explicit, gated `Watches(...)` per new kind (both behind `pkgcfg.FromContext(ctx).Features.VMEviction`), reusing the existing mapper function — renamed `computePolicyToPolicyEvaluationMapperFn` → `policyToPolicyEvaluationMapperFn` since its body was already kind-agnostic and is now shared by all three kinds' watches unmodified.
+  - **Net effect**: adding a policy kind to this reconciler means one new `reconcileMandatory<Kind>Policies` function, one new `add<Kind>PolicyRef` function, and one new gated `Watches(...)` line — the same granularity as `pkg/crd/crd.go`'s install-gating switch and the `+kubebuilder:rbac` markers. What's shared, and grows by zero code per new kind: `matchesPolicy`/`evaluateMatchSpec`, `addPolicyResult`, `resolvePolicyTags`, `addExplicitPolicyMatch`, and the mapper function.
+  - `ComputePolicy`'s existing functions are unchanged (confirmed via the existing unit test suite passing unmodified). `ControlledRebalancingPolicy` remains CRD-install-gated only, unchanged, since it isn't wired into this reconciler on `main`.
+  - Both new kinds' watches gate on the same single `Features.VMEviction` flag, checked once via `pkgcfg.FromContext(ctx).Features.VMEviction` in `AddToManager` and again per-reconcile in `reconcileMandatoryPolicies`/`reconcileExplicitPolicies` — matching `ControlledRebalancingPolicy`'s existing CRD-gating behavior, except both new kinds share one flag instead of each having its own.
 - **No new controller**. No new webhook.
 - **`pkg/providers/vsphere/vmprovider_vm.go` / `pkg/util/vsphere/vm/power_state.go` / `pkg/util/vsphere/task/task.go` (power-state reconcile step)**: there is no host lookup at all. The signal comes from the VM's own power-op task failing with a specific vCenter fault, observed at the point VM Operator itself attempts to converge power state — no new vCenter round-trip is added anywhere.
   - `reconcileStatusPowerState` (`pkg/providers/vsphere/vmlifecycle/update_status.go`) keeps setting `vmCtx.VM.Status.PowerState` exactly as it does today; its `VirtualMachinePowerStateSynced` condition logic is removed from this function.
@@ -159,7 +161,7 @@ test/e2e/vmservice/...                                              (new — see
 ## Test strategy
 
 - **Unit** (`testlabels.Controller`, table-driven):
-  - `controllers/vspherepolicy/policyevaluation/policyevaluation_controller_test.go`: mandatory-match, feature-disabled (mandatory and explicit-ref variants), mixed-kind matching (including all three kinds matching the same VM at once, since they now share one loop), tag resolution via `TagPolicy`, explicit-ref-does-not-match error path, explicit-ref-not-found error path — same matrix as today, parameterized by `computePolicyKindDescriptor` entry instead of copy-pasted per kind. Plus a regression check that `ComputePolicy` behavior is byte-for-byte unchanged after folding it into the registry.
+  - `controllers/vspherepolicy/policyevaluation/policyevaluation_controller_test.go`: mandatory-match, feature-disabled (mandatory and explicit-ref variants), mixed-kind matching (a VM matching more than one kind at once, since each kind runs through the same shared `addPolicyResult`/`processMandatoryPolicies` helpers), tag resolution via `TagPolicy`, explicit-ref-does-not-match error path, explicit-ref-not-found error path — same matrix as `ComputePolicy`'s existing tests, duplicated per new kind. Plus a regression check that `ComputePolicy`'s own behavior is byte-for-byte unchanged (confirmed: its existing tests pass unmodified).
   - `pkg/config/capabilities/capabilities_test.go`: `UpdateCapabilitiesFeatures`/`WouldUpdateCapabilitiesFeatures` cases for the single new capability key, following the existing table shape.
   - `pkg/crd/crd_test.go`: gating matrix (`VSpherePolicies` on/off × `VMEviction` on/off) mirroring the existing `ControlledRebalancingPolicy` `When(...)` blocks — both new CRDs install/don't install together since they share one flag.
   - `pkg/util/vsphere/task/task_test.go` (existing file, new cases): `isInfraMaintenanceFault` matches a `*vimtypes.NoCompatibleHost` fault carrying either autoevac fault-message key, does not match other faults/fault-message keys, and handles `nil` `TaskInfo`/`Error`/non-`NoCompatibleHost` fault types gracefully (mirroring `ErrorMessageFromTaskInfo`'s existing nil-guards).

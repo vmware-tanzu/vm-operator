@@ -51,7 +51,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		record.New(mgr.GetEventRecorder(controllerNameShort)),
 	)
 
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		Watches(
 			&vmopv1.VirtualMachine{},
@@ -60,11 +60,28 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Watches(
 			&vspherepolv1.ComputePolicy{},
 			handler.EnqueueRequestsFromMapFunc(
-				computePolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
+				policyToPolicyEvaluationMapperFn(ctx, r.Client))).
 		Watches(
 			&vspherepolv1.TagPolicy{},
 			handler.EnqueueRequestsFromMapFunc(
-				tagPolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
+				tagPolicyToPolicyEvaluationMapperFn(ctx, r.Client)))
+
+	// AutomaticVMEvictionPolicy and BestEffortRestartPolicy are both gated
+	// behind the same VMEviction capability, so only watch them once that
+	// capability is enabled.
+	if pkgcfg.FromContext(ctx).Features.VMEviction {
+		builder = builder.
+			Watches(
+				&vspherepolv1.AutomaticVMEvictionPolicy{},
+				handler.EnqueueRequestsFromMapFunc(
+					policyToPolicyEvaluationMapperFn(ctx, r.Client))).
+			Watches(
+				&vspherepolv1.BestEffortRestartPolicy{},
+				handler.EnqueueRequestsFromMapFunc(
+					policyToPolicyEvaluationMapperFn(ctx, r.Client)))
+	}
+
+	return builder.
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
 			LogConstructor: pkglog.ControllerLogConstructor(
@@ -106,6 +123,10 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=computepolicies/status,verbs=get
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tagpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tagpolicies/status,verbs=get
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=automaticvmevictionpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=automaticvmevictionpolicies/status,verbs=get
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=besteffortrestartpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=besteffortrestartpolicies/status,verbs=get
 
 func (r *Reconciler) Reconcile(
 	ctx context.Context,
@@ -192,6 +213,51 @@ func (r *Reconciler) ReconcileNormal(
 	return ctrl.Result{}, nil
 }
 
+// matchablePolicy carries the fields needed to run match
+// evaluation against a PolicyEvaluation, independent of which concrete
+// policy kind (ComputePolicy, AutomaticVMEvictionPolicy,
+// BestEffortRestartPolicy, ...) it was built from. Each policy kind keeps
+// its own explicit List/loop (see reconcileMandatoryComputePolicies,
+// reconcileMandatoryAutomaticVMEvictionPolicies,
+// reconcileMandatoryBestEffortRestartPolicies below) and only converges here
+// to share the match-evaluation and result-recording logic.
+type matchablePolicy struct {
+	kind            string
+	obj             ctrlclient.Object
+	enforcementMode vspherepolv1.PolicyEnforcementMode
+	match           *vspherepolv1.MatchSpec
+	tagPolicyNames  []string
+}
+
+// processMandatoryPolicies evaluates each Mandatory policy's MatchSpec
+// against obj, recording a match via addPolicyResult. Optional policies are
+// skipped here; they are only ever applied via an explicit reference in
+// reconcileExplicitPolicies.
+func (r *Reconciler) processMandatoryPolicies(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation,
+	policies []matchablePolicy) error {
+
+	for _, p := range policies {
+		if p.enforcementMode != vspherepolv1.PolicyEnforcementModeMandatory {
+			continue
+		}
+
+		matches, err := matchesPolicy(obj, p.match)
+		if err != nil {
+			return err
+		}
+
+		if matches {
+			if err := r.addPolicyResult(ctx, obj, p); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (r *Reconciler) reconcileMandatoryPolicies(
 	ctx context.Context,
 	obj *vspherepolv1.PolicyEvaluation) error {
@@ -199,6 +265,18 @@ func (r *Reconciler) reconcileMandatoryPolicies(
 	if err := r.reconcileMandatoryComputePolicies(ctx, obj); err != nil {
 		return fmt.Errorf(
 			"failed to reconcile mandatory compute policies: %w", err)
+	}
+
+	if pkgcfg.FromContext(ctx).Features.VMEviction {
+		if err := r.reconcileMandatoryAutomaticVMEvictionPolicies(ctx, obj); err != nil {
+			return fmt.Errorf(
+				"failed to reconcile mandatory automatic VM eviction policies: %w", err)
+		}
+
+		if err := r.reconcileMandatoryBestEffortRestartPolicies(ctx, obj); err != nil {
+			return fmt.Errorf(
+				"failed to reconcile mandatory best-effort restart policies: %w", err)
+		}
 	}
 
 	return nil
@@ -217,36 +295,86 @@ func (r *Reconciler) reconcileMandatoryComputePolicies(
 		return fmt.Errorf("failed to list compute policies: %w", err)
 	}
 
-	for _, p := range list.Items {
-		// Only mandatory policies should be automatically applied.
-		if p.Spec.EnforcementMode != vspherepolv1.PolicyEnforcementModeMandatory {
-			continue
-		}
-
-		matches, err := matchesPolicy(obj, p)
-		if err != nil {
-			return err
-		}
-
-		if matches {
-			if err := r.addComputePolicy(ctx, obj, p); err != nil {
-				return err
-			}
-		}
+	policies := make([]matchablePolicy, 0, len(list.Items))
+	for i := range list.Items {
+		p := &list.Items[i]
+		policies = append(policies, matchablePolicy{
+			kind:            computePolicyKind,
+			obj:             p,
+			enforcementMode: p.Spec.EnforcementMode,
+			match:           p.Spec.Match,
+			tagPolicyNames:  p.Spec.Tags,
+		})
 	}
 
-	return nil
+	return r.processMandatoryPolicies(ctx, obj, policies)
+}
+
+func (r *Reconciler) reconcileMandatoryAutomaticVMEvictionPolicies(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation) error {
+
+	var list vspherepolv1.AutomaticVMEvictionPolicyList
+	if err := r.Client.List(
+		ctx,
+		&list,
+		ctrlclient.InNamespace(obj.Namespace)); err != nil {
+
+		return fmt.Errorf("failed to list automatic VM eviction policies: %w", err)
+	}
+
+	policies := make([]matchablePolicy, 0, len(list.Items))
+	for i := range list.Items {
+		p := &list.Items[i]
+		policies = append(policies, matchablePolicy{
+			kind:            automaticVMEvictionPolicyKind,
+			obj:             p,
+			enforcementMode: p.Spec.EnforcementMode,
+			match:           p.Spec.Match,
+			tagPolicyNames:  p.Spec.Tags,
+		})
+	}
+
+	return r.processMandatoryPolicies(ctx, obj, policies)
+}
+
+func (r *Reconciler) reconcileMandatoryBestEffortRestartPolicies(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation) error {
+
+	var list vspherepolv1.BestEffortRestartPolicyList
+	if err := r.Client.List(
+		ctx,
+		&list,
+		ctrlclient.InNamespace(obj.Namespace)); err != nil {
+
+		return fmt.Errorf("failed to list best-effort restart policies: %w", err)
+	}
+
+	policies := make([]matchablePolicy, 0, len(list.Items))
+	for i := range list.Items {
+		p := &list.Items[i]
+		policies = append(policies, matchablePolicy{
+			kind:            bestEffortRestartPolicyKind,
+			obj:             p,
+			enforcementMode: p.Spec.EnforcementMode,
+			match:           p.Spec.Match,
+			tagPolicyNames:  p.Spec.Tags,
+		})
+	}
+
+	return r.processMandatoryPolicies(ctx, obj, policies)
 }
 
 func matchesPolicy(
 	obj *vspherepolv1.PolicyEvaluation,
-	pol vspherepolv1.ComputePolicy) (bool, error) {
+	match *vspherepolv1.MatchSpec) (bool, error) {
 
-	if pol.Spec.Match == nil {
+	if match == nil {
 		return true, nil
 	}
 
-	return evaluateMatchSpec(obj, pol.Spec.Match)
+	return evaluateMatchSpec(obj, match)
 }
 
 func evaluateMatchSpec(
@@ -516,11 +644,17 @@ func matchesGuestFamily(
 	return matchesString(string(actual), sm)
 }
 
-const computePolicyKind = "ComputePolicy"
+const (
+	computePolicyKind             = "ComputePolicy"
+	automaticVMEvictionPolicyKind = "AutomaticVMEvictionPolicy"
+	bestEffortRestartPolicyKind   = "BestEffortRestartPolicy"
+)
 
 func (r *Reconciler) reconcileExplicitPolicies(
 	ctx context.Context,
 	obj *vspherepolv1.PolicyEvaluation) error {
+
+	vmEvictionEnabled := pkgcfg.FromContext(ctx).Features.VMEviction
 
 	for _, ref := range obj.Spec.Policies {
 		switch ref.Kind {
@@ -528,6 +662,28 @@ func (r *Reconciler) reconcileExplicitPolicies(
 			if err := r.addComputePolicyRef(ctx, obj, ref); err != nil {
 				return fmt.Errorf(
 					"failed to add explicit compute policy %s: %w",
+					ref.Name, err)
+			}
+		case automaticVMEvictionPolicyKind:
+			if !vmEvictionEnabled {
+				r.Logger.Info("skipping disabled policy kind",
+					"kind", ref.Kind, "name", ref.Name)
+				continue
+			}
+			if err := r.addAutomaticVMEvictionPolicyRef(ctx, obj, ref); err != nil {
+				return fmt.Errorf(
+					"failed to add explicit automatic VM eviction policy %s: %w",
+					ref.Name, err)
+			}
+		case bestEffortRestartPolicyKind:
+			if !vmEvictionEnabled {
+				r.Logger.Info("skipping disabled policy kind",
+					"kind", ref.Kind, "name", ref.Name)
+				continue
+			}
+			if err := r.addBestEffortRestartPolicyRef(ctx, obj, ref); err != nil {
+				return fmt.Errorf(
+					"failed to add explicit best-effort restart policy %s: %w",
 					ref.Name, err)
 			}
 		default:
@@ -558,60 +714,148 @@ func (r *Reconciler) addComputePolicyRef(
 		return fmt.Errorf("failed to get compute policy: %w", err)
 	}
 
-	matches, err := matchesPolicy(obj, pol)
+	return r.addExplicitPolicyMatch(ctx, obj, matchablePolicy{
+		kind:           computePolicyKind,
+		obj:            &pol,
+		match:          pol.Spec.Match,
+		tagPolicyNames: pol.Spec.Tags,
+	})
+}
+
+func (r *Reconciler) addAutomaticVMEvictionPolicyRef(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation,
+	ref vspherepolv1.LocalObjectRef) error {
+
+	var (
+		pol vspherepolv1.AutomaticVMEvictionPolicy
+		key = ctrlclient.ObjectKey{
+			Namespace: obj.Namespace,
+			Name:      ref.Name,
+		}
+	)
+
+	if err := r.Client.Get(ctx, key, &pol); err != nil {
+		return fmt.Errorf("failed to get automatic VM eviction policy: %w", err)
+	}
+
+	return r.addExplicitPolicyMatch(ctx, obj, matchablePolicy{
+		kind:           automaticVMEvictionPolicyKind,
+		obj:            &pol,
+		match:          pol.Spec.Match,
+		tagPolicyNames: pol.Spec.Tags,
+	})
+}
+
+func (r *Reconciler) addBestEffortRestartPolicyRef(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation,
+	ref vspherepolv1.LocalObjectRef) error {
+
+	var (
+		pol vspherepolv1.BestEffortRestartPolicy
+		key = ctrlclient.ObjectKey{
+			Namespace: obj.Namespace,
+			Name:      ref.Name,
+		}
+	)
+
+	if err := r.Client.Get(ctx, key, &pol); err != nil {
+		return fmt.Errorf("failed to get best-effort restart policy: %w", err)
+	}
+
+	return r.addExplicitPolicyMatch(ctx, obj, matchablePolicy{
+		kind:           bestEffortRestartPolicyKind,
+		obj:            &pol,
+		match:          pol.Spec.Match,
+		tagPolicyNames: pol.Spec.Tags,
+	})
+}
+
+// addExplicitPolicyMatch evaluates p's MatchSpec against obj on behalf of an
+// explicitly-referenced policy (obj.Spec.Policies), irrespective of which
+// concrete policy kind p was built from. Unlike a mandatory policy, an
+// explicit reference to a non-matching policy is an error, not a silent
+// skip.
+func (r *Reconciler) addExplicitPolicyMatch(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation,
+	p matchablePolicy) error {
+
+	matches, err := matchesPolicy(obj, p.match)
 	if err != nil {
 		return err
 	}
 	if !matches {
-		return fmt.Errorf("compute policy %q does not match", pol.Name)
+		return fmt.Errorf("%s %q does not match", p.kind, p.obj.GetName())
 	}
 
-	return r.addComputePolicy(ctx, obj, pol)
+	return r.addPolicyResult(ctx, obj, p)
 }
 
-func (r *Reconciler) addComputePolicy(
+// addPolicyResult records a policy match in obj.Status.Policies, resolving
+// the given TagPolicy names to their vSphere tags. It is shared by every
+// policy kind so the dedup and tag-resolution logic is written once.
+func (r *Reconciler) addPolicyResult(
 	ctx context.Context,
 	obj *vspherepolv1.PolicyEvaluation,
-	pol vspherepolv1.ComputePolicy) error {
+	p matchablePolicy) error {
+
+	name := p.obj.GetName()
 
 	// Check if this policy is already in the results to avoid duplicates.
 	if slices.ContainsFunc(
 		obj.Status.Policies,
-		func(p vspherepolv1.PolicyEvaluationResult) bool {
-			return p.Name == pol.Name && p.Kind == computePolicyKind
+		func(res vspherepolv1.PolicyEvaluationResult) bool {
+			return res.Name == name && res.Kind == p.kind
 		}) {
 
 		// Policy already exists, skip adding it again.
 		return nil
 	}
 
-	var tags []string
-	for _, tpn := range pol.Spec.Tags {
-		var (
-			tp  vspherepolv1.TagPolicy
-			tpk = ctrlclient.ObjectKey{
-				Namespace: obj.Namespace,
-				Name:      tpn,
-			}
-		)
-		if err := r.Client.Get(ctx, tpk, &tp); err != nil {
-			return fmt.Errorf("failed to get tag policy %q: %w", tpn, err)
-		}
-		tags = append(tags, tp.Spec.Tags...)
+	tags, err := r.resolvePolicyTags(ctx, obj.Namespace, p.tagPolicyNames)
+	if err != nil {
+		return err
 	}
 
 	obj.Status.Policies = append(
 		obj.Status.Policies,
 		vspherepolv1.PolicyEvaluationResult{
 			APIVersion: vspherepolv1.GroupVersion.String(),
-			Kind:       computePolicyKind,
-			Name:       pol.Name,
-			Generation: pol.Generation,
+			Kind:       p.kind,
+			Name:       name,
+			Generation: p.obj.GetGeneration(),
 			Tags:       tags,
 		},
 	)
 
 	return nil
+}
+
+// resolvePolicyTags resolves a list of TagPolicy names, in the given
+// namespace, into the vSphere tags they contain.
+func (r *Reconciler) resolvePolicyTags(
+	ctx context.Context,
+	namespace string,
+	tagPolicyNames []string) ([]string, error) {
+
+	var tags []string
+	for _, tpn := range tagPolicyNames {
+		var (
+			tp  vspherepolv1.TagPolicy
+			tpk = ctrlclient.ObjectKey{
+				Namespace: namespace,
+				Name:      tpn,
+			}
+		)
+		if err := r.Client.Get(ctx, tpk, &tp); err != nil {
+			return nil, fmt.Errorf("failed to get tag policy %q: %w", tpn, err)
+		}
+		tags = append(tags, tp.Spec.Tags...)
+	}
+
+	return tags, nil
 }
 
 // virtualMachineToPolicyEvaluationMapperFn returns a mapper function that returns
@@ -635,27 +879,28 @@ func virtualMachineToPolicyEvaluationMapperFn(
 	}
 }
 
-// computePolicyToPolicyEvaluationMapperFn returns a mapper function that returns
-// the PolicyEvaluations that need to be reconciled for a ComputePolicy event. For
-// now, we just return all the objects in the namespace to force a re-evaluation
-// but it should be smarter: we could see if it matches here (but at the cost of
-// double evaluation), or check the PolicyEval Status.Policies and skip ones that
-// already have this or newer observed Generation.
-func computePolicyToPolicyEvaluationMapperFn(
+// policyToPolicyEvaluationMapperFn returns a mapper function that returns the
+// PolicyEvaluations that need to be reconciled for a compute-policy-kind
+// event (ComputePolicy, AutomaticVMEvictionPolicy, BestEffortRestartPolicy).
+// For now, we just return all the objects in the namespace to force a
+// re-evaluation but it should be smarter: we could see if it matches here
+// (but at the cost of double evaluation), or check the PolicyEval
+// Status.Policies and skip ones that already have this or newer observed
+// Generation.
+func policyToPolicyEvaluationMapperFn(
 	_ context.Context,
 	client ctrlclient.Client) handler.MapFunc {
 
 	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
-		obj := o.(*vspherepolv1.ComputePolicy)
-
 		logger := pkglog.FromContextOrDefault(ctx).WithValues(
-			"computePolicyName", obj.Name, "namespace", obj.Namespace)
+			"policyKind", fmt.Sprintf("%T", o),
+			"policyName", o.GetName(), "namespace", o.GetNamespace())
 
 		policyEvalList := &vspherepolv1.PolicyEvaluationList{}
 		if err := client.List(
 			ctx,
 			policyEvalList,
-			ctrlclient.InNamespace(obj.Namespace),
+			ctrlclient.InNamespace(o.GetNamespace()),
 			//
 			// !!! WARNING !!!
 			//
@@ -663,7 +908,7 @@ func computePolicyToPolicyEvaluationMapperFn(
 			// performance by skipping a CPU-intensive operation, since
 			// there can be a PolicyEvaluation for each VM.
 			ctrlclient.UnsafeDisableDeepCopy); err != nil {
-			logger.Error(err, "Failed to list PolicyEvaluations during ComputePolicy watch mapper")
+			logger.Error(err, "Failed to list PolicyEvaluations during policy watch mapper")
 			return nil
 		}
 
@@ -679,7 +924,7 @@ func computePolicyToPolicyEvaluationMapperFn(
 
 		if len(requests) > 0 {
 			logger.V(4).Info(
-				"Reconciling PolicyEvaluations due to ComputePolicy watch",
+				"Reconciling PolicyEvaluations due to policy watch",
 				"requests", requests)
 		}
 

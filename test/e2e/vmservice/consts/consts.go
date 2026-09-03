@@ -44,4 +44,9 @@ const (
 	VirtualMachineConfigPolicyCapabilityName = "supports_vm_service_vm_config_policy"
 	TelcoVMServiceAPICapabilityName          = "supports_telco_vm_service_api"
 	WorkloadIPv6CapabilityName               = "supports_workload_ipv6"
+
+	// VMEvictionCapabilityName gates the AutomaticVMEvictionPolicy and
+	// BestEffortRestartPolicy CRDs; must match
+	// pkg/config/capabilities.CapabilityKeyVMEviction.
+	VMEvictionCapabilityName = "supports_infrapolicy_vm_evacuation"
 )

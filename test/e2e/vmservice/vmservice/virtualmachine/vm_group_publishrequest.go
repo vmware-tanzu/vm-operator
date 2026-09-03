@@ -259,7 +259,7 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 		// child's Uploaded condition on its own generous budget first so
 		// that slow, VC-side clone doesn't have to fit inside the shorter
 		// budget used for Complete.
-		vmoperator.VerifyVirtualMachineGroupPublishRequestImagesUploaded(
+		vmoperator.WaitForVirtualMachineGroupPublishRequestImagesUploaded(
 			ctx,
 			vmSvcE2EConfig,
 			vmSvcClusterProxy.GetClient(),

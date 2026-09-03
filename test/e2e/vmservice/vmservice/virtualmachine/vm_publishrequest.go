@@ -243,6 +243,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
 					Status: metav1.ConditionTrue,
 				}
+				vmoperator.WaitForVirtualMachinePublishRequestUploaded(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, vmPubCondition)
 
 				By("Duplicate TargetName should result in TargetItemAlreadyExistsReason condition", func() {
@@ -308,14 +309,14 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				}
 
 				sourceVMName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vapp-src", capiutil.RandomString(4))
-				createVMWithPromotionDisabled(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName, sourceImageName, *clusterResources,
-					&vmopv1.VirtualMachineBootstrapSpec{
-						// LinuxPrep is needed here for the VM to get a valid IP address.
-						LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
-						VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
-							Properties: sourceVAppProperties,
-						},
-					})
+				sourceBootstrapSpec := &vmopv1.VirtualMachineBootstrapSpec{
+					// LinuxPrep is needed here for the VM to get a valid IP address.
+					LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+					VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+						Properties: sourceVAppProperties,
+					},
+				}
+				createVMWithPromotionDisabled(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName, sourceImageName, *clusterResources, sourceBootstrapSpec)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, sourceVMName)
 				DeferCleanup(func() {
 					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName)
@@ -429,7 +430,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				// than publishing to a Content Library (an OVF export). Wait for
 				// that clone on its own generous budget before waiting on Complete,
 				// which follows quickly once Uploaded=True.
-				vmoperator.VerifyVirtualMachinePublishRequestUploaded(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
+				vmoperator.WaitForVirtualMachinePublishRequestUploaded(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
 				vmoperator.VerifyVirtualMachinePublishRequestCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName, metav1.Condition{
 					Type:   vmopv1.VirtualMachinePublishRequestConditionComplete,
 					Status: metav1.ConditionTrue,
@@ -559,7 +560,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				By("Computing the VM's actual used storage from vCenter's file layout")
 				// Mirror the controller's own calculation (see checkContentLibraryQuota)
 				// so the expected requestedCapacity is built the same way the controller does.
-				vmmoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
+				vmmoid := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
 				vmMoRef := vimtypes.ManagedObjectReference{
 					Type:  string(vimtypes.ManagedObjectTypeVirtualMachine),
 					Value: vmmoid,
@@ -623,8 +624,7 @@ func generateVMBuilder(
 	}
 }
 
-// createVMWithPromotionDisabled creates a VirtualMachine with disk promotion
-// disabled once creation succeeds.
+// createVMWithPromotionDisabled creates a VirtualMachine with no online disk promotion.
 //
 // The VM is built as a typed struct rather than rendered YAML because
 // PromoteDisksMode does not exist before v1alpha4, so the v1alpha2 fixture
@@ -647,13 +647,10 @@ func createVMWithPromotionDisabled(
 			Name:      name,
 		},
 		Spec: vmopv1.VirtualMachineSpec{
-			ClassName:    clusterResources.VMClassName,
-			ImageName:    imageName,
-			StorageClass: clusterResources.StorageClassName,
-			PowerState:   vmopv1.VirtualMachinePowerStateOn,
-			Reserved: &vmopv1.VirtualMachineReservedSpec{
-				ResourcePolicyName: clusterResources.VMResourcePolicyName,
-			},
+			ClassName:        clusterResources.VMClassName,
+			ImageName:        imageName,
+			StorageClass:     clusterResources.StorageClassName,
+			PowerState:       vmopv1.VirtualMachinePowerStateOn,
 			PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
 			Bootstrap:        bootstrap,
 		},

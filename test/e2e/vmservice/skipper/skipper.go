@@ -88,8 +88,7 @@ func SkipUnlessSupervisorCapabilityEnabled(ctx context.Context, vmSvcClusterProx
 
 	if !utils.IsSupervisorCapabilityEnabled(
 		ctx,
-		vmSvcClusterProxy.GetClientSet(),
-		vmSvcClusterProxy.GetDynamicClient(),
+		vmSvcClusterProxy.GetClient(),
 		capabilityName,
 		isAsyncSvUpgradeEnabled,
 	) {

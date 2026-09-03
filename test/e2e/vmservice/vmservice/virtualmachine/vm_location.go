@@ -105,7 +105,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
 			ctx,
 			[]string{config.GetVariable("VMOPNamespace")},
-			clusterProxy.GetClientSet(),
+			clusterProxy.GetRESTConfig(),
 			filepath.Join(input.ArtifactFolder, specName),
 		)
 		DeferCleanup(cancelPodWatches)

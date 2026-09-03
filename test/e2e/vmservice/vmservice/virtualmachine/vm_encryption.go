@@ -15,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
@@ -97,7 +98,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		svClusterClient = clusterProxy.GetClient()
 		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 		cryptoManager = crypto.NewManagerKmip(vCenterClient)
-		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetClientSet(), filepath.Join(input.ArtifactFolder, specName))
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
 		By("Ensure native key provider exists (create via WCP if not pre-configured)")
@@ -135,7 +136,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By(utils.E2EEncryptionStorageProfileName + " should exist")
 		Expect(utils.EnsureE2EEncryptionStorageInNamespace(ctx, vCenterClient,
-			wcpClient, clusterProxy.GetClientSet(), svClusterClient, *config,
+			wcpClient, svClusterClient, *config,
 			tmpNamespaceName, clusterResources.StorageClassName)).
 			To(Succeed(), "failed to ensure encryption storage in namespace %s",
 				tmpNamespaceName)
@@ -381,16 +382,13 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Create PVC using encryption class")
 
-		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
-		volumeClaims := clientSet.CoreV1().PersistentVolumeClaims(tmpNamespaceName)
-		pvc, err := volumeClaims.Get(ctx, pvcName, metav1.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: pvcName}, pvc)).To(Succeed())
 
 		pvc.Annotations["csi.vsphere.encryption-class"] = class.Name
-		_, err = volumeClaims.Update(ctx, pvc, metav1.UpdateOptions{})
-		Expect(err).ToNot(HaveOccurred())
+		Expect(svClusterClient.Update(ctx, pvc)).To(Succeed())
 
 		By("Create VM using encryption class with invalid key")
 
@@ -495,16 +493,13 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Create PVC with encryption class annotation")
 
-		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
-		volumeClaims := clientSet.CoreV1().PersistentVolumeClaims(tmpNamespaceName)
-		pvc, err := volumeClaims.Get(ctx, pvcName, metav1.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: pvcName}, pvc)).To(Succeed())
 
 		pvc.Annotations["csi.vsphere.encryption-class"] = class.Name
-		_, err = volumeClaims.Update(ctx, pvc, metav1.UpdateOptions{})
-		Expect(err).ToNot(HaveOccurred())
+		Expect(svClusterClient.Update(ctx, pvc)).To(Succeed())
 
 		By("Create VM with attached PVC")
 
@@ -575,9 +570,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Create PVC without encryption class annotation")
 
-		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
 
 		By("Create VM with attached PVC and encryption class")
 
@@ -642,16 +636,13 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Create PVC with encryption class annotation")
 
-		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
-		volumeClaims := clientSet.CoreV1().PersistentVolumeClaims(tmpNamespaceName)
-		pvc, err := volumeClaims.Get(ctx, pvcName, metav1.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: pvcName}, pvc)).To(Succeed())
 
 		pvc.Annotations["csi.vsphere.encryption-class"] = class.Name
-		_, err = volumeClaims.Update(ctx, pvc, metav1.UpdateOptions{})
-		Expect(err).ToNot(HaveOccurred())
+		Expect(svClusterClient.Update(ctx, pvc)).To(Succeed())
 
 		By("Create VM with attached PVC")
 
@@ -745,16 +736,13 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Create PVC annotated with the standard key provider encryption class")
 
-		clientSet := clusterProxy.GetClientSet()
 		pvcName := vmName + "-pvc"
-		testutils.AssertCreatePVC(clientSet, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
-		volumeClaims := clientSet.CoreV1().PersistentVolumeClaims(tmpNamespaceName)
-		pvc, err := volumeClaims.Get(ctx, pvcName, metav1.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: pvcName}, pvc)).To(Succeed())
 
 		pvc.Annotations["csi.vsphere.encryption-class"] = pvcClass.Name
-		_, err = volumeClaims.Update(ctx, pvc, metav1.UpdateOptions{})
-		Expect(err).ToNot(HaveOccurred())
+		Expect(svClusterClient.Update(ctx, pvc)).To(Succeed())
 
 		By("Create VM with native provider encryption class and PVC using standard provider")
 

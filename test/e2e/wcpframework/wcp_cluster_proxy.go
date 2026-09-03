@@ -99,7 +99,6 @@ func (w *WCPClusterProxy) CreateWCPNamespace(ctx context.Context, config framewo
 	// we can assume that vcenter has default vm classes names present
 	namespace, cancelNsWatches := wcp.CreateNamespace(ctx, wcp.NamespaceCreateInput{
 		SpecName:         nsName,
-		ClientSet:        w.ClusterProxyInterface.GetClientSet(),
 		Client:           w.ClusterProxyInterface.GetClient(),
 		Kubeconfig:       w.ClusterProxyInterface.GetKubeconfigPath(),
 		StorageClassName: scName,
@@ -207,7 +206,6 @@ func (w *WCPClusterProxy) UpdateNamespaceWithZones(ctx context.Context, nsName s
 		Namespace:       nsName,
 		Zones:           zones,
 		SvClusterClient: svClusterClient,
-		ClientSet:       w.ClusterProxyInterface.GetClientSet(),
 		Kubeconfig:      w.ClusterProxyInterface.GetKubeconfigPath(),
 		WCPClient:       w.wcpAPI,
 	})
@@ -224,7 +222,6 @@ func (w *WCPClusterProxy) DeleteZonesFromNamespace(ctx context.Context, nsName s
 		Namespace:       nsName,
 		Zones:           zones,
 		SvClusterClient: svClusterClient,
-		ClientSet:       w.ClusterProxyInterface.GetClientSet(),
 		Kubeconfig:      w.ClusterProxyInterface.GetKubeconfigPath(),
 		WCPClient:       w.wcpAPI,
 	})
@@ -239,7 +236,6 @@ func (w *WCPClusterProxy) CreateWCPNamespaceWithNetwork(ctx context.Context, con
 	// we can assume that vcenter has default vm classes names present
 	namespace, cancelNsWatches := wcp.CreateNamespace(ctx, wcp.NamespaceCreateInput{
 		SpecName:         nsName,
-		ClientSet:        w.ClusterProxyInterface.GetClientSet(),
 		Client:           w.ClusterProxyInterface.GetClient(),
 		Kubeconfig:       w.ClusterProxyInterface.GetKubeconfigPath(),
 		StorageClassName: scName,
@@ -265,7 +261,6 @@ func (w *WCPClusterProxy) CreateWCPNamespaceWithVMReservation(
 		SpecName:               nsName,
 		WCPClient:              w.wcpAPI,
 		Kubeconfig:             w.ClusterProxyInterface.GetKubeconfigPath(),
-		ClientSet:              w.ClusterProxyInterface.GetClientSet(),
 		Client:                 w.ClusterProxyInterface.GetClient(),
 		StorageClassName:       scName,
 		Zone:                   zone,
@@ -357,10 +352,10 @@ func (s *SimulatedWCPClusterProxy) CreateWCPNamespace(ctx context.Context, confi
 	vmsvcSpecs wcp.VMServiceSpecDetails,
 	scName, nsName, artifactFolder string) (NamespaceContext, error) {
 	namespace, cancelWatches := framework.CreateNamespaceAndWatchEvents(ctx, framework.CreateNamespaceAndWatchEventsInput{
-		Creator:   s.ClusterProxyInterface.GetClient(),
-		ClientSet: s.ClusterProxyInterface.GetClientSet(),
-		Name:      nsName,
-		LogFolder: filepath.Join(artifactFolder, "wcp-simulated-clusters", s.ClusterProxyInterface.GetName()),
+		Creator:    s.ClusterProxyInterface.GetClient(),
+		RESTConfig: s.ClusterProxyInterface.GetRESTConfig(),
+		Name:       nsName,
+		LogFolder:  filepath.Join(artifactFolder, "wcp-simulated-clusters", s.ClusterProxyInterface.GetName()),
 	})
 
 	if err := s.setUserWorkloadNamespaceLabel(ctx, config, nsName); err != nil {

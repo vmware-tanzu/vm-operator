@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/gomega"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
-	"k8s.io/client-go/kubernetes"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -18,7 +17,6 @@ type BindZonesForNamespaceInput struct {
 	Zones           []string
 	Kubeconfig      string
 	ArtifactFolder  string
-	ClientSet       *kubernetes.Clientset
 	SvClusterClient ctrlclient.Client
 	WCPClient       WorkloadManagementAPI
 }

@@ -29,7 +29,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -138,7 +137,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		config                        *config.E2EConfig
 		clusterProxy                  *common.VMServiceClusterProxy
 		svClusterClient               ctrlclient.Client
-		svClusterClientSet            *kubernetes.Clientset
 		vmServiceBackupRestoreEnabled bool
 		incrementalRestoreEnabled     bool
 		linuxImageDisplayName         string
@@ -159,7 +157,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		config = input.Config
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = clusterProxy.GetClient()
-		svClusterClientSet = clusterProxy.GetClientSet()
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(config.InfraConfig.ManagementClusterConfig.Resources)
 
@@ -429,7 +426,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
 			pvcNameA := vmName + "-pvc-a"
-			testutils.AssertCreatePVC(svClusterClientSet, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
+			testutils.AssertCreatePVC(svClusterClient, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
 			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, pvcNameA)
 
 			vmParameters := manifestbuilders.VirtualMachineYaml{
@@ -506,7 +503,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Create and attach another pvc to the VM.
 			pvcNameB := vmName + "-pvc-b"
-			testutils.AssertCreatePVC(svClusterClientSet, pvcNameB, input.WCPNamespaceName, resources.StorageClassName)
+			testutils.AssertCreatePVC(svClusterClient, pvcNameB, input.WCPNamespaceName, resources.StorageClassName)
 			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, pvcNameB)
 
 			By(fmt.Sprintf("Updating the VM with two PVCs: '%v'", vmParameters.PVCNames))
@@ -889,7 +886,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
 			pvcNameA := vmName + "-pvc-a"
-			testutils.AssertCreatePVC(svClusterClientSet, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
+			testutils.AssertCreatePVC(svClusterClient, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
 			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, vmNamespace, pvcNameA)
 
 			vmParameters := manifestbuilders.VirtualMachineYaml{

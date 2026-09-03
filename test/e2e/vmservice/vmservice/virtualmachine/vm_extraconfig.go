@@ -108,7 +108,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
 			ctx,
 			[]string{config.GetVariable("VMOPNamespace")},
-			clusterProxy.GetClientSet(),
+			clusterProxy.GetRESTConfig(),
 			filepath.Join(input.ArtifactFolder, specName),
 		)
 		DeferCleanup(cancelPodWatches)

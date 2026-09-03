@@ -9,40 +9,37 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
-	e2epv "k8s.io/kubernetes/test/e2e/framework/pv"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	ExecutedDuration   = 5 * time.Minute
-	PollDuration       = 5 * time.Second
+	executedDuration   = 5 * time.Minute
+	pollDuration       = 5 * time.Second
 	StorageAppSelector = "gc-e2e-storage"
 )
 
 // AssertCreatePVC creates a PVC under a namespace with provided storageclass.
-func AssertCreatePVC(client kubernetes.Interface, name, namespace, storageClassName string) {
+func AssertCreatePVC(client ctrlclient.Client, name, namespace, storageClassName string) {
 	ctx := context.TODO()
-	// Create the PVC
-	pvc := ConstructPVC(name, storageClassName)
 
+	// Create the PVC.
 	Eventually(func() error {
-		_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
-		if err != nil {
-			return err
-		}
-
-		return nil
-	}, ExecutedDuration, PollDuration).Should(Succeed())
+		pvc := ConstructPVC(name, storageClassName)
+		pvc.Namespace = namespace
+		return client.Create(ctx, pvc)
+	}, executedDuration, pollDuration).Should(Succeed())
 
 	// Validate the PVC is bound
 	By("Validating the creation of pvc")
 
 	timeouts := e2eframework.NewTimeoutContext()
-	err := e2epv.WaitForPersistentVolumeClaimPhase(context.Background(), corev1.ClaimBound, client, namespace, name, 2*time.Second, timeouts.ClaimBound)
-	e2eframework.ExpectNoError(err)
+	Eventually(func(g Gomega) {
+		got := &corev1.PersistentVolumeClaim{}
+		g.Expect(client.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: name}, got)).To(Succeed())
+		g.Expect(got.Status.Phase).To(Equal(corev1.ClaimBound))
+	}, timeouts.ClaimBound, 2*time.Second).Should(Succeed())
 }
 
 // ConstructPVC returns a PVC object with user-specified pvcname and storage class.

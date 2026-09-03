@@ -10,13 +10,13 @@ import (
 	. "github.com/onsi/gomega"
 
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e/storage/podlogs"
 )
 
 // https://github.com/kubernetes/kubernetes/blob/3d6026499b674020b4f8eec11f0b8a860a330d8a/test/e2e/storage/podlogs/podlogs.go
-// https://github-vcf.devops.broadcom.net/vcf/vks-gce2e/blob/cd04354b144b707d113b21a740f83f156cabaea5/test/e2e/lib/e2e/lib.go#L42
-func WatchPodLogsAndEvents(ctx context.Context, cs kubernetes.Interface, podArtifactFolder, ns string) {
+func watchPodLogsAndEvents(ctx context.Context, cs kubernetes.Interface, podArtifactFolder, ns string) {
 	// Needed in case directory permission bits get messed up due to umask.
 	oldUMask := syscall.Umask(0)
 
@@ -54,11 +54,18 @@ func WatchPodLogsAndEvents(ctx context.Context, cs kubernetes.Interface, podArti
 	Expect(podlogs.WatchPods(ctx, cs, ns, eventOutput, eventLogCloser)).To(Succeed(), "error occurred during watching pod events")
 }
 
-func WatchPodLogsAndEventsInNamespaces(ctx context.Context, watchNsList []string, cs kubernetes.Interface, podArtifactFolder string) context.CancelFunc {
+// WatchPodLogsAndEventsInNamespaces streams pod logs and events for the given
+// namespaces to podArtifactFolder. Pod log streaming and pod watching have no
+// controller-runtime equivalent, so a client-go clientset is constructed here,
+// confined to this one call site, rather than threaded through the suite.
+func WatchPodLogsAndEventsInNamespaces(ctx context.Context, watchNsList []string, restConfig *rest.Config, podArtifactFolder string) context.CancelFunc {
+	cs, err := kubernetes.NewForConfig(restConfig)
+	Expect(err).ToNot(HaveOccurred(), "Failed to get client-go client")
+
 	watchesCtx, cancelWatches := context.WithCancel(ctx)
 
 	for _, ns := range watchNsList {
-		WatchPodLogsAndEvents(watchesCtx, cs, podArtifactFolder, ns)
+		watchPodLogsAndEvents(watchesCtx, cs, podArtifactFolder, ns)
 	}
 
 	return cancelWatches

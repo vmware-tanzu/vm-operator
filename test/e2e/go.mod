@@ -98,6 +98,8 @@ require (
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250813160346-0f6259af5cbb // indirect
+	github.com/vmware-tanzu/vm-operator/external/infra v0.0.0-00010101000000-000000000000 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	k8s.io/cli-runtime v0.37.0 // indirect
 	k8s.io/streaming v0.37.0 // indirect

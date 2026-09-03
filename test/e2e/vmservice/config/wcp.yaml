@@ -50,6 +50,10 @@ intervals:
   # over 4 minutes under datastore/NFC contention; give it more headroom than
   # "default" without loosening the timeout for every other caller.
   register-vm-restore-disk-only/wait-virtual-machine-condition-update: ["12m", "5s"]
+  # RegisterVM specs drain any PromoteDisks tasks left running by suite-setup
+  # VMs (fire-and-forget shared Photon/Windows VMs) before starting, to avoid
+  # racing their own boot-disk promotion against leftover NFC contention.
+  default/wait-no-active-promote-disks-tasks: ["10m", "10s"]
   default/wait-virtual-machine-powerstate: ["5m", "3s"]
   default/wait-virtual-machine-resize: ["5m", "3s"]
   default/wait-virtual-machine-moid: ["5m", "3s"]

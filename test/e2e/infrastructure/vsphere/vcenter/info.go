@@ -15,7 +15,6 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
@@ -153,17 +152,6 @@ func GetClusterRefs(ctx context.Context, finder *find.Finder) []*object.ClusterC
 	return clusters
 }
 
-func GetClusterResourcePool(ctx context.Context, finder *find.Finder) types.ManagedObjectReference {
-	clusters := GetClusterRefs(ctx, finder)
-	Expect(len(clusters)).To(BeNumerically(">", 0))
-	rp, err := clusters[0].ResourcePool(ctx)
-	Expect(err).ToNot(HaveOccurred())
-
-	rpRef := rp.Reference()
-
-	return rpRef
-}
-
 func GetClusterIDToRefMapping(clusterRefs []*object.ClusterComputeResource) map[string]*object.ClusterComputeResource {
 	refMapping := make(map[string]*object.ClusterComputeResource)
 	for _, ref := range clusterRefs {
@@ -171,18 +159,6 @@ func GetClusterIDToRefMapping(clusterRefs []*object.ClusterComputeResource) map[
 	}
 
 	return refMapping
-}
-
-// SimulateFindClusterByMoid returns a cluster reference in the vcsim by the given cluster moid.
-func SimulateFindClusterByMoid(ctx context.Context, vcip, moid string) *object.ClusterComputeResource {
-	vimClient := NewVcSimClient(ctx, vcip)
-	finder := NewVcsimFinder(ctx, vimClient)
-
-	clusterRefs := GetClusterRefs(ctx, finder)
-	refMapping := GetClusterIDToRefMapping(clusterRefs)
-	Expect(refMapping).Should(HaveKey(moid))
-
-	return refMapping[moid]
 }
 
 // GetResourcePoolAndFolder returns associated resource pool and folder for a cluster.

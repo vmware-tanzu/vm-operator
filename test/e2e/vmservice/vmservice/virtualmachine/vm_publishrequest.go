@@ -96,7 +96,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 			// Skip testing if WCP_VM_Image_Registry FSS is not enabled.
 			svClusterClient = clusterProxy.GetClient()
-			skipper.SkipUnlessVMImageRegistryFSSEnabled(ctx, svClusterClient, config)
 
 			cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, vmPubSpecName))
 			DeferCleanup(cancelPodWatches)
@@ -285,8 +284,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			})
 
 			It("should preserve vAppConfig properties on a VM deployed from the published image", Label("extended-functional"), func() {
-				skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
-
 				By("Attaching the target content library to the namespace as writable")
 				targetLocationK8sCLName := attachTargetLocationCLAsWritable(ctx, config, svClusterClient, wcpClient, input.WCPNamespaceName, targetLocationCLID, &tarLocationCLIsAttached)
 

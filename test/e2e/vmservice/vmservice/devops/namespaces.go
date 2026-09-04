@@ -8,7 +8,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/kubectl"
@@ -17,7 +16,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/testutils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
@@ -39,19 +37,15 @@ const (
 
 func DevOpsSpec(ctx context.Context, inputGetter func() DevOpsSpecInput) {
 	var (
-		input                       DevOpsSpecInput
-		config                      *e2eConfig.E2EConfig
-		wcpClient                   wcp.WorkloadManagementAPI
-		k8sClient                   ctrlclient.Client
-		kubeconfigPath              string
-		namespacedVMClassFSSEnabled bool
-		vmImageRegistryEnabled      bool
-		namespace                   string
-		sshCommandRunner            libssh.SSHCommandRunner
-		supervisorClusterIP         string
-		vCenterAdminCreds           dcli.VCenterUserCredentials
-		user                        *vcenter.User
-		userKubeconfigPath          string
+		input               DevOpsSpecInput
+		wcpClient           wcp.WorkloadManagementAPI
+		kubeconfigPath      string
+		namespace           string
+		sshCommandRunner    libssh.SSHCommandRunner
+		supervisorClusterIP string
+		vCenterAdminCreds   dcli.VCenterUserCredentials
+		user                *vcenter.User
+		userKubeconfigPath  string
 	)
 
 	BeforeEach(func() {
@@ -65,14 +59,10 @@ func DevOpsSpec(ctx context.Context, inputGetter func() DevOpsSpecInput) {
 		Expect(input.ClusterProxy).NotTo(BeNil(), "Invalid argument. input.ClusterProxy can't be nil when calling %s spec", devopsSpecName)
 		Expect(input.WCPClient).NotTo(BeNil(), "Invalid argument. input.WCPClient can't be nil when calling %s spec", devopsSpecName)
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", devopsSpecName)
-		config = input.Config
 		wcpClient = input.WCPClient
 		namespace = input.WCPNamespaceName
-		k8sClient = input.ClusterProxy.GetClient()
 		kubeconfigPath = input.ClusterProxy.GetKubeconfigPath()
 		vCenterAdminCreds = dcli.VCenterUserCredentials{Username: testbed.AdminUsername, Password: testbed.AdminPassword}
-		namespacedVMClassFSSEnabled = utils.IsFssEnabled(ctx, k8sClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSNamespacedVMClass"))
-		vmImageRegistryEnabled = utils.IsFssEnabled(ctx, k8sClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMImageRegistry"))
 		// Create SSO user
 		sshCommandRunner, _, supervisorClusterIP = testutils.GetHelpersFromKubeconfig(ctx, kubeconfigPath)
 		user = vcenter.NewUser(randomSSOUserName, randomSSOUserPassword).WithAdminCreds(vCenterAdminCreds).WithSSHCommandRunner(sshCommandRunner)
@@ -96,17 +86,8 @@ func DevOpsSpec(ctx context.Context, inputGetter func() DevOpsSpecInput) {
 
 		It("Should have correct view permission", Label("smoke"), func() {
 			By("able to get resources within assigned namespace")
-
-			if namespacedVMClassFSSEnabled {
-				kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "virtualmachineclass", "-n", namespace)
-			} else {
-				kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "virtualmachineclassbinding", "-n", namespace)
-			}
-
-			if vmImageRegistryEnabled {
-				kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "clustervirtualmachineimage")
-			}
-
+			kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "virtualmachineclass", "-n", namespace)
+			kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "clustervirtualmachineimage")
 			kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "virtualmachineimage", "-n", namespace)
 			kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "virtualmachine", "-n", namespace)
 			kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "virtualmachineservices", "-n", namespace)
@@ -114,23 +95,8 @@ func DevOpsSpec(ctx context.Context, inputGetter func() DevOpsSpecInput) {
 			kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "webconsolerequests", "-n", namespace)
 
 			By("not able to get resources outside assigned namespace")
-
-			if namespacedVMClassFSSEnabled {
-				kubectl.AssertKubectlUserCannot(ctx, userKubeconfigPath, "get", "virtualmachineclass", "-A")
-			} else {
-				// VM Class is cluster scoped resource when WCP_Namespaced_VM_Class disabled
-				kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "virtualmachineclass")
-				kubectl.AssertKubectlUserCannot(ctx, userKubeconfigPath, "get", "virtualmachineclassbinding", "-A")
-			}
-
-			if vmImageRegistryEnabled {
-				kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "clustervirtualmachineimage")
-				kubectl.AssertKubectlUserCannot(ctx, userKubeconfigPath, "get", "virtualmachineimage", "-A")
-			} else {
-				// VM Image is cluster scoped resource when WCP_VM_Image_Registry disabled
-				kubectl.AssertKubectlUserCan(ctx, userKubeconfigPath, "get", "virtualmachineimage")
-			}
-
+			kubectl.AssertKubectlUserCannot(ctx, userKubeconfigPath, "get", "virtualmachineclass", "-A")
+			kubectl.AssertKubectlUserCannot(ctx, userKubeconfigPath, "get", "virtualmachineimage", "-A")
 			kubectl.AssertKubectlUserCannot(ctx, userKubeconfigPath, "get", "virtualmachine", "-A")
 			kubectl.AssertKubectlUserCannot(ctx, userKubeconfigPath, "get", "virtualmachineservices", "-A")
 			kubectl.AssertKubectlUserCannot(ctx, userKubeconfigPath, "get", "virtualmachinepublishrequests", "-A")

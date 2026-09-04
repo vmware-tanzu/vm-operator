@@ -78,7 +78,6 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 	skipChecks := func() {
 		skipper.SkipUnlessInfraIs(vmSnapshotInput.Config.InfraConfig.InfraName, consts.WCP)
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.VirtualMachineSnapshotCapabilityName)
-		skipper.SkipUnlessSnapshotFSSEnabled(ctx, vmSvcClusterProxy, vmSvcE2EConfig)
 
 		skipCleanup = false
 	}

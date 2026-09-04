@@ -162,7 +162,6 @@ func VMGroupPublishRequestSpec(ctx context.Context, inputGetter func() VMGroupPu
 
 	skipChecks := func() {
 		skipper.SkipUnlessInfraIs(vmGroupPubInput.Config.InfraConfig.InfraName, consts.WCP)
-		skipper.SkipUnlessVMImageRegistryFSSEnabled(ctx, vmSvcClusterProxy.GetClient(), vmSvcE2EConfig)
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.VMGroupsCapabilityName)
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.InventoryContentLibraryCapabilityName)
 

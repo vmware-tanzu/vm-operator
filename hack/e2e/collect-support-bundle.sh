@@ -29,11 +29,18 @@ TESTBED_BLOB_URL=""
 OUTPUT_DIR="${RESULTSDIR:-/tmp/support-bundles}"
 
 # WCP allows only one support-bundle generation in flight per supervisor/
-# cluster; a request made while another is running fails until it completes.
-# Multiple pipelines (or multiple test suites within one pipeline) can now
-# collect bundles from the same VC around the same time, so retry on failure
-# instead of giving up immediately. ~10 minutes of total wait by default.
-SUPPORT_BUNDLE_RETRY_ATTEMPTS="${SUPPORT_BUNDLE_RETRY_ATTEMPTS:-20}"
+# cluster. Multiple pipelines (or multiple test suites within one pipeline,
+# or a per-suite inline collection racing the standalone collect-support-
+# bundle job) can request a bundle from the same VC around the same time.
+# When that happens, a losing request can still get back HTTP 2xx with a
+# url/token, but downloading it yields an empty body instead of an outright
+# rejection - so retries cover both the request and the download, not just
+# the request. A real generation+download has been observed to take ~9
+# minutes end to end, so the default budget (attempts * interval, not
+# counting per-attempt request/download time) targets ~15 minutes to
+# comfortably outlast one competing collection. This must stay under the
+# calling UTS job's timeout with headroom for the rest of the job.
+SUPPORT_BUNDLE_RETRY_ATTEMPTS="${SUPPORT_BUNDLE_RETRY_ATTEMPTS:-30}"
 SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS="${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS:-30}"
 
 usage() {
@@ -145,40 +152,56 @@ if [[ "${_vc_session_http}" != "20"* || -z "${VC_SESSION}" || "${VC_SESSION}" ==
     exit 0
 fi
 
-BUNDLE_URL=""
-BUNDLE_TOKEN=""
+OUT_FILE="${OUTPUT_DIR}/wcp-support-bundle.tar"
 
 # ---------------------------------------------------------------------------
-# Request a support bundle, retrying while another collection is already in
-# progress on this VC. Prints the response body on success (HTTP 2xx and a
-# recognizable bundle field); returns non-zero once retries are exhausted.
+# Request a bundle and download it, in one attempt. A losing request in the
+# single-generation-in-flight race can still come back HTTP 2xx with a
+# url/token, but downloading it yields an empty body - so a non-empty file on
+# disk is the only real success signal, not the trigger response alone.
 # ---------------------------------------------------------------------------
-request_support_bundle() {
-    local url="$1"
-    local attempt=1 response http_code body
+try_collect_bundle() {
+    local trigger_url="$1" token_field="$2"
+    local response http_code body url token dl_tmp dl_http_code
 
-    while (( attempt <= SUPPORT_BUNDLE_RETRY_ATTEMPTS )); do
-        response=$(curl -sk -w '\n%{http_code}' --max-time 30 -X POST \
-            -H "vmware-api-session-id: ${VC_SESSION}" "${url}")
-        http_code=$(printf '%s' "${response}" | tail -1)
-        body=$(printf '%s' "${response}" | sed '$d')
+    response=$(curl -sk -w '\n%{http_code}' --max-time 30 -X POST \
+        -H "vmware-api-session-id: ${VC_SESSION}" "${trigger_url}")
+    http_code=$(printf '%s' "${response}" | tail -1)
+    body=$(printf '%s' "${response}" | sed '$d')
 
-        if [[ "${http_code}" == "20"* ]] && printf '%s' "${body}" | jq -e '.url // .support_bundle_token // empty' >/dev/null 2>&1; then
-            printf '%s' "${body}"
-            return 0
-        fi
+    if [[ "${http_code}" != "20"* ]]; then
+        _warn "Support bundle request to ${trigger_url} did not return a bundle (HTTP ${http_code}); another collection may be in progress"
+        return 1
+    fi
 
-        _warn "Support bundle request attempt ${attempt}/${SUPPORT_BUNDLE_RETRY_ATTEMPTS} on ${VC_IP} did not return a bundle (HTTP ${http_code}); another collection may be in progress. Retrying in ${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}s..."
-        sleep "${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}"
-        ((attempt++))
-    done
+    url=$(printf '%s' "${body}" | jq -r '.url // empty')
+    token=$(printf '%s' "${body}" | jq -r "${token_field}")
+    if [[ -z "${url}" || -z "${token}" ]]; then
+        _warn "Support bundle request to ${trigger_url} returned no url/token"
+        return 1
+    fi
 
-    _warn "Gave up requesting a support bundle from ${VC_IP} after ${SUPPORT_BUNDLE_RETRY_ATTEMPTS} attempts"
-    return 1
+    _log "Downloading WCP support bundle from ${url}..."
+    dl_tmp="$(mktemp "${OUTPUT_DIR}/wcp-support-bundle.XXXXXX.tar")"
+    dl_http_code=$(curl -sk -w '%{http_code}' --max-time 600 -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"wcp-support-bundle-token\": \"${token}\"}" \
+        "${url}" -o "${dl_tmp}")
+
+    if [[ ! -s "${dl_tmp}" ]]; then
+        _warn "Downloaded support bundle from ${url} was empty (HTTP ${dl_http_code}); another collection likely won the race"
+        rm -f "${dl_tmp}"
+        return 1
+    fi
+
+    mv "${dl_tmp}" "${OUT_FILE}"
+    return 0
 }
 
 # ---------------------------------------------------------------------------
-# v2 API: supervisors endpoint (vSphere 8.0+)
+# v2 API: supervisors endpoint (vSphere 8.0+); v1 fallback: clusters endpoint
+# (pre-8.0). The endpoint choice only depends on which resource exists on
+# this VC, so it is resolved once, outside the retry loop below.
 # ---------------------------------------------------------------------------
 SUPERVISOR_ID=$(curl -sk --max-time 30 -H "vmware-api-session-id: ${VC_SESSION}" \
     "https://${VC_IP}/api/vcenter/namespace-management/supervisors" \
@@ -186,40 +209,35 @@ SUPERVISOR_ID=$(curl -sk --max-time 30 -H "vmware-api-session-id: ${VC_SESSION}"
 
 if [[ -n "${SUPERVISOR_ID}" ]]; then
     _log "Getting WCP bundle for supervisor ${SUPERVISOR_ID} (v2 API)..."
-    BUNDLE_INFO=$(request_support_bundle "https://${VC_IP}/api/vcenter/namespace-management/supervisors/${SUPERVISOR_ID}/support-bundles") || BUNDLE_INFO='{}'
-    BUNDLE_URL=$(echo "${BUNDLE_INFO}" | jq -r '.url // empty')
-    BUNDLE_TOKEN=$(echo "${BUNDLE_INFO}" | jq -r '.support_bundle_token.token // empty')
+    TRIGGER_URL="https://${VC_IP}/api/vcenter/namespace-management/supervisors/${SUPERVISOR_ID}/support-bundles"
+    TOKEN_FIELD='.support_bundle_token.token // empty'
 else
-    # ---------------------------------------------------------------------------
-    # v1 fallback: clusters endpoint (pre-8.0)
-    # ---------------------------------------------------------------------------
     CLUSTER_ID=$(curl -sk --max-time 30 -H "vmware-api-session-id: ${VC_SESSION}" \
         "https://${VC_IP}/api/vcenter/namespace-management/clusters" \
         | jq -r 'if type == "array" then .[0].cluster // empty else empty end')
     if [[ -n "${CLUSTER_ID}" ]]; then
         _log "Getting WCP bundle for cluster ${CLUSTER_ID} (v1 API)..."
-        BUNDLE_INFO=$(request_support_bundle "https://${VC_IP}/api/vcenter/namespace-management/clusters/${CLUSTER_ID}/support-bundle") || BUNDLE_INFO='{}'
-        BUNDLE_URL=$(echo "${BUNDLE_INFO}" | jq -r '.url // empty')
-        BUNDLE_TOKEN=$(echo "${BUNDLE_INFO}" | jq -r '.wcp_support_bundle_token.token // empty')
+        TRIGGER_URL="https://${VC_IP}/api/vcenter/namespace-management/clusters/${CLUSTER_ID}/support-bundle"
+        TOKEN_FIELD='.wcp_support_bundle_token.token // empty'
     else
         _warn "No supervisor or cluster found on VC ${VC_IP}; skipping WCP bundle"
+        TRIGGER_URL=""
+        TOKEN_FIELD=""
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# Download the bundle
-# ---------------------------------------------------------------------------
-if [[ -n "${BUNDLE_URL}" && -n "${BUNDLE_TOKEN}" ]]; then
-    _log "Downloading WCP support bundle from ${BUNDLE_URL}..."
-    WCP_BUNDLE_PAYLOAD="{\"wcp-support-bundle-token\": \"${BUNDLE_TOKEN}\"}"
-    curl -sk --max-time 600 -X POST \
-        -H 'Content-Type: application/json' \
-        -d "${WCP_BUNDLE_PAYLOAD}" \
-        "${BUNDLE_URL}" \
-        -o "${OUTPUT_DIR}/wcp-support-bundle.tar" \
-        || _warn "WCP support bundle download failed"
-else
-    _warn "Could not obtain WCP support bundle URL or token"
+if [[ -n "${TRIGGER_URL}" ]]; then
+    attempt=1
+    while (( attempt <= SUPPORT_BUNDLE_RETRY_ATTEMPTS )); do
+        try_collect_bundle "${TRIGGER_URL}" "${TOKEN_FIELD}" && break
+        if (( attempt == SUPPORT_BUNDLE_RETRY_ATTEMPTS )); then
+            _warn "Gave up collecting a WCP support bundle from ${VC_IP} after ${SUPPORT_BUNDLE_RETRY_ATTEMPTS} attempts"
+        else
+            _warn "Retrying support bundle collection in ${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}s (attempt ${attempt}/${SUPPORT_BUNDLE_RETRY_ATTEMPTS})..."
+            sleep "${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}"
+        fi
+        ((attempt++))
+    done
 fi
 
 curl -sk -X DELETE \

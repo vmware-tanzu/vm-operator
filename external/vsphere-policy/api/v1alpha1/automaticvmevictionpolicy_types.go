@@ -87,6 +87,22 @@ type AutomaticVMEvictionPolicy struct {
 	Status AutomaticVMEvictionPolicyStatus `json:"status,omitempty"`
 }
 
+// GetPolicyEnforcementMode returns the policy's enforcement mode.
+func (p *AutomaticVMEvictionPolicy) GetPolicyEnforcementMode() PolicyEnforcementMode {
+	return p.Spec.EnforcementMode
+}
+
+// GetPolicyMatch returns the policy's match spec.
+func (p *AutomaticVMEvictionPolicy) GetPolicyMatch() *MatchSpec {
+	return p.Spec.Match
+}
+
+// GetPolicyTagNames returns the names of the TagPolicy objects associated
+// with this policy.
+func (p *AutomaticVMEvictionPolicy) GetPolicyTagNames() []string {
+	return p.Spec.Tags
+}
+
 // GetConditions returns the conditions associated with the policy.
 func (p *AutomaticVMEvictionPolicy) GetConditions() []metav1.Condition {
 	return p.Status.Conditions

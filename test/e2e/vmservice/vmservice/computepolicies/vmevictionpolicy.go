@@ -210,6 +210,105 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				map[string]string{evacuationPolicy.Name: tagID},
 				[]string{evacuationPolicy.Name})
 		})
+
+	It("Should update the VM's vSphere tag when the policy's Tags are changed",
+		Label("core-functional", "experimental"),
+		func() {
+			tagID1 := createVSphereTag(input.WCPClient, tagManager, "vm-eviction-update-1")
+
+			By("Creating a TagPolicy referencing the first real vSphere tag")
+			tagPolicy = createTagPolicy(ctx, adminClient, input.WCPNamespaceName,
+				fmt.Sprintf("vm-eviction-update-tag-policy-1-%s", capiutil.RandomString(4)), []string{tagID1})
+
+			By("Creating a Mandatory AutomaticVMEvictionPolicy referencing the first TagPolicy")
+			evacuationPolicy = createAutomaticVMEvictionPolicy(ctx, adminClient, input.WCPNamespaceName,
+				fmt.Sprintf("vm-eviction-update-policy-%s", capiutil.RandomString(4)), matchLabel, []string{tagPolicy.Name})
+
+			By("Creating a VM matching the policy's label selector")
+			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
+
+			By("Verifying the VM has the first tag assigned")
+			vmservice.VerifyVMTagsAndPolicyAssignment(
+				ctx,
+				input.Config,
+				svClusterClient,
+				tagManager,
+				input.WCPNamespaceName,
+				vmName,
+				map[string]string{evacuationPolicy.Name: tagID1},
+				[]string{evacuationPolicy.Name})
+
+			tagID2 := createVSphereTag(input.WCPClient, tagManager, "vm-eviction-update-2")
+
+			By("Creating a second TagPolicy referencing a second real vSphere tag")
+			tagPolicy2 := createTagPolicy(ctx, adminClient, input.WCPNamespaceName,
+				fmt.Sprintf("vm-eviction-update-tag-policy-2-%s", capiutil.RandomString(4)), []string{tagID2})
+			DeferCleanup(func() { _ = adminClient.Delete(ctx, tagPolicy2) })
+
+			By("Updating the policy's Tags to reference the second TagPolicy instead of the first")
+			evacuationPolicyPatch := evacuationPolicy.DeepCopy()
+			evacuationPolicyPatch.Spec.Tags = []string{tagPolicy2.Name}
+			Expect(adminClient.Patch(ctx, evacuationPolicyPatch, ctrlclient.MergeFrom(evacuationPolicy))).
+				To(Succeed(), "failed to update AutomaticVMEvictionPolicy %q tags", evacuationPolicy.Name)
+			evacuationPolicy = evacuationPolicyPatch
+
+			By("Verifying the VM now has only the second tag assigned")
+			vmservice.VerifyVMTagsAndPolicyAssignment(
+				ctx,
+				input.Config,
+				svClusterClient,
+				tagManager,
+				input.WCPNamespaceName,
+				vmName,
+				map[string]string{evacuationPolicy.Name: tagID2},
+				[]string{evacuationPolicy.Name})
+		})
+
+	It("Should remove the VM's vSphere tag and status.policies entry when the policy is deleted",
+		Label("core-functional", "experimental"),
+		func() {
+			tagID := createVSphereTag(input.WCPClient, tagManager, "vm-eviction-delete")
+
+			By("Creating a TagPolicy referencing the real vSphere tag")
+			tagPolicy = createTagPolicy(ctx, adminClient, input.WCPNamespaceName,
+				fmt.Sprintf("vm-eviction-delete-tag-policy-%s", capiutil.RandomString(4)), []string{tagID})
+
+			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the test label")
+			evacuationPolicy = createAutomaticVMEvictionPolicy(ctx, adminClient, input.WCPNamespaceName,
+				fmt.Sprintf("vm-eviction-delete-policy-%s", capiutil.RandomString(4)), matchLabel, []string{tagPolicy.Name})
+
+			By("Creating a VM matching the policy's label selector")
+			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
+
+			By("Verifying the VM has the tag and policy assigned before deletion")
+			vmservice.VerifyVMTagsAndPolicyAssignment(
+				ctx,
+				input.Config,
+				svClusterClient,
+				tagManager,
+				input.WCPNamespaceName,
+				vmName,
+				map[string]string{evacuationPolicy.Name: tagID},
+				[]string{evacuationPolicy.Name})
+
+			By("Deleting the AutomaticVMEvictionPolicy")
+			Expect(adminClient.Delete(ctx, evacuationPolicy)).
+				To(Succeed(), "failed to delete AutomaticVMEvictionPolicy %q", evacuationPolicy.Name)
+			evacuationPolicy = nil
+
+			By("Verifying the VM's tag and status.policies entry are removed")
+			vmservice.VerifyVMTagsAndPolicyAssignment(
+				ctx,
+				input.Config,
+				svClusterClient,
+				tagManager,
+				input.WCPNamespaceName,
+				vmName,
+				nil,
+				nil)
+		})
 }
 
 // createVSphereTag creates a real vSphere tag category and tag, registering
@@ -340,6 +439,10 @@ func createAutomaticVMEvictionPolicy(
 			Namespace: namespace,
 		},
 		Spec: vspherepolv1.AutomaticVMEvictionPolicySpec{
+			// PolicyID is required by the schema but not otherwise used by
+			// this test: nothing here drives an actual vCenter compute
+			// policy, so any non-empty value satisfies validation.
+			PolicyID:        "e2e-dummy-policy-id",
 			EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
 			Match: &vspherepolv1.MatchSpec{
 				Workload: &vspherepolv1.MatchWorkloadSpec{

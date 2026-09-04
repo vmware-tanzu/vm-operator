@@ -28,6 +28,12 @@ const (
 
 	JumpboxPodVMName = "jumpbox"
 
+	// WindowsSysprepLabel decorates the Windows guest-customization specs
+	// (see vm_guestcustomization.go's "Sysprep" Context) so the suite setup
+	// can preview the filtered spec tree and only precreate the Windows VM
+	// when a spec carrying this label will actually run.
+	WindowsSysprepLabel = "windows-sysprep"
+
 	// VM condition type strings used when waiting on backfill/registration lifecycle.
 	VMUnmanagedVolumesBackfilledCondition = "VirtualMachineUnmanagedVolumesBackfilled"
 	VMUnmanagedVolumesRegisteredCondition = "VirtualMachineUnmanagedVolumesRegistered"

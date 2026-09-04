@@ -106,12 +106,13 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 		Context("VM-GUEST-CUSTOMIZATION", func() {
 			virtualmachine.VMGOSCSpec(context.TODO(), func() virtualmachine.VMGOSCSpecInput {
 				return virtualmachine.VMGOSCSpecInput{
-					ClusterProxy:        svClusterProxy,
-					Config:              config,
-					WCPClient:           wcpClient,
-					ArtifactFolder:      artifactFolder,
-					WCPNamespaceName:    wcpNamespaceName,
-					WindowsServerVMName: windowsServerVMName,
+					ClusterProxy:              svClusterProxy,
+					Config:                    config,
+					WCPClient:                 wcpClient,
+					ArtifactFolder:            artifactFolder,
+					WCPNamespaceName:          wcpNamespaceName,
+					WindowsServerVMName:       windowsServerVMName,
+					WindowsInlineServerVMName: windowsInlineServerVMName,
 				}
 			})
 		})

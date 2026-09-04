@@ -42,12 +42,13 @@ import (
 )
 
 type VMGOSCSpecInput struct {
-	Config              *e2eConfig.E2EConfig
-	ClusterProxy        wcpframework.WCPClusterProxyInterface
-	WCPClient           wcp.WorkloadManagementAPI
-	ArtifactFolder      string
-	WCPNamespaceName    string
-	WindowsServerVMName string
+	Config                    *e2eConfig.E2EConfig
+	ClusterProxy              wcpframework.WCPClusterProxyInterface
+	WCPClient                 wcp.WorkloadManagementAPI
+	ArtifactFolder            string
+	WCPNamespaceName          string
+	WindowsServerVMName       string
+	WindowsInlineServerVMName string
 }
 
 // vAppProp builds a single vApp property key/value pair with a literal,
@@ -974,43 +975,71 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		})
 	})
 
-	Context("Sysprep", func() {
-		BeforeEach(func() {
-			// The Windows server VM was deployed during the suite setup and will be deleted in the suite teardown.
-			skipCleanup = true
+	Context("Sysprep", Label(consts.WindowsSysprepLabel, "experimental"), func() {
 
-			// Skip if WCP_Windows_Sysprep FSS not enabled
-			skipper.SkipUnlessWindowsFSSEnabled(ctx, svClusterClient, config)
-		})
+		// verifyWindowsVMDeployed waits for vmName to exist, power on, and report a
+		// real IPv4 address, shared by both Sysprep Contexts above.
+		//
+		// The IP wait is rolled inline rather than vmoperator.WaitForVirtualMachineIP
+		// so these specs can use the longer "windows-sysprep" interval (see wcp.yaml)
+		// without changing that shared helper's timeout for every other caller, and
+		// so a guest falling back to an APIPA (169.254.0.0/16) self-assigned address
+		// -- which vmoperator.WaitForVirtualMachineIP would otherwise accept as a
+		// real IP -- is treated as still-waiting rather than success.
+		verifyWindowsVMDeployed := func(ctx context.Context, config *e2eConfig.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
+			By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", ns, vmName))
+			vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, ns, vmName)
+			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, ns, vmName)
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 
+			By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", ns, vmName))
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm).ToNot(BeNil())
+
+				g.Expect(vm.Status.Network).ToNot(BeNil())
+				g.Expect(vm.Status.Network.PrimaryIP4).ToNot(BeEmpty())
+				ip := net.ParseIP(vm.Status.Network.PrimaryIP4).To4()
+				g.Expect(ip).ToNot(BeNil())
+				g.Expect(ip.IsLinkLocalUnicast()).To(BeFalse())
+			}, config.GetIntervals("windows-sysprep", "wait-virtual-machine-vmip")...).Should(Succeed())
+		}
+
+		// Register-from-backup isn't Windows-specific -- it's already
+		// covered by the Linux specs above -- and re-verifying it here
+		// only adds several more minutes to an already slow spec.
 		When("raw Sysprep data is used", func() {
-			// TODO: VMSVC-2789: Re-enable this once we've fixed PR 3531430
-			XIt("should successfully deploy VM and be able to register VM from backup", func() {
+			It("should successfully deploy VM", func() {
 				// The VM is already created during the suite setup.
 				vmName = input.WindowsServerVMName
 				Expect(vmName).ToNot(BeEmpty())
-				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
-				if vmServiceBackupRestoreEnabled {
-					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, vmName, input.WCPNamespaceName, nil, clusterProxy, config, svClusterClient, wcpClient)
+				// Set vmYaml so the VM gets cleaned up.
+				vmParameters = manifestbuilders.VirtualMachineYaml{
+					Name:      vmName,
+					Namespace: input.WCPNamespaceName,
 				}
+				vmYaml = manifestbuilders.GetVirtualMachineYaml(vmParameters)
+
+				verifyWindowsVMDeployed(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			})
 		})
 
 		When("Inline Sysprep is used", func() {
-			BeforeEach(func() {
-				skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
-			})
-			// TODO: VMSVC-2789: Re-enable this once we've fixed PR 3531430
-			XIt("should successfully deploy VM and be able to register VM from backup", func() {
+			It("should successfully deploy VM", func() {
 				// The VM is already created during the suite setup.
-				vmName = input.WindowsServerVMName + "-a2"
+				vmName = input.WindowsInlineServerVMName
 				Expect(vmName).ToNot(BeEmpty())
-				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
-				if vmServiceBackupRestoreEnabled {
-					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, vmName, input.WCPNamespaceName, nil, clusterProxy, config, svClusterClient, wcpClient)
+				// Set vmYaml so the VM gets cleaned up.
+				vmParameters = manifestbuilders.VirtualMachineYaml{
+					Name:      vmName,
+					Namespace: input.WCPNamespaceName,
 				}
+				vmYaml = manifestbuilders.GetVirtualMachineYaml(vmParameters)
+
+				verifyWindowsVMDeployed(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			})
 		})
 	})

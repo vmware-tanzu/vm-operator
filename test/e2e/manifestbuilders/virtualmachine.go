@@ -121,6 +121,7 @@ type VirtualMachineYaml struct {
 	ConfigMapName    string            `json:"config_map_name,omitempty"`
 	SecretName       string            `json:"secret_name,omitempty"`
 	PowerState       string            `json:"power_state,omitempty"`
+	PowerOffMode     string            `json:"power_off_mode,omitempty"`
 	Bootstrap        Bootstrap         `json:"bootstrap,omitempty"`
 	// Deprecated: For v1alpha5, use Hardware.Cdrom instead.
 	Cdrom               []Cdrom                            `json:"cdrom,omitempty"`

@@ -106,3 +106,8 @@ intervals:
   default/wait-vm-compute-config-powerstate: ["3m", "10s"]
   default/wait-vm-extraconfig-synced:    ["5m", "10s"]
   default/wait-vm-nic-extra-config-synced: ["5m", "10s"]
+
+  # windows-sysprep overrides apply only to the Windows Sysprep spec.
+  # Empirically, Sysprep GOSC on this image reliably reports an IP in
+  # 5.5-6 minutes so this spec needs a little more room.
+  windows-sysprep/wait-virtual-machine-vmip: ["10m", "3s"]

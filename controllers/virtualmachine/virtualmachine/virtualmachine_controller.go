@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -310,11 +311,28 @@ func NewReconciler(
 		Context:    ctx,
 		Client:     client,
 		Logger:     logger,
-		Recorder:   recorder,
+		Recorder:   &vmRecorderWrapper{Recorder: recorder},
 		VMProvider: vmProvider,
 		Prober:     prober,
 		vmMetrics:  metrics.NewVMMetrics(),
 	}
+}
+
+// vmRecorderWrapper wraps the Recorder to emit NoRequeueErrors as pending
+// instead of failures during create.
+type vmRecorderWrapper struct {
+	record.Recorder
+}
+
+func (v *vmRecorderWrapper) EmitEvent(object runtime.Object, opName string, err error, ignoreSuccess bool) {
+	if opName == "Create" {
+		if _, ok := errors.AsType[pkgerr.NoRequeueError](err); ok {
+			v.Warn(object, opName+"Pending", err.Error())
+			return
+		}
+	}
+
+	v.Recorder.EmitEvent(object, opName, err, ignoreSuccess)
 }
 
 // Reconciler reconciles a VirtualMachine object.
@@ -598,7 +616,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	}
 
 	if !controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
-
 		// If the object has the deprecated finalizer, remove it.
 		if updated := controllerutil.RemoveFinalizer(ctx.VM, deprecatedFinalizerName); updated {
 			ctx.Logger.V(5).Info("Removed deprecated finalizer", "finalizerName", deprecatedFinalizerName)
@@ -628,7 +645,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
 		// Do not proceed unless the VMI cache this VM needs is ready.
 		if !r.isVMICacheReady(ctx) {
-			return nil
+			return pkgerr.NoRequeueError{Message: "disk image cache is not ready"}
 		}
 	}
 
@@ -719,11 +736,11 @@ func (r *Reconciler) handleBlockingCreateErr(
 			// If the cache is not yet ready then do not return an error,
 			// but simultaneously, do not reflect a successful create. The
 			// VM will be requeued once the cache object is ready.
-			return nil
+			err = pkgerr.NoRequeueError{Message: "disk image cache is not ready"}
 		}
 	}
 
-	r.Recorder.EmitEvent(ctx.VM, "Create", filterNoRequeueErr(err), false)
+	r.Recorder.EmitEvent(ctx.VM, "Create", err, false)
 	return err
 }
 

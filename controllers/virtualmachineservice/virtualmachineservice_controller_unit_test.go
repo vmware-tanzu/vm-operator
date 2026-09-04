@@ -1597,7 +1597,7 @@ func nsxtLBProviderTestsReconcile() {
 				})
 			})
 
-			It("Should sync nsx.vmware.com/hostnames annotation from VirtualMachineService to Service", func() {
+			It("Should sync external-dns annotation from VirtualMachineService to Service", func() {
 				const hostnamesValue = "host1.example.com,host2.example.com"
 
 				vmService.Annotations[providers.AnnotationServiceNSXHostnamesKey] = hostnamesValue
@@ -1609,14 +1609,14 @@ func nsxtLBProviderTestsReconcile() {
 				Expect(newService.Annotations).To(HaveKeyWithValue(providers.AnnotationServiceNSXHostnamesKey, hostnamesValue))
 			})
 
-			It("Should remove nsx.vmware.com/hostnames annotation from Service when absent from VirtualMachineService", func() {
+			It("Should remove external-dns annotation from Service when absent from VirtualMachineService", func() {
 				const hostnamesValue = "host1.example.com"
 
 				vmService.Annotations[providers.AnnotationServiceNSXHostnamesKey] = hostnamesValue
 				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
 				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
 
-				By("Service should have nsx.vmware.com/hostnames annotation", func() {
+				By("Service should have external-dns.alpha.kubernetes.io/hostname annotation", func() {
 					svc := &corev1.Service{}
 					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
 					Expect(svc.Annotations).To(HaveKeyWithValue(providers.AnnotationServiceNSXHostnamesKey, hostnamesValue))
@@ -1625,7 +1625,7 @@ func nsxtLBProviderTestsReconcile() {
 				delete(vmService.Annotations, providers.AnnotationServiceNSXHostnamesKey)
 				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
 
-				By("Service should not have nsx.vmware.com/hostnames annotation", func() {
+				By("Service should not have external-dns.alpha.kubernetes.io/hostname annotation", func() {
 					svc := &corev1.Service{}
 					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
 					Expect(svc.Annotations).ToNot(HaveKey(providers.AnnotationServiceNSXHostnamesKey))

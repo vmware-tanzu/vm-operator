@@ -726,7 +726,7 @@ func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 		return allErrs
 	}
 
-	if f := pkgcfg.FromContext(ctx).Features; !f.VMResize && !f.VMResizeCPUMemory {
+	if !pkgcfg.FromContext(ctx).Features.VMResizeCPUMemory {
 		return append(allErrs,
 			validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, field.NewPath("spec", "className"))...)
 	}

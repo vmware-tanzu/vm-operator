@@ -166,7 +166,7 @@ func reconcileStatusClass(
 		// since we don't know if the class has been applied to the VM.
 		// When resize is enabled, this field is updated after a successful
 		// resize.
-		if f := pkgcfg.FromContext(vmCtx).Features; !f.VMResize && !f.VMResizeCPUMemory {
+		if !pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory {
 			vmCtx.VM.Status.Class = &common.LocalObjectRef{
 				APIVersion: vmopv1.GroupVersion.String(),
 				Kind:       "VirtualMachineClass",
@@ -175,7 +175,7 @@ func reconcileStatusClass(
 		}
 	}
 
-	if f := pkgcfg.FromContext(vmCtx).Features; f.VMResize || f.VMResizeCPUMemory {
+	if pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory {
 		MarkVMClassConfigurationSynced(vmCtx, vmCtx.VM, k8sClient)
 	}
 

@@ -778,22 +778,7 @@ func vmPowerStateTests() {
 					ExpectWithOffset(1, backing.FileName).To(Equal(vmiFileName))
 				}
 
-				assertNotPowerOnVMWithCDROM := func() {
-					err := createOrUpdateVM(ctx, vmProvider, vm)
-					ExpectWithOffset(1, err).To(HaveOccurred())
-					ExpectWithOffset(1, err.Error()).To(ContainSubstring("no CD-ROM is found for image ref"))
-				}
-
 				It("should power on the VM with expected CD-ROM device", assertPowerOnVMWithCDROM)
-
-				When("FSS Resize is enabled", func() {
-					JustBeforeEach(func() {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.VMResize = true
-						})
-					})
-					It("should not power on the VM with expected CD-ROM device", assertNotPowerOnVMWithCDROM)
-				})
 
 				When("FSS Resize CPU & Memory is enabled", func() {
 					JustBeforeEach(func() {

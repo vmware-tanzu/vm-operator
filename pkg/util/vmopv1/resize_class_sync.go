@@ -26,34 +26,7 @@ import (
 // because the VirtualMachineClass need not exist when the webhook fires —
 // the class can be created at any point after the VM is admitted as well.
 //
-// For the full class resize path (VMResize feature), device changes such as
-// PCI passthrough are also applied within the same reconcile. Keeping the spec
-// sync here ensures that spec changes and device changes are applied atomically
-// in a single vSphere reconfigure call. The subsequent reconcile observes no
-// diff and is a no-op.
-//
 // ────────────────────────────────────────────────────────────────────────────
-
-// SyncClassComputeToSpec copies all compute configuration from a class-derived
-// ConfigSpec into vm.Spec. It is called when a full class-based resize is
-// triggered (VMResize feature, ResizeNeeded returns true) so that
-// OverwriteSpecComputeConfig applies the class intent rather than stale or
-// backfilled spec values.
-//
-// Fields not set in classCS are left unchanged in spec. Any field that classCS
-// explicitly configures is unconditionally written to spec so that the class is
-// the authority for this resize action.
-func SyncClassComputeToSpec(
-	vm *vmopv1.VirtualMachine,
-	classCS vimtypes.VirtualMachineConfigSpec) {
-
-	syncClassSizeToSpec(vm, classCS)
-	syncClassAllocationToSpec(vm, classCS)
-	syncClassTopologyToSpec(vm, classCS)
-	syncClassLatencySensitivityToSpec(vm, classCS)
-	syncClassCPUFlagsToSpec(vm, classCS)
-	syncClassMemoryFlagsToSpec(vm, classCS)
-}
 
 // SyncClassSizeAndAllocationToSpec copies CPU/memory size, allocation, and the
 // memory reservation lock from a class-derived ConfigSpec into vm.Spec. It is
@@ -66,9 +39,9 @@ func SyncClassComputeToSpec(
 // memory size, and without syncing this field OverwriteSpecComputeConfig would
 // apply the backfilled value instead.
 //
-// Unlike SyncClassComputeToSpec, this function deliberately omits topology,
-// CPU/memory hot-add flags, and latency sensitivity — matching the narrow scope
-// of the VMResizeCPUMemory resize path.
+// This function deliberately omits topology, CPU/memory hot-add flags, and
+// latency sensitivity — matching the narrow scope of the VMResizeCPUMemory
+// resize path.
 func SyncClassSizeAndAllocationToSpec(
 	vm *vmopv1.VirtualMachine,
 	classCS vimtypes.VirtualMachineConfigSpec) {
@@ -141,81 +114,6 @@ func syncClassAllocationToSpec(vm *vmopv1.VirtualMachine, cs vimtypes.VirtualMac
 	}
 }
 
-func syncClassTopologyToSpec(vm *vmopv1.VirtualMachine, cs vimtypes.VirtualMachineConfigSpec) {
-	if cs.NumCoresPerSocket != nil {
-		ensureTopology(vm)
-		cps := *cs.NumCoresPerSocket
-		vm.Spec.CPUAdvanced.Topology.CoresPerSocket = &cps
-	}
-
-	if n := cs.VirtualNuma; n != nil &&
-		n.CoresPerNumaNode != nil &&
-		*n.CoresPerNumaNode > 0 &&
-		cs.NumCPUs > 0 &&
-		cs.NumCPUs%*n.CoresPerNumaNode == 0 {
-
-		// Only sync when NumCPUs divides evenly by CoresPerNumaNode: a
-		// non-exact division would round-trip through
-		// vnumaNodeCountField's inverse division in compute_overwrite.go
-		// (CoresPerNumaNode = NumCPUs / VNUMANodeCount) and silently drift
-		// from what the class's CoresPerNumaNode actually specified.
-		nodeCount := cs.NumCPUs / *n.CoresPerNumaNode
-		if nodeCount > 0 {
-			ensureTopology(vm)
-			vm.Spec.CPUAdvanced.Topology.VNUMANodeCount = &nodeCount
-		}
-	}
-}
-
-func syncClassLatencySensitivityToSpec(vm *vmopv1.VirtualMachine, cs vimtypes.VirtualMachineConfigSpec) {
-	if cs.LatencySensitivity == nil {
-		return
-	}
-
-	var level vmopv1.VirtualMachineLatencySensitivityLevel
-	switch cs.LatencySensitivity.Level {
-	case vimtypes.LatencySensitivitySensitivityLevelHigh:
-		if cs.SimultaneousThreads == 2 {
-			level = vmopv1.VirtualMachineLatencySensitivityHighWithHyperthreading
-		} else {
-			level = vmopv1.VirtualMachineLatencySensitivityHigh
-		}
-	case vimtypes.LatencySensitivitySensitivityLevelNormal:
-		level = vmopv1.VirtualMachineLatencySensitivityNormal
-	default:
-		return
-	}
-
-	ensureCPUAdvanced(vm)
-	vm.Spec.CPUAdvanced.LatencySensitivity = &level
-}
-
-func syncClassCPUFlagsToSpec(vm *vmopv1.VirtualMachine, cs vimtypes.VirtualMachineConfigSpec) {
-	if cs.CpuHotAddEnabled != nil {
-		ensureCPUAdvanced(vm)
-		v := *cs.CpuHotAddEnabled
-		vm.Spec.CPUAdvanced.HotAddEnabled = &v
-	}
-
-	if cs.Flags != nil && cs.Flags.VvtdEnabled != nil {
-		ensureCPUAdvanced(vm)
-		v := *cs.Flags.VvtdEnabled
-		vm.Spec.CPUAdvanced.IOMMUEnabled = &v
-	}
-
-	if cs.NestedHVEnabled != nil {
-		ensureCPUAdvanced(vm)
-		v := *cs.NestedHVEnabled
-		vm.Spec.CPUAdvanced.NestedHardwareVirtualizationEnabled = &v
-	}
-
-	if cs.VPMCEnabled != nil {
-		ensureCPUAdvanced(vm)
-		v := *cs.VPMCEnabled
-		vm.Spec.CPUAdvanced.PerformanceCountersEnabled = &v
-	}
-}
-
 // syncClassMemoryReservationLockToSpec syncs the MemoryReservationLockedToMax
 // field from the class ConfigSpec to vm.Spec. It is used by the narrow
 // VMResizeCPUMemory path because the lock is directly tied to memory allocation
@@ -228,16 +126,6 @@ func syncClassMemoryReservationLockToSpec(vm *vmopv1.VirtualMachine, cs vimtypes
 		v := *cs.MemoryReservationLockedToMax
 		vm.Spec.MemoryAdvanced.ReservationLockedToMax = &v
 	}
-}
-
-func syncClassMemoryFlagsToSpec(vm *vmopv1.VirtualMachine, cs vimtypes.VirtualMachineConfigSpec) {
-	if cs.MemoryHotAddEnabled != nil {
-		ensureMemoryAdvanced(vm)
-		v := *cs.MemoryHotAddEnabled
-		vm.Spec.MemoryAdvanced.HotAddEnabled = &v
-	}
-
-	syncClassMemoryReservationLockToSpec(vm, cs)
 }
 
 // ─── lazy-init helpers ──────────────────────────────────────────────────────
@@ -266,19 +154,6 @@ func ensureLimits(vm *vmopv1.VirtualMachine) {
 	ensureResources(vm)
 	if vm.Spec.Resources.Limits == nil {
 		vm.Spec.Resources.Limits = &vmopv1.VirtualMachineResourceQuantity{}
-	}
-}
-
-func ensureCPUAdvanced(vm *vmopv1.VirtualMachine) {
-	if vm.Spec.CPUAdvanced == nil {
-		vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{}
-	}
-}
-
-func ensureTopology(vm *vmopv1.VirtualMachine) {
-	ensureCPUAdvanced(vm)
-	if vm.Spec.CPUAdvanced.Topology == nil {
-		vm.Spec.CPUAdvanced.Topology = &vmopv1.VirtualMachineCPUTopologySpec{}
 	}
 }
 

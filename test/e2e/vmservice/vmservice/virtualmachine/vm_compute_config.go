@@ -383,6 +383,59 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 		})
 
+	It("applies changeBlockTracking while VM is powered off",
+		Label("core-functional", "experimental"), func() {
+
+			vmName := fmt.Sprintf("cc-cbt-poff-%s", capiutil.RandomString(4))
+			vm := buildComputeConfigVM(vmName, vmNamespace, vmClassName, linuxVMIName, storageClass,
+				nil, nil, nil)
+
+			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
+				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
+			DeferCleanup(func() {
+				if !input.SkipCleanup {
+					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
+				}
+			})
+
+			By("Waiting for VM to be created and condition=True")
+			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
+				vmNamespace, vmName)
+
+			By("Powering off VM")
+			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
+				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+
+			By("Patching changeBlockTracking while VM is powered off")
+			latest, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			p := ctrlclient.MergeFrom(latest.DeepCopy())
+			latest.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+				ChangeBlockTracking: ptr.To(true),
+			}
+			Expect(svClusterClient.Patch(ctx, latest, p)).To(Succeed(),
+				"failed to patch changeBlockTracking on %s/%s", vmNamespace, vmName)
+
+			By("Asserting changeBlockTracking is applied without powering the VM on")
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff),
+					"VM must remain powered off for this assertion to be meaningful")
+				g.Expect(vm.Status.ChangeBlockTracking).ToNot(BeNil())
+				g.Expect(*vm.Status.ChangeBlockTracking).To(BeTrue(),
+					"expected changeBlockTracking=true while powered off")
+			}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).
+				Should(Succeed(), "changeBlockTracking assertions failed for %s/%s", vmNamespace, vmName)
+
+			By("Restoring power state")
+			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
+				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+		})
+
 	It("applies iommuEnabled after power-off",
 		Label("extended-functional", "experimental"), func() {
 

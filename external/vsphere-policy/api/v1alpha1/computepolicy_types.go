@@ -78,6 +78,22 @@ type ComputePolicy struct {
 	Status ComputePolicyStatus `json:"status,omitempty"`
 }
 
+// GetPolicyEnforcementMode returns the policy's enforcement mode.
+func (p *ComputePolicy) GetPolicyEnforcementMode() PolicyEnforcementMode {
+	return p.Spec.EnforcementMode
+}
+
+// GetPolicyMatch returns the policy's match spec.
+func (p *ComputePolicy) GetPolicyMatch() *MatchSpec {
+	return p.Spec.Match
+}
+
+// GetPolicyTagNames returns the names of the TagPolicy objects associated
+// with this policy.
+func (p *ComputePolicy) GetPolicyTagNames() []string {
+	return p.Spec.Tags
+}
+
 func (p ComputePolicy) GetConditions() []metav1.Condition {
 	return p.Status.Conditions
 }

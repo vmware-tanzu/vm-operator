@@ -19,7 +19,7 @@ Both CRDs reuse the existing `ComputePolicy`/`ControlledRebalancingPolicy` spec 
 | `status.observedGeneration` | `int64` | optional | Standard. |
 | `status.conditions` | `[]metav1.Condition` | optional | Standard; includes `Ready`. |
 
-Not added to the `VirtualMachineSpec.Policies` doc comment's "Valid policy types" list, matching the design doc ("usually applied by the provider mandatorily"). Confirmed by inspecting `webhooks/` and `reconcileExplicitPolicies`: nothing in the webhook or controller technically prevents a `Mandatory`-typed policy from being referenced explicitly via `spec.policies` — the "Valid policy types" doc comment is documentation only, not enforced. Omitting `AutomaticVMEvictionPolicy` from that list is a documentation choice reflecting intended usage, not a schema restriction.
+Added to the `VirtualMachineSpec.Policies` doc comment's "Valid policy types" list. Nothing in the webhook or `reconcileExplicitPolicies` restricts a `Mandatory`-typed policy from being referenced explicitly via `spec.policies` — the "Valid policy types" doc comment is documentation only, not enforced — and `reconcileExplicitPolicies` already handles `AutomaticVMEvictionPolicy` refs the same as `ComputePolicy`/`BestEffortRestartPolicy`, so the doc now reflects that it is supported.
 
 Example (from WIKI page 2781824956):
 

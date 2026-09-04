@@ -2022,7 +2022,7 @@ spec:
     name: my-compute-policy
 ```
 
-Only `ComputePolicy` objects with `spec.enforcementMode: Optional` can be explicitly applied to VMs through the `spec.policies` field. Mandatory policies are automatically applied based on their match criteria and do not need to be specified.
+Only `ComputePolicy`, `AutomaticVMEvictionPolicy`, and `BestEffortRestartPolicy` objects with `spec.enforcementMode: Optional` can be explicitly applied to VMs through the `spec.policies` field. Mandatory policies are automatically applied based on their match criteria and do not need to be specified.
 
 ### Status
 
@@ -2053,6 +2053,22 @@ A `ComputePolicy` defines compute-related policies for VMs, such as placement ru
 - **Optional**: Must be explicitly referenced in the VM's `spec.policies` field
 
 The policy may include references to `TagPolicy` objects that define vSphere tags to be applied to activate the policy.
+
+#### AutomaticVMEvictionPolicy
+
+An `AutomaticVMEvictionPolicy` authorizes DRS to power off a matching VM when it cannot be evacuated from a host entering maintenance mode (for example, a VM using PCI passthrough or a multi-GPU device that has no live-migration path). It reuses `ComputePolicy`'s spec/status shape and can be:
+
+- **Mandatory**: Automatically applied to VMs based on match criteria
+- **Optional**: Must be explicitly referenced in the VM's `spec.policies` field
+
+Like `ComputePolicy`, it may include references to `TagPolicy` objects that define the vSphere tag(s) applied to activate the policy. VM Operator does not decide which VMs are powered off or perform the power-off itself — it only applies the vSphere tag that DRS acts on.
+
+#### BestEffortRestartPolicy
+
+A `BestEffortRestartPolicy` controls whether a VM powered off by DRS for host maintenance is, on a best-effort basis, restarted on any available host in the cluster afterward (rather than only the original host). It reuses `ComputePolicy`'s spec/status shape and can be:
+
+- **Mandatory**: Automatically applied to VMs based on match criteria
+- **Optional**: Must be explicitly referenced in the VM's `spec.policies` field
 
 #### TagPolicy
 

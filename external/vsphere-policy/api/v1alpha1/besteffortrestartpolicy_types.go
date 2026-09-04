@@ -87,18 +87,38 @@ type BestEffortRestartPolicy struct {
 	Status BestEffortRestartPolicyStatus `json:"status,omitempty"`
 }
 
-func (p BestEffortRestartPolicy) GetConditions() []metav1.Condition {
+// GetPolicyEnforcementMode returns the policy's enforcement mode.
+func (p *BestEffortRestartPolicy) GetPolicyEnforcementMode() PolicyEnforcementMode {
+	return p.Spec.EnforcementMode
+}
+
+// GetPolicyMatch returns the policy's match spec.
+func (p *BestEffortRestartPolicy) GetPolicyMatch() *MatchSpec {
+	return p.Spec.Match
+}
+
+// GetPolicyTagNames returns the names of the TagPolicy objects associated
+// with this policy.
+func (p *BestEffortRestartPolicy) GetPolicyTagNames() []string {
+	return p.Spec.Tags
+}
+
+// GetConditions returns the conditions associated with the policy.
+func (p *BestEffortRestartPolicy) GetConditions() []metav1.Condition {
 	return p.Status.Conditions
 }
 
+// SetConditions sets the conditions associated with the policy.
 func (p *BestEffortRestartPolicy) SetConditions(conditions []metav1.Condition) {
 	p.Status.Conditions = conditions
 }
 
-func (p BestEffortRestartPolicyStatus) GetConditions() []metav1.Condition {
+// GetConditions returns the conditions associated with the policy status.
+func (p *BestEffortRestartPolicyStatus) GetConditions() []metav1.Condition {
 	return p.Conditions
 }
 
+// SetConditions sets the conditions associated with the policy status.
 func (p *BestEffortRestartPolicyStatus) SetConditions(conditions []metav1.Condition) {
 	p.Conditions = conditions
 }

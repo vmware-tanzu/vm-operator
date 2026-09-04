@@ -16292,7 +16292,8 @@ spec:
                   has a field named spec.type. Only ComputePolicy objects with
                   type=Optional may be applied explicitly to a VM.
 
-                  Valid policy types are: ComputePolicy.
+                  Valid policy types are: ComputePolicy, AutomaticVMEvictionPolicy,
+                  BestEffortRestartPolicy.
                 items:
                   description: |-
                     LocalObjectRef describes a reference to another object in the same

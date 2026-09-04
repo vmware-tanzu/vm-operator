@@ -395,6 +395,8 @@ rules:
 - apiGroups:
   - vsphere.policy.vmware.com
   resources:
+  - automaticvmevictionpolicies
+  - besteffortrestartpolicies
   - computepolicies
   - tagpolicies
   verbs:
@@ -404,6 +406,8 @@ rules:
 - apiGroups:
   - vsphere.policy.vmware.com
   resources:
+  - automaticvmevictionpolicies/status
+  - besteffortrestartpolicies/status
   - computepolicies/status
   - tagpolicies/status
   verbs:

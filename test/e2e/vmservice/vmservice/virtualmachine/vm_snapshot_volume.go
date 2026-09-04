@@ -109,7 +109,7 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 	Context("VirtualMachineSnapshot volume mounts", func() {
 		BeforeEach(func() {
 			By("Deploying source VM")
-			vmservice.DeployVMWithCloudInitA6(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, sourceVMName, "", nil)
+			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, sourceVMName, "", nil)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName, "PoweredOn")
 

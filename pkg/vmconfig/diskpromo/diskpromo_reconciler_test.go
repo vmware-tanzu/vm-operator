@@ -457,7 +457,26 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
 					})
 
-					When("there is an error calling promote disks", func() {
+					When("spec.powerState is PoweredOff", func() {
+					BeforeEach(func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					})
+
+					It("should not promote disks", func() {
+						Expect(err).ToNot(HaveOccurred())
+
+						promoRef := getPromoTaskRef()
+						Expect(promoRef).To(BeNil())
+
+						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
+						Expect(c.Message).To(Equal("Pending VM power-off"))
+					})
+				})
+
+				When("there is an error calling promote disks", func() {
 						BeforeEach(func() {
 							reg.Handler = func(
 								ctx *simulator.Context,

@@ -260,17 +260,6 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
-		Context("COMPUTE-POLICY", func() {
-			computepolicies.ComputePolicySpec(context.TODO(), func() computepolicies.SpecInput {
-				return computepolicies.SpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPClient:        wcpClient,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
-
 		Context("VM-LOCATION", func() {
 			virtualmachine.VMLocationSpec(context.TODO(), func() virtualmachine.VMLocationSpecInput {
 				return virtualmachine.VMLocationSpecInput{

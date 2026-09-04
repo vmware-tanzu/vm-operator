@@ -249,10 +249,6 @@ const (
 	// reconcile priority for an object.
 	ReconcilePriorityAnnotationKey = "vmoperator.vmware.com.protected/reconcile-priority"
 
-	// CreatedByLabel is the label key that indicates an object was
-	// created on behalf of a VM Operator VM. The value is the name of a VM.
-	CreatedByLabel = "vmoperator.vmware.com/created-by"
-
 	// NoUnmanagedVolumesRegisterAnnotationKey is the annotation to not create any CNSRegisterVolumes
 	// by skipping the unmanaged volume register reconcile.
 	NoUnmanagedVolumesRegisterAnnotationKey = "vmoperator.vmware.com/no-unmanaged-volumes-register"

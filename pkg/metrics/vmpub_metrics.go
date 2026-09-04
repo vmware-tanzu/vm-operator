@@ -5,12 +5,14 @@
 package metrics
 
 import (
+	"context"
 	"sync"
 
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
+
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
 type PublishResult int
@@ -54,19 +56,21 @@ func NewVMPublishMetrics() *VMPublishMetrics {
 }
 
 // RegisterVMPublishRequest registers VM publish request metrics with the given value.
-func (m *VMPublishMetrics) RegisterVMPublishRequest(logger logr.Logger, reqName, ns string, val PublishResult) {
+func (m *VMPublishMetrics) RegisterVMPublishRequest(ctx context.Context, reqName, ns string, val PublishResult) {
 	labels := getVMPubRequestLabels(reqName, ns)
 	m.vmPubRequest.With(labels).Set(float64(val))
 
-	logger.V(5).WithValues("labels", labels, "result", val).Info("Set metrics for VM publish request")
+	pkglog.FromContextOrDefault(ctx).V(5).
+		WithValues("labels", labels, "result", val).Info("Set metrics for VM publish request")
 }
 
 // DeleteMetrics deletes all the related VM publish request metrics from the given name and namespace.
-func (m *VMPublishMetrics) DeleteMetrics(logger logr.Logger, reqName, ns string) {
+func (m *VMPublishMetrics) DeleteMetrics(ctx context.Context, reqName, ns string) {
 	labels := getVMPubRequestLabels(reqName, ns)
 	deleted := m.vmPubRequest.Delete(labels)
 
-	logger.V(5).WithValues("labels", labels, "deleted", deleted).Info("Delete VM publish request metrics")
+	pkglog.FromContextOrDefault(ctx).V(5).
+		WithValues("labels", labels, "deleted", deleted).Info("Delete VM publish request metrics")
 }
 
 func getVMPubRequestLabels(name, ns string) prometheus.Labels {

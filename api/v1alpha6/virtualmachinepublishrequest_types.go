@@ -312,9 +312,6 @@ type VirtualMachinePublishRequestStatus struct {
 	// CompletionTime represents time when the request was completed. It is not
 	// guaranteed to be set in happens-before order across separate operations.
 	// It is represented in RFC3339 form and is in UTC.
-	//
-	// The value of this field should be equal to the value of the
-	// LastTransitionTime for the status condition Type=Complete.
 	CompletionTime metav1.Time `json:"completionTime,omitempty"`
 
 	// +optional

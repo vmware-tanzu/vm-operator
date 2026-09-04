@@ -168,13 +168,15 @@ func PatchSnapshotSuccessStatus(
 	k8sClient ctrlclient.Client,
 	snap *vmopv1.VirtualMachineSnapshot,
 	snapNode *vimtypes.VirtualMachineSnapshotTree,
-	vmPowerState vmopv1.VirtualMachinePowerState) error {
+	vmPowerState vmopv1.VirtualMachinePowerState,
+	disks []vmopv1.VirtualMachineSnapshotDiskStatus) error {
 
 	snapPatch := ctrlclient.MergeFrom(snap.DeepCopy())
 	snap.Status.UniqueID = snapNode.Snapshot.Reference().Value
 	snap.Status.Quiesced = snap.Spec.Quiesce != nil
 	snap.Status.PowerState = vmPowerState
 	snap.Status.PowerState = vmopv1util.ConvertPowerState(logger, snapNode.State)
+	snap.Status.Disks = disks
 
 	pkgcond.MarkTrue(snap, vmopv1.VirtualMachineSnapshotCreatedCondition)
 

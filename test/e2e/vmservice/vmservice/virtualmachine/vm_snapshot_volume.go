@@ -25,8 +25,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
@@ -37,6 +36,7 @@ const (
 type VMSnapshotVolumeSpecInput struct {
 	Config           *e2eConfig.E2EConfig
 	ClusterProxy     wcpframework.WCPClusterProxyInterface
+	WCPClient        wcp.WorkloadManagementAPI
 	ArtifactFolder   string
 	WCPNamespaceName string
 }
@@ -47,6 +47,7 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 		vmSvcClusterProxy     *common.VMServiceClusterProxy
 		vmSvcE2EConfig        *e2eConfig.E2EConfig
 		svClusterClient       ctrlclient.Client
+		wcpClient             wcp.WorkloadManagementAPI
 		vmSvcClusterResources *e2eConfig.Resources
 		vmSvcNamespace        string
 		skipCleanup           bool
@@ -76,6 +77,7 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 		vmSvcClusterResources = vmSvcE2EConfig.InfraConfig.ManagementClusterConfig.Resources
 		vmSvcNamespace = input.WCPNamespaceName
 		svClusterClient = vmSvcClusterProxy.GetClient()
+		wcpClient = input.WCPClient
 		skipCleanup = true
 
 		skipChecks()
@@ -305,14 +307,15 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 			})
 
 			var otherNamespace string
+			var secondNamespaceCtx wcpframework.NamespaceContext
 			By("Creating a different namespace", func() {
 				otherNamespace = "other-ns-" + capiutil.RandomString(4)
-				nsObj := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: otherNamespace,
-					},
-				}
-				Expect(svClusterClient.Create(ctx, nsObj)).To(Succeed())
+				clID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+				vmsvcSpecs := wcp.NewVMServiceSpecDetails([]string{vmSvcClusterResources.VMClassName}, []string{clID})
+				var err error
+				secondNamespaceCtx, err = input.ClusterProxy.CreateWCPNamespace(ctx, vmSvcE2EConfig, vmsvcSpecs, vmSvcClusterResources.StorageClassName, otherNamespace, input.ArtifactFolder)
+				Expect(err).ToNot(HaveOccurred(), "Failed to create a second test WCP namespace")
+				wcp.WaitForNamespaceReady(wcpClient, otherNamespace)
 			})
 
 			By("Deploying data-mover VM in the other namespace with snapshot volume", func() {
@@ -379,12 +382,9 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 			
 			By("Cleaning up the other namespace", func() {
 				vmoperator.VerifyVMDeleted(ctx, svClusterClient, vmSvcE2EConfig, otherNamespace, dataMoverVMName)
-				nsObj := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: otherNamespace,
-					},
+				if secondNamespaceCtx.GetNamespace() != nil {
+					input.ClusterProxy.DeleteWCPNamespace(secondNamespaceCtx)
 				}
-				Expect(svClusterClient.Delete(ctx, nsObj)).To(Succeed())
 			})
 		})
 

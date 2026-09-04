@@ -849,6 +849,57 @@ func ReconcileSnapshotWaitForCRVCondition(
 	return nil
 }
 
+// getDisksFromSnapshot retrieves the hardware configuration of the snapshot and extracts the disks.
+func getDisksFromSnapshot(vmCtx pkgctx.VirtualMachineContext, vcVM *object.VirtualMachine, snapRef vimtypes.ManagedObjectReference) ([]vmopv1.VirtualMachineSnapshotDiskStatus, error) {
+	logger := pkglog.FromContextOrDefault(vmCtx)
+
+	var moSnap mo.VirtualMachineSnapshot
+	ctx := pkgctx.WithVCOpID(vmCtx, vmCtx.VM, "getDisksFromSnapshot")
+	if err := vcVM.Properties(ctx, snapRef, []string{"config.hardware.device"}, &moSnap); err != nil {
+		return nil, fmt.Errorf("failed to fetch snapshot hardware configuration: %w", err)
+	}
+
+	var disks []vmopv1.VirtualMachineSnapshotDiskStatus
+	logger.Info("getDisksFromSnapshot called", "snapRef", snapRef.Value, "devices", len(moSnap.Config.Hardware.Device))
+	for _, dev := range moSnap.Config.Hardware.Device {
+		if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
+			var uuid, changeID string
+			switch backing := disk.Backing.(type) {
+			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+				uuid = backing.Uuid
+				changeID = backing.ChangeId
+			case *vimtypes.VirtualDiskSeSparseBackingInfo:
+				uuid = backing.Uuid
+				changeID = backing.ChangeId
+			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+				uuid = backing.Uuid
+				changeID = backing.ChangeId
+			case *vimtypes.VirtualDiskRawDiskVer2BackingInfo:
+				uuid = backing.Uuid
+				changeID = backing.ChangeId
+			case *vimtypes.VirtualDiskPartitionedRawDiskVer2BackingInfo:
+				uuid = backing.Uuid
+				changeID = backing.ChangeId
+			case *vimtypes.VirtualDiskRawDiskMappingVer1BackingInfo:
+				uuid = backing.Uuid
+				changeID = backing.ChangeId
+			default:
+				logger.V(4).Info("Skipping disk backing type", "type", fmt.Sprintf("%T", backing))
+			}
+
+			if uuid != "" {
+				disks = append(disks, vmopv1.VirtualMachineSnapshotDiskStatus{
+					ID:                     uuid,
+					ChangedBlockTrackingID: changeID,
+				})
+			}
+		}
+	}
+
+	logger.Info("getDisksFromSnapshot returning", "disks", disks)
+	return disks, nil
+}
+
 // ReconcileCurrentSnapshot reconciles the current snapshot owned by the VM.
 func ReconcileCurrentSnapshot(
 	vmCtx pkgctx.VirtualMachineContext,
@@ -1031,6 +1082,17 @@ func ReconcileCurrentSnapshot(
 			snapshotToProcess.Name, err)
 	}
 
+	var disks []vmopv1.VirtualMachineSnapshotDiskStatus
+	logger.Info("Checking CSIBackupAPI feature", "CSIBackupAPI", pkgcfg.FromContext(vmCtx).Features.CSIBackupAPI)
+	if pkgcfg.FromContext(vmCtx).Features.CSIBackupAPI {
+		var err error
+		disks, err = getDisksFromSnapshot(vmCtx, vcVM, snapNode.Snapshot)
+		if err != nil {
+			return err
+		}
+	}
+	logger.Info("Disks after getDisksFromSnapshot", "disks", disks)
+
 	// Update the snapshot status with the successful result
 	if err = kubeutil.PatchSnapshotSuccessStatus(
 		vmCtx,
@@ -1038,7 +1100,8 @@ func ReconcileCurrentSnapshot(
 		k8sClient,
 		snapshotToProcess,
 		snapNode,
-		vmCtx.VM.Spec.PowerState); err != nil {
+		vmCtx.VM.Spec.PowerState,
+		disks); err != nil {
 
 		return fmt.Errorf("failed to update snapshot %q status: %w",
 			snapshotToProcess.Name, err)

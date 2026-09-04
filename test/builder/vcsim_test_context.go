@@ -1499,6 +1499,7 @@ func (c *TestContextForVCSim) setupAZs() {
 			},
 		}
 		for _, c := range clusters {
+			fmt.Printf("DEBUG: setupAZs adding moID: %s to az: %s\n", c.Reference().Value, az.Name)
 			az.Spec.ClusterComputeResourceMoIDs = append(az.Spec.ClusterComputeResourceMoIDs, c.Reference().Value)
 		}
 

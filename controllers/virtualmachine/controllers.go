@@ -26,7 +26,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		return fmt.Errorf("failed to initialize virtualmachine storagepolicyusage controller: %w", err)
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks || pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 		if err := volumebatch.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize Volume Batch controller: %w", err)
 		}

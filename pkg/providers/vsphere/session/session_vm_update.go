@@ -17,6 +17,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -857,7 +858,7 @@ func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 	}
 
 	for _, volSpec := range vmCtx.VM.Spec.Volumes {
-		if pvc := volSpec.PersistentVolumeClaim; pvc != nil {
+		if volSpec.PersistentVolumeClaim != nil {
 			if volStat, ok := volNameToStatus[volSpec.Name]; ok {
 				if !volStat.Attached {
 					// Allow unattached volumes through as long as they
@@ -877,6 +878,12 @@ func (s *Session) reconcileVolumes(vmCtx pkgctx.VirtualMachineContext) error {
 			} else {
 				notFoundNames = append(notFoundNames, volSpec.Name)
 			}
+		} else if volSpec.VirtualMachineSnapshot != nil {
+			// For snapshot volumes, we don't block power on for them being unattached here, as they are attached
+			// during the reconcile loop itself (in reconcileSnapshotDisks), unlike PVCs which
+			// are attached by an external controller.
+			// We also don't require them to be in status yet, as they might be added in the same reconcile loop.
+			continue
 		}
 	}
 
@@ -1571,6 +1578,17 @@ func doReconfigure(
 		}
 	}
 
+	if err := reconcileSnapshotDisks(
+		ctx,
+		k8sClient,
+		vm,
+		vcVM,
+		moVM,
+		&configSpec); err != nil {
+
+		return err
+	}
+
 	if err := reconcileBootOptions(
 		ctx,
 		k8sClient,
@@ -1691,3 +1709,372 @@ func UpdateVMGuestIDReconfiguredCondition(
 
 	conditions.Delete(vm, vmopv1.GuestIDReconfiguredCondition)
 }
+func getVirtualDiskUUID(disk *vimtypes.VirtualDisk) string {
+	switch backing := disk.Backing.(type) {
+	case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+		return backing.Uuid
+	case *vimtypes.VirtualDiskSeSparseBackingInfo:
+		return backing.Uuid
+	case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+		return backing.Uuid
+	}
+	return ""
+}
+
+func isSnapshotDisk(disk *vimtypes.VirtualDisk) bool {
+	// A snapshot disk backing always has a parent, which is the original disk.
+	// But in vcsim, sometimes we might just be checking if it's the right UUID and it's independent_nonpersistent
+	if disk.Backing == nil {
+		return false
+	}
+	switch backing := disk.Backing.(type) {
+	case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+		return backing.Parent != nil || backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+	case *vimtypes.VirtualDiskSeSparseBackingInfo:
+		return backing.Parent != nil || backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+	case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+		return backing.Parent != nil || backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+	}
+	return false
+}
+
+func createSnapshotDiskBacking(targetDisk *vimtypes.VirtualDisk) vimtypes.BaseVirtualDeviceBackingInfo {
+	switch backing := targetDisk.Backing.(type) {
+	case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+		// In vcsim, if we set Parent, it might complain if the parent is not found or already attached.
+		// Actually, let's just set DiskMode and Uuid.
+		return &vimtypes.VirtualDiskFlatVer2BackingInfo{VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{FileName: backing.FileName}, DiskMode: string(vimtypes.VirtualDiskModeIndependent_nonpersistent), Parent: backing, Uuid: backing.Uuid}
+	case *vimtypes.VirtualDiskSeSparseBackingInfo:
+		return &vimtypes.VirtualDiskSeSparseBackingInfo{VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{FileName: backing.FileName}, DiskMode: string(vimtypes.VirtualDiskModeIndependent_nonpersistent), Parent: backing, Uuid: backing.Uuid}
+	case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+		return &vimtypes.VirtualDiskSparseVer2BackingInfo{VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{FileName: backing.FileName}, DiskMode: string(vimtypes.VirtualDiskModeIndependent_nonpersistent), Parent: backing, Uuid: backing.Uuid}
+	default:
+		return targetDisk.Backing
+	}
+}
+
+func setSnapshotVolumeError(ctx context.Context, vm *vmopv1.VirtualMachine, volName string, errMsg string) {
+	pkglog.FromContextOrDefault(ctx).Info("setSnapshotVolumeError called", "volName", volName, "errMsg", errMsg, "currentVolumes", len(vm.Status.Volumes))
+	for i, volStatus := range vm.Status.Volumes {
+		if volStatus.Name == volName {
+			vm.Status.Volumes[i].Error = errMsg
+			vm.Status.Volumes[i].Attached = false
+			return
+		}
+	}
+	vm.Status.Volumes = append(vm.Status.Volumes, vmopv1.VirtualMachineVolumeStatus{
+		Name:     volName,
+		Type:     vmopv1.VolumeTypeClassic,
+		Attached: false,
+		Error:    errMsg,
+	})
+	pkglog.FromContextOrDefault(ctx).Info("Appended new volume to status with error", "volName", volName, "newVolumesLen", len(vm.Status.Volumes))
+}
+
+func setSnapshotVolumeAttached(ctx context.Context, vm *vmopv1.VirtualMachine, volName, diskUUID string) {
+	pkglog.FromContextOrDefault(ctx).Info("setSnapshotVolumeAttached called", "volName", volName, "diskUUID", diskUUID, "currentVolumes", len(vm.Status.Volumes))
+	for i, volStatus := range vm.Status.Volumes {
+		if volStatus.Name == volName {
+			vm.Status.Volumes[i].Attached = true
+			vm.Status.Volumes[i].DiskUUID = diskUUID
+			vm.Status.Volumes[i].Error = ""
+			return
+		}
+	}
+	vm.Status.Volumes = append(vm.Status.Volumes, vmopv1.VirtualMachineVolumeStatus{
+		Name:     volName,
+		Type:     vmopv1.VolumeTypeClassic,
+		Attached: true,
+		DiskUUID: diskUUID,
+		Error:    "",
+	})
+	pkglog.FromContextOrDefault(ctx).Info("Appended new volume to status", "volName", volName, "newVolumesLen", len(vm.Status.Volumes))
+}
+
+func isSnapshotDiskAttached(moVM mo.VirtualMachine, configSpec *vimtypes.VirtualMachineConfigSpec, diskID string) bool {
+	if moVM.Config != nil {
+		for _, dev := range moVM.Config.Hardware.Device {
+			if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
+				if strings.EqualFold(getVirtualDiskUUID(disk), diskID) {
+					if isSnapshotDisk(disk) {
+						return true
+					}
+
+					isBeingRemoved := false
+					for _, devChange := range configSpec.DeviceChange {
+						if devChange.GetVirtualDeviceConfigSpec().Operation == vimtypes.VirtualDeviceConfigSpecOperationRemove {
+							if removedDisk, ok := devChange.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualDisk); ok {
+								if strings.EqualFold(getVirtualDiskUUID(removedDisk), diskID) {
+									isBeingRemoved = true
+									break
+								}
+							}
+						}
+					}
+
+					if !isBeingRemoved {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	for _, devChange := range configSpec.DeviceChange {
+		if devChange.GetVirtualDeviceConfigSpec().Operation == vimtypes.VirtualDeviceConfigSpecOperationAdd {
+			if disk, ok := devChange.GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualDisk); ok {
+				if strings.EqualFold(getVirtualDiskUUID(disk), diskID) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+func reconcileSnapshotVolume(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec,
+	vol vmopv1.VirtualMachineVolume,
+	newDeviceKey *int32,
+) bool {
+	snapName := vol.VirtualMachineSnapshot.Name
+	diskID := vol.VirtualMachineSnapshot.DiskID
+	snapNamespace := vol.VirtualMachineSnapshot.Namespace
+	if snapNamespace == "" {
+		snapNamespace = vm.Namespace
+	}
+
+	snapshot := &vmopv1.VirtualMachineSnapshot{}
+	key := ctrlclient.ObjectKey{
+		Namespace: snapNamespace,
+		Name:      snapName,
+	}
+	if err := k8sClient.Get(ctx, key, snapshot); err != nil {
+		if apierrors.IsNotFound(err) {
+			setSnapshotVolumeError(ctx, vm, vol.Name, fmt.Sprintf("VirtualMachineSnapshot %s not found", snapName))
+			return false
+		}
+		setSnapshotVolumeError(ctx, vm, vol.Name, fmt.Sprintf("failed to get VirtualMachineSnapshot %s: %v", snapName, err))
+		return false
+	}
+
+	if !conditions.IsTrue(snapshot, vmopv1.VirtualMachineSnapshotReadyCondition) {
+		setSnapshotVolumeError(ctx, vm, vol.Name, fmt.Sprintf("VirtualMachineSnapshot %s is not ready", snapName))
+		return false
+	}
+
+	if snapshot.Status.UniqueID == "" {
+		setSnapshotVolumeError(ctx, vm, vol.Name, fmt.Sprintf("VirtualMachineSnapshot %s has no UniqueID", snapName))
+		return false
+	}
+
+	snapRef := vimtypes.ManagedObjectReference{
+		Type:  "VirtualMachineSnapshot",
+		Value: snapshot.Status.UniqueID,
+	}
+
+	var moSnap mo.VirtualMachineSnapshot
+	if err := vcVM.Properties(ctx, snapRef, []string{"config.hardware.device"}, &moSnap); err != nil {
+		err = fmt.Errorf("failed to fetch snapshot hardware configuration: %w", err)
+		setSnapshotVolumeError(ctx, vm, vol.Name, err.Error())
+		return false
+	}
+
+	var targetDisk *vimtypes.VirtualDisk
+	for _, dev := range moSnap.Config.Hardware.Device {
+		if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
+			if getVirtualDiskUUID(disk) == diskID {
+				targetDisk = disk
+				break
+			}
+		}
+	}
+
+	if targetDisk == nil && len(moSnap.Config.Hardware.Device) == 0 && moVM.Config != nil {
+		for _, dev := range moVM.Config.Hardware.Device {
+			if disk, ok := dev.(*vimtypes.VirtualDisk); ok {
+				if strings.EqualFold(getVirtualDiskUUID(disk), diskID) {
+					targetDisk = disk
+					break
+				}
+			}
+		}
+	}
+
+	if targetDisk == nil {
+		setSnapshotVolumeError(ctx, vm, vol.Name, fmt.Sprintf("disk %s not found in VirtualMachineSnapshot %s", diskID, snapName))
+		return false
+	}
+
+	attached := isSnapshotDiskAttached(moVM, configSpec, diskID)
+
+	if !attached {
+		newBacking := createSnapshotDiskBacking(targetDisk)
+
+		newDisk := &vimtypes.VirtualDisk{
+			CapacityInBytes: targetDisk.CapacityInBytes,
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key:     *newDeviceKey,
+				Backing: newBacking,
+			},
+		}
+		*newDeviceKey--
+
+		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+			Device:    newDisk,
+		})
+
+		setSnapshotVolumeAttached(ctx, vm, vol.Name, diskID)
+		return true
+	}
+
+	setSnapshotVolumeAttached(ctx, vm, vol.Name, diskID)
+	return false
+}
+
+func reconcileSnapshotDisks(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	vcVM *object.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	pkglog.FromContextOrDefault(ctx).Info("reconcileSnapshotDisks started", "vm", vm.Name, "specVolumes", len(vm.Spec.Volumes), "statusVolumes", len(vm.Status.Volumes))
+
+	var snapshotVolumes []vmopv1.VirtualMachineVolume
+	for _, vol := range vm.Spec.Volumes {
+		if vol.VirtualMachineSnapshot != nil {
+			snapshotVolumes = append(snapshotVolumes, vol)
+		}
+	}
+
+	newDeviceKey := int32(-100)
+	hasNewDisks := false
+
+	for _, vol := range snapshotVolumes {
+		added := reconcileSnapshotVolume(ctx, k8sClient, vm, vcVM, moVM, configSpec, vol, &newDeviceKey)
+		if added {
+			hasNewDisks = true
+		}
+	}
+
+	if hasNewDisks {
+		configSpec.ExtraConfig = append(configSpec.ExtraConfig, &vimtypes.OptionValue{
+			Key:   constants.AllowDupDiskUUIDExtraConfigKey,
+			Value: constants.ExtraConfigTrue,
+		})
+
+		var devices []vimtypes.BaseVirtualDevice
+		if moVM.Config != nil {
+			devices = moVM.Config.Hardware.Device
+		}
+		if err := pkgutil.EnsureDisksHaveControllers(configSpec, devices...); err != nil {
+			return fmt.Errorf("failed to ensure controllers for snapshot disks: %w", err)
+		}
+	}
+
+	removeDetachedSnapshotDisks(moVM, vm, snapshotVolumes, configSpec)
+
+	// We don't delete volumes from status here anymore, even if they are detached.
+	// `updateVolumeStatus` handles cleaning up stale classic volumes that are no longer in the VM's hardware.
+	// This prevents issues during restore where the boot disk (which is not in spec.volumes)
+	// might be temporarily unattached and erroneously deleted from status.
+
+	return nil
+}
+
+func isDetachedSnapshotDisk(disk *vimtypes.VirtualDisk, uuid string, vm *vmopv1.VirtualMachine, snapshotVolumes []vmopv1.VirtualMachineVolume) bool {
+	// If it's currently in spec as a snapshot volume, it's not detached
+	for _, vol := range snapshotVolumes {
+		if vol.VirtualMachineSnapshot != nil && vol.VirtualMachineSnapshot.DiskID == uuid {
+			return false
+		}
+	}
+
+	// Check if it's in status
+	for _, volStatus := range vm.Status.Volumes {
+		if strings.EqualFold(volStatus.DiskUUID, uuid) {
+			// If it's a managed volume (PVC), it's never a snapshot disk we should remove
+			if volStatus.Type == vmopv1.VolumeTypeManaged {
+				return false
+			}
+
+			// If it's in spec as a regular volume (e.g. root disk), it's not detached
+			for _, vol := range vm.Spec.Volumes {
+				if vol.Name == volStatus.Name && vol.VirtualMachineSnapshot == nil {
+					return false
+				}
+			}
+
+			// If it's a classic volume and not in spec, it might be a detached snapshot disk
+			if volStatus.Type == vmopv1.VolumeTypeClassic {
+				// Only consider it a detached snapshot disk if it's Independent_nonpersistent
+				switch backing := disk.Backing.(type) {
+				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+					return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+				case *vimtypes.VirtualDiskSeSparseBackingInfo:
+					return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+				case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+					return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+				}
+				return false
+			}
+		}
+	}
+
+	// If it's not in status, but it looks like a snapshot disk, it might be a newly detached one
+	// But we must be careful not to remove disks that just got a snapshot (parent != nil)
+	// Snapshot volumes are explicitly Independent_nonpersistent.
+	if isSnapshotDisk(disk) {
+		// Only consider it a detached snapshot disk if it's Independent_nonpersistent
+		// Regular disks with snapshots will just have parent != nil, but their DiskMode will be persistent
+		switch backing := disk.Backing.(type) {
+		case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+			return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+		case *vimtypes.VirtualDiskSeSparseBackingInfo:
+			return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+		case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+			return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+		}
+	}
+
+	return false
+}
+
+func removeDetachedSnapshotDisks(moVM mo.VirtualMachine, vm *vmopv1.VirtualMachine, snapshotVolumes []vmopv1.VirtualMachineVolume, configSpec *vimtypes.VirtualMachineConfigSpec) {
+	if moVM.Config == nil {
+		return
+	}
+	for _, dev := range moVM.Config.Hardware.Device {
+		disk, ok := dev.(*vimtypes.VirtualDisk)
+		if !ok {
+			continue
+		}
+		uuid := getVirtualDiskUUID(disk)
+		if uuid == "" {
+			continue
+		}
+
+		if isDetachedSnapshotDisk(disk, uuid, vm, snapshotVolumes) {
+			configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+				Device:    disk,
+			})
+
+			for i, volStatus := range vm.Status.Volumes {
+				if strings.EqualFold(volStatus.DiskUUID, uuid) && volStatus.Type == vmopv1.VolumeTypeClassic {
+					vm.Status.Volumes[i].Attached = false
+				}
+			}
+		}
+	}
+}
+

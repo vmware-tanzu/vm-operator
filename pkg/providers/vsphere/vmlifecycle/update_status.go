@@ -1635,61 +1635,117 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				}
 			}
 
-		} else if !di.FCD {
+			// For snapshot volumes, ensure attached is true and error is cleared
+			// Only do this if it's actually in config (which it is, since we are in existingDisksInStatus loop)
+			for _, vol := range vm.Spec.Volumes {
+				if vol.Name == vm.Status.Volumes[diskIndex].Name && vol.VirtualMachineSnapshot != nil {
+					vm.Status.Volumes[diskIndex].Attached = true
+					vm.Status.Volumes[diskIndex].Error = ""
+					// Ensure DiskUUID is set
+					vm.Status.Volumes[diskIndex].DiskUUID = di.UUID
+					break
+				}
+			}
+
+		} else {
 
 			var volName string
+			isSnapshot := false
 			if volSpec, ok := info.Volumes[di.Target.String()]; ok {
 				volName = volSpec.Name
+				if volSpec.VirtualMachineSnapshot != nil {
+					isSnapshot = true
+				}
 			} else {
-				volName = pkgutil.GeneratePVCName("disk", di.UUID)
-			}
-
-			// The disk is a classic, non-FCD that must be added to the list
-			// of volume statuses.
-			ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
-				vmCtx,
-				nil,         /* no client since props aren't re-fetched */
-				moVM,        /* use props from this object */
-				false,       /* do not refetch props */
-				snapEnabled, /* exclude disks related to snapshots */
-				di.UUID)
-
-			volStatus := vmopv1.VirtualMachineVolumeStatus{
-				Name:      volName,
-				Type:      vmopv1.VolumeTypeClassic,
-				Attached:  true,
-				DiskUUID:  di.UUID,
-				Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
-				Requested: kubeutil.BytesToResource(di.CapacityInBytes),
-				Used:      kubeutil.BytesToResource(ddi.UniqueSize),
-			}
-
-			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs ||
-				pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
-
-				volStatus.UnitNumber = di.UnitNumber
-				if c, ok := info.Controllers[di.ControllerKey]; ok {
-					volStatus.ControllerBusNumber = &c.Bus
-					volStatus.ControllerType = c.Type
-				}
-				if diskMode, err := pkgutil.GetVolumeDiskModeFromDiskMode(di.DiskMode); err == nil {
-					volStatus.DiskMode = diskMode
-				}
-				if sharingMode, err := pkgutil.GetVolumeSharingModeFromDiskSharing(di.Sharing); err == nil {
-					volStatus.SharingMode = sharingMode
+				// If it's not in info.Volumes, it might be a snapshot volume that was just attached
+				// Let's check the spec directly
+				for _, vol := range vm.Spec.Volumes {
+					if vol.VirtualMachineSnapshot != nil && vol.VirtualMachineSnapshot.DiskID == di.UUID {
+						volName = vol.Name
+						isSnapshot = true
+						break
+					}
 				}
 			}
 
-			if ddi.CryptoKey.ProviderID != "" || ddi.CryptoKey.KeyID != "" {
-				volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
-					ProviderID: ddi.CryptoKey.ProviderID,
-					KeyID:      ddi.CryptoKey.KeyID,
+			if !di.FCD || isSnapshot {
+				if !isSnapshot && volName == "" {
+					volName = pkgutil.GeneratePVCName("disk", di.UUID)
+				}
+
+				// The disk is a classic, non-FCD that must be added to the list
+				// of volume statuses.
+				ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
+					vmCtx,
+					nil,         /* no client since props aren't re-fetched */
+					moVM,        /* use props from this object */
+					false,       /* do not refetch props */
+					snapEnabled, /* exclude disks related to snapshots */
+					di.UUID)
+
+				volStatus := vmopv1.VirtualMachineVolumeStatus{
+					Name:      volName,
+					Type:      vmopv1.VolumeTypeClassic,
+					Attached:  true,
+					DiskUUID:  di.UUID,
+					Limit:     kubeutil.BytesToResource(di.CapacityInBytes),
+					Requested: kubeutil.BytesToResource(di.CapacityInBytes),
+					Used:      kubeutil.BytesToResource(ddi.UniqueSize),
+				}
+
+				if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs ||
+					pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+
+					volStatus.UnitNumber = di.UnitNumber
+					if c, ok := info.Controllers[di.ControllerKey]; ok {
+						volStatus.ControllerBusNumber = &c.Bus
+						volStatus.ControllerType = c.Type
+					}
+					if diskMode, err := pkgutil.GetVolumeDiskModeFromDiskMode(di.DiskMode); err == nil {
+						volStatus.DiskMode = diskMode
+					}
+					if sharingMode, err := pkgutil.GetVolumeSharingModeFromDiskSharing(di.Sharing); err == nil {
+						volStatus.SharingMode = sharingMode
+					}
+				}
+
+				if ddi.CryptoKey.ProviderID != "" || ddi.CryptoKey.KeyID != "" {
+					volStatus.Crypto = &vmopv1.VirtualMachineVolumeCryptoStatus{
+						ProviderID: ddi.CryptoKey.ProviderID,
+						KeyID:      ddi.CryptoKey.KeyID,
+					}
+				}
+
+				// Only append if it's not a snapshot volume, as those are handled in session_vm_update.go
+				// But if it IS a snapshot volume, we still want to update the properties if they are already in the status
+				// AND we want to append it if it's NOT in the status, because it might have just been attached
+				if !isSnapshot {
+					vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
+				} else {
+					found := false
+					for i, existingVol := range vm.Status.Volumes {
+						if existingVol.Name == volName {
+							vm.Status.Volumes[i].Limit = volStatus.Limit
+							vm.Status.Volumes[i].Requested = volStatus.Requested
+							vm.Status.Volumes[i].Used = volStatus.Used
+							vm.Status.Volumes[i].UnitNumber = volStatus.UnitNumber
+							vm.Status.Volumes[i].ControllerBusNumber = volStatus.ControllerBusNumber
+							vm.Status.Volumes[i].ControllerType = volStatus.ControllerType
+							vm.Status.Volumes[i].DiskMode = volStatus.DiskMode
+							vm.Status.Volumes[i].SharingMode = volStatus.SharingMode
+							vm.Status.Volumes[i].Crypto = volStatus.Crypto
+							vm.Status.Volumes[i].Attached = true
+							vm.Status.Volumes[i].DiskUUID = di.UUID
+							vm.Status.Volumes[i].Error = ""
+							found = true
+							break
+						}
+					}
+					if !found {
+						vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
+					}
 				}
 			}
-			// ProvisioningMode is set later in a single pass for all volumes
-			// (both classic and managed); DiskMode and SharingMode may also
-			// be overridden there if vSphere reports an explicit value.
-			vm.Status.Volumes = append(vm.Status.Volumes, volStatus)
 		}
 	}
 
@@ -1699,6 +1755,17 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
 			switch e.Type {
 			case vmopv1.VolumeTypeClassic:
+				// Don't delete snapshot volumes here, they are managed in session_vm_update.go
+				isSnapshot := false
+				for _, vol := range vm.Spec.Volumes {
+					if vol.Name == e.Name && vol.VirtualMachineSnapshot != nil {
+						isSnapshot = true
+						break
+					}
+				}
+				if isSnapshot {
+					return false
+				}
 				_, keep := existingDisksInConfig[e.DiskUUID]
 				return !keep
 			default:

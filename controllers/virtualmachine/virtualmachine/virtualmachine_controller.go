@@ -246,7 +246,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	// Watch CnsNodeVMBatchAttachment in order to account for the volume
 	// registration race outlined/fixed in
 	// https://github.com/vmware-tanzu/vm-operator/pull/1572.
-	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+	if pkgcfg.FromContext(ctx).Features.VMSharedDisks || pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 		builder = builder.Watches(
 			&cnsv1alpha1.CnsNodeVMBatchAttachment{},
 			handler.EnqueueRequestsFromMapFunc(
@@ -445,6 +445,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			ctx,
 			vm.Namespace,
 			vm.Spec.StorageClass)
+		
+		// Ensure that if we have a non-nil reterr, we still try to patch the status
+		// This is important for snapshot errors to be persisted
 		if err := patchHelper.Patch(ctx, vm); err != nil {
 			if reterr == nil {
 				reterr = err
@@ -618,7 +621,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 		if pkgerr.IsNoRequeueError(reterr) {
 			l = l.WithValues("noRequeueReason", reterr.Error())
 		}
-		l.Info("Finished Reconciling VirtualMachine")
+		l.Info("Finished Reconciling VirtualMachine", "err", fmt.Sprintf("%+v", reterr))
 	}()
 
 	defer func() {

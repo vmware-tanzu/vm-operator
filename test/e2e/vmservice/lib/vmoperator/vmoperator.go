@@ -410,22 +410,6 @@ func WaitForBootDiskPVC(
 	ns, vmName string,
 	opts *IntervalOptions,
 ) (string, *vmopv1.VirtualMachine) {
-	By("Waiting on virtual machine conditions to become true")
-
-	conditions := []metav1.Condition{
-		{
-			Type:   consts.VMUnmanagedVolumesBackfilledCondition,
-			Status: metav1.ConditionTrue,
-		},
-		{
-			Type:   consts.VMUnmanagedVolumesRegisteredCondition,
-			Status: metav1.ConditionTrue,
-		},
-	}
-	for _, condition := range conditions {
-		WaitOnVirtualMachineCondition(ctx, config, client, ns, vmName, condition)
-	}
-
 	By("Waiting for the boot disk to be promoted to a PVC")
 	var (
 		bootDiskVolName string
@@ -445,6 +429,22 @@ func WaitForBootDiskPVC(
 		bootDiskVolName = bootDiskVol.Name
 	}, config.GetIntervals(opts.spec(), "wait-virtual-machine-condition-update")...).
 		Should(Succeed(), "Timed out waiting for boot disk to be found in spec.volumes")
+
+	By("Waiting on virtual machine conditions to become true")
+
+	conditions := []metav1.Condition{
+		{
+			Type:   consts.VMUnmanagedVolumesBackfilledCondition,
+			Status: metav1.ConditionTrue,
+		},
+		{
+			Type:   consts.VMUnmanagedVolumesRegisteredCondition,
+			Status: metav1.ConditionTrue,
+		},
+	}
+	for _, condition := range conditions {
+		WaitOnVirtualMachineCondition(ctx, config, client, ns, vmName, condition)
+	}
 
 	return bootDiskVolName, vm
 }

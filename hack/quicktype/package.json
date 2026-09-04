@@ -1,5 +1,5 @@
 {
   "dependencies": {
-    "quicktype": "^23.0.80"
+    "quicktype": "^26.0.0"
   }
 }

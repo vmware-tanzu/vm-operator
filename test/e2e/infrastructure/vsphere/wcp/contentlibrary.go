@@ -20,7 +20,7 @@ type BackingInfo struct {
 
 // StorageBackingInfo represents storage backing used for storing VMImages of the Content Library.
 type StorageBackingInfo struct {
-	StorageBackings []BackingInfo
+	StorageBackings []BackingInfo `json:"storage_backings"`
 }
 
 // SecurityPolicyInfo represents datastore backing used for storing VMImages of the Content Library.

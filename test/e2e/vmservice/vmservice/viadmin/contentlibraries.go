@@ -9,6 +9,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -40,76 +42,50 @@ func VIAdminCLSpec(ctx context.Context, inputGetter func() VIAdminCLSpecInput) {
 		config       *e2eConfig.E2EConfig
 		nsContext    wcpframework.NamespaceContext
 		cls          []string
-		// localCLID holds the ID of the local content library created by BeforeEach
-		// so it can be cleaned up in AfterEach. It is only set when we create one.
-		localCLID string
 	)
 
 	BeforeEach(func() {
 		var err error
+
+		suffix := capiutil.RandomString(6)
 
 		input = inputGetter()
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		wcpClient = input.WCPClient
 		config = input.Config
-		localCLID = ""
-		vmClassNames, contentLibraryNames := []string{}, []string{}
-		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, contentLibraryNames)
 
-		// VIAdminCLSpec will update the WCP namespace by overwriting its content library association.
-		// Therefore, we are not using the default namespace and creating a new one for each test spec.
+		vmsvcSpecs := wcp.NewVMServiceSpecDetails([]string{}, []string{})
 		nsContext, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs,
 			config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
-			fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)),
+			fmt.Sprintf("%s-%s", specName, suffix),
 			input.ArtifactFolder)
 		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")
+		DeferCleanup(func() {
+			clusterProxy.DeleteWCPNamespace(nsContext)
+		})
 
-		cls, err = wcpClient.ListContentLibraries()
-		Expect(err).NotTo(HaveOccurred(), "failed to list content libraries")
+		vmServiceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
 
-		// Ensure there are at least two content libraries so the multi-CL
-		// association tests have something to work with. On VDS testbeds that
-		// do not include TKG, only the vmservice subscribed library exists.
-		// We create a throwaway local library to satisfy the requirement and
-		// clean it up in AfterEach.
-		if len(cls) < 2 {
-			datastores, err := wcpClient.ListDatastores()
-			Expect(err).NotTo(HaveOccurred(), "failed to list datastores for local CL")
-			var datastoreID string
-			for _, dsName := range []string{"vsanDatastore", "sharedVmfs-0", "nfs0-1"} {
-				for _, ds := range datastores {
-					if ds.Name == dsName {
-						datastoreID = ds.Datastore
-						break
-					}
-				}
-				if datastoreID != "" {
-					break
-				}
-			}
-			Expect(datastoreID).NotTo(BeEmpty(), "no suitable datastore found for local content library")
+		clInfo, err := wcpClient.GetContentLibrary(vmServiceCLID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(clInfo.StorageBackings).ToNot(BeEmpty())
 
-			localCLName := fmt.Sprintf("e2e-local-cl-%s", capiutil.RandomString(6))
-			localCLID, err = wcpClient.CreateLocalContentLibrary(localCLName, wcp.StorageBackingInfo{
-				StorageBackings: []wcp.BackingInfo{{DatastoreID: datastoreID, Type: "DATASTORE"}},
-			})
-			Expect(err).NotTo(HaveOccurred(), "failed to create local content library %q", localCLName)
-			cls = append(cls, localCLID)
-		}
-
-		Expect(len(cls)).Should(BeNumerically(">=", 2),
-			"expected at least 2 content libraries but found %d", len(cls))
-	})
-
-	AfterEach(func() {
-		clusterProxy.DeleteWCPNamespace(nsContext)
-		if localCLID != "" {
+		localCLName := fmt.Sprintf("e2e-local-cl-%s", suffix)
+		localCLID, err := wcpClient.CreateLocalContentLibrary(
+			localCLName,
+			wcp.StorageBackingInfo{
+				StorageBackings: []wcp.BackingInfo{clInfo.StorageBackings[0]},
+			},
+		)
+		Expect(err).NotTo(HaveOccurred(), "failed to create local content library %q", localCLName)
+		DeferCleanup(func() {
 			if err := wcpClient.DeleteLocalContentLibrary(localCLID); err != nil {
-				GinkgoWriter.Printf("Warning: failed to delete local content library %q: %v\n", localCLID, err)
+				e2eframework.Logf("failed to delete local content library %s %q: %v", localCLName, localCLID, err)
 			}
-			localCLID = ""
-		}
+		})
+
+		cls = []string{vmServiceCLID, localCLID}
 	})
 
 	Context("When testing content library association workflow with valid params", func() {
@@ -122,34 +98,12 @@ func VIAdminCLSpec(ctx context.Context, inputGetter func() VIAdminCLSpecInput) {
 		})
 
 		It("Should associate then disassociate content library", func() {
-			// Re-snapshot CLs at test time to avoid using stale IDs from CLs
-			// created and deleted by parallel test runners since BeforeEach ran.
-			currentCLs, err := wcpClient.ListContentLibraries()
-			Expect(err).NotTo(HaveOccurred(), "failed to re-list content libraries")
-			// Keep only CLs that were present in both the original snapshot and
-			// now, so we never try to associate a CL that no longer exists.
-			var stableCLs []string
-			for _, id := range cls {
-				for _, cur := range currentCLs {
-					if id == cur {
-						stableCLs = append(stableCLs, id)
-						break
-					}
-				}
-			}
-			Expect(len(stableCLs)).Should(BeNumerically(">=", 2),
-				"expected at least 2 stable content libraries but found %d", len(stableCLs))
-
 			// Associate content libraries.
-			vmservice.VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, stableCLs)
+			vmservice.VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, cls)
 
 			// Disassociate content libraries and verify removed CLs are not associated to the namespace.
-			vmservice.VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, stableCLs[0:1])
-			vmservice.CheckCLDisassociation(wcpClient, nsContext.GetNamespace().Name, stableCLs[1:])
-			/* TODO (dramdass): Figure out how/if dcli supports update to empty list or use set instead of update
-			cls = []string{""}
-			VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, cls)
-			*/
+			vmservice.VerifyCLAssociation(wcpClient, nsContext.GetNamespace().Name, cls[0:1])
+			vmservice.CheckCLDisassociation(wcpClient, nsContext.GetNamespace().Name, cls[1:])
 		})
 	})
 }

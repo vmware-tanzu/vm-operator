@@ -1736,7 +1736,7 @@ func (v validator) validateVolume(
 	if hasPVC && hasSnap {
 		allErrs = append(allErrs, field.Forbidden(
 			volPath, "only one of persistentVolumeClaim or virtualMachineSnapshot can be specified"))
-	} else if !hasPVC && !hasSnap {
+	} else if !hasPVC && !hasSnap && !isBackfilledVolume(&vol) {
 		allErrs = append(allErrs, field.Required(
 			volPath, "one of persistentVolumeClaim or virtualMachineSnapshot must be specified"))
 	}

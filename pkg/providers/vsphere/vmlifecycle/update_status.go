@@ -1755,15 +1755,16 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
 			switch e.Type {
 			case vmopv1.VolumeTypeClassic:
-				// Don't delete snapshot volumes here, they are managed in session_vm_update.go
-				isSnapshot := false
+				// Don't delete snapshot volumes here if they are still in spec.
+				// If they are no longer in spec, let them be deleted if they are not in config.
+				isSnapshotInSpec := false
 				for _, vol := range vm.Spec.Volumes {
 					if vol.Name == e.Name && vol.VirtualMachineSnapshot != nil {
-						isSnapshot = true
+						isSnapshotInSpec = true
 						break
 					}
 				}
-				if isSnapshot {
+				if isSnapshotInSpec {
 					return false
 				}
 				_, keep := existingDisksInConfig[e.DiskUUID]

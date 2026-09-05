@@ -235,18 +235,20 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 			})
 
 			By("Detaching snapshot disk", func() {
-				vm := &vmopv1.VirtualMachine{}
-				Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: dataMoverVMName}, vm)).To(Succeed())
+				Eventually(func(g Gomega) {
+					vm := &vmopv1.VirtualMachine{}
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: dataMoverVMName}, vm)).To(Succeed())
 
-				// Remove the snapshot volume
-				var newVolumes []vmopv1.VirtualMachineVolume
-				for _, v := range vm.Spec.Volumes {
-					if v.Name != "snap-vol" {
-						newVolumes = append(newVolumes, v)
+					// Remove the snapshot volume
+					var newVolumes []vmopv1.VirtualMachineVolume
+					for _, v := range vm.Spec.Volumes {
+						if v.Name != "snap-vol" {
+							newVolumes = append(newVolumes, v)
+						}
 					}
-				}
-				vm.Spec.Volumes = newVolumes
-				Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+					vm.Spec.Volumes = newVolumes
+					g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+				}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed())
 			})
 
 			By("Asserting snapshot volume is detached", func() {
@@ -281,24 +283,36 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 			})
 
 			By("Attaching snapshot volume to the data-mover VM", func() {
-				vm := &vmopv1.VirtualMachine{}
-				Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: dataMoverVMName}, vm)).To(Succeed())
+				Eventually(func(g Gomega) {
+					vm := &vmopv1.VirtualMachine{}
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: dataMoverVMName}, vm)).To(Succeed())
 
-				vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-					Name: "snap-vol-same-uuid",
-					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-						VirtualMachineSnapshot: &vmopv1.VirtualMachineSnapshotDiskSpec{
-							Name:   snapshotName,
-							DiskID: diskID,
-						},
-					},
-					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
-					ControllerBusNumber: ptr.To[int32](0),
-					UnitNumber:          ptr.To[int32](1),
-					DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
-					Removable:           ptr.To(true),
-				})
-				Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+					// Check if already attached to avoid appending multiple times in retry
+					alreadyAttached := false
+					for _, v := range vm.Spec.Volumes {
+						if v.Name == "snap-vol-same-uuid" {
+							alreadyAttached = true
+							break
+						}
+					}
+					if !alreadyAttached {
+						vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+							Name: "snap-vol-same-uuid",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshot: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name:   snapshotName,
+									DiskID: diskID,
+								},
+							},
+							ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+							ControllerBusNumber: ptr.To[int32](0),
+							UnitNumber:          ptr.To[int32](1),
+							DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
+							Removable:           ptr.To(true),
+						})
+					}
+					g.Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
+				}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed())
 			})
 
 			By("Asserting snapshot volume is attached", func() {

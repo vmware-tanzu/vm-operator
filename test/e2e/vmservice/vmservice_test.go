@@ -230,6 +230,7 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 				return virtualmachine.VMSnapshotVolumeSpecInput{
 					ClusterProxy:     svClusterProxy,
 					Config:           config,
+					WCPClient:        wcpClient,
 					ArtifactFolder:   artifactFolder,
 					WCPNamespaceName: wcpNamespaceName,
 				}

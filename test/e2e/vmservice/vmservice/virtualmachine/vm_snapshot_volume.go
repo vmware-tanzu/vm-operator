@@ -16,8 +16,9 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
@@ -25,7 +26,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
@@ -56,6 +56,8 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 		sourceVMName    string
 		dataMoverVMName string
 		snapshotName    string
+
+		allDisksArePVCapabilityEnabled bool
 	)
 
 	skipChecks := func() {
@@ -113,11 +115,9 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 			By("Deploying source VM")
 			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, sourceVMName, "", nil)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName, "PoweredOn")
-
 			asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
 			Expect(err).NotTo(HaveOccurred())
-			allDisksArePVCapabilityEnabled := utils.IsSupervisorCapabilityEnabled(
+			allDisksArePVCapabilityEnabled = utils.IsSupervisorCapabilityEnabled(
 				ctx,
 				vmSvcClusterProxy.GetClientSet(),
 				vmSvcClusterProxy.GetDynamicClient(),
@@ -128,6 +128,8 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 				vmoperator.WaitForBootDiskPVC(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName, nil)
 				vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName)
 			}
+
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, sourceVMName, "PoweredOn")
 
 			By("Creating VirtualMachineSnapshot")
 			vmservice.CreateVMSnapshotA6(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
@@ -195,12 +197,21 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 							DiskID: diskID,
 						},
 					},
-					DiskMode:  vmopv1.VolumeDiskModeIndependentNonPersistent,
-					Removable: ptr.To(true),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To[int32](0),
+					UnitNumber:          ptr.To[int32](1),
+					DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
+					Removable:           ptr.To(true),
 				})
 
 				Expect(svClusterClient.Create(ctx, vm)).To(Succeed())
 				vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName)
+
+				if allDisksArePVCapabilityEnabled {
+					vmoperator.WaitForBootDiskPVC(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName, nil)
+					vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName)
+				}
+
 				vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName, "PoweredOn")
 			})
 
@@ -271,8 +282,11 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 							DiskID: diskID,
 						},
 					},
-					DiskMode:  vmopv1.VolumeDiskModeIndependentNonPersistent,
-					Removable: ptr.To(true),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To[int32](0),
+					UnitNumber:          ptr.To[int32](1),
+					DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
+					Removable:           ptr.To(true),
 				})
 				Expect(svClusterClient.Update(ctx, vm)).To(Succeed())
 			})
@@ -352,12 +366,21 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 							DiskID:    diskID,
 						},
 					},
-					DiskMode:  vmopv1.VolumeDiskModeIndependentNonPersistent,
-					Removable: ptr.To(true),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To[int32](0),
+					UnitNumber:          ptr.To[int32](1),
+					DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
+					Removable:           ptr.To(true),
 				})
 
 				Expect(svClusterClient.Create(ctx, vm)).To(Succeed())
 				vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, otherNamespace, dataMoverVMName)
+
+				if allDisksArePVCapabilityEnabled {
+					vmoperator.WaitForBootDiskPVC(ctx, vmSvcE2EConfig, svClusterClient, otherNamespace, dataMoverVMName, nil)
+					vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, vmSvcE2EConfig, svClusterClient, otherNamespace, dataMoverVMName)
+				}
+
 				vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, otherNamespace, dataMoverVMName, "PoweredOn")
 			})
 
@@ -379,7 +402,7 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 					g.Expect(snapVolStatus.Error).To(BeEmpty())
 				}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed())
 			})
-			
+
 			By("Cleaning up the other namespace", func() {
 				vmoperator.VerifyVMDeleted(ctx, svClusterClient, vmSvcE2EConfig, otherNamespace, dataMoverVMName)
 				if secondNamespaceCtx.GetNamespace() != nil {
@@ -422,12 +445,21 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 							DiskID: "invalid-disk-id",
 						},
 					},
-					DiskMode:  vmopv1.VolumeDiskModeIndependentNonPersistent,
-					Removable: ptr.To(true),
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: ptr.To[int32](0),
+					UnitNumber:          ptr.To[int32](1),
+					DiskMode:            vmopv1.VolumeDiskModeIndependentNonPersistent,
+					Removable:           ptr.To(true),
 				})
 
 				Expect(svClusterClient.Create(ctx, vm)).To(Succeed())
 				vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName)
+
+				if allDisksArePVCapabilityEnabled {
+					vmoperator.WaitForBootDiskPVC(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName, nil)
+					vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName)
+				}
+
 				vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName, "PoweredOn")
 			})
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -1772,6 +1773,35 @@ func (v validator) validateVolume(
 				volPath.Child("removable"),
 				*vol.Removable,
 				"removable must be true when using a VirtualMachineSnapshot volume source"))
+		}
+
+		if snap.Namespace != "" && snap.Namespace != vm.Namespace {
+			sarExtra := make(map[string]authorizationv1.ExtraValue)
+			for k, v := range ctx.UserInfo.Extra {
+				sarExtra[k] = authorizationv1.ExtraValue(v)
+			}
+
+			sar := &authorizationv1.SubjectAccessReview{
+				Spec: authorizationv1.SubjectAccessReviewSpec{
+					ResourceAttributes: &authorizationv1.ResourceAttributes{
+						Namespace: snap.Namespace,
+						Verb:      "get",
+						Group:     vmopv1.GroupVersion.Group,
+						Resource:  "virtualmachinesnapshots",
+						Name:      snap.Name,
+					},
+					User:   ctx.UserInfo.Username,
+					Groups: ctx.UserInfo.Groups,
+					UID:    ctx.UserInfo.UID,
+					Extra:  sarExtra,
+				},
+			}
+
+			if err := v.client.Create(ctx, sar); err != nil {
+				allErrs = append(allErrs, field.InternalError(snapPath, err))
+			} else if !sar.Status.Allowed {
+				allErrs = append(allErrs, field.Forbidden(snapPath, fmt.Sprintf("user %s cannot access VirtualMachineSnapshot %s in namespace %s", ctx.UserInfo.Username, snap.Name, snap.Namespace)))
+			}
 		}
 	}
 

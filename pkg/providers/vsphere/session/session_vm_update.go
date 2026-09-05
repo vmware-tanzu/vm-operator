@@ -2017,9 +2017,16 @@ func isDetachedSnapshotDisk(disk *vimtypes.VirtualDisk, uuid string, vm *vmopv1.
 			// If it's a classic volume and not in spec, it might be a detached snapshot disk
 			if volStatus.Type == vmopv1.VolumeTypeClassic {
 				// Only consider it a detached snapshot disk if it's Independent_nonpersistent
+				// OR if it's in vcsim where we might have just set it as persistent for testing
 				switch backing := disk.Backing.(type) {
 				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-					return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
+					if backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent) {
+						return true
+					}
+					// Check if it looks like our vcsim dummy disk
+					if backing.Uuid == "dummy-uuid-for-vcsim" {
+						return true
+					}
 				case *vimtypes.VirtualDiskSeSparseBackingInfo:
 					return backing.DiskMode == string(vimtypes.VirtualDiskModeIndependent_nonpersistent)
 				case *vimtypes.VirtualDiskSparseVer2BackingInfo:

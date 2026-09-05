@@ -331,6 +331,18 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 					g.Expect(snapVolStatus.Attached).To(BeTrue())
 					g.Expect(snapVolStatus.DiskUUID).ToNot(BeEmpty())
 					g.Expect(snapVolStatus.Error).To(BeEmpty())
+
+					// Verify that the data-mover VM's boot disk has the same UUID as the snapshot disk
+					// (since they are deployed from the same image and the snapshot is of the boot disk)
+					var bootDiskStatus *vmopv1.VirtualMachineVolumeStatus
+					for i, v := range vm.Status.Volumes {
+						if v.Name != "snap-vol-same-uuid" && v.DiskUUID != "" {
+							bootDiskStatus = &vm.Status.Volumes[i]
+							break
+						}
+					}
+					g.Expect(bootDiskStatus).ToNot(BeNil(), "Expected to find the boot disk status")
+					g.Expect(snapVolStatus.DiskUUID).To(Equal(bootDiskStatus.DiskUUID), "Expected snapshot disk UUID to match boot disk UUID")
 				}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed())
 			})
 		})

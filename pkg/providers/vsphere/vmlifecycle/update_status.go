@@ -1763,13 +1763,13 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 						break
 					}
 				}
-				
+
 				// If it's a snapshot volume, we only delete it if it's NOT in spec AND NOT in config
 				// If it's in spec, we keep it (session_vm_update.go manages its attached state)
 				if isSnapshotInSpec {
 					return false
 				}
-				
+
 				// If it's not in spec anymore, we want to delete it from status.
 				// However, if it's still in config (because it's in the process of being detached),
 				// we should wait until it's actually removed from config before deleting it from status.
@@ -1780,7 +1780,7 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				// If it's still in config, it means the remove task hasn't finished or hasn't run yet.
 				// Let's just use the standard logic: if it's not in config, remove it.
 				_, keep := existingDisksInConfig[e.DiskUUID]
-				
+
 				// BUT wait! What if it's a snapshot volume that was just removed from spec,
 				// and it IS still in config because the remove task is pending?
 				// Then keep == true, so we return false (don't delete).

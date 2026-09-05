@@ -2084,4 +2084,3 @@ func removeDetachedSnapshotDisks(moVM mo.VirtualMachine, vm *vmopv1.VirtualMachi
 		}
 	}
 }
-

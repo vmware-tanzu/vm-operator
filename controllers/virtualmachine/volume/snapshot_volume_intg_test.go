@@ -20,27 +20,27 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/volume"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
-	"github.com/vmware-tanzu/vm-operator/test/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 	corev1 "k8s.io/api/core/v1"
 )
 
 func snapshotVolumeIntgTests() {
 	var (
-		ctx       context.Context
-		vcSimCtx  *builder.IntegrationTestContextForVCSim
-		initEnvFn builder.InitVCSimEnvFn
-		vm        *object.VirtualMachine
-		obj       *vmopv1.VirtualMachine
-		objKey    client.ObjectKey
-		vmName    = "my-vm-snapshot-test"
+		ctx         context.Context
+		vcSimCtx    *builder.IntegrationTestContextForVCSim
+		initEnvFn   builder.InitVCSimEnvFn
+		vm          *object.VirtualMachine
+		obj         *vmopv1.VirtualMachine
+		objKey      client.ObjectKey
+		vmName      = "my-vm-snapshot-test"
 		snapVolName = "snap-vol"
 	)
 
@@ -150,30 +150,30 @@ func snapshotVolumeIntgTests() {
 				// Add a dummy disk to the VM so the snapshot has a disk
 				dummyDisk := &vimtypes.VirtualDisk{
 					VirtualDevice: vimtypes.VirtualDevice{
-						Key: -100,
+						Key:           -100,
 						ControllerKey: 1000, // Use SCSI controller key
-						UnitNumber: ptr.To(int32(0)),
+						UnitNumber:    ptr.To(int32(0)),
 						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
 							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
 								FileName: "[LocalDS_0]",
 							},
-							Uuid: "dummy-uuid-for-vcsim",
+							Uuid:     "dummy-uuid-for-vcsim",
 							DiskMode: string(vimtypes.VirtualDiskModePersistent),
 						},
 					},
 					CapacityInBytes: 1024 * 1024,
 				}
-				
+
 				spec := vimtypes.VirtualMachineConfigSpec{
 					DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
 						&vimtypes.VirtualDeviceConfigSpec{
-							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
 							FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
-							Device:    dummyDisk,
+							Device:        dummyDisk,
 						},
 					},
 				}
-				
+
 				task, err := vm.Reconfigure(ctx, spec)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(task.Wait(ctx)).To(Succeed())
@@ -188,11 +188,24 @@ func snapshotVolumeIntgTests() {
 					g.Expect(moVM.Snapshot).ToNot(BeNil())
 					g.Expect(moVM.Snapshot.CurrentSnapshot).ToNot(BeNil())
 				}).Should(Succeed())
+
+				// Remove the dummy disk so it doesn't interfere with attaching the snapshot disk (which has the same UUID)
+				removeSpec := vimtypes.VirtualMachineConfigSpec{
+					DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+							Device:    dummyDisk,
+						},
+					},
+				}
+				task, err = vm.Reconfigure(ctx, removeSpec)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(task.Wait(ctx)).To(Succeed())
 				snapID := moVM.Snapshot.CurrentSnapshot.Value
 
 				var moSnap mo.VirtualMachineSnapshot
 				Expect(vm.Properties(ctx, *moVM.Snapshot.CurrentSnapshot, []string{"config.hardware.device"}, &moSnap)).To(Succeed())
-				
+
 				diskUUID = "dummy-uuid-for-vcsim"
 
 				snapCR = &vmopv1.VirtualMachineSnapshot{

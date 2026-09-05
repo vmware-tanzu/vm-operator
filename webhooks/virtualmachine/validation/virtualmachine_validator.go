@@ -154,7 +154,6 @@ var (
 		"vnet":                        true,
 		"wakeonpcktrcv":               true,
 	}
-
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -1726,8 +1725,8 @@ func (v validator) validateVolume(
 	volPath *field.Path) field.ErrorList {
 
 	var (
-		allErrs field.ErrorList
-		pvcPath = volPath.Child("persistentVolumeClaim")
+		allErrs  field.ErrorList
+		pvcPath  = volPath.Child("persistentVolumeClaim")
 		snapPath = volPath.Child("virtualMachineSnapshot")
 	)
 
@@ -3702,7 +3701,6 @@ func isFirstClassVMAdvancedProperty(key string) bool {
 	_, ok := vmopv1util.AdvancedVMXKeyMap()[key]
 	return ok
 }
-
 
 func isSystemReservedNetworkDeviceProperty(key string) bool {
 	return systemReservedNetworkDeviceProperties[key]

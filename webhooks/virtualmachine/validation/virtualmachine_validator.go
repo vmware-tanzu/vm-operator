@@ -1754,55 +1754,7 @@ func (v validator) validateVolume(
 	}
 
 	if snap := vol.VirtualMachineSnapshot; snap != nil {
-		if snap.Name == "" {
-			allErrs = append(allErrs, field.Required(
-				snapPath.Child("name"), ""))
-		}
-		if snap.DiskID == "" {
-			allErrs = append(allErrs, field.Required(
-				snapPath.Child("diskID"), ""))
-		}
-		if vol.DiskMode != vmopv1.VolumeDiskModeIndependentNonPersistent {
-			allErrs = append(allErrs, field.Invalid(
-				volPath.Child("diskMode"),
-				vol.DiskMode,
-				"diskMode must be IndependentNonPersistent when using a VirtualMachineSnapshot volume source"))
-		}
-		if vol.Removable != nil && !*vol.Removable {
-			allErrs = append(allErrs, field.Invalid(
-				volPath.Child("removable"),
-				*vol.Removable,
-				"removable must be true when using a VirtualMachineSnapshot volume source"))
-		}
-
-		if snap.Namespace != "" && snap.Namespace != vm.Namespace {
-			sarExtra := make(map[string]authorizationv1.ExtraValue)
-			for k, v := range ctx.UserInfo.Extra {
-				sarExtra[k] = authorizationv1.ExtraValue(v)
-			}
-
-			sar := &authorizationv1.SubjectAccessReview{
-				Spec: authorizationv1.SubjectAccessReviewSpec{
-					ResourceAttributes: &authorizationv1.ResourceAttributes{
-						Namespace: snap.Namespace,
-						Verb:      "get",
-						Group:     vmopv1.GroupVersion.Group,
-						Resource:  "virtualmachinesnapshots",
-						Name:      snap.Name,
-					},
-					User:   ctx.UserInfo.Username,
-					Groups: ctx.UserInfo.Groups,
-					UID:    ctx.UserInfo.UID,
-					Extra:  sarExtra,
-				},
-			}
-
-			if err := v.client.Create(ctx, sar); err != nil {
-				allErrs = append(allErrs, field.InternalError(snapPath, err))
-			} else if !sar.Status.Allowed {
-				allErrs = append(allErrs, field.Forbidden(snapPath, fmt.Sprintf("user %s cannot access VirtualMachineSnapshot %s in namespace %s", ctx.UserInfo.Username, snap.Name, snap.Namespace)))
-			}
-		}
+		allErrs = append(allErrs, v.validateSnapshotVolume(ctx, vm, vol, snap, volPath, snapPath)...)
 	}
 
 	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks &&
@@ -3762,4 +3714,66 @@ func isFirstClassNICAdvancedProperty(key string) bool {
 
 func isNetworkDeviceProperty(key string) bool {
 	return vmopv1util.IsEthernetDeviceKey(key)
+}
+
+func (v validator) validateSnapshotVolume(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	vol vmopv1.VirtualMachineVolume,
+	snap *vmopv1.VirtualMachineSnapshotDiskSpec,
+	volPath, snapPath *field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if snap.Name == "" {
+		allErrs = append(allErrs, field.Required(
+			snapPath.Child("name"), ""))
+	}
+	if snap.DiskID == "" {
+		allErrs = append(allErrs, field.Required(
+			snapPath.Child("diskID"), ""))
+	}
+	if vol.DiskMode != vmopv1.VolumeDiskModeIndependentNonPersistent {
+		allErrs = append(allErrs, field.Invalid(
+			volPath.Child("diskMode"),
+			vol.DiskMode,
+			"diskMode must be IndependentNonPersistent when using a VirtualMachineSnapshot volume source"))
+	}
+	if vol.Removable != nil && !*vol.Removable {
+		allErrs = append(allErrs, field.Invalid(
+			volPath.Child("removable"),
+			*vol.Removable,
+			"removable must be true when using a VirtualMachineSnapshot volume source"))
+	}
+
+	if snap.Namespace != "" && snap.Namespace != vm.Namespace {
+		sarExtra := make(map[string]authorizationv1.ExtraValue)
+		for k, v := range ctx.UserInfo.Extra {
+			sarExtra[k] = authorizationv1.ExtraValue(v)
+		}
+
+		sar := &authorizationv1.SubjectAccessReview{
+			Spec: authorizationv1.SubjectAccessReviewSpec{
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Namespace: snap.Namespace,
+					Verb:      "get",
+					Group:     vmopv1.GroupVersion.Group,
+					Resource:  "virtualmachinesnapshots",
+					Name:      snap.Name,
+				},
+				User:   ctx.UserInfo.Username,
+				Groups: ctx.UserInfo.Groups,
+				UID:    ctx.UserInfo.UID,
+				Extra:  sarExtra,
+			},
+		}
+
+		if err := v.client.Create(ctx, sar); err != nil {
+			allErrs = append(allErrs, field.InternalError(snapPath, err))
+		} else if !sar.Status.Allowed {
+			allErrs = append(allErrs, field.Forbidden(snapPath, fmt.Sprintf("user %s cannot access VirtualMachineSnapshot %s in namespace %s", ctx.UserInfo.Username, snap.Name, snap.Namespace)))
+		}
+	}
+
+	return allErrs
 }

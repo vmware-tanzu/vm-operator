@@ -151,7 +151,7 @@ func snapshotVolumeIntgTests() {
 				dummyDisk := &vimtypes.VirtualDisk{
 					VirtualDevice: vimtypes.VirtualDevice{
 						Key: -100,
-						ControllerKey: 200,
+						ControllerKey: 1000, // Use SCSI controller key
 						UnitNumber: ptr.To(int32(0)),
 						Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
 							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{

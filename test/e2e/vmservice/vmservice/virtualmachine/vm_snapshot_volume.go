@@ -261,7 +261,7 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 			})
 		})
 
-		It("Mount a snapshot disk on the source VM (same disk UUID)", Label("vmservice", "storage", "snapshot"), func() {
+		It("Mount a snapshot disk on a data-mover VM (same disk UUID)", Label("vmservice", "storage", "snapshot"), func() {
 			var diskID string
 			By("Getting snapshot disk ID", func() {
 				vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
@@ -270,9 +270,19 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 				diskID = vmSnapshot.Status.Disks[0].ID
 			})
 
-			By("Attaching snapshot volume to the source VM", func() {
+			By("Deploying data-mover VM", func() {
+				vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, dataMoverVMName, "", nil)
+				vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName)
+				if allDisksArePVCapabilityEnabled {
+					vmoperator.WaitForBootDiskPVC(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName, nil)
+					vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName)
+				}
+				vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, dataMoverVMName, "PoweredOn")
+			})
+
+			By("Attaching snapshot volume to the data-mover VM", func() {
 				vm := &vmopv1.VirtualMachine{}
-				Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: sourceVMName}, vm)).To(Succeed())
+				Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: dataMoverVMName}, vm)).To(Succeed())
 
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
 					Name: "snap-vol-same-uuid",
@@ -294,7 +304,7 @@ func VMSnapshotVolumeSpec(ctx context.Context, inputGetter func() VMSnapshotVolu
 			By("Asserting snapshot volume is attached", func() {
 				Eventually(func(g Gomega) {
 					vm := &vmopv1.VirtualMachine{}
-					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: sourceVMName}, vm)).To(Succeed())
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: dataMoverVMName}, vm)).To(Succeed())
 
 					var snapVolStatus *vmopv1.VirtualMachineVolumeStatus
 					for i, v := range vm.Status.Volumes {

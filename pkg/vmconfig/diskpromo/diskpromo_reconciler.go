@@ -288,6 +288,21 @@ func (r reconciler) Reconcile(
 
 	switch vm.Spec.PromoteDisksMode {
 	case vmopv1.VirtualMachinePromoteDisksModeOnline:
+		if vm.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff {
+			// Do not start a new online promotion when a power-off is
+			// desired. vCenter serializes tasks per-VM, so a freshly issued
+			// PromoteDisks task would stall the pending PowerOff behind it.
+			// Promotion resumes once the VM is powered back on.
+			pkgcond.MarkFalse(
+				vm,
+				vmopv1.VirtualMachineDiskPromotionSynced,
+				ReasonPending,
+				"Pending VM power-off")
+			logger.V(4).Info(
+				"Skipping online disk promotion while VM power-off is pending")
+			return nil
+		}
+
 		if moVM.Snapshot != nil && moVM.Snapshot.CurrentSnapshot != nil {
 			// Skip VMs that have snapshots.
 			pkgcond.MarkFalse(

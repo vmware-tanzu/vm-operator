@@ -15,6 +15,18 @@ const (
 	MicrosoftWSFCControllerSharingMode = vmopv1.VirtualControllerSharingModePhysical
 )
 
+const (
+	// NICUnitNumberFirst is the first PCI unit number an ethernet card can
+	// occupy. The virtual PCI bus is shared with other devices that occupy
+	// the lower slots, and ethernet cards are allocated units 7-16 by the
+	// platform's static, per-device-class allocation.
+	NICUnitNumberFirst = 7
+
+	// NICUnitNumberMax is the last PCI unit number an ethernet card can
+	// occupy.
+	NICUnitNumberMax = 16
+)
+
 // ControllerSpec is an interface describing a controller specification.
 type ControllerSpec interface {
 	// MaxSlots returns the maximum number of slots per controller type.

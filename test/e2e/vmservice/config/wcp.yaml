@@ -50,6 +50,12 @@ intervals:
   # over 4 minutes under datastore/NFC contention; give it more headroom than
   # "default" without loosening the timeout for every other caller.
   register-vm-restore-disk-only/wait-virtual-machine-condition-update: ["12m", "5s"]
+  # This spec deletes the VM while snapshots are still attached (to verify
+  # they're garbage-collected), which makes vCenter's Destroy_Task
+  # consolidate delta/memory-snapshot files before it completes; give it
+  # more headroom than "default" without loosening the timeout for every
+  # other caller.
+  vm-snapshot/wait-virtual-machine-deletion: ["10m", "5s"]
   default/wait-virtual-machine-powerstate: ["5m", "3s"]
   default/wait-virtual-machine-resize: ["5m", "3s"]
   default/wait-virtual-machine-moid: ["5m", "3s"]

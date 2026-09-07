@@ -53,7 +53,7 @@
 
 - [x] T002 [P] Add feature flag `VMNetworkUnitNumbers bool` to the `FeatureStates` struct in `pkg/config/config.go` (with inline comment matching the pattern of `VMSharedDisks`); **NOTE: `VMSharedDisks` is capability-driven, not FSS env-var driven** — decide whether `VMNetworkUnitNumbers` is an FSS env var (add constant to `pkg/config/env/env.go` and a `setBool` line in `pkg/config/env.go`) or a capability (add a capability key constant and switch case in `pkg/config/capabilities/capabilities.go`); document the decision in `plan.md`
 
-- [ ] T003 [P] Add `FeatureVersionNICUnitNumbers` to the `1 << iota` block in `pkg/util/vmopv1/features.go` (value 16); update `FeatureVersionAll` to OR in the new bit (15 → 31); add the new bit to the `FeatureVersions()` slice; add the new bit to `ActivatedFeatureVersion(ctx)` when `VMNetworkUnitNumbers` is enabled; update `features_test.go` in `pkg/util/vmopv1/`
+- [x] T003 [P] Add `FeatureVersionNICUnitNumbers` to the `1 << iota` block in `pkg/util/vmopv1/features.go` (value 16); update `FeatureVersionAll` to OR in the new bit (15 → 31); add the new bit to the `FeatureVersions()` slice; add the new bit to `ActivatedFeatureVersion(ctx)` when `VMNetworkUnitNumbers` is enabled; update `features_test.go` in `pkg/util/vmopv1/`
 
 ---
 

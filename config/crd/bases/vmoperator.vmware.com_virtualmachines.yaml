@@ -17967,6 +17967,19 @@ spec:
                             Please note this name is not necessarily related to the name of the
                             device as it is surfaced inside of the guest.
                           type: string
+                        unitNumber:
+                          description: |-
+                            UnitNumber describes the observed PCI unit number of this network
+                            interface's virtual device, as reported by vSphere. This is an
+                            informational counterpart to the interface's unitNumber field in the
+                            VM's desired network interface list, and reflects the slot actually
+                            observed in vSphere even when it differs from the spec value.
+
+                            Please note this field only appears for interfaces reported by VMware
+                            Tools in guest info; a VM without Tools running has no interface status
+                            entries at all.
+                          format: int32
+                          type: integer
                         vmxnet3:
                           description: |-
                             VMXNet3 reflects the observed VMXNet3-specific device properties for

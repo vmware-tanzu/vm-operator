@@ -767,6 +767,19 @@ type VirtualMachineNetworkInterfaceStatus struct {
 
 	// +optional
 
+	// UnitNumber describes the observed PCI unit number of this network
+	// interface's virtual device, as reported by vSphere. This is an
+	// informational counterpart to the interface's unitNumber field in the
+	// VM's desired network interface list, and reflects the slot actually
+	// observed in vSphere even when it differs from the spec value.
+	//
+	// Please note this field only appears for interfaces reported by VMware
+	// Tools in guest info; a VM without Tools running has no interface status
+	// entries at all.
+	UnitNumber *int32 `json:"unitNumber,omitempty"`
+
+	// +optional
+
 	// IP describes the observed state of the interface's IP configuration.
 	IP *VirtualMachineNetworkInterfaceIPStatus `json:"ip,omitempty"`
 

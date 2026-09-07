@@ -227,6 +227,9 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMa
 		dstIface.IPAMModes = append([]corev1.IPFamily(nil), srcIface.IPAMModes...)
 		dstIface.Type = srcIface.Type
 		dstIface.VNUMANodeID = srcIface.VNUMANodeID
+		// UnitNumber is restored by Name only: the hub being restored into was
+		// built from a spoke that cannot carry this hub-only field, so its
+		// value is always nil here and it must never join the match key.
 		dstIface.UnitNumber = srcIface.UnitNumber
 		dstIface.VMXNet3 = srcIface.VMXNet3
 		dstIface.AdvancedProperties = srcIface.AdvancedProperties

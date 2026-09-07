@@ -59,7 +59,7 @@
 
 ## Phase 2 — API & Foundational
 
-- [ ] T004 [vmop-4071] Add `UnitNumber *int32` to `VirtualMachineNetworkInterfaceSpec` in `api/v1alpha6/virtualmachine_network_types.go` — place after the `VNUMANodeID` field; add kubebuilder markers (`+optional`, `+kubebuilder:validation:Minimum=7`, `+kubebuilder:validation:Maximum=16` — ethernet cards own PCI units 7–16 by the platform's static per-device-class allocation, `external/vim/api/v1alpha1/testdata/device_keys.txt`) and full godoc; run `make generate-go` to regenerate `zz_generated.deepcopy.go` and `make generate-manifests` to regenerate CRD YAML under `config/crd/`
+- [x] T004 [vmop-4071] Add `UnitNumber *int32` to `VirtualMachineNetworkInterfaceSpec` in `api/v1alpha6/virtualmachine_network_types.go` — place after the `VNUMANodeID` field; add kubebuilder markers (`+optional`, `+kubebuilder:validation:Minimum=7`, `+kubebuilder:validation:Maximum=16` — ethernet cards own PCI units 7–16 by the platform's static per-device-class allocation, `external/vim/api/v1alpha1/testdata/device_keys.txt`) and full godoc; run `make generate-go` to regenerate `zz_generated.deepcopy.go` and `make generate-manifests` to regenerate CRD YAML under `config/crd/`
 
 - [ ] T005 [vmop-4072] Add `UnitNumber *int32` to `VirtualMachineNetworkInterfaceStatus` in `api/v1alpha6/virtualmachine_network_types.go` — place after `DeviceKey`; add `+optional` marker and full godoc; regenerate deepcopy (`make generate-go`)
 

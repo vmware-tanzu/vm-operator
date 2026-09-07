@@ -3360,6 +3360,7 @@ func autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha4_Virtual
 	out.SearchDomains = *(*[]string)(unsafe.Pointer(&in.SearchDomains))
 	// WARNING: in.Type requires manual conversion: does not exist in peer-type
 	// WARNING: in.VNUMANodeID requires manual conversion: does not exist in peer-type
+	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
 	// WARNING: in.VMXNet3 requires manual conversion: does not exist in peer-type
 	// WARNING: in.AdvancedProperties requires manual conversion: does not exist in peer-type
 	// WARNING: in.IPAMModes requires manual conversion: does not exist in peer-type

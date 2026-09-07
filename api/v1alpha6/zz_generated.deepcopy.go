@@ -2734,6 +2734,11 @@ func (in *VirtualMachineNetworkInterfaceSpec) DeepCopyInto(out *VirtualMachineNe
 		*out = new(int32)
 		**out = **in
 	}
+	if in.UnitNumber != nil {
+		in, out := &in.UnitNumber, &out.UnitNumber
+		*out = new(int32)
+		**out = **in
+	}
 	if in.VMXNet3 != nil {
 		in, out := &in.VMXNet3, &out.VMXNet3
 		*out = new(VirtualMachineNetworkInterfaceVMXNet3Spec)

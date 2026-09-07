@@ -136,7 +136,7 @@ func MapEthernetDevicesToSpecIdx(
 	}
 
 	for i, interfaceSpec := range vmCtx.VM.Spec.Network.Interfaces {
-		matchingIdx := findMatchingEthCardForInterfaceSpec(vmCtx, client, interfaceSpec, ethCards)
+		matchingIdx := FindMatchingEthCardForInterfaceSpec(vmCtx, client, interfaceSpec, ethCards)
 		if matchingIdx >= 0 {
 			devKeyToSpecIdx[ethCards[matchingIdx].GetVirtualDevice().Key] = i
 			ethCards = slices.Delete(ethCards, matchingIdx, matchingIdx+1)
@@ -146,7 +146,15 @@ func MapEthernetDevicesToSpecIdx(
 	return devKeyToSpecIdx
 }
 
-func findMatchingEthCardForInterfaceSpec(
+// FindMatchingEthCardForInterfaceSpec resolves a spec interface to the index
+// of its matching ethernet device in ethCards via provider-dispatched
+// MAC/ExternalID/backing matching, returning -1 when no device satisfies the
+// network provider's criteria. It dispatches on the configured
+// NetworkProviderType: VDS, NSXT, VPC, or Named. The matcher compares the MAC
+// only when the interface specifies one, the ExternalID only when non-empty,
+// and the backing per provider — mirroring FindMatchingEthCard's predicate.
+// Shared by the reconcile-time matching and the schema-upgrade backfill.
+func FindMatchingEthCardForInterfaceSpec(
 	vmCtx pkgctx.VirtualMachineContext,
 	client ctrlclient.Client,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,

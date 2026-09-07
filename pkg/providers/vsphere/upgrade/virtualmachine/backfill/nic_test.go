@@ -12,10 +12,16 @@ import (
 
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/client-go/tools/events"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/upgrade/virtualmachine/backfill"
+	pkgrecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ = Describe("BackfillNICConfigFromMoVM", func() {
@@ -727,6 +733,605 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 			Expect(ifaces[1].VNUMANodeID).To(BeNil())
 			Expect(ifaces[2].Type).To(Equal(vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3))
 			Expect(ifaces[2].VNUMANodeID).To(BeNil())
+		})
+	})
+})
+
+var _ = Describe("NICUnitNumbersFromMoVM", func() {
+
+	// ------------------------------------------------------------------ //
+	// Helpers
+	// ------------------------------------------------------------------ //
+
+	// moVMWithEthDevs builds a moVM with only hardware devices (no
+	// ExtraConfig). Scoped here because moVMWithEthernet belongs to the
+	// BackfillNICConfigFromMoVM Describe's closure above.
+	moVMWithEthDevs := func(devs ...vimtypes.BaseVirtualDevice) mo.VirtualMachine {
+		return mo.VirtualMachine{
+			Config: &vimtypes.VirtualMachineConfigInfo{
+				Hardware: vimtypes.VirtualHardware{Device: devs},
+			},
+		}
+	}
+
+	// ethCardWithUnit creates a VirtualVmxnet3 with the given key, MAC
+	// address, named network backing, and observed unit number. The Named
+	// network provider's matcher only considers devices whose backing
+	// DeviceName equals the interface's Network.Name, so fixtures that
+	// exercise the hodgepodge pass carry that backing; devices without a
+	// backing match are reachable only through the positional zip.
+	ethCardWithUnit := func(key int32, mac, netName string, unit *int32) vimtypes.BaseVirtualDevice {
+		dev := &vimtypes.VirtualVmxnet3{}
+		dev.Key = key
+		dev.MacAddress = mac
+		dev.UnitNumber = unit
+		if netName != "" {
+			dev.Backing = &vimtypes.VirtualEthernetCardNetworkBackingInfo{
+				VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+					DeviceName: netName,
+				},
+			}
+		}
+		return dev
+	}
+
+	// ifaceWith builds a spec interface with the given name, MAC address,
+	// and unit number, and no Network reference: under the Named provider,
+	// findMatchingEthCardNamed returns -1 for such interfaces, so they fall
+	// through to the positional zip (unless numbered, which the zip skips).
+	ifaceWith := func(name, mac string, unit *int32) vmopv1.VirtualMachineNetworkInterfaceSpec {
+		return vmopv1.VirtualMachineNetworkInterfaceSpec{
+			Name:       name,
+			MACAddr:    mac,
+			UnitNumber: unit,
+		}
+	}
+
+	// ifaceWithNet builds a spec interface like ifaceWith but carrying a
+	// Network reference matching the fixtures' device backing, so the Named
+	// provider's hodgepodge matcher can resolve it (comparing the MAC only
+	// when one is specified).
+	ifaceWithNet := func(name, mac, netName string, unit *int32) vmopv1.VirtualMachineNetworkInterfaceSpec {
+		iface := ifaceWith(name, mac, unit)
+		iface.Network = &vmopv1common.PartialObjectRef{Name: netName}
+		return iface
+	}
+
+	// newRecorderCtx returns a context with a fake recorder injected, plus
+	// the fake so tests can assert on emitted events. pkgrecord.FromContext
+	// panics when no recorder is present (mirroring the production reconcile
+	// context, which always carries one), so every test injects one; the
+	// no-event cases assert the fake stayed empty. The context also carries
+	// the Named network provider type so the pass-1 matcher dispatches; the
+	// default (empty) provider type would match nothing.
+	newRecorderCtx := func() (context.Context, *events.FakeRecorder) {
+		fakeRecorder := events.NewFakeRecorder(100)
+		ctx := pkgrecord.WithContext(
+			context.Background(),
+			pkgrecord.New(fakeRecorder),
+		)
+		ctx = pkgcfg.WithContext(
+			ctx,
+			pkgcfg.Config{
+				NetworkProviderType: pkgcfg.NetworkProviderTypeNamed,
+			},
+		)
+		return ctx, fakeRecorder
+	}
+
+	// newClient returns a fresh fake controller-runtime client for the pass-1
+	// matcher. The Named provider's matcher never reads provider CRs, so the
+	// client's contents are irrelevant here; it only must not be nil.
+	newClient := func() ctrlclient.Client {
+		return builder.NewFakeClient()
+	}
+
+	const ambiguousEventMsgPrefix = "Warning NICUnitNumberBackfillAmbiguous Observed unit numbers were recorded for the following network interfaces by positional matching rather than a unique match, and may be assigned incorrectly: "
+
+	const (
+		mac1 = "aa:bb:cc:dd:ee:01"
+		mac2 = "aa:bb:cc:dd:ee:02"
+		mac3 = "aa:bb:cc:dd:ee:03"
+
+		netName  = "net-1"
+		bogusNet = "bogus"
+	)
+
+	var (
+		vm     *vmopv1.VirtualMachine
+		moVM   mo.VirtualMachine
+		ctx    context.Context
+		client ctrlclient.Client
+		rec    *events.FakeRecorder
+	)
+
+	BeforeEach(func() {
+		ctx, rec = newRecorderCtx()
+		client = newClient()
+	})
+
+	AfterEach(func() {
+		vm = nil
+		moVM = mo.VirtualMachine{}
+		client = nil
+	})
+
+	// ------------------------------------------------------------------ //
+	// Guard conditions
+	// ------------------------------------------------------------------ //
+
+	When("moVM.Config is nil", func() {
+		It("returns false", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWith("eth0", "", nil),
+						},
+					},
+				},
+			}
+			moVM = mo.VirtualMachine{}
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeFalse())
+			Expect(rec.Events).To(BeEmpty())
+		})
+	})
+
+	When("the VM has no spec network interfaces", func() {
+		It("returns false and records nothing", func() {
+			vm = &vmopv1.VirtualMachine{Spec: vmopv1.VirtualMachineSpec{}}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeFalse())
+			Expect(rec.Events).To(BeEmpty())
+		})
+	})
+
+	// ------------------------------------------------------------------ //
+	// Hodgepodge (provider-dispatched) matching
+	// ------------------------------------------------------------------ //
+
+	When("an interface's MAC uniquely matches a device", func() {
+		It("records the observed unit number", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		It("matches the MAC case-insensitively, as findMatchingEthCardNamed does", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", "AA:BB:CC:DD:EE:01", netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		It("backing match alone suffices when no MAC is specified", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", "", netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		It("two same-network interfaces without MACs match distinct devices", func() {
+			// Pass 1 must consume a matched device before the next interface's
+			// lookup (as MapEthernetDevicesToSpecIdx does): with backing-only
+			// matching, two same-network Named interfaces would otherwise both
+			// match the first device, marking the second interface
+			// hodgepodge-matched and G7-skipping its duplicate unit instead of
+			// leaving it to zip with the second device.
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", "", netName, nil),
+							ifaceWithNet("eth1", "", netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))),
+				ethCardWithUnit(4001, mac2, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(vm.Spec.Network.Interfaces[1].UnitNumber).
+				To(Equal(ptr.To(int32(8))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		It("spec wins when a unit number is already set", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, ptr.To(int32(8))),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeFalse())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(8))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		It("spec wins when the observed slot disagrees; no event (steady-state condition)", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, ptr.To(int32(8))),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(9))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeFalse())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(8))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		It("records nothing when the device has no observed unit number", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(ethCardWithUnit(4000, mac1, netName, nil))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeFalse())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).To(BeNil())
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		// The provider matcher claims the first device satisfying its
+		// criteria; unlike a count-based unique check it does not reject
+		// duplicates. This pins that first-match semantics so a future
+		// change is deliberate.
+		It("a MAC shared by several devices claims the first match", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))),
+				ethCardWithUnit(4001, mac1, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+	})
+
+	// ------------------------------------------------------------------ //
+	// G7 admissibility guard
+	// ------------------------------------------------------------------ //
+
+	When("the observed value is already claimed by another interface", func() {
+		It("the write is skipped and the spec stays admissible; no event", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWith("eth0", "", ptr.To(int32(9))),
+							ifaceWithNet("eth1", mac2, netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4001, mac2, netName, ptr.To(int32(9))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeFalse())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(9))))
+			Expect(vm.Spec.Network.Interfaces[1].UnitNumber).To(BeNil())
+			Expect(rec.Events).To(BeEmpty())
+		})
+	})
+
+	When("the observed value is out of the valid range", func() {
+		It("the write is skipped (defensive; real vSphere never reports this); no event", func() {
+			// Below the band (3 sits in the unoccupied SCSI HBA band).
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(3))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeFalse())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).To(BeNil())
+			Expect(rec.Events).To(BeEmpty())
+
+			// Above the band.
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(17))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeFalse())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).To(BeNil())
+			Expect(rec.Events).To(BeEmpty())
+		})
+	})
+
+	// ------------------------------------------------------------------ //
+	// Positional zip
+	// ------------------------------------------------------------------ //
+
+	When("interfaces the hodgepodge could not claim are zip-matched", func() {
+		It("records the observed unit numbers and emits one NICUnitNumberBackfillAmbiguous event", func() {
+			// Both interfaces reference a network no device backs, so pass 1
+			// cannot claim anything and the zip carries the whole load.
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", "", bogusNet, nil),
+							ifaceWithNet("eth1", "", bogusNet, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))),
+				ethCardWithUnit(4001, mac2, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(vm.Spec.Network.Interfaces[1].UnitNumber).
+				To(Equal(ptr.To(int32(8))))
+			Expect(rec.Events).To(HaveLen(1))
+			Expect(<-rec.Events).
+				To(Equal(ambiguousEventMsgPrefix + "eth0, eth1"))
+		})
+
+		It("mixed unique+zip: only the zipped interface is named in the event", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, nil),
+							ifaceWithNet("eth1", "", bogusNet, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))),
+				ethCardWithUnit(4001, mac2, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(vm.Spec.Network.Interfaces[1].UnitNumber).
+				To(Equal(ptr.To(int32(8))))
+			Expect(rec.Events).To(HaveLen(1))
+			Expect(<-rec.Events).
+				To(Equal(ambiguousEventMsgPrefix + "eth1"))
+		})
+
+		It("a uniquely-matched interface with a spec unit number claims its device, keeping the zip off it", func() {
+			// eth0's device is identified by the provider matcher; the zip
+			// must not hand it to the unnumbered eth1.
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, ptr.To(int32(7))),
+							ifaceWithNet("eth1", "", bogusNet, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeFalse())
+			Expect(vm.Spec.Network.Interfaces[1].UnitNumber).To(BeNil())
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		It("devices with no observed unit number are not zip candidates", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", "", bogusNet, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, nil),
+				ethCardWithUnit(4001, mac2, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(8))))
+			Expect(rec.Events).To(HaveLen(1))
+		})
+
+		It("a device already at a numbered interface's declared slot is reserved from the zip", func() {
+			// eth0 declares unit 9 but has no device identified by the
+			// hodgepodge; the device actually sitting at slot 9 is not eth0's
+			// (nothing matched it). The reservation must keep that device out
+			// of the zip, so the leftover interfaces pair against the free
+			// slots 7 and 8 and nothing is G7-skipped.
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWith("eth0", "", ptr.To(int32(9))),
+							ifaceWithNet("eth1", "", bogusNet, nil),
+							ifaceWithNet("eth2", "", bogusNet, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(9))),
+				ethCardWithUnit(4001, mac2, netName, ptr.To(int32(7))),
+				ethCardWithUnit(4002, mac3, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(9))))
+			Expect(vm.Spec.Network.Interfaces[1].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(vm.Spec.Network.Interfaces[2].UnitNumber).
+				To(Equal(ptr.To(int32(8))))
+			Expect(rec.Events).To(HaveLen(1))
+			Expect(<-rec.Events).
+				To(Equal(ambiguousEventMsgPrefix + "eth1, eth2"))
+		})
+	})
+
+	// ------------------------------------------------------------------ //
+	// Interface/device count mismatch
+	// ------------------------------------------------------------------ //
+
+	When("there are more spec interfaces than devices", func() {
+		It("records what it can; the remainder stay nil", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, nil),
+							ifaceWithNet("eth1", "", bogusNet, nil),
+							ifaceWithNet("eth2", "", bogusNet, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))),
+				ethCardWithUnit(4001, mac2, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(vm.Spec.Network.Interfaces[1].UnitNumber).
+				To(Equal(ptr.To(int32(8))))
+			Expect(vm.Spec.Network.Interfaces[2].UnitNumber).To(BeNil())
+			Expect(rec.Events).To(HaveLen(1))
+			Expect(<-rec.Events).
+				To(Equal(ambiguousEventMsgPrefix + "eth1"))
+		})
+	})
+
+	When("there are more devices than spec interfaces", func() {
+		It("records the matched interface; the extra device is unclaimed", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))),
+				ethCardWithUnit(4001, mac2, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+	})
+
+	When("spec.network.disabled is true", func() {
+		It("the backfill still runs: it is driven by the spec's interface list", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Disabled: true,
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", mac1, netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(rec.Events).To(BeEmpty())
 		})
 	})
 })

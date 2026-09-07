@@ -9,12 +9,19 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	pkgrecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -252,4 +259,250 @@ func collectEthernetDevicesFromMoVM(
 		}
 	}
 	return devs
+}
+
+// NICUnitNumberBackfillAmbiguous is the warning-event reason emitted when an
+// interface's observed unit number was recorded by positional matching rather
+// than a unique match.
+const NICUnitNumberBackfillAmbiguous = "NICUnitNumberBackfillAmbiguous"
+
+// NICUnitNumbersFromMoVM records each spec.network.interfaces entry's observed
+// PCI unit number from the VM's live vSphere ethernet devices during schema
+// upgrade. Once recorded, the unit number is the interface's identifier for
+// its hardware, so the value recorded here must be the one vSphere actually
+// observed. Spec wins: an interface that already carries a unit number is
+// never overwritten, including when the observed device sits at a different
+// slot — that disagreement is reported by the steady-state hardware condition,
+// not by this one-shot backfill.
+//
+// Interfaces are matched to devices in two passes:
+//
+//  1. Hodgepodge matching via the network package's provider-dispatched
+//     matcher (network.FindMatchingEthCardForInterfaceSpec), the same
+//     MAC / ExternalID / backing criteria the reconcile-time matching uses
+//     (FindMatchingEthCard / MapEthernetDevicesToSpecIdx). A returned index
+//     is a unique, provider-approved match; the device is claimed even when
+//     the interface's spec unit number is already set, so the zip below
+//     cannot hand that device to a different interface. When the client is
+//     nil, pass 1 is skipped entirely.
+//
+//  2. A positional zip of the remaining unmatched spec interfaces against
+//     the remaining unclaimed devices (with an observed unit number), as a
+//     strictly last resort so every interface receives its observed unit
+//     number. A single warning event (NICUnitNumberBackfillAmbiguous) names
+//     every interface whose value came from the zip: nothing in the
+//     resulting spec distinguishes a zipped value from a matched one, yet a
+//     wrong zip assignment is one-shot and feeds unit-number-first reconcile
+//     matching, status, and boot-order device selection. No other case
+//     emits an event here.
+//
+// Per interface, the write is skipped (the unit number stays nil) when the
+// observed value would make the spec inadmissible (G7): already claimed by
+// another interface's spec value or by a value recorded earlier in this same
+// pass, or — defensively, since ethernet cards are allocated units 7-16 by
+// the platform — outside that range. Note what the skip does and does not
+// buy: it keeps the spec admissible, but it does not leave the interface
+// un-numbered — the mutation webhook runs on this very patch and assigns the
+// interface a free slot, exactly as AddControllersForVolumes numbers a volume
+// the disk backfill skipped (and that invented slot is acted on under the
+// unit-number identity model). This is accepted; see the spec plan's
+// "Consistency with the disk placement model".
+//
+// The backfill is driven by the spec's interface list and runs even when
+// spec.network.disabled is true (the devices may still exist in vSphere); a
+// VM with no interfaces records nothing.
+//
+// Returns true if any spec field was mutated.
+func NICUnitNumbersFromMoVM(
+	ctx context.Context,
+	client ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine) bool {
+
+	if moVM.Config == nil {
+		return false
+	}
+	if vm.Spec.Network == nil || len(vm.Spec.Network.Interfaces) == 0 {
+		return false
+	}
+
+	// The same ethernet device list the provider-dispatched matcher consumes;
+	// its indices are the ones claimedDevs tracks. collectEthernetDevicesFromMoVM
+	// selects the identical set (IsEthernetCard and SelectByType agree), but a
+	// single list guarantees index alignment between pass 1 and the zip.
+	ethDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device).
+		SelectByType((*vimtypes.VirtualEthernetCard)(nil))
+
+	// G7 admissibility guard: unit numbers already claimed in the spec, plus
+	// any recorded by this same pass, are unavailable for recording.
+	occupiedUnits := sets.New[int32]()
+	for i := range vm.Spec.Network.Interfaces {
+		if u := vm.Spec.Network.Interfaces[i].UnitNumber; u != nil {
+			occupiedUnits.Insert(*u)
+		}
+	}
+
+	var (
+		claimedDevs   = make([]bool, len(ethDevs))
+		hodgepodgeIdx = make([]bool, len(vm.Spec.Network.Interfaces))
+		mutated       bool
+		zipMatched    []string
+	)
+
+	// Pass 1: provider-dispatched hodgepodge matching. A nil client cannot
+	// resolve provider CRs; skip the pass rather than panic (the zip below
+	// still records observed slots, with its ambiguity event).
+	if client != nil {
+		vmCtx := pkgctx.NewVirtualMachineContext(ctx, vm)
+
+		// Match against only the devices not yet claimed by an earlier
+		// interface, mirroring MapEthernetDevicesToSpecIdx's consumption of
+		// each matched card before the next lookup: without this, two
+		// interfaces whose criteria both match the same card (e.g. two
+		// same-network Named interfaces without MACs) would both match the
+		// first device. unclaimedIdx maps positions in unclaimedDevs back to
+		// their indices in ethDevs.
+		unclaimedIdx := make([]int, 0, len(ethDevs))
+		unclaimedDevs := make([]vimtypes.BaseVirtualDevice, 0, len(ethDevs))
+		rebuildUnclaimed := func() {
+			unclaimedIdx = unclaimedIdx[:0]
+			unclaimedDevs = unclaimedDevs[:0]
+			for j := range ethDevs {
+				if !claimedDevs[j] {
+					unclaimedIdx = append(unclaimedIdx, j)
+					unclaimedDevs = append(unclaimedDevs, ethDevs[j])
+				}
+			}
+		}
+		rebuildUnclaimed()
+
+		for i := range vm.Spec.Network.Interfaces {
+			iface := &vm.Spec.Network.Interfaces[i]
+
+			if len(unclaimedDevs) == 0 {
+				break
+			}
+
+			matchingIdx := network.FindMatchingEthCardForInterfaceSpec(
+				vmCtx, client, *iface, unclaimedDevs)
+			if matchingIdx < 0 {
+				continue
+			}
+
+			devIdx := unclaimedIdx[matchingIdx]
+			claimedDevs[devIdx] = true
+			hodgepodgeIdx[i] = true
+			rebuildUnclaimed()
+
+			if iface.UnitNumber != nil {
+				continue // spec wins
+			}
+
+			if recordEthDeviceUnitNumber(
+				ctx, iface, ethDevs[devIdx], occupiedUnits) {
+				mutated = true
+			}
+		}
+	} else {
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
+			"Skipping NIC unit number hodgepodge matching: no client")
+	}
+
+	// Reserve every unclaimed device whose observed slot is already declared
+	// by a numbered spec interface (or recorded this pass): the zip must only
+	// pair leftover interfaces with devices that are not already some other
+	// interface's identity, otherwise it G7-skips the write and consumes the
+	// pairing, costing a later valid device its record. Note pass-1 claim is
+	// still by match, not by unit: a uniquely matched physical NIC must be
+	// reserved even when the spec disagrees with it.
+	for j := range ethDevs {
+		if claimedDevs[j] {
+			continue
+		}
+		if u := ethDevs[j].GetVirtualDevice().UnitNumber; u != nil && occupiedUnits.Has(*u) {
+			claimedDevs[j] = true
+		}
+	}
+
+	// Pass 2: positional zip of the remaining interfaces against the
+	// remaining unclaimed devices with an observed unit number. Devices
+	// without an observed unit number have nothing to record and are not
+	// zip candidates.
+	for i := range vm.Spec.Network.Interfaces {
+		iface := &vm.Spec.Network.Interfaces[i]
+		if hodgepodgeIdx[i] || iface.UnitNumber != nil {
+			continue
+		}
+
+		for j := range ethDevs {
+			dev := ethDevs[j]
+			if claimedDevs[j] || dev.GetVirtualDevice().UnitNumber == nil {
+				continue
+			}
+
+			claimedDevs[j] = true
+			if recordEthDeviceUnitNumber(ctx, iface, dev, occupiedUnits) {
+				mutated = true
+				zipMatched = append(zipMatched, iface.Name)
+			}
+			break
+		}
+	}
+
+	if len(zipMatched) > 0 {
+		// G8.2: this is the only case a one-shot event is the right mechanism
+		// for — nothing in the resulting spec records that the value came from
+		// the zip. The other divergence cases (an explicit value disagreeing
+		// with the observed slot, a G7-skipped interface) are steady-state
+		// observable and belong to the hardware condition, not here.
+		pkgrecord.FromContext(ctx).Warnf(
+			vm,
+			NICUnitNumberBackfillAmbiguous,
+			"Observed unit numbers were recorded for the following network interfaces by positional matching rather than a unique match, and may be assigned incorrectly: %s",
+			strings.Join(zipMatched, ", "))
+	}
+
+	return mutated
+}
+
+// recordEthDeviceUnitNumber records the device's observed unit number onto
+// iface unless doing so would make the spec inadmissible (G7): the value is
+// outside the valid ethernet-card range, or already claimed by another
+// interface's spec value or by a value recorded earlier in this same pass
+// (occupiedUnits). The device's UnitNumber is already *int32 — copy the
+// pointed-to value with a nil guard; never re-take its address, which would
+// be a **int32 and would alias a field inside moVM.
+func recordEthDeviceUnitNumber(
+	ctx context.Context,
+	iface *vmopv1.VirtualMachineNetworkInterfaceSpec,
+	dev vimtypes.BaseVirtualDevice,
+	occupiedUnits sets.Set[int32]) bool {
+
+	observed := dev.GetVirtualDevice().UnitNumber
+	if observed == nil {
+		// The device reports no unit number: nothing to record.
+		return false
+	}
+
+	unit := *observed
+
+	if unit < vmopv1util.NICUnitNumberFirst || unit > vmopv1util.NICUnitNumberMax {
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
+			"Skipping NIC unit number backfill: observed value is out of the valid range",
+			"interface", iface.Name,
+			"unitNumber", unit)
+		return false
+	}
+
+	if occupiedUnits.Has(unit) {
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
+			"Skipping NIC unit number backfill: observed value is already claimed by another interface",
+			"interface", iface.Name,
+			"unitNumber", unit)
+		return false
+	}
+
+	occupiedUnits.Insert(unit)
+	iface.UnitNumber = ptr.To(unit)
+	return true
 }

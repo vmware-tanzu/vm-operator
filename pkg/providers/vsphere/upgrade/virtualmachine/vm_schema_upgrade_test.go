@@ -6,15 +6,20 @@ package virtualmachine_test
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -22,11 +27,14 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	upgradevm "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/upgrade/virtualmachine"
+	pkgrecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -457,6 +465,162 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 							Expect(*vm.Spec.Network.Interfaces[0].VNUMANodeID).To(Equal(int32(2)))
 						})
 					})
+				})
+
+				When("VMNetworkUnitNumbers feature is enabled", func() {
+					var rec *events.FakeRecorder
+
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMNetworkUnitNumbers = true
+						})
+
+						// The backfill emits a Warning event for zip-matched
+						// interfaces via the context recorder; without one it
+						// panics. The production reconcile context always
+						// carries a recorder.
+						rec = events.NewFakeRecorder(100)
+						ctx = pkgrecord.WithContext(ctx, pkgrecord.New(rec))
+
+						vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0"},
+							},
+						}
+					})
+
+					ethCardWithUnit := func(key int32, unit *int32) vimtypes.BaseVirtualDevice {
+						dev := &vimtypes.VirtualVmxnet3{}
+						dev.Key = key
+						dev.UnitNumber = unit
+						return dev
+					}
+
+					When("VC VM has a NIC with an observed unit number", func() {
+						BeforeEach(func() {
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+								ethCardWithUnit(4000, ptr.To(int32(7))),
+							}
+						})
+
+						It("should backfill the observed unit number and stamp the bit", func() {
+							assertUpgraded()
+							// base=1 | NICUnitNumbers=16
+							assertFeatureVersion("17")
+							Expect(vm.Spec.Network.Interfaces[0].UnitNumber).To(Equal(ptr.To(int32(7))))
+						})
+
+						It("should emit the zip-ambiguity event for positionally matched interfaces", func() {
+							// "eth0" has no Network ref or MAC, so the hodgepodge
+							// matcher cannot claim a device: the record comes from
+							// the positional zip, which is the only case that
+							// leaves no trace in the spec (G8.2).
+							assertUpgraded()
+							Expect(rec.Events).To(HaveLen(1))
+							Expect(<-rec.Events).To(SatisfyAll(
+								ContainSubstring("NICUnitNumberBackfillAmbiguous"),
+								ContainSubstring("eth0")))
+						})
+					})
+
+					When("spec already carries explicit unit numbers", func() {
+						BeforeEach(func() {
+							vm.Spec.Network.Interfaces[0].UnitNumber = ptr.To(int32(9))
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+								ethCardWithUnit(4000, ptr.To(int32(7))),
+							}
+						})
+
+						It("should leave the explicit value untouched (spec wins, no event)", func() {
+							assertUpgraded()
+							assertFeatureVersion("17")
+							Expect(vm.Spec.Network.Interfaces[0].UnitNumber).To(Equal(ptr.To(int32(9))))
+							Expect(rec.Events).To(BeEmpty())
+						})
+					})
+
+					When("VM has no interfaces", func() {
+						BeforeEach(func() {
+							vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+						})
+
+						It("should record nothing but still stamp the bit", func() {
+							assertUpgraded()
+							assertFeatureVersion("17")
+						})
+					})
+
+					When("observed value would duplicate an explicit spec value", func() {
+						// eth0's explicit value pins slot 7, whose device is
+						// therefore reserved from the zip; eth1 zips with the
+						// slot-8 device and is recorded.
+						BeforeEach(func() {
+							vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0", UnitNumber: ptr.To(int32(7))},
+								{Name: "eth1"},
+							}
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+								ethCardWithUnit(4000, ptr.To(int32(7))),
+								ethCardWithUnit(4001, ptr.To(int32(8))),
+							}
+						})
+
+						It("should reserve the pinned slot and record the rest, bit still stamped", func() {
+							assertUpgraded()
+							assertFeatureVersion("17")
+							Expect(vm.Spec.Network.Interfaces[0].UnitNumber).To(Equal(ptr.To(int32(7))))
+							Expect(vm.Spec.Network.Interfaces[1].UnitNumber).To(Equal(ptr.To(int32(8))))
+							Expect(rec.Events).To(HaveLen(1))
+						})
+					})
+
+					When("the only free device is the one an explicit spec value claims", func() {
+						// G7/I13: the backfill must never write a spec the API
+						// would reject. eth0's explicit 7 claims the only device's
+						// slot, so eth1's write is skipped and eth1 stays nil; the
+						// mutator numbers it on this same patch (I18).
+						BeforeEach(func() {
+							vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{Name: "eth0", UnitNumber: ptr.To(int32(7))},
+								{Name: "eth1"},
+							}
+							moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+								ethCardWithUnit(4000, ptr.To(int32(7))),
+							}
+						})
+
+						It("should skip the duplicate write, leave the interface nil, bit still stamped", func() {
+							assertUpgraded()
+							assertFeatureVersion("17")
+							Expect(vm.Spec.Network.Interfaces[0].UnitNumber).To(Equal(ptr.To(int32(7))))
+							Expect(vm.Spec.Network.Interfaces[1].UnitNumber).To(BeNil())
+							Expect(rec.Events).To(BeEmpty())
+						})
+					})
+				})
+			})
+
+			When("VMNetworkUnitNumbers feature is disabled", func() {
+				BeforeEach(func() {
+					vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{Name: "eth0"},
+						},
+					}
+					moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+						func() vimtypes.BaseVirtualDevice {
+							dev := &vimtypes.VirtualVmxnet3{}
+							dev.Key = 4000
+							dev.UnitNumber = ptr.To(int32(7))
+							return dev
+						}(),
+					}
+				})
+
+				It("should not backfill unit numbers even without the bit", func() {
+					assertUpgraded()
+					assertFeatureVersion("1")
+					Expect(vm.Spec.Network.Interfaces[0].UnitNumber).To(BeNil())
 				})
 			})
 
@@ -1670,6 +1834,196 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 					assertPVCPlacementPopulated(vm.Spec.Volumes[1], 0, 1, vmopv1.VirtualControllerTypeSCSI)
 				})
 			})
+		})
+	})
+})
+
+// vcsim integration coverage for the backfill flow. This is the only place
+// the NIC unit-number backfill is exercised end-to-end: the E2E environment
+// cannot flip the VMNetworkUnitNumbers capability mid-run, so the
+// greenfield (first post-create reconcile) and brownfield (operator
+// upgrade) flows are both covered here against the govmomi simulator.
+//
+// Test caveats (R3/I26): vcsim cannot evidence unit-number collision
+// behavior for payloads this product builds — its duplicate-unit check bails
+// when devices differ in ControllerKey, and operator-built ethernet cards
+// leave ControllerKey unset, so the check never fires. Do not add a vcsim
+// "collision is rejected" assertion (it would pass for the wrong reason or
+// not at all), and do not add a vcsim same-slot Remove+Add test (it passes
+// vacuously and is not evidence for R1). T001 items 6 and 8 are the only
+// real evidence for both.
+var _ = Describe("ReconcileSchemaUpgrade NIC unit numbers (vcsim)", func() {
+
+	var (
+		vcsimCtx  *builder.TestContextForVCSim
+		ctx       context.Context
+		k8sClient ctrlclient.Client
+		vcVM      *object.VirtualMachine
+		moVM      mo.VirtualMachine
+		rec       *events.FakeRecorder
+		vmObj     *vmopv1.VirtualMachine
+	)
+
+	assertFeatureVersion := func(expected string) {
+		ExpectWithOffset(1, vmObj.Annotations).To(HaveKeyWithValue(
+			pkgconst.UpgradedToFeatureVersionAnnotationKey, expected))
+	}
+
+	dcEthCards := func() []vimtypes.BaseVirtualDevice {
+		return object.VirtualDeviceList(moVM.Config.Hardware.Device).
+			SelectByType((*vimtypes.VirtualEthernetCard)(nil))
+	}
+
+	BeforeEach(func() {
+		pkg.BuildVersion = "v1.2.3"
+
+		vcsimCtx = builder.NewTestContextForVCSim(
+			ctxop.WithContext(pkgcfg.NewContextWithDefaultConfig()),
+			builder.VCSimTestConfig{})
+		ctx = vcsimCtx
+
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.VMNetworkUnitNumbers = true
+			config.NetworkProviderType = pkgcfg.NetworkProviderTypeNamed
+		})
+
+		// The backfill emits events via the context recorder; without one it
+		// panics. The production reconcile context always carries one.
+		rec = events.NewFakeRecorder(100)
+		ctx = pkgrecord.WithContext(ctx, pkgrecord.New(rec))
+
+		k8sClient = builder.NewFakeClient()
+
+		var err error
+		vcVM, err = vcsimCtx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+		Expect(err).ToNot(HaveOccurred())
+
+		pc := property.DefaultCollector(vcsimCtx.VCClient.Client)
+		Expect(pc.RetrieveOne(
+			ctx,
+			vcVM.Reference(),
+			[]string{"config"},
+			&moVM)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		vcsimCtx.AfterEach()
+		vcsimCtx = nil
+		ctx = nil
+		k8sClient = nil
+		vcVM = nil
+		moVM = mo.VirtualMachine{}
+		rec = nil
+	})
+
+	// runUpgrade calls ReconcileSchemaUpgrade twice: the first call stamps
+	// the build/schema annotations and returns ErrUpgradeSchema before any
+	// feature backfill runs; the second performs the backfill and stamps the
+	// feature-version bit.
+	runUpgrade := func(vm *vmopv1.VirtualMachine) error {
+		err1 := upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vm, moVM)
+		if err1 != nil {
+			ExpectWithOffset(1, err1).To(MatchError(upgradevm.ErrUpgradeSchema))
+		}
+		return upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vm, moVM)
+	}
+
+	When("the VM has interfaces for every ethernet device", func() {
+		BeforeEach(func() {
+			ethCards := dcEthCards()
+			Expect(ethCards).ToNot(BeEmpty())
+
+			var ifaces []vmopv1.VirtualMachineNetworkInterfaceSpec
+			for i, dev := range ethCards {
+				card := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+				iface := vmopv1.VirtualMachineNetworkInterfaceSpec{
+					Name: fmt.Sprintf("eth%d", i),
+					Network: &vmopv1common.PartialObjectRef{
+						Name: card.Backing.(*vimtypes.VirtualEthernetCardNetworkBackingInfo).DeviceName,
+					},
+				}
+				if card.MacAddress != "" {
+					iface.MACAddr = card.MacAddress
+				}
+				ifaces = append(ifaces, iface)
+			}
+
+			vmObj = &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       types.UID("vcsim-abc-123"),
+					Namespace: testNamespace,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{Interfaces: ifaces},
+				},
+			}
+		})
+
+		It("should backfill the observed unit numbers and stamp the bit", func() {
+			Expect(runUpgrade(vmObj)).To(MatchError(upgradevm.ErrUpgradeObject))
+
+			assertFeatureVersion("17") // base=1 | NICUnitNumbers=16
+
+			seen := sets.New[int32]()
+			for i, iface := range vmObj.Spec.Network.Interfaces {
+				Expect(iface.UnitNumber).ToNot(BeNil(), "interface %d", i)
+				Expect(*iface.UnitNumber).To(BeNumerically(">=", 7))
+				Expect(*iface.UnitNumber).To(BeNumerically("<=", 16))
+				Expect(seen.Has(*iface.UnitNumber)).To(BeFalse())
+				seen.Insert(*iface.UnitNumber)
+			}
+
+			// Already upgraded: the third run is a no-op that no longer
+			// reaches the backfill.
+			before := vmObj.DeepCopy()
+			Expect(upgradevm.ReconcileSchemaUpgrade(ctx, k8sClient, vmObj, moVM)).
+				To(Succeed())
+			Expect(vmObj.Spec.Network.Interfaces).To(Equal(before.Spec.Network.Interfaces))
+		})
+	})
+
+	When("the VM spec carries explicit unit numbers", func() {
+		BeforeEach(func() {
+			Expect(dcEthCards()).ToNot(BeEmpty())
+
+			vmObj = &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       types.UID("vcsim-abc-123"),
+					Namespace: testNamespace,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							{Name: "eth0", UnitNumber: ptr.To(int32(9))},
+						},
+					},
+				},
+			}
+		})
+
+		It("should leave the explicit value untouched (spec wins)", func() {
+			Expect(runUpgrade(vmObj)).To(MatchError(upgradevm.ErrUpgradeObject))
+			assertFeatureVersion("17")
+			Expect(vmObj.Spec.Network.Interfaces[0].UnitNumber).To(Equal(ptr.To(int32(9))))
+		})
+	})
+
+	When("the VM has no interfaces", func() {
+		BeforeEach(func() {
+			vmObj = &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       types.UID("vcsim-abc-123"),
+					Namespace: testNamespace,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{},
+				},
+			}
+		})
+
+		It("should record nothing but still stamp the bit", func() {
+			Expect(runUpgrade(vmObj)).To(MatchError(upgradevm.ErrUpgradeObject))
+			assertFeatureVersion("17")
 		})
 	})
 })

@@ -44,6 +44,10 @@ intervals:
   # vMotion and has been observed taking well over 4 minutes under
   # datastore/NFC contention.
   register-vm-restore-disk-only/wait-virtual-machine-condition-update: ["12m", "5s"]
+  # See wcp.yaml: this spec deletes the VM while snapshots are still
+  # attached, which makes vCenter's Destroy_Task consolidate delta/
+  # memory-snapshot files before it completes.
+  vm-snapshot/wait-virtual-machine-deletion: ["10m", "5s"]
   default/wait-virtual-machine-powerstate: ["5m", "3s"]
   default/wait-virtual-machine-resize: ["5m", "3s"]
   default/wait-virtual-machine-moid: ["5m", "3s"]

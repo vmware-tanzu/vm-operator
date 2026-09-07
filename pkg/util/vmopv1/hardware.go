@@ -40,9 +40,11 @@ type ControllerSpec interface {
 	ReservedUnitNumber() int32
 }
 
-// firstUnitNumberer is an optional ControllerSpec extension implemented by
-// controllers whose valid unit numbers do not start at zero — the single,
-// implicit PCI bus hosting ethernet cards starts at NICUnitNumberFirst.
+// firstUnitNumberer is an optional ControllerSpec extension. Controllers
+// whose valid unit numbers do not start at zero implement it: FirstUnitNumber
+// returns the first assignable unit number on the controller's bus, and
+// NextAvailableUnitNumber scans from there. Controllers that start at zero
+// (the default) need not implement it.
 type firstUnitNumberer interface {
 	FirstUnitNumber() int32
 }

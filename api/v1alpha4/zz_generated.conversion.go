@@ -3383,6 +3383,7 @@ func Convert_v1alpha4_VirtualMachineNetworkInterfaceStatus_To_v1alpha6_VirtualMa
 func autoConvert_v1alpha6_VirtualMachineNetworkInterfaceStatus_To_v1alpha4_VirtualMachineNetworkInterfaceStatus(in *v1alpha6.VirtualMachineNetworkInterfaceStatus, out *VirtualMachineNetworkInterfaceStatus, s conversion.Scope) error {
 	out.Name = in.Name
 	out.DeviceKey = in.DeviceKey
+	// WARNING: in.UnitNumber requires manual conversion: does not exist in peer-type
 	out.IP = (*VirtualMachineNetworkInterfaceIPStatus)(unsafe.Pointer(in.IP))
 	out.DNS = (*VirtualMachineNetworkDNSStatus)(unsafe.Pointer(in.DNS))
 	// WARNING: in.VNUMANodeID requires manual conversion: does not exist in peer-type

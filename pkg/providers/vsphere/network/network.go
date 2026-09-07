@@ -71,6 +71,11 @@ type Device struct {
 	EthCard vimtypes.BaseVirtualDevice
 	// EthCardKey is EthCard's device key once it exists on the VM.
 	EthCardKey int32
+
+	// UnitNumber is the interface's desired PCI unit number from
+	// spec.network.interfaces[].unitNumber. Nil when unset or when the
+	// VMNetworkUnitNumbers feature is disabled.
+	UnitNumber *int32
 }
 
 // ObjectName returns the name of the network interface CR backing this
@@ -206,6 +211,10 @@ func CreateNetworkDevices(
 			errs = append(errs,
 				fmt.Errorf("error getting device for interface %s: %w", interfaceSpec.Name, err))
 			continue
+		}
+
+		if pkgcfg.FromContext(ctx).Features.VMNetworkUnitNumbers {
+			dev.UnitNumber = interfaceSpec.UnitNumber
 		}
 
 		devices = append(devices, dev)
@@ -527,6 +536,10 @@ func CreateAndWaitForNetworkInterfaces(
 			continue
 		}
 
+		if pkgcfg.FromContext(vmCtx).Features.VMNetworkUnitNumbers {
+			dev.UnitNumber = interfaceSpec.UnitNumber
+		}
+
 		devices = append(devices, dev)
 	}
 
@@ -549,6 +562,10 @@ func createNetworkDevicesForNamedNetwork(
 			return nil, err
 		}
 
+		if pkgcfg.FromContext(ctx).Features.VMNetworkUnitNumbers {
+			dev.UnitNumber = interfaceSpec.UnitNumber
+		}
+
 		devices = append(devices, dev)
 	}
 
@@ -566,6 +583,10 @@ func createAndWaitNamedNetworkInterfaces(
 		dev, err := createAndWaitNamedNetworkInterface(ctx, finder, interfaceSpec)
 		if err != nil {
 			return nil, fmt.Errorf("named network interface %q error: %w", interfaceSpec.Name, err)
+		}
+
+		if pkgcfg.FromContext(ctx).Features.VMNetworkUnitNumbers {
+			dev.UnitNumber = interfaceSpec.UnitNumber
 		}
 
 		devices = append(devices, dev)

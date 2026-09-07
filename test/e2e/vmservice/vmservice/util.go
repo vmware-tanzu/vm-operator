@@ -678,11 +678,20 @@ func VerifyLoginAndRunCmdsInNSXSetup(ctx context.Context, config *config.E2EConf
 	namespace string, podVMName string, vmIP string, cmds []string, expectedOutput []string) {
 	framework.Logf("will attempt to ssh into %s using jumpbox podvm", vmIP)
 
-	Eventually(func() bool {
+	Eventually(func(g Gomega) bool {
 		stdout, err := clusterProxy.Exec(ctx, "-it", "jumpbox", "-n", namespace, "--", "sshpass", "-V")
 		if err == nil && stdout != nil {
 			return true
 		}
+
+		// The install script on the jumpbox PodVM marks /root/.failed once it gives
+		// up retrying yum install; fail fast with the real error instead of burning
+		// the full timeout on a install that will never succeed.
+		if failMarker, ferr := clusterProxy.Exec(ctx, "jumpbox", "-n", namespace, "--", "cat", "/root/.failed"); ferr == nil && len(failMarker) > 0 {
+			installLog, _ := clusterProxy.Exec(ctx, "jumpbox", "-n", namespace, "--", "cat", "/root/.install.log")
+			g.Expect(false).To(BeTrue(), "jumpbox PodVM failed to install sshpass permanently:\n%s", string(installLog))
+		}
+
 		// The Exec function will output an error message on each failure.
 		// Add a log here to clarify that retries are expected behavior.
 		framework.Logf("sshpass not yet installed on jumpbox PodVM, retrying...")

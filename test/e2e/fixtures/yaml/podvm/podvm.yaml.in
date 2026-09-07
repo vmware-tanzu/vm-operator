@@ -42,8 +42,21 @@ spec:
       args:
         - |
           rm -f /etc/yum.repos.d/photon-updates.repo /etc/yum.repos.d/photon-extras.repo
-          yum install -y iputils openssh-server sshpass
-          mkdir /root/.ssh
+          mkdir -p /root/.ssh
+
+          attempt=0
+          max_attempts=10
+          until yum install -y iputils openssh-server sshpass >>/root/.install.log 2>&1; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "yum install failed after ${attempt} attempts" >>/root/.install.log
+              echo "failed" > /root/.failed
+              while true; do sleep 30; done
+            fi
+            echo "yum install attempt ${attempt} failed, retrying in 15s..." >>/root/.install.log
+            sleep 15
+          done
+
           echo > /root/.completed
           while true; do sleep 30; done
       {{- if or .PrivateKeySecretName .CustomUserPrivateKeySecretName }}

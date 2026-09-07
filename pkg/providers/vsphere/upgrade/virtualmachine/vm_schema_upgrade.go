@@ -176,6 +176,13 @@ func ReconcileSchemaUpgrade(
 		}
 	}
 
+	if features.VMNetworkUnitNumbers {
+		if f := vmopv1util.FeatureVersionNICUnitNumbers; !vmFeatureVersion.Has(f) {
+			vmbackfill.NICUnitNumbersFromMoVM(ctx, k8sClient, vm, moVM)
+			vmFeatureVersion.Set(f)
+		}
+	}
+
 	vm.SetAnnotation(
 		pkgconst.UpgradedToFeatureVersionAnnotationKey,
 		vmFeatureVersion.String())

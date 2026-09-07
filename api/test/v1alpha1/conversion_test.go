@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/utils/ptr"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 	"sigs.k8s.io/randfill"
 
@@ -60,6 +61,38 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 		Context("Hub-Spoke-Hub", func() {
 			It("should get fuzzy with it", func() {
 				fuzztests.HubSpokeHub(input)
+			})
+		})
+
+		Context("unitNumber round-trip", func() {
+			It("restores spec.network.interfaces[].unitNumber via the annotation", func() {
+				// v1alpha1 cannot carry the hub-only unitNumber field, but the
+				// annotation-based restore saves the interfaces list on
+				// down-conversion and restores it wholesale on up-conversion,
+				// so the field must survive the round trip.
+				hub := &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Network: &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:       "eth0",
+									UnitNumber: ptr.To(int32(9)),
+								},
+							},
+						},
+					},
+				}
+
+				spoke := &vmopv1a1.VirtualMachine{}
+				Expect(spoke.ConvertFrom(hub)).To(Succeed())
+
+				restored := &vmopv1.VirtualMachine{}
+				Expect(spoke.ConvertTo(restored)).To(Succeed())
+
+				Expect(restored.Spec.Network).NotTo(BeNil())
+				Expect(restored.Spec.Network.Interfaces).To(HaveLen(1))
+				Expect(restored.Spec.Network.Interfaces[0].Name).To(Equal("eth0"))
+				Expect(restored.Spec.Network.Interfaces[0].UnitNumber).To(Equal(ptr.To(int32(9))))
 			})
 		})
 	})

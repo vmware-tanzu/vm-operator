@@ -168,6 +168,7 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMa
 		dstIface.IPAMModes = append([]corev1.IPFamily(nil), srcIface.IPAMModes...)
 		dstIface.Type = srcIface.Type
 		dstIface.VNUMANodeID = srcIface.VNUMANodeID
+		dstIface.UnitNumber = srcIface.UnitNumber
 		dstIface.VMXNet3 = srcIface.VMXNet3
 		dstIface.AdvancedProperties = srcIface.AdvancedProperties
 		// DHCP4/DHCP6 ptr.To(false) is lost on down-conversion (bool false ≡ nil).

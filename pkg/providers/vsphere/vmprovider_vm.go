@@ -1714,9 +1714,13 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 			// processPlacementResult may already have set a more specific
 			// reason (e.g. ZoneMismatch); only fall back to the generic
 			// NotReady reason when the condition is not already False.
+			// Update message (which may contain updated details) only
+			// when its the same "NotReady" reason.
 			if !pkgcond.IsFalse(
 				vmCtx.VM,
-				vmopv1.VirtualMachineConditionPlacementReady) {
+				vmopv1.VirtualMachineConditionPlacementReady) ||
+				pkgcond.GetReason(vmCtx.VM,
+					vmopv1.VirtualMachineConditionPlacementReady) == "NotReady" {
 				pkgcond.MarkError(
 					vmCtx.VM,
 					vmopv1.VirtualMachineConditionPlacementReady,

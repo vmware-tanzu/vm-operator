@@ -200,6 +200,7 @@ type FeatureStates struct {
 	GuestCustomizationVCDParity bool
 	AllDisksArePVCs             bool
 	VMAffinityDuringExecution   bool
+	ExtensionCompatConstraint   bool
 }
 
 type InstanceStorage struct {

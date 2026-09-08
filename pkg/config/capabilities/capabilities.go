@@ -96,6 +96,12 @@ const (
 	// the Supervisor capabilities CRD for enabling affinity/anti-affinity rules
 	// for VM Placement during execution.
 	CapabilityKeyVMAffinityDuringExecution = "supports_VM_service_VM_affinity_during_execution"
+
+	// CapabilityKeyExtensionCompatConstraint is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the vpxd Safety Rails
+	// extension compatibility constraint mechanism. It gates VM Operator
+	// registering INVARIANT constraints on VMs it creates.
+	CapabilityKeyExtensionCompatConstraint = "supports_extension_compat_constraint"
 )
 
 var (
@@ -258,6 +264,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.AllDisksArePVCs = capStatus.Activated
 		case CapabilityKeyVMAffinityDuringExecution:
 			fs.VMAffinityDuringExecution = capStatus.Activated
+		case CapabilityKeyExtensionCompatConstraint:
+			fs.ExtensionCompatConstraint = capStatus.Activated
 		}
 
 	}

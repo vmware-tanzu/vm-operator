@@ -15,10 +15,12 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	taskutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/task"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
@@ -86,6 +88,14 @@ func (vm *VirtualMachine) Reconfigure(
 	configSpec *vimtypes.VirtualMachineConfigSpec) (*vimtypes.TaskInfo, error) {
 
 	ctxop.MarkUpdate(ctx)
+
+	// VM Operator registered these constraints on the VM (see CreateConfigSpec
+	// and the extension compat constraint reconciler), so its own reconfigures
+	// must not be blocked by them. VM Operator holds the ExtensionCompat.Bypass
+	// privilege required for vpxd to honor this flag.
+	if pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint {
+		configSpec.SkipExtensionCompatibilityChecks = ptr.To(true)
+	}
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger.Info("Reconfiguring VM", "configSpec", pkgutil.SafeConfigSpecToString(configSpec))

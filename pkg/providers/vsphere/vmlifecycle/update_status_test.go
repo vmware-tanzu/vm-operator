@@ -120,6 +120,15 @@ var _ = Describe("UpdateStatus", func() {
 			Expect(vmCtx.VM.Status.Network).ToNot(BeNil())
 			Expect(vmCtx.VM.Status.Network.HostName).To(Equal(moVM.Summary.Guest.HostName))
 			Expect(vmCtx.VM.Status.Network.PrimaryIP4).To(Equal(moVM.Summary.Guest.IpAddress))
+
+			Expect(vmCtx.VM.Status.ProviderID).To(Equal(moVM.Summary.Config.InstanceUuid))
+			Expect(vmCtx.VM.Status.ProviderMetadata).To(HaveKeyWithValue("uniqueID", moVM.Self.Value))
+			if moVM.Summary.Guest.IpAddress != "" {
+				Expect(vmCtx.VM.Status.Addresses).To(ConsistOf(vmopv1.VirtualMachineAddress{
+					Type:    "InternalIP",
+					Address: moVM.Summary.Guest.IpAddress,
+				}))
+			}
 		})
 	})
 

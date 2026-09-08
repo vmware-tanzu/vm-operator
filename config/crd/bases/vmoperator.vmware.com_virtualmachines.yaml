@@ -16934,6 +16934,38 @@ spec:
             description: VirtualMachineStatus defines the observed state of a VirtualMachine
               instance.
             properties:
+              addresses:
+                description: |-
+                  Addresses are the VM's observed network addresses, reported at the
+                  fixed contract path a generic infrastructure consumer, such as a
+                  kube-vm.io VirtualMachine, reads on every provider. This duplicates
+                  information already reported under Network.PrimaryIP4.
+                items:
+                  description: |-
+                    VirtualMachineAddress is a network address reported for a VirtualMachine at
+                    the fixed contract path a generic infrastructure consumer, such as a
+                    kube-vm.io VirtualMachine, reads on every provider.
+                  properties:
+                    address:
+                      description: Address is the address value.
+                      type: string
+                    interface:
+                      description: Interface names the network interface this address
+                        belongs to.
+                      type: string
+                    type:
+                      description: |-
+                        Type describes the kind of address, matching the well-known Kubernetes
+                        NodeAddress type values.
+                      enum:
+                      - InternalIP
+                      - ExternalIP
+                      - InternalDNS
+                      - ExternalDNS
+                      type: string
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
               biosUUID:
                 description: |-
                   BiosUUID describes a unique identifier provided by the underlying
@@ -18073,6 +18105,29 @@ spec:
                     format: date-time
                     type: string
                 type: object
+              providerID:
+                description: |-
+                  ProviderID is the platform-unique identifier for this VM, reported at
+                  the fixed contract path a generic infrastructure consumer, such as a
+                  kube-vm.io VirtualMachine, reads on every provider. This duplicates
+                  information already reported under InstanceUUID.
+                type: string
+              providerMetadata:
+                additionalProperties:
+                  type: string
+                description: |-
+                  ProviderMetadata is a free-form set of further provider-reported facts,
+                  reported at the fixed contract path a generic infrastructure consumer,
+                  such as a kube-vm.io VirtualMachine, reads on every provider.
+                type: object
+              ready:
+                description: |-
+                  Ready is whether the VM has converged to its desired power state and,
+                  if powered on, has reported an address, reported at the fixed contract
+                  path a generic infrastructure consumer, such as a kube-vm.io
+                  VirtualMachine, reads on every provider. Duplicates the
+                  VirtualMachineConditionInfrastructureReady condition above.
+                type: boolean
               rootSnapshots:
                 description: |-
                   RootSnapshots represents the observed list of root snapshots of

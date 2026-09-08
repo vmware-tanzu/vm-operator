@@ -101,9 +101,41 @@ func ReconcileStatus(
 		errs = append(errs, reconcileStatusSnapshot(vmCtx, k8sClient, vcVM, data)...)
 	}
 
+	errs = append(errs, reconcileStatusReady(vmCtx, k8sClient, vcVM, data)...)
+
 	MarkReconciliationCondition(vmCtx.VM)
 
 	return apierrorsutil.NewAggregate(errs)
+}
+
+// reconcileStatusReady sets the fixed contract Ready condition and
+// status.ready boolean, read by every generic infrastructure consumer (e.g.
+// a kube-vm.io VirtualMachine) at these paths. The VM is ready once it has
+// converged to its desired power state and, if powered on, has reported an
+// address. Must run after reconcileStatusPowerState and reconcileStatusGuest,
+// which set the PowerStateSynced condition and status.Addresses this reads.
+func reconcileStatusReady(
+	vmCtx pkgctx.VirtualMachineContext,
+	_ ctrlclient.Client,
+	_ *object.VirtualMachine,
+	_ ReconcileStatusData) []error { //nolint:unparam
+
+	vm := vmCtx.VM
+
+	ready := conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated) &&
+		conditions.IsTrue(vm, vmopv1.VirtualMachinePowerStateSynced) &&
+		(vm.Status.PowerState != vmopv1.VirtualMachinePowerStateOn || len(vm.Status.Addresses) > 0)
+
+	vm.Status.Ready = ready
+
+	if ready {
+		conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionInfrastructureReady)
+	} else {
+		conditions.MarkFalse(vm, vmopv1.VirtualMachineConditionInfrastructureReady, "NotReady",
+			"the VM has not converged to its desired power state or is waiting to report an address")
+	}
+
+	return nil
 }
 
 var anno2ConditionRegex = regexp.MustCompile(`^condition.vmoperator.vmware.com.protected/(.+)?$`)
@@ -438,6 +470,14 @@ func reconcileStatusPlatform(
 	vmCtx.VM.Status.UniqueID = vmCtx.MoVM.Self.Value
 	vmCtx.VM.Status.BiosUUID = vmCtx.MoVM.Summary.Config.Uuid
 	vmCtx.VM.Status.InstanceUUID = vmCtx.MoVM.Summary.Config.InstanceUuid
+
+	// Contract status fields, read by every generic infrastructure consumer
+	// (e.g. a kube-vm.io VirtualMachine) at these fixed paths.
+	vmCtx.VM.Status.ProviderID = vmCtx.MoVM.Summary.Config.InstanceUuid
+	if vmCtx.VM.Status.ProviderMetadata == nil {
+		vmCtx.VM.Status.ProviderMetadata = map[string]string{}
+	}
+	vmCtx.VM.Status.ProviderMetadata["uniqueID"] = vmCtx.MoVM.Self.Value
 
 	if vmCtx.VM.Status.Provider == nil {
 		vmCtx.VM.Status.Provider = &vmopv1.VirtualMachineProviderStatus{}
@@ -1342,6 +1382,20 @@ func updateGuestNetworkStatus(
 		vm.Status.Network.PrimaryIP6 = primaryIP6
 		vm.Status.Network.IPStacks = ipStackStatuses
 		vm.Status.Network.Interfaces = ifaceStatuses
+
+		// Contract status field, read by every generic infrastructure
+		// consumer (e.g. a kube-vm.io VirtualMachine) at this fixed path.
+		// Duplicates the primary IPv4 address reported above.
+		if primaryIP4 != "" {
+			vm.Status.Addresses = []vmopv1.VirtualMachineAddress{
+				{
+					Type:    "InternalIP",
+					Address: primaryIP4,
+				},
+			}
+		} else {
+			vm.Status.Addresses = nil
+		}
 
 		// TODO(akutz) Handle additional situations:
 		//             - The VM has IPv4 but not IPv6 and vice versa

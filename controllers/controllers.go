@@ -9,11 +9,14 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	kubevmcorecontroller "github.com/vmware-tanzu/vm-operator/external/kubevm/controller/controllers/virtualmachine"
+
 	"github.com/vmware-tanzu/vm-operator/controllers/configtarget"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra"
 	"github.com/vmware-tanzu/vm-operator/controllers/storage"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/kubevmlink"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineconfigoptions"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegroup"
@@ -84,6 +87,20 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 		if err := virtualmachinegrouppublishrequest.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VirtualMachineGroupPublishRequest controller: %w", err)
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.KubeVMProvider {
+		if err := kubevmlink.AddToManager(ctx, mgr); err != nil {
+			return fmt.Errorf("failed to initialize KubeVM link controller: %w", err)
+		}
+		// Bundled in-process for the demo, rather than run as the separate
+		// out-of-cluster binary external/kubevm/controller/main.go builds.
+		// This module never depends on the root module, so the dependency
+		// direction here is safe; it just means the same manager now also
+		// reconciles the generic kube-vm.io VirtualMachine.
+		if err := kubevmcorecontroller.AddToManager(mgr); err != nil {
+			return fmt.Errorf("failed to initialize KubeVM core controller: %w", err)
 		}
 	}
 

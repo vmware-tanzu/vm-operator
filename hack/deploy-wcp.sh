@@ -121,7 +121,7 @@ function sv_deploy_crds() {
     fi
 
     log "Deploying CRDs to $ip..."
-    echo "$crds_yaml" | sv_cp_ssh_cmd "$ip" "kubectl apply --server-side=true --force-conflicts -f -"
+    echo "$crds_yaml" | sv_cp_ssh_cmd "$ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply --server-side=true --force-conflicts -f -"
 }
 
 function vc_ssh_cmd() {

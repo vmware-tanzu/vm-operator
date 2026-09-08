@@ -250,6 +250,7 @@ func unitTests() {
 		),
 		unitTestsValidateDelete,
 	)
+	kubevmAnnotationTests()
 }
 
 type unitValidatingWebhookContext struct {

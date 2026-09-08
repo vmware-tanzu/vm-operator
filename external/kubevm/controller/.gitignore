@@ -1,0 +1,5 @@
+# Tooling binaries installed by "make -C hack/tools".
+hack/tools/bin/
+
+# The controller binary built by "make manager".
+bin/

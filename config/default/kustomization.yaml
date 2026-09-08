@@ -19,6 +19,7 @@ resources:
 - ../crd/external-crds/vim.vmware.com_virtualmachineconfigoptions.yaml
 - ../crd/external-crds/vim.vmware.com_virtualmachineconfigpolicies.yaml
 - ../crd/external-crds/vim.vmware.com_virtualmachineguestoptions.yaml
+- ../crd/external-crds/kube-vm.io_virtualmachines.yaml
 
 patches:
 - path: manager_default_container_patch.yaml

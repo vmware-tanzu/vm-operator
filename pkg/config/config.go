@@ -221,6 +221,7 @@ type FeatureStates struct {
 	VirtualMachineConfigPolicy   bool
 	WorkloadNetworkConfiguration bool
 	ExtensionCompatConstraint    bool
+	KubeVMProvider               bool // FSS_WCP_VMSERVICE_KUBEVM_PROVIDER
 }
 
 type InstanceStorage struct {

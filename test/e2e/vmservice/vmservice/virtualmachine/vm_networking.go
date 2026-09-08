@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/crypto/ssh"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -23,11 +21,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-
-	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/util"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
-	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
@@ -51,8 +45,7 @@ type VMNetworkSpecInput struct {
 
 func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 	const (
-		specName           = "vm-networking"
-		mutableNetworksCap = "supports_VM_service_mutable_networks"
+		specName = "vm-networking"
 	)
 
 	var (
@@ -66,9 +59,8 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		vmYaml           []byte
 		vmName           string
 
-		isVMMutableNetworksCapEnabled bool
-		linuxImageDisplayName         string
-		linuxVMIName                  string
+		linuxImageDisplayName string
+		linuxVMIName          string
 	)
 
 	BeforeEach(func() {
@@ -81,7 +73,6 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 
-		svClusterProxy := input.ClusterProxy
 		wcpClient = input.WCPClient
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
@@ -96,13 +87,6 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-
-		sshCommandRunner, _ := e2essh.NewSSHCommandRunner(
-			vcenter.GetVCPNIDFromKubeconfigFile(ctx, svClusterProxy.GetKubeconfigPath()),
-			vcenter.VCSSHPort, testbed.RootUsername, []ssh.AuthMethod{ssh.Password(testbed.RootPassword)})
-		isAsyncSvUpgradeEnabled, _ := util.IsFSSEnabled(sshCommandRunner, utils.SupervisorAsyncUpgradeFSS)
-		isVMMutableNetworksCapEnabled = utils.IsSupervisorCapabilityEnabled(ctx,
-			svClusterProxy.GetClient(), mutableNetworksCap, isAsyncSvUpgradeEnabled)
 	})
 
 	AfterEach(func() {
@@ -130,10 +114,6 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 	})
 
 	It("Should allow network interface to be added to VirtualMachine when mutability cap is enabled", Label("smoke"), func() {
-		if !isVMMutableNetworksCapEnabled {
-			Skip("VM Mutable Networks capability is not enabled")
-		}
-
 		vmParameters := manifestbuilders.VirtualMachineYaml{
 			Namespace:        input.WCPNamespaceName,
 			Name:             vmName,
@@ -222,10 +202,6 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 	})
 
 	It("Should allow network interface to be moved to a different subnet when mutability cap is enabled", Label("smoke"), func() {
-		if !isVMMutableNetworksCapEnabled {
-			Skip("VM Mutable Networks capability is not enabled")
-		}
-
 		if !vmoperator.IsNetworkNsxtVPC(ctx, svClusterClient, config) {
 			Skip("Test requires VPC networking environment to create SubnetSet")
 		}

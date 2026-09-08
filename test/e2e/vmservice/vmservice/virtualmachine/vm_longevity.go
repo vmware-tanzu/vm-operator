@@ -123,9 +123,6 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 	When("VM Class is associated with default namespace, not associated with the second namespace", func() {
 		It("VMClass CR should exist in default namespace and not exist in the second namespace", Label("smoke"), func() {
-			// Skip testing if WCP_Namespaced_VM_Class FSS is not enabled.
-			skipper.SkipUnlessNamespacedVMClassFSSEnabled(ctx, svClusterClient, config)
-
 			vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmClassName)
 			Expect(vmclass).ToNot(BeNil())
 			Expect(err).ToNot(HaveOccurred(), "vmclass should exist in namespace where it's associated with")

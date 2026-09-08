@@ -125,8 +125,6 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		wcpClient = input.WCPClient
 		// This test is specific for networking VPC
 		skipper.SkipUnlessNetworkingIsVPC(ctx, svClusterClient, config)
-		// Skip if WCP_VMService_v1alpha2 FSS not enabled
-		skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 

@@ -95,9 +95,6 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 		})
 
 		It("When WCP_VMService_v1alpha2 enabled, should successfully create v1a2 virtualmachinewebconsolerequests and populate status", func() {
-			// Skip if WCP_VMService_v1alpha2 FSS not enabled
-			skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
-
 			resourceName = "virtualmachinewebconsolerequests"
 			vmWebconsoleYaml := manifestbuilders.GetVirtualMachineWebConsoleRequestYaml(webconsoleParams)
 			e2eframework.Logf("%v", string(vmWebconsoleYaml))

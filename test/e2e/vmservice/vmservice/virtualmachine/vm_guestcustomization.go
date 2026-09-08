@@ -585,8 +585,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 		When("Secret is used to provide raw cloud-init config", func() {
 			BeforeEach(func() {
-				skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
-
 				bootstrapYAML = createAndVerifySecret(ctx, cloudInitTransport)
 				v1a2vmParameters.Bootstrap.CloudInit.RawCloudConfig = &manifestbuilders.KeySelector{
 					Key:  "user-data",
@@ -651,7 +649,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 	Context("LinuxPrep", func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
 			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 			v1a2vmParameters.ImageName = imageName
@@ -695,7 +692,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 	Context("vAppConfig", func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessV1a2FSSEnabled(ctx, svClusterClient, config)
 			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 			v1a2vmParameters.ImageName = imageName

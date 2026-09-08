@@ -60,6 +60,23 @@ const (
 	// VirtualMachineConditionCreated indicates that the VM has been created.
 	VirtualMachineConditionCreated = "VirtualMachineCreated"
 
+	// VirtualMachineConditionUpToDate indicates whether the VM's spec fully
+	// reflects the values requested by an owning generic infrastructure
+	// consumer, such as a kube-vm.io VirtualMachine. It is False with reason
+	// UnsupportedByProvider when a requested change cannot be applied because
+	// the corresponding VM Operator field is immutable after create.
+	VirtualMachineConditionUpToDate = "UpToDate"
+
+	// VirtualMachineConditionInfrastructureReady indicates whether the VM has
+	// converged to its desired power state and, if powered on, has reported
+	// an address. This is a contract condition, read by every generic
+	// infrastructure consumer (e.g. a kube-vm.io VirtualMachine) at this
+	// fixed type, alongside VM Operator's own, more granular readiness
+	// conditions. Named distinctly from ReadyConditionType, which this
+	// package already reserves exclusively for the configured readiness
+	// probe's result.
+	VirtualMachineConditionInfrastructureReady = "InfrastructureReady"
+
 	// VirtualMachineClassConfigurationSynced indicates that the VM's current configuration is synced to the
 	// current version of its VirtualMachineClass.
 	VirtualMachineClassConfigurationSynced = "VirtualMachineClassConfigurationSynced"
@@ -1403,6 +1420,28 @@ type VirtualMachineGuestStatus struct {
 	GuestFullName string `json:"guestFullName,omitempty"`
 }
 
+// VirtualMachineAddress is a network address reported for a VirtualMachine at
+// the fixed contract path a generic infrastructure consumer, such as a
+// kube-vm.io VirtualMachine, reads on every provider.
+type VirtualMachineAddress struct {
+	// +optional
+
+	// Interface names the network interface this address belongs to.
+	Interface string `json:"interface,omitempty"`
+
+	// +kubebuilder:validation:Enum=InternalIP;ExternalIP;InternalDNS;ExternalDNS
+	// +optional
+
+	// Type describes the kind of address, matching the well-known Kubernetes
+	// NodeAddress type values.
+	Type string `json:"type,omitempty"`
+
+	// +optional
+
+	// Address is the address value.
+	Address string `json:"address,omitempty"`
+}
+
 // VirtualMachineProviderStatus describes the observed state of the
 // VirtualMachine from the underlying infrastructure provider (vSphere/vCenter).
 type VirtualMachineProviderStatus struct {
@@ -1555,6 +1594,39 @@ type VirtualMachineStatus struct {
 	// advanced properties, and spec.advanced.extraConfig.
 	// This denotes the current configuration of the VM.
 	ExtraConfig []vmopv1common.KeyValuePair `json:"extraConfig,omitempty"`
+
+	// +optional
+	// +listType=atomic
+
+	// Addresses are the VM's observed network addresses, reported at the
+	// fixed contract path a generic infrastructure consumer, such as a
+	// kube-vm.io VirtualMachine, reads on every provider. This duplicates
+	// information already reported under Network.PrimaryIP4.
+	Addresses []VirtualMachineAddress `json:"addresses,omitempty"`
+
+	// +optional
+
+	// ProviderID is the platform-unique identifier for this VM, reported at
+	// the fixed contract path a generic infrastructure consumer, such as a
+	// kube-vm.io VirtualMachine, reads on every provider. This duplicates
+	// information already reported under InstanceUUID.
+	ProviderID string `json:"providerID,omitempty"`
+
+	// +optional
+
+	// ProviderMetadata is a free-form set of further provider-reported facts,
+	// reported at the fixed contract path a generic infrastructure consumer,
+	// such as a kube-vm.io VirtualMachine, reads on every provider.
+	ProviderMetadata map[string]string `json:"providerMetadata,omitempty"`
+
+	// +optional
+
+	// Ready is whether the VM has converged to its desired power state and,
+	// if powered on, has reported an address, reported at the fixed contract
+	// path a generic infrastructure consumer, such as a kube-vm.io
+	// VirtualMachine, reads on every provider. Duplicates the
+	// VirtualMachineConditionInfrastructureReady condition above.
+	Ready bool `json:"ready,omitempty"`
 }
 
 // +kubebuilder:object:root=true

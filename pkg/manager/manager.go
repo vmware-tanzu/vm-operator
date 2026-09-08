@@ -28,10 +28,12 @@ import (
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+
 	appv1a1 "github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
+	kubevmv1a1 "github.com/vmware-tanzu/vm-operator/external/kubevm/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -96,6 +98,36 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		_ = vpcv1alpha1.AddToScheme(opts.Scheme)
 	}
 
+	cacheDisableFor := []client.Object{
+		// An informer is created for each watched resource. Due to the
+		// number of ConfigMap and Secret resources that may exist,
+		// watching each one can result in VM Operator being terminated
+		// due to an out-of-memory error, i.e. OOMKill. To avoid this
+		// outcome, ConfigMap and Secret resources are not cached.
+		&corev1.ConfigMap{},
+		&corev1.Secret{},
+
+		// The pkg/exit.Restart function gets a Deployment resource
+		// in order to patch it to restart the pods in the
+		// deployment when capabilities have changed.
+		// Capabilities do not change often enough to warrant
+		// caching the Deployment resource, and thus there is no
+		// reason to cache Deployment resources as nothing else in
+		// VM Operator gets them.
+		&appsv1.Deployment{},
+	}
+
+	if pkgcfg.FromContext(ctx).Features.KubeVMProvider {
+		_ = kubevmv1a1.AddToScheme(opts.Scheme)
+
+		// The mutating webhook Gets the generic VirtualMachine named by the
+		// kube-vm.io/virtual-machine annotation. A cached read would lazily
+		// start an informer during a live admission request under
+		// failurePolicy: Fail, and that informer never syncs if the CRD is
+		// absent, so this type is excluded from the cache.
+		cacheDisableFor = append(cacheDisableFor, &kubevmv1a1.VirtualMachine{})
+	}
+
 	// Build the controller manager.
 	mgr, err := ctrlmgr.New(opts.KubeConfig, ctrlmgr.Options{
 		Scheme: opts.Scheme,
@@ -106,24 +138,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		},
 		Client: client.Options{
 			Cache: &client.CacheOptions{
-				DisableFor: []client.Object{
-					// An informer is created for each watched resource. Due to the
-					// number of ConfigMap and Secret resources that may exist,
-					// watching each one can result in VM Operator being terminated
-					// due to an out-of-memory error, i.e. OOMKill. To avoid this
-					// outcome, ConfigMap and Secret resources are not cached.
-					&corev1.ConfigMap{},
-					&corev1.Secret{},
-
-					// The pkg/exit.Restart function gets a Deployment resource
-					// in order to patch it to restart the pods in the
-					// deployment when capabilities have changed.
-					// Capabilities do not change often enough to warrant
-					// caching the Deployment resource, and thus there is no
-					// reason to cache Deployment resources as nothing else in
-					// VM Operator gets them.
-					&appsv1.Deployment{},
-				},
+				DisableFor: cacheDisableFor,
 			},
 		},
 		Controller: ctrlcfg.Controller{

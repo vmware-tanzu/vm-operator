@@ -44,6 +44,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/kubevm"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -153,7 +154,6 @@ var (
 		"vnet":                        true,
 		"wakeonpcktrcv":               true,
 	}
-
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -2698,6 +2698,11 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		if clusterModuleName != oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] {
 			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.ClusterModuleNameAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
 		}
+
+		if oldValue := oldVM.Annotations[kubevm.AnnotationKey]; oldValue != "" &&
+			vm.Annotations[kubevm.AnnotationKey] != oldValue {
+			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(kubevm.AnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+		}
 	}
 
 	return allErrs
@@ -3661,7 +3666,6 @@ func isFirstClassVMAdvancedProperty(key string) bool {
 	_, ok := vmopv1util.AdvancedVMXKeyMap()[key]
 	return ok
 }
-
 
 func isSystemReservedNetworkDeviceProperty(key string) bool {
 	return systemReservedNetworkDeviceProperties[key]

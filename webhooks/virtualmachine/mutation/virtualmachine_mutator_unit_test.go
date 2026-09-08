@@ -49,6 +49,7 @@ func uniTests() {
 	)
 
 	controllerTests()
+	kubevmTests()
 }
 
 type unitMutationWebhookContext struct {

@@ -322,6 +322,36 @@ jobs:
           covmeta.*
           covcounters.*
 
+  test-kubevm-controller:
+    # Not gated on verify-go-modules: that job's `make modules` runs
+    # go mod tidy against the root module's go.work-less module set and does
+    # not touch this module, which has its own go.mod and is never a root
+    # dependency.
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        go-version-file: 'go.mod'
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          external/kubevm/controller/**/go.sum
+    - name: Build
+      working-directory: external/kubevm/controller
+      run: go build ./...
+    - name: Lint
+      run: |
+        make -C hack/tools golangci-lint
+        cd external/kubevm/controller
+        ../../../hack/tools/bin/*/golangci-lint run -v
+    - name: Test
+      working-directory: external/kubevm/controller
+      run: make test
+
   coverage:
     needs:
     - test

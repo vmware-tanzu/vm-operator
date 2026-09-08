@@ -1,0 +1,49 @@
+# Modeled on the parent vm-operator repo's .golangci.yml, trimmed for a
+# module that contains only the generic core reconciler.
+#
+# This module carries its own config rather than inheriting the parent's,
+# because it is expected to move to its own repository alongside
+# ../.golangci.yml.
+version: "2"
+
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+  - gofmt
+  - goimports
+  settings:
+    goimports:
+      local-prefixes:
+      - github.com/vmware
+      - github.com/vmware-tanzu
+
+linters:
+  enable:
+  - asciicheck
+  - bodyclose
+  - errcheck
+  - errorlint
+  - govet
+  - ineffassign
+  - misspell
+  - nakedret
+  - nolintlint
+  - prealloc
+  - revive
+  - staticcheck
+  - unconvert
+  - unparam
+  - unused
+  - whitespace
+
+  settings:
+    revive:
+      rules:
+      - name: exported
+        disabled: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

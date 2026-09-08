@@ -59,6 +59,7 @@ const (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=netoperator.vmware.com,resources=networksettings,verbs=get;list;watch
+// +kubebuilder:rbac:groups=kube-vm.io,resources=virtualmachines,verbs=get
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
@@ -268,6 +269,13 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	case admissionv1.Create:
 		// SetCreatedAtAnnotations always mutates the VM on create.
 		wasMutated = true
+
+		// Resolved first, ahead of every other create-time mutator, so that
+		// SetDefaultPowerState and ResolveImageNameOnCreate see a spec
+		// already populated from the owning generic VirtualMachine.
+		if _, err := ResolveKubeVMParentOnCreate(ctx, m.client, modified); err != nil {
+			return admission.Denied(err.Error())
+		}
 
 		if _, err := AddDefaultNetworkInterface(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())

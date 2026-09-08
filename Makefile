@@ -323,6 +323,7 @@ GO_MOD_DIRS_TO_LINT := $(filter-out ./packer-plugin-vsphere-src%,$(GO_MOD_DIRS_T
 # not ours to lint. external/kubevm is first-party code that happens to live
 # there, so it is added back explicitly.
 GO_MOD_DIRS_TO_LINT += ./external/kubevm/
+GO_MOD_DIRS_TO_LINT += ./external/kubevm/controller/
 GO_LINT_DIR_TARGETS := $(addprefix lint-,$(GO_MOD_DIRS_TO_LINT))
 
 .PHONY: $(GO_LINT_DIR_TARGETS)
@@ -449,6 +450,7 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 		paths=./controllers/... \
 		paths=./pkg/... \
 		paths=./webhooks/... \
+		paths=github.com/vmware-tanzu/vm-operator/external/kubevm/controller/... \
 		output:rbac:dir=$(RBAC_ROOT) \
 		rbac:roleName=manager-role
 
@@ -509,6 +511,11 @@ generate-external-manifests: ## Generate manifests for the external types for te
 		output:none
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/external/vim/api/... \
+		crd:crdVersions=v1 \
+		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
+		output:none
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/external/kubevm/... \
 		crd:crdVersions=v1 \
 		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
 		output:none

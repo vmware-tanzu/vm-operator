@@ -228,6 +228,25 @@ rules:
   - update
   - watch
 - apiGroups:
+  - kube-vm.io
+  resources:
+  - virtualmachines
+  verbs:
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kube-vm.io
+  resources:
+  - virtualmachines/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - netoperator.vmware.com
   resources:
   - networkinterfaces

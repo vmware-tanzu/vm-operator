@@ -6,23 +6,33 @@ far, not a fixed plan.
 
 ## Today
 
-The `kube-vm.io/v1alpha1` types generate CRDs and install and validate against a
-live API server. There is no controller yet, the provider contract is prose
-rather than code, and the companion catalog types are undefined.
-[`README.md`](README.md) tracks the gaps.
+The `kube-vm.io/v1alpha1` types can be used to generate CRDs, install
+and validate them against a live API server. The generic core
+controllers exist at `external/kubevm/controller`, and VM Operator
+has a working provider integration, demonstrated end to end on a
+vSphere Supervisor. KubeVM can be used to manage the lifecycle of a VM
+from creation to deletion including address reporting, power off/on
+etc. The provider contract is defined in
+`external/kubevm/controller/internal/contract`.
 
 ## 1. A working generic core
 
-- Generic controller: adopt the provider object, own finalizers and deletion
-  ordering, read the duck-typed status back, maintain conditions.
-- Provider contract expressed in code, including a precise definition of
-  `status.ready`.
+The core of this milestone is done, proven out with VM Operator as the first
+provider: the generic controller adopts the provider object, owns finalizers
+and deletion ordering, reads the duck-typed status back, and maintains
+conditions.
+
+What's left:
+
 - Companion catalog types, starting with `VirtualMachineImage`, which the API
   already references.
 - Settle the open API questions: who owns the provider object's spec,
   cross-namespace references, and per-instance accelerators.
 
 ## 2. A second provider
+
+With VM Operator established as the first provider, this milestone is about
+proving the model generalizes to a second one:
 
 - A provider for Kubevirt, EC2 or GCE, following the shape `cluster-api-provider-aws`
   and `cluster-api-provider-gcp` etc. already use.

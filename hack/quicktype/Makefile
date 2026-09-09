@@ -115,7 +115,7 @@ $(OUTPUT_GO): | $(QUICKTYPE)
 	$(QUICKTYPE) \
 	  --src $(SCHEMA_IN) --src-lang schema \
 	  --out $@ --lang go --package schema \
-	  --top-level $(START_TYP)
+	  --top-level $(START_TYP) --omit-empty
 	$(GOIMPORTS) -w $@
 else
 $(OUTPUT_GO): | $(QUICKTYPE_IMAGE_RECEIPT)
@@ -129,7 +129,7 @@ $(OUTPUT_GO): | $(QUICKTYPE_IMAGE_RECEIPT)
 	  --out /output/schema.go \
 	  --lang go \
 	  --package schema \
-	  --top-level $(START_TYP)
+	  --top-level $(START_TYP) --omit-empty
 	mv -f schema.go $@
 	$(GOIMPORTS) -w $@
 endif

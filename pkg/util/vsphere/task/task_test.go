@@ -314,7 +314,7 @@ var _ = Describe("IsInfraMaintenanceFault", func() {
 	When("the NoCompatibleHost fault carries the HostInMaintenanceMode key", func() {
 		It("returns true", func() {
 			taskInfo := &vimtypes.TaskInfo{
-				Error: noCompatibleHostWithKeys(task.FaultMessageKeyHostInMaintenanceMode),
+				Error: noCompatibleHostWithKeys(task.FaultMessageKeyAutoevacHostInMaintenanceMode),
 			}
 			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeTrue())
 		})
@@ -323,7 +323,16 @@ var _ = Describe("IsInfraMaintenanceFault", func() {
 	When("the NoCompatibleHost fault carries the RestartOnCurrentHostRequired key", func() {
 		It("returns true", func() {
 			taskInfo := &vimtypes.TaskInfo{
-				Error: noCompatibleHostWithKeys(task.FaultMessageKeyRestartOnCurrentHostRequired),
+				Error: noCompatibleHostWithKeys(task.FaultMessageKeyAutoevacRestartOnCurrentHostRequired),
+			}
+			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeTrue())
+		})
+	})
+
+	When("the NoCompatibleHost fault carries the HostStateMaintenanceMode key", func() {
+		It("returns true", func() {
+			taskInfo := &vimtypes.TaskInfo{
+				Error: noCompatibleHostWithKeys(task.FaultMessageKeyHostStateMaintenanceMode),
 			}
 			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeTrue())
 		})
@@ -334,7 +343,7 @@ var _ = Describe("IsInfraMaintenanceFault", func() {
 			taskInfo := &vimtypes.TaskInfo{
 				Error: noCompatibleHostWithKeys(
 					"some.other.key",
-					task.FaultMessageKeyHostInMaintenanceMode),
+					task.FaultMessageKeyAutoevacHostInMaintenanceMode),
 			}
 			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeTrue())
 		})

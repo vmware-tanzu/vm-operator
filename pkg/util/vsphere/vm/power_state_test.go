@@ -1083,7 +1083,7 @@ var _ = Describe("WrapHardPowerOpFailure", func() {
 
 	When("ti matches the infra-maintenance fault", func() {
 		It("returns an error satisfying errors.Is(ErrInfraMaintenanceFault) and wrapping the original error", func() {
-			ti := noCompatibleHostTaskInfoWithKey(vspheretask.FaultMessageKeyHostInMaintenanceMode)
+			ti := noCompatibleHostTaskInfoWithKey(vspheretask.FaultMessageKeyAutoevacHostInMaintenanceMode)
 			err := vmutil.WrapHardPowerOpFailure(vimtypes.VirtualMachinePowerStatePoweredOn, ti, origErr)
 			Expect(errors.Is(err, vmutil.ErrInfraMaintenanceFault)).To(BeTrue())
 			Expect(errors.Is(err, origErr)).To(BeTrue())

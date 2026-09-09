@@ -255,7 +255,7 @@ func PolicyEvalToVMToVMGroupMapperFunc(
 func RetrieveVMGroupMembers(ctx context.Context, c ctrlclient.Client,
 	vmGroupKey ctrlclient.ObjectKey, visitedGroups *sets.Set[string]) (sets.Set[string], error) {
 	if visitedGroups.Has(vmGroupKey.Name) {
-		return nil, fmt.Errorf("a loop is detected among groups: %q visisted", vmGroupKey.Name)
+		return nil, fmt.Errorf("a loop is detected among groups: %q visited", vmGroupKey.Name)
 	}
 	visitedGroups.Insert(vmGroupKey.Name)
 

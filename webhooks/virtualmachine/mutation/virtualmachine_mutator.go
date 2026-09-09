@@ -453,7 +453,7 @@ func SetNextRestartTime(
 			return false, field.Invalid(
 				field.NewPath("spec", "nextRestartTime"),
 				newVM.Spec.NextRestartTime,
-				"can only restart powered on vm")
+				"can only restart powered on VM")
 		}
 		newVM.Spec.NextRestartTime = time.Now().UTC().Format(time.RFC3339Nano)
 		return true, nil

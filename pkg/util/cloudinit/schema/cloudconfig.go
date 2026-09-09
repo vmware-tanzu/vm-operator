@@ -1,4 +1,4 @@
-// This file was generated from JSON Schema using quicktype, do not modify it directly.
+// Code generated from JSON Schema using quicktype. DO NOT EDIT.
 // To parse and unparse this JSON data, add this code to your project and do:
 //
 //    cloudconfig, err := UnmarshalCloudconfig(bytes)
@@ -29,7 +29,7 @@ type Cloudconfig struct {
 	Ansible            *AnsibleClass       `json:"ansible,omitempty"`
 	ApkRepos           *ApkRepos           `json:"apk_repos,omitempty"`
 	Apt                *Apt                `json:"apt,omitempty"`
-	AptPipelining      *AptPipeliningUnion `json:"apt_pipelining,omitempty"`
+	AptPipelining      *AptPipeliningUnion `json:"apt_pipelining"`
 	// Default: ``false``.
 	AptRebootIfRequired *bool `json:"apt_reboot_if_required,omitempty"`
 	// Default: ``false``.
@@ -77,7 +77,7 @@ type Cloudconfig struct {
 	// cloud-config, the ``local-hostname`` value will be used from datasource metadata.
 	FQDN     *string            `json:"fqdn,omitempty"`
 	FSSetup  []FSSetup          `json:"fs_setup,omitempty"`
-	Groups   *CloudconfigGroups `json:"groups,omitempty"`
+	Groups   *CloudconfigGroups `json:"groups"`
 	Growpart *Growpart          `json:"growpart,omitempty"`
 	// An alias for ``grub_dpkg``
 	GrubDpkg            map[string]interface{} `json:"grub-dpkg,omitempty"`
@@ -101,13 +101,13 @@ type Cloudconfig struct {
 	// ``/etc/cloud/templates/hosts.tmpl`` replacing ``$hostname`` and ``$fdqn``. If
 	// ``localhost``, append a ``127.0.1.1`` entry that resolves from FQDN and hostname every
 	// boot. Default: ``false``
-	ManageEtcHosts *ManageEtcHostsUnion `json:"manage_etc_hosts,omitempty"`
+	ManageEtcHosts *ManageEtcHostsUnion `json:"manage_etc_hosts"`
 	// Whether to manage the resolv.conf file. ``resolv_conf`` block will be ignored unless this
 	// is set to ``true``. Default: ``false``
 	ManageResolvConf *bool             `json:"manage_resolv_conf,omitempty"`
 	Mcollective      *McollectiveClass `json:"mcollective,omitempty"`
-	MergeHow         *MergeHow         `json:"merge_how,omitempty"`
-	MergeType        *MergeHow         `json:"merge_type,omitempty"`
+	MergeHow         *MergeHow         `json:"merge_how"`
+	MergeType        *MergeHow         `json:"merge_type"`
 	// Whether to migrate legacy cloud-init semaphores to new format. Default: ``true``
 	Migrate *bool `json:"migrate,omitempty"`
 	// Default mount configuration for any mount entry with less than 6 options provided. When
@@ -122,7 +122,7 @@ type Cloudconfig struct {
 	Mounts [][]string `json:"mounts,omitempty"`
 	// If true, SSH fingerprints will not be written. Default: ``false``
 	NoSSHFingerprints *bool     `json:"no_ssh_fingerprints,omitempty"`
-	NTP               *NTPClass `json:"ntp,omitempty"`
+	NTP               *NTPClass `json:"ntp"`
 	Output            *Output   `json:"output,omitempty"`
 	// Set ``true`` to reboot the system if required by presence of `/var/run/reboot-required`.
 	// Default: ``false``
@@ -158,7 +158,7 @@ type Cloudconfig struct {
 	Reporting        *Reporting   `json:"reporting,omitempty"`
 	// Whether to resize the root partition. ``noblock`` will resize in the background. Default:
 	// ``true``
-	ResizeRootfs   *ResizeRootfsUnion   `json:"resize_rootfs,omitempty"`
+	ResizeRootfs   *ResizeRootfsUnion   `json:"resize_rootfs"`
 	ResolvConf     *ResolvConfClass     `json:"resolv_conf,omitempty"`
 	RhSubscription *RhSubscriptionClass `json:"rh_subscription,omitempty"`
 	Rsyslog        *RsyslogClass        `json:"rsyslog,omitempty"`
@@ -195,7 +195,7 @@ type Cloudconfig struct {
 	// config to be applied, SSH may need to be restarted. On systemd systems, this restart will
 	// only happen if the SSH service has already been started. On non-systemd systems, a
 	// restart will be attempted regardless of the service state.
-	SSHPwauth *GrubPCInstallDevicesEmpty `json:"ssh_pwauth,omitempty"`
+	SSHPwauth *GrubPCInstallDevicesEmpty `json:"ssh_pwauth"`
 	// If ``true``, will suppress the output of key generation to the console. Default: ``false``
 	SSHQuietKeygen *bool `json:"ssh_quiet_keygen,omitempty"`
 	Swap           *Swap `json:"swap,omitempty"`
@@ -206,11 +206,11 @@ type Cloudconfig struct {
 	// The ``user`` dictionary values override the ``default_user`` configuration from
 	// ``/etc/cloud/cloud.cfg``. The `user` dictionary keys supported for the default_user are
 	// the same as the ``users`` schema.
-	User       *CloudconfigUser `json:"user,omitempty"`
-	Users      *Users           `json:"users,omitempty"`
+	User       *CloudconfigUser `json:"user"`
+	Users      *Users           `json:"users"`
 	VendorData *VendorData      `json:"vendor_data,omitempty"`
-	Version    interface{}      `json:"version,omitempty"`
-	Wireguard  *WireguardClass  `json:"wireguard,omitempty"`
+	Version    interface{}      `json:"version"`
+	Wireguard  *WireguardClass  `json:"wireguard"`
 	WriteFiles []WriteFile      `json:"write_files,omitempty"`
 	// The repo parts directory where individual yum repo config files will be written. Default:
 	// ``/etc/yum.repos.d``
@@ -303,7 +303,7 @@ type RunAnsibleClass struct {
 }
 
 type ApkRepos struct {
-	AlpineRepo *AlpineRepo `json:"alpine_repo,omitempty"`
+	AlpineRepo *AlpineRepo `json:"alpine_repo"`
 	// The base URL of an Alpine repository containing unofficial packages
 	LocalRepoBaseURL *string `json:"local_repo_base_url,omitempty"`
 	// By default, cloud-init will generate a new repositories file ``/etc/apk/repositories``
@@ -671,7 +671,7 @@ type Chpasswd struct {
 	// password. A hashed password, created by a tool like ``mkpasswd``, can be specified. A
 	// regex (``r'\$(1|2a|2y|5|6)(\$.+){2}'``) is used to determine if a password value should
 	// be treated as a hash.
-	List *ListUnion `json:"list,omitempty"`
+	List *ListUnion `json:"list"`
 	// This key represents a list of existing users to set passwords for. Each item under users
 	// contains the following required keys: ``name`` and ``password`` or in the case of a
 	// randomly generated password, ``name`` and ``type``. The ``type`` key has a default value
@@ -698,7 +698,7 @@ type GrubDpkgClass struct {
 	GrubPCInstallDevices *string `json:"grub-pc/install_devices,omitempty"`
 	// Sets values for ``grub-pc/install_devices_empty``. If unspecified, will be set to
 	// ``true`` if ``grub-pc/install_devices`` is empty, otherwise ``false``
-	GrubPCInstallDevicesEmpty *GrubPCInstallDevicesEmpty `json:"grub-pc/install_devices_empty,omitempty"`
+	GrubPCInstallDevicesEmpty *GrubPCInstallDevicesEmpty `json:"grub-pc/install_devices_empty"`
 }
 
 type DeviceAliases struct {
@@ -722,7 +722,7 @@ type FSSetup struct {
 	// Optional command to run to create the filesystem. Can include string substitutions of the
 	// other ``fs_setup`` config keys. This is only necessary if you need to override the
 	// default command.
-	Cmd *Cmd `json:"cmd,omitempty"`
+	Cmd *Cmd `json:"cmd"`
 	// Specified either as a path or as an alias in the format ``<alias name>.<y>`` where
 	// ``<y>`` denotes the partition number on the device. If specifying device using the
 	// ``<alias name>.<partition number>`` format, the value of ``partition`` will be
@@ -730,7 +730,7 @@ type FSSetup struct {
 	Device *string `json:"device,omitempty"`
 	// Optional options to pass to the filesystem creation command. Ignored if you using ``cmd``
 	// directly.
-	ExtraOpts *Cmd `json:"extra_opts,omitempty"`
+	ExtraOpts *Cmd `json:"extra_opts"`
 	// Filesystem type to create. E.g., ``ext4`` or ``btrfs``
 	Filesystem *string `json:"filesystem,omitempty"`
 	// Label for the filesystem.
@@ -782,7 +782,7 @@ type Growpart struct {
 	// * ``gpart`` - Use BSD gpart utility
 	//
 	// * ``off`` - Take no action
-	Mode *ModeUnion `json:"mode,omitempty"`
+	Mode *ModeUnion `json:"mode"`
 }
 
 type KeyboardClass struct {
@@ -974,10 +974,10 @@ type NTPConfig struct {
 }
 
 type Output struct {
-	All    *AllUnion `json:"all,omitempty"`
-	Config *AllUnion `json:"config,omitempty"`
-	Final  *AllUnion `json:"final,omitempty"`
-	Init   *AllUnion `json:"init,omitempty"`
+	All    *AllUnion `json:"all"`
+	Config *AllUnion `json:"config"`
+	Final  *AllUnion `json:"final"`
+	Init   *AllUnion `json:"init"`
 }
 
 type AllClass struct {
@@ -994,13 +994,13 @@ type AllClass struct {
 }
 
 type PackageClass struct {
-	Apt  []Cmd `json:"apt,omitempty"`
-	Snap []Cmd `json:"snap,omitempty"`
+	Apt  []AptElement `json:"apt,omitempty"`
+	Snap []AptElement `json:"snap,omitempty"`
 }
 
 type PhoneHomeClass struct {
 	// A list of keys to post or ``all``. Default: ``all``
-	Post *PostUnion `json:"post,omitempty"`
+	Post *PostUnion `json:"post"`
 	// The number of times to try sending the phone home data. Default: ``10``
 	Tries *int64 `json:"tries,omitempty"`
 	// The URL to send the phone home data to.
@@ -1012,10 +1012,10 @@ type PowerState struct {
 	// (never met), or a command string or list to be executed. For command formatting, see the
 	// documentation for ``cc_runcmd``. If exit code is 0, condition is met, otherwise not.
 	// Default: ``true``
-	Condition *Condition `json:"condition,omitempty"`
+	Condition *Condition `json:"condition"`
 	// Time in minutes to delay after cloud-init has finished. Can be ``now`` or an integer
 	// specifying the number of minutes to delay. Default: ``now``
-	Delay *Delay `json:"delay,omitempty"`
+	Delay *Delay `json:"delay"`
 	// Optional message to display to the user when the system is powering off or rebooting.
 	Message *string `json:"message,omitempty"`
 	// Must be one of ``poweroff``, ``halt``, or ``reboot``.
@@ -1215,7 +1215,7 @@ type RsyslogClass struct {
 	// this is set to ``auto``, then an appropriate command for the distro will be used. This is
 	// the default behavior. To manually set the command, use a list of command args (e.g.
 	// ``[systemctl, restart, rsyslog]``).
-	ServiceReloadCommand *ServiceReloadCommandUnion `json:"service_reload_command,omitempty"`
+	ServiceReloadCommand *ServiceReloadCommandUnion `json:"service_reload_command"`
 }
 
 type ConfigConfig struct {
@@ -1269,9 +1269,9 @@ type SaltMinionClass struct {
 
 type SnapClass struct {
 	// Properly-signed snap assertions which will run before and snap ``commands``.
-	Assertions *Assertions `json:"assertions,omitempty"`
+	Assertions *Assertions `json:"assertions"`
 	// Snap commands to run on the target system
-	Commands *Commands `json:"commands,omitempty"`
+	Commands *Commands `json:"commands"`
 }
 
 type SpacewalkClass struct {
@@ -1287,13 +1287,13 @@ type Swap struct {
 	// Path to the swap file to create
 	Filename *string `json:"filename,omitempty"`
 	// The maxsize in bytes of the swap file
-	Maxsize *Size `json:"maxsize,omitempty"`
+	Maxsize *Size `json:"maxsize"`
 	// The size in bytes of the swap file, 'auto' or a human-readable size abbreviation of the
 	// format <float_size><units> where units are one of B, K, M, G or T. **WARNING: Attempts to
 	// use IEC prefixes in your configuration prior to cloud-init version 23.1 will result in
 	// unexpected behavior. SI prefixes names (KB, MB) are required on pre-23.1 cloud-init,
 	// however IEC values are used. In summary, assume 1KB == 1024B, not 1000B**
-	Size *Size `json:"size,omitempty"`
+	Size *Size `json:"size"`
 }
 
 type UbuntuAdvantageClass struct {
@@ -1325,20 +1325,20 @@ type UbuntuAdvantageClass struct {
 type UbuntuAdvantageConfig struct {
 	// HTTP Proxy URL used for all APT repositories on a system or null to unset. Stored at
 	// ``/etc/apt/apt.conf.d/90ubuntu-advantage-aptproxy``
-	GlobalAptHTTPProxy *string `json:"global_apt_http_proxy,omitempty"`
+	GlobalAptHTTPProxy *string `json:"global_apt_http_proxy"`
 	// HTTPS Proxy URL used for all APT repositories on a system or null to unset. Stored at
 	// ``/etc/apt/apt.conf.d/90ubuntu-advantage-aptproxy``
-	GlobalAptHTTPSProxy *string `json:"global_apt_https_proxy,omitempty"`
+	GlobalAptHTTPSProxy *string `json:"global_apt_https_proxy"`
 	// Ubuntu Advantage HTTP Proxy URL or null to unset.
-	HTTPProxy *string `json:"http_proxy,omitempty"`
+	HTTPProxy *string `json:"http_proxy"`
 	// Ubuntu Advantage HTTPS Proxy URL or null to unset.
-	HTTPSProxy *string `json:"https_proxy,omitempty"`
+	HTTPSProxy *string `json:"https_proxy"`
 	// HTTP Proxy URL used only for Ubuntu Advantage APT repositories or null to unset. Stored
 	// at ``/etc/apt/apt.conf.d/90ubuntu-advantage-aptproxy``
-	UaAptHTTPProxy *string `json:"ua_apt_http_proxy,omitempty"`
+	UaAptHTTPProxy *string `json:"ua_apt_http_proxy"`
 	// HTTPS Proxy URL used only for Ubuntu Advantage APT repositories or null to unset. Stored
 	// at ``/etc/apt/apt.conf.d/90ubuntu-advantage-aptproxy``
-	UaAptHTTPSProxy *string `json:"ua_apt_https_proxy,omitempty"`
+	UaAptHTTPSProxy *string `json:"ua_apt_https_proxy"`
 }
 
 // Ubuntu Advantage features.
@@ -1368,7 +1368,7 @@ type PurpleSchemaCloudConfigV1 struct {
 	// contact information
 	Gecos *string `json:"gecos,omitempty"`
 	// Optional comma-separated string of groups to add the user to.
-	Groups *UserGroups `json:"groups,omitempty"`
+	Groups *UserGroups `json:"groups"`
 	// Hash of user password to be applied. This will be applied even if the user is
 	// preexisting. To generate this hash, run: ``mkpasswd --method=SHA-512 --rounds=500000``.
 	// **Note:** Your password might possibly be visible to unprivileged users on your system,
@@ -1428,11 +1428,11 @@ type PurpleSchemaCloudConfigV1 struct {
 	// ``default_username`` for this instance. Default: ``false``. This key can not be combined
 	// with ``ssh_import_id`` or ``ssh_authorized_keys``.
 	SSHRedirectUser *bool `json:"ssh_redirect_user,omitempty"`
-	Sudo            *Sudo `json:"sudo,omitempty"`
+	Sudo            *Sudo `json:"sudo"`
 	// Optional. Create user as system user with no home directory. Default: ``false``.
 	System *bool `json:"system,omitempty"`
 	// The user's ID. Default value [system default]
-	Uid *Uid `json:"uid,omitempty"`
+	Uid *Uid `json:"uid"`
 }
 
 type FluffySchemaCloudConfigV1 struct {
@@ -1447,7 +1447,7 @@ type FluffySchemaCloudConfigV1 struct {
 	// contact information
 	Gecos *string `json:"gecos,omitempty"`
 	// Optional comma-separated string of groups to add the user to.
-	Groups *UserGroups `json:"groups,omitempty"`
+	Groups *UserGroups `json:"groups"`
 	// Hash of user password to be applied. This will be applied even if the user is
 	// preexisting. To generate this hash, run: ``mkpasswd --method=SHA-512 --rounds=500000``.
 	// **Note:** Your password might possibly be visible to unprivileged users on your system,
@@ -1507,19 +1507,19 @@ type FluffySchemaCloudConfigV1 struct {
 	// ``default_username`` for this instance. Default: ``false``. This key can not be combined
 	// with ``ssh_import_id`` or ``ssh_authorized_keys``.
 	SSHRedirectUser *bool `json:"ssh_redirect_user,omitempty"`
-	Sudo            *Sudo `json:"sudo,omitempty"`
+	Sudo            *Sudo `json:"sudo"`
 	// Optional. Create user as system user with no home directory. Default: ``false``.
 	System *bool `json:"system,omitempty"`
 	// The user's ID. Default value [system default]
-	Uid *Uid `json:"uid,omitempty"`
+	Uid *Uid `json:"uid"`
 }
 
 type VendorData struct {
 	// Whether vendor data is enabled or not. Default: ``true``
-	Enabled *GrubPCInstallDevicesEmpty `json:"enabled,omitempty"`
+	Enabled *GrubPCInstallDevicesEmpty `json:"enabled"`
 	// The command to run before any vendor scripts. Its primary use case is for profiling a
 	// script, not to prevent its run
-	Prefix *Prefix `json:"prefix,omitempty"`
+	Prefix *Prefix `json:"prefix"`
 }
 
 type WireguardClass struct {
@@ -2237,6 +2237,26 @@ func (x *PackageElement) MarshalJSON() ([]byte, error) {
 	return marshalUnion(nil, nil, nil, x.String, x.StringArray != nil, x.StringArray, x.PackageClass != nil, x.PackageClass, false, nil, false, nil, false)
 }
 
+type AptElement struct {
+	String      *string
+	StringArray []string
+}
+
+func (x *AptElement) UnmarshalJSON(data []byte) error {
+	x.StringArray = nil
+	object, err := unmarshalUnion(data, nil, nil, nil, &x.String, true, &x.StringArray, false, nil, false, nil, false, nil, false)
+	if err != nil {
+		return err
+	}
+	if object {
+	}
+	return nil
+}
+
+func (x *AptElement) MarshalJSON() ([]byte, error) {
+	return marshalUnion(nil, nil, nil, x.String, x.StringArray != nil, x.StringArray, false, nil, false, nil, false, nil, false)
+}
+
 // A list of keys to post or “all“. Default: “all“
 type PostUnion struct {
 	Enum      *PurplePost
@@ -2702,7 +2722,6 @@ func unmarshalUnion(data []byte, pi **int64, pf **float64, pb **bool, ps **strin
 		return false, errors.New("Cannot handle delimiter")
 	}
 	return false, errors.New("Cannot unmarshal union")
-
 }
 
 func marshalUnion(pi *int64, pf *float64, pb *bool, ps *string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) ([]byte, error) {

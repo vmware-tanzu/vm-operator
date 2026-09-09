@@ -16,12 +16,19 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
 )
 
 func SkipUnlessNetworkingIsVPC(ctx context.Context, client ctrlclient.Client, config *config.E2EConfig) {
 	if !vmoperator.IsNetworkNsxtVPC(ctx, client, config) {
 		framework.SkipInternalf(1, "skip if not VPC networking environment")
+	}
+}
+
+func SkipIfNetworkTopologyIsNSX(config *config.E2EConfig) {
+	if framework.NetworkTopologyIs(config.InfraConfig.NetworkingTopology, consts.NSX) {
+		framework.SkipInternalf(1, "skip on NSX networking topology (nsx/vpc)")
 	}
 }
 

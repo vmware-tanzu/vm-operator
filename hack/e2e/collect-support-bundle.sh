@@ -195,6 +195,7 @@ try_collect_bundle() {
     fi
 
     mv "${dl_tmp}" "${OUT_FILE}"
+    chmod 644 "${OUT_FILE}"
     return 0
 }
 

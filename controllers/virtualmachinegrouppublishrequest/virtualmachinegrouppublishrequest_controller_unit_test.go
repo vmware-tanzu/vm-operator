@@ -177,6 +177,24 @@ func unitTestsReconcile() {
 			})
 		})
 
+		When("a vm publish request has Ready=true but empty ImageName", func() {
+			It("should count it as pending, not completed", func() {
+				// First reconcile creates the vm publish requests.
+				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(Succeed())
+				reqs := getVMPublishRequests(vmGroupPubReq, reconciler, len(vmGroupPubReq.Spec.VirtualMachines))
+
+				// Simulate race condition: Ready=true but ImageName not yet populated.
+				reqs[0].Status.Ready = true
+				reqs[0].Status.ImageName = ""
+				Expect(ctx.Client.Status().Update(ctx, &reqs[0])).To(Succeed())
+
+				// Second reconcile: request with Ready=true but no ImageName should
+				// still count as pending, not completed.
+				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(Succeed())
+				verifyFalseCondition(Default, vmGroupPubReq, len(vmGroupPubReq.Spec.VirtualMachines))
+			})
+		})
+
 		When("vm group publish request is completed", func() {
 			BeforeEach(func() {
 				conditions.MarkTrue(vmGroupPubReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete)

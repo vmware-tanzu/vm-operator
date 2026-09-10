@@ -329,15 +329,6 @@ var _ = Describe("IsInfraMaintenanceFault", func() {
 		})
 	})
 
-	When("the NoCompatibleHost fault carries the HostStateMaintenanceMode key", func() {
-		It("returns true", func() {
-			taskInfo := &vimtypes.TaskInfo{
-				Error: noCompatibleHostWithKeys(task.FaultMessageKeyHostStateMaintenanceMode),
-			}
-			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeTrue())
-		})
-	})
-
 	When("the NoCompatibleHost fault carries the key alongside unrelated keys", func() {
 		It("returns true", func() {
 			taskInfo := &vimtypes.TaskInfo{

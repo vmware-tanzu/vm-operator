@@ -68,23 +68,13 @@ const (
 	// RestartOnCurrentHost-required policy's original host has exited
 	// maintenance mode but DRS selected a different destination host.
 	FaultMessageKeyAutoevacRestartOnCurrentHostRequired = "com.vmware.cp.autoevac.RestartOnCurrentHostRequired"
-
-	// FaultMessageKeyHostStateMaintenanceMode is the vCenter cdrs
-	// fault-message key present on a NoCompatibleHost fault when a VM's
-	// only compatible host cannot accept a power-on because it is in
-	// maintenance mode. Unlike the autoevac keys above, this key is not
-	// specific to an eviction/restart compute policy — it appears any time
-	// host maintenance mode is what makes the host incompatible (e.g. a
-	// host-VM affinity constraint pinning the VM to that host).
-	FaultMessageKeyHostStateMaintenanceMode = "com.vmware.cdrs.hostState.maintenanceMode"
 )
 
 // IsInfraMaintenanceFault returns true if taskInfo's failure is a
 // NoCompatibleHost fault whose nested fault messages carry the
-// com.vmware.cp.autoevac.RestartOnCurrentHostRequired.HostInMaintenanceMode,
-// com.vmware.cp.autoevac.RestartOnCurrentHostRequired, or
-// com.vmware.cdrs.hostState.maintenanceMode key, i.e. the task failed
-// because the VM's host is in infrastructure maintenance.
+// com.vmware.cp.autoevac.RestartOnCurrentHostRequired.HostInMaintenanceMode or
+// com.vmware.cp.autoevac.RestartOnCurrentHostRequired key, i.e. the task
+// failed because the VM's host is in infrastructure maintenance.
 func IsInfraMaintenanceFault(taskInfo *vimtypes.TaskInfo) bool {
 	if taskInfo == nil || taskInfo.Error == nil {
 		return false
@@ -105,8 +95,7 @@ func IsInfraMaintenanceFault(taskInfo *vimtypes.TaskInfo) bool {
 		}
 		for _, fm := range fault.FaultMessage {
 			if fm.Key == FaultMessageKeyAutoevacHostInMaintenanceMode ||
-				fm.Key == FaultMessageKeyAutoevacRestartOnCurrentHostRequired ||
-				fm.Key == FaultMessageKeyHostStateMaintenanceMode {
+				fm.Key == FaultMessageKeyAutoevacRestartOnCurrentHostRequired {
 				return true
 			}
 		}

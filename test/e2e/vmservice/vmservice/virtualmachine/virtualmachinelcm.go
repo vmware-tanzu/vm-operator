@@ -105,6 +105,12 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
+		// Wait for the shared warm-up VM's image cache to be ready before any test in
+		// this suite creates its own VM against the same image/datastore/profile. This
+		// call is idempotent: only the first It pays the real wait, later Its resolve
+		// immediately once the condition is already True.
+		vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
+
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 

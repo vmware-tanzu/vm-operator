@@ -47,6 +47,7 @@ type VMGOSCSpecInput struct {
 	WCPClient                 wcp.WorkloadManagementAPI
 	ArtifactFolder            string
 	WCPNamespaceName          string
+	LinuxVMName               string
 	WindowsServerVMName       string
 	WindowsInlineServerVMName string
 }
@@ -487,6 +488,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 		Expect(input.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.SVClusterProxy can't be nil when calling %s spec", specName)
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
+		Expect(input.LinuxVMName).ToNot(BeEmpty(), "Invalid argument. input.LinuxVMName can't be empty when calling %s spec", specName)
 		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 
 		config = input.Config
@@ -499,6 +501,12 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		DeferCleanup(cancelPodWatches)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+
+		// Wait for the shared warm-up VM's image cache to be ready before any test in
+		// this suite creates its own VM against the same image/datastore/profile. This
+		// call is idempotent: only the first It pays the real wait, later Its resolve
+		// immediately once the condition is already True.
+		vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
 
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		configMapName = fmt.Sprintf("%s-%s", "configmap", capiutil.RandomString(4))
@@ -985,6 +993,9 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		verifyWindowsVMDeployed := func(ctx context.Context, config *e2eConfig.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
 			By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", ns, vmName))
 			vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, ns, vmName)
+			// This suite's warm-up VM is Windows-specific and isn't covered by the Linux
+			// image-cache wait above, so wait for it directly here on its own budget.
+			vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, ns, vmName)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, ns, vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 

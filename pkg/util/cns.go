@@ -80,7 +80,7 @@ func GetCnsNodeVMAttachmentsForVM(
 		ctx,
 		list,
 		ctrlclient.InNamespace(vm.Namespace),
-		ctrlclient.MatchingFields{"spec.nodeuuid": vm.Status.BiosUUID})
+		ctrlclient.MatchingFields{"spec.nodeuuid": strings.ToLower(vm.Status.BiosUUID)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list CnsNodeVmAttachments: %w", err)
 	}

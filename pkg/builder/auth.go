@@ -131,7 +131,7 @@ func InPrivilegedUsersList(
 			// Neither the authenticating user nor the current privileged user
 			// is a service account, so compare the user names directly.
 			//
-			if userInfo.Username == privUser {
+			if strings.EqualFold(userInfo.Username, privUser) {
 				return true
 			}
 

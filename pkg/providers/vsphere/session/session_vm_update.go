@@ -1134,7 +1134,7 @@ func (s *Session) reconcileClusterModule(
 		return fmt.Errorf("ClusterModule %q not found in VirtualMachineSetResourcePolicy", clusterModuleName)
 	}
 
-	if oldUUID := vmCtx.VM.Annotations[pkgconst.ClusterModuleUUIDAnnotationKey]; oldUUID == moduleUUID {
+	if oldUUID := vmCtx.VM.Annotations[pkgconst.ClusterModuleUUIDAnnotationKey]; strings.EqualFold(oldUUID, moduleUUID) {
 		vmCtx.Logger.V(4).Info("Skipping cluster module reconciliation since cluster module uuid is the same")
 		return nil
 	}

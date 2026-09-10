@@ -734,7 +734,7 @@ func VerifyVirtualMachinePublishRequestCondition(
 // VirtualMachineImage lookup). Waiting on Uploaded separately keeps that
 // slow, VC-side clone from having to fit inside the same short budget used
 // for Complete.
-func VerifyVirtualMachinePublishRequestUploaded(
+func WaitForVirtualMachinePublishRequestUploaded(
 	ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client,
@@ -758,7 +758,7 @@ func VerifyVirtualMachinePublishRequestUploaded(
 // VirtualMachineImage lookup for each child). Waiting on Uploaded here keeps
 // that slow, VC-side clone from having to fit inside the short budget used
 // for Complete.
-func VerifyVirtualMachineGroupPublishRequestImagesUploaded(
+func WaitForVirtualMachineGroupPublishRequestImagesUploaded(
 	ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client,

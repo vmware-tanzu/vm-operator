@@ -18,7 +18,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	f, err := os.Create(os.Args[2])
+	f, err := os.Create(os.Args[2]) //nolint:gosec // build-time codegen CLI; path comes from its own argv, not an untrusted source.
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

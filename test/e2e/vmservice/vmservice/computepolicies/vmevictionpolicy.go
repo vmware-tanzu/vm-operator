@@ -878,7 +878,10 @@ func createAutomaticVMEvictionPolicy(
 	enforcementMode vspherepolv1.PolicyEnforcementMode,
 	matchLabel map[string]string,
 	vmTagID string,
-	existingInfraPolicyNames []string) (*vspherepolv1.AutomaticVMEvictionPolicy, []string) {
+	// existingInfraPolicyNames mirrors createBestEffortRestartPolicy's chaining
+	// contract; no existing test happens to call this helper after another one
+	// in the same namespace, so it is always nil today.
+	existingInfraPolicyNames []string) (*vspherepolv1.AutomaticVMEvictionPolicy, []string) { //nolint:unparam
 
 	GinkgoHelper()
 

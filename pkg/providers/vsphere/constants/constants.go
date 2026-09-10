@@ -44,8 +44,9 @@ const (
 	// when the underlying host enters into maintenance mode. This is to ensure
 	// the maintenance mode workflow is consistent for VMs with vGPU/DDPIO
 	// devices.
+	//
 	// Deprecated: Admins can power off the VMs as they would VMs that are not
-	//             managed by VM Operator.
+	// managed by VM Operator.
 	MMPowerOffVMExtraConfigKey = "maintenance.vm.evacuation.poweroff"
 
 	// NetPlanVersion points to the version used for Network config.
@@ -68,7 +69,8 @@ const (
 	// Example: "vmservice.nic.ethernet0.managedKeys" for device key 4000.
 	NICExtraConfigManagedKeysKeyFmt = "vmservice.nic.ethernet%d.managedKeys"
 
-	// ExtraConfig reserved prefixes — vm-operator controls these and users must not set them directly.
+	// ExtraConfigReservedPrefixVMService is the reserved ExtraConfig prefix —
+	// vm-operator controls these keys and users must not set them directly.
 	ExtraConfigReservedPrefixVMService = "vmservice."
 
 	// ExtraConfigReservedKeyVMXRebootPowerCycle is the VMX key that triggers a

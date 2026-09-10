@@ -94,11 +94,12 @@ const (
 
 // Conditions related to the VirtualMachineImages.
 const (
-	// Deprecated
 	// VirtualMachineImageOSTypeSupportedCondition denotes that the OS type in the VirtualMachineImage object is
 	// supported by VMService. A VirtualMachineImageOsTypeSupportedCondition is marked true:
 	// - If OS Type is of Linux Family
 	// - If OS Type is supported by hosts in the cluster.
+	//
+	// Deprecated.
 	VirtualMachineImageOSTypeSupportedCondition ConditionType = "VirtualMachineImageOSTypeSupported"
 
 	// VirtualMachineImageV1Alpha1CompatibleCondition denotes image compatibility with VMService. VMService expects
@@ -118,9 +119,10 @@ const (
 
 // Condition.Reason for Conditions related to VirtualMachineImages.
 const (
-	// Deprecated
 	// VirtualMachineImageOSTypeNotSupportedReason (Severity=Error) documents that OS Type is VirtualMachineImage is
 	// not supported.
+	//
+	// Deprecated.
 	VirtualMachineImageOSTypeNotSupportedReason = "VirtualMachineImageOSTypeNotSupported"
 
 	// VirtualMachineImageV1Alpha1NotCompatibleReason (Severity=Error) documents that the VirtualMachineImage

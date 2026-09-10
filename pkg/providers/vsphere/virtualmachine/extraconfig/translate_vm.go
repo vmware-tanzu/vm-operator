@@ -96,7 +96,7 @@ func TranslateFirstClass(ctx context.Context, advanced *vmopv1.VirtualMachineAdv
 // on the VM if currently present (nil pointer or empty/nil slice).
 func TranslateFieldValue(fv reflect.Value) (val string, ok bool) {
 	switch fv.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if fv.IsNil() {
 			return "", true
 		}

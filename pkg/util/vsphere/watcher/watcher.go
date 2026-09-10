@@ -437,7 +437,9 @@ func Start(
 	ctx, cancel = context.WithCancel(ctx)
 	w.cancel = cancel
 
-	go func() {
+	// The ctx.Canceled path below intentionally uses Background so its
+	// cleanup call still goes through.
+	go func() { //nolint:gosec
 		defer func() {
 			logger.Info("Exiting watching VMs", "version", version)
 

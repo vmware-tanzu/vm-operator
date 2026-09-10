@@ -398,7 +398,7 @@ func loggerFromCtx(ctx context.Context) logr.Logger {
 // single-element slice.
 func DecodeVMXFieldValue(ctx context.Context, rv reflect.Value, raw string) error {
 	switch rv.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return decodePtrVMXField(ctx, rv, raw)
 	case reflect.Slice:
 		return decodeSliceVMXField(ctx, rv, raw)

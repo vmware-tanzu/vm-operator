@@ -349,13 +349,13 @@ type GuestHeartbeatStatus string
 
 // See govmomi.vim25.types.ManagedEntityStatus.
 const (
-	// VMware Tools are not installed or not running.
+	// GrayHeartbeatStatus means VMware Tools are not installed or not running.
 	GrayHeartbeatStatus GuestHeartbeatStatus = "gray"
-	// No heartbeat. Guest operating system may have stopped responding.
+	// RedHeartbeatStatus means no heartbeat. Guest operating system may have stopped responding.
 	RedHeartbeatStatus GuestHeartbeatStatus = "red"
-	// Intermittent heartbeat. May be due to guest load.
+	// YellowHeartbeatStatus means intermittent heartbeat. May be due to guest load.
 	YellowHeartbeatStatus GuestHeartbeatStatus = "yellow"
-	// Guest operating system is responding normally.
+	// GreenHeartbeatStatus means guest operating system is responding normally.
 	GreenHeartbeatStatus GuestHeartbeatStatus = "green"
 )
 

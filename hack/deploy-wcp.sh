@@ -5,7 +5,7 @@ set -o nounset
 set -o pipefail
 
 USAGE="
-Usage: ${0} [[-s SV_IP,SV_IP,SV_IP [-S SV_PASSWORD]] | [-v VC_IP [-V VC_SSH_PASSWORD]] | [-T testbedInfo.json]] [-c cluster] [-C CRDs] [image.tar]
+Usage: ${0} [[-s SV_IP,SV_IP,SV_IP [-S SV_PASSWORD]] | [-v VC_IP [-V VC_SSH_PASSWORD]] | [-T testbedInfo.json]] [-c cluster] [-C CRDs] [-J jumphost] [image.tar]
 
 Loads the VM Operator container image to the Supervisor control plane VMs,
 and restarts the deployments. The Supervisor control plane VM credential
@@ -32,6 +32,14 @@ public key authentication has already been configured.
 With either the -T or -v arguments, the first Supervisor cluster is selected
 by default. To select a specific cluster, use the -c argument.
 
+If VC and the Supervisor CP VMs are only reachable through a jumphost,
+specify it with the -J argument. It is passed to ssh/scp as the ProxyJump
+destination (e.g. 'user@jumphost' or 'user@jumphost:port'), so it applies to
+every ssh/scp call this script makes to VC and to the Supervisor. Public
+key authentication to the jumphost must already be configured and its host
+key already trusted, since ProxyJump does not inherit this script's
+StrictHostKeyChecking/UserKnownHostsFile options for the jump hop itself.
+
 FLAGS:
   -s Supervisor CP IPs
   -S Supervisor CP ssh password
@@ -41,12 +49,15 @@ FLAGS:
   -c Supervisor cluster, eg 'domain-c8'
   -C Deploy CRDs matching glob pattern (e.g. '*.vmoperator.vmware.com')
      Supports comma-separated patterns and glob wildcards (* and ?)
+  -J Jumphost to ssh/scp through to reach VC and the Supervisor (ProxyJump)
 "
 
 #########################################
 
 # VIP host key will change as Supervisor leader migrates
 COMMON_SSH_OPTS=("-o StrictHostKeyChecking=no" "-o UserKnownHostsFile=/dev/null")
+
+JUMPHOST=
 
 SV_VIP=
 SV_USERNAME="root"
@@ -187,7 +198,8 @@ function process_testbedInfoJson() {
         VC_SSH_PASSWORD=$(jq -r .root_password <<< "$vc")
     fi
 
-    # TODO: For some envs we need to use the jumphost to reach the SV.
+    # TODO: Auto-populate JUMPHOST from testbedInfo.json instead of
+    # requiring -J, if/when the format grows a jumphost field.
 }
 
 function sv_get_vip_and_password() {
@@ -263,7 +275,7 @@ function sv_restart_vmop_deployment() {
 
 #########################################
 
-while getopts ":hc:s:S:v:V:T:C:" opt ; do
+while getopts ":hc:s:S:v:V:T:C:J:" opt ; do
     case $opt in
         h)
             echo "$USAGE"
@@ -290,6 +302,9 @@ while getopts ":hc:s:S:v:V:T:C:" opt ; do
         C)
             DEPLOY_CRD_PATTERN=$OPTARG
             ;;
+        J)
+            JUMPHOST=$OPTARG
+            ;;
         *)
             fatal "$USAGE"
             ;;
@@ -297,6 +312,11 @@ while getopts ":hc:s:S:v:V:T:C:" opt ; do
 done
 
 shift $((OPTIND-1))
+
+# Route every ssh/scp call to VC and the Supervisor through the jumphost.
+if [[ -n $JUMPHOST ]] ; then
+    COMMON_SSH_OPTS+=("-J" "$JUMPHOST")
+fi
 
 IMAGE=
 IMAGE_REF=

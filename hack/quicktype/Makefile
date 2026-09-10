@@ -109,13 +109,14 @@ $(QUICKTYPE): $(QUICK_DIR)/package.json
 generate-schema: $(SCHEMA_IN)
 generate-schema: ## Generate the schema
 
+.PHONY: $(OUTPUT_GO)
 $(OUTPUT_GO): $(SCHEMA_IN) | $(GOIMPORTS)
 ifeq (local,$(QUICKTYPE_METHOD))
 $(OUTPUT_GO): | $(QUICKTYPE)
 	$(QUICKTYPE) \
 	  --src $(SCHEMA_IN) --src-lang schema \
 	  --out $@ --lang go --package schema \
-	  --top-level $(START_TYP)
+	  --top-level $(START_TYP) --omit-empty
 	$(GOIMPORTS) -w $@
 else
 $(OUTPUT_GO): | $(QUICKTYPE_IMAGE_RECEIPT)
@@ -129,11 +130,12 @@ $(OUTPUT_GO): | $(QUICKTYPE_IMAGE_RECEIPT)
 	  --out /output/schema.go \
 	  --lang go \
 	  --package schema \
-	  --top-level $(START_TYP)
+	  --top-level $(START_TYP) --omit-empty
 	mv -f schema.go $@
 	$(GOIMPORTS) -w $@
 endif
 
+.PHONY: generate-go
 generate-go: $(OUTPUT_GO)
 generate-go: ## Generate the go source code from the schema
 

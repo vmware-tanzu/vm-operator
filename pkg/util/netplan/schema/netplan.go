@@ -1,4 +1,4 @@
-// This file was generated from JSON Schema using quicktype, do not modify it directly.
+// Code generated from JSON Schema using quicktype. DO NOT EDIT.
 // To parse and unparse this JSON data, add this code to your project and do:
 //
 //    config, err := UnmarshalConfig(bytes)
@@ -2124,7 +2124,6 @@ func unmarshalUnion(data []byte, pi **int64, pf **float64, pb **bool, ps **strin
 		return false, errors.New("Cannot handle delimiter")
 	}
 	return false, errors.New("Cannot unmarshal union")
-
 }
 
 func marshalUnion(pi *int64, pf *float64, pb *bool, ps *string, haveArray bool, pa interface{}, haveObject bool, pc interface{}, haveMap bool, pm interface{}, haveEnum bool, pe interface{}, nullable bool) ([]byte, error) {

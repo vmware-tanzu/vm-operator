@@ -1,6 +1,8 @@
 name: dependabot-codegen
 
-# Dependabot only edits go.mod/go.sum. It never runs `make modules` (to
+# Dependabot edits go.mod/go.sum and other security
+# critical dependencies such as hack/quicktype.
+# By itself never runs `make modules` (to
 # re-tidy every module in this multi-module repo) or `make generate` (to
 # regenerate CRDs, webhooks, RBAC, and Go sources), so a bumped dependency
 # can silently leave stale generated files behind, which then fails
@@ -22,6 +24,20 @@ on:
     - reopened
 
 jobs:
+  prefix-title:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && !startsWith(github.event.pull_request.title, '🤖')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+    - name: Prefix PR title with the Dependabot icon
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh pr edit "${{ github.event.pull_request.number }}" \
+          --repo "${{ github.repository }}" \
+          --title "🤖 ${{ github.event.pull_request.title }}"
+
   regenerate:
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
@@ -33,6 +49,13 @@ jobs:
       with:
         repository: ${{ github.repository }}
         ref: ${{ github.event.pull_request.head.ref }}
+
+    - name: Install node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: 'hack/quicktype/package-lock.json'
 
     - name: Install Go
       uses: actions/setup-go@v5

@@ -139,7 +139,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 				input.WCPNamespaceName, vmName, vmKind)
 		}
 
-		vmoperator.VerifyVMDeleted(ctx, svClusterClient, config, input.WCPNamespaceName, vmName, nil)
+		vmoperator.VerifyVMDeleted(ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
 	})
 
 	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given zone, read

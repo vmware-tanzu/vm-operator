@@ -1322,17 +1322,11 @@ func EnsureVMSnapshotDeleted(
 	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-snapshot-deletion")...).Should(BeTrue())
 }
 
-// opts selects the "wait-virtual-machine-deletion" interval; pass nil unless
-// a specific spec needs a longer budget (e.g. because the VM is known to
-// still have snapshots at delete time, which makes vCenter's Destroy_Task
-// consolidate delta/memory-snapshot files before it completes) without
-// affecting every other caller of this function.
 func VerifyVMDeleted(
 	ctx context.Context,
 	client ctrlclient.Client,
 	vmSvcE2EConfig *config.E2EConfig,
-	ns, name string,
-	opts *IntervalOptions) {
+	ns, name string) {
 	Eventually(func() bool {
 		err := utils.DeleteVirtualMachine(ctx, client, ns, name)
 		if err != nil && apierrors.IsNotFound(err) {
@@ -1340,7 +1334,7 @@ func VerifyVMDeleted(
 		}
 
 		return false
-	}, vmSvcE2EConfig.GetIntervals(opts.spec(), "wait-virtual-machine-deletion")...).Should(BeTrue(),
+	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-deletion")...).Should(BeTrue(),
 		"Timed out waiting for VirtualMachine to be deleted")
 }
 

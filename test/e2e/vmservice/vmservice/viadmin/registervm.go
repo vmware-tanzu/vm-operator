@@ -263,6 +263,11 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			}
 
 			By("Get an existing VM Service VM MoID in Supervisor")
+			// Status.UniqueID is only set once the VM's vSphere create task completes,
+			// which is gated behind the same image-cache warm-up as Created. Wait for
+			// the shared warm-up VM's cache on its own budget first, since this Context
+			// runs before VM-LCM's BeforeEach gets a chance to do the same.
+			vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
 			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
 			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
 			Expect(err).ToNot(HaveOccurred())

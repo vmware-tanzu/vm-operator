@@ -112,6 +112,7 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					WCPClient:                 wcpClient,
 					ArtifactFolder:            artifactFolder,
 					WCPNamespaceName:          wcpNamespaceName,
+					LinuxVMName:               linuxVMName,
 					WindowsServerVMName:       windowsServerVMName,
 					WindowsInlineServerVMName: windowsInlineServerVMName,
 				}

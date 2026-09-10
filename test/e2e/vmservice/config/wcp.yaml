@@ -43,19 +43,17 @@ intervals:
   # Please keep the wait-virtual-machine values in sync between the different
   # configuration files.
   default/wait-virtual-machine-creation: ["5m", "3s"]
-  default/wait-virtual-machine-deletion: ["5m", "3s"]
+  # VM deletion typically waits for a graceful guest power-off, and when
+  # snapshots are still attached it also waits for vCenter's Destroy_Task to
+  # consolidate delta/memory-snapshot files, so this default already carries
+  # a lot of headroom.
+  default/wait-virtual-machine-deletion: ["10m", "5s"]
   default/wait-virtual-machine-condition-update: ["5m", "3s"]
   # Boot-disk promotion for this spec is a live Storage vMotion (VM home on
   # nfsDatastore, child disk vSAN-backed) and has been observed taking well
   # over 4 minutes under datastore/NFC contention; give it more headroom than
   # "default" without loosening the timeout for every other caller.
   register-vm-restore-disk-only/wait-virtual-machine-condition-update: ["12m", "5s"]
-  # This spec deletes the VM while snapshots are still attached (to verify
-  # they're garbage-collected), which makes vCenter's Destroy_Task
-  # consolidate delta/memory-snapshot files before it completes; give it
-  # more headroom than "default" without loosening the timeout for every
-  # other caller.
-  vm-snapshot/wait-virtual-machine-deletion: ["10m", "5s"]
   default/wait-virtual-machine-powerstate: ["5m", "3s"]
   default/wait-virtual-machine-resize: ["5m", "3s"]
   default/wait-virtual-machine-moid: ["5m", "3s"]

@@ -17,7 +17,6 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -120,7 +119,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 			return
 		}
 
-		vmoperator.VerifyVMDeleted(ctx, svClusterClient, vmSvcE2EConfig, vmSvcNamespace, vmName, nil)
+		vmoperator.VerifyVMDeleted(ctx, svClusterClient, vmSvcE2EConfig, vmSvcNamespace, vmName)
 		vmoperator.EnsureVMSnapshotDeleted(ctx, vmSvcClusterProxy.GetClient(),
 			vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
 				Namespace: vmSvcNamespace,
@@ -317,8 +316,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 			By("Delete vm")
 			vmoperator.VerifyVMDeleted(ctx, vmSvcClusterProxy.GetClient(),
-				vmSvcE2EConfig, vmSvcNamespace, vmName,
-				&vmoperator.IntervalOptions{Spec: ptr.To(vmSnapshotSpecName)})
+				vmSvcE2EConfig, vmSvcNamespace, vmName)
 
 			By("Verifying Snapshot 1 and Snapshot 3 are gone because of garbage collection")
 			vmoperator.VerifyVMSnapshotDeletion(ctx, vmSvcClusterProxy.GetClient(),
@@ -480,7 +478,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		AfterEach(func() {
 			if importedVMName != "" {
 				vmoperator.VerifyVMDeleted(ctx, vmSvcClusterProxy.GetClient(),
-					vmSvcE2EConfig, vmSvcNamespace, importedVMName, nil)
+					vmSvcE2EConfig, vmSvcNamespace, importedVMName)
 			}
 
 			CleanupBrownfieldVM(ctx, BrownfieldVMCleanupInput{

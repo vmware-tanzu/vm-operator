@@ -16,7 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
@@ -33,7 +33,7 @@ type fakeManager struct {
 	scheme *runtime.Scheme
 }
 
-func (f fakeManager) GetEventRecorder(name string) events.EventRecorder {
+func (f fakeManager) GetEventRecorder(name string) recorder.EventRecorder {
 	return nil
 }
 

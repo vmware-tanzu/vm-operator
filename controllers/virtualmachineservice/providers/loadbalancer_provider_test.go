@@ -131,7 +131,7 @@ var _ = Describe(
 			})
 		})
 
-		Context("GetToBeRemovedServiceAnnotations for nsx.vmware.com/hostnames", func() {
+		Context("GetToBeRemovedServiceAnnotations for external-dns.alpha.kubernetes.io/hostname", func() {
 			BeforeEach(func() {
 				vmService = &vmopv1.VirtualMachineService{
 					ObjectMeta: metav1.ObjectMeta{
@@ -148,13 +148,13 @@ var _ = Describe(
 				lbProvider = NsxtLoadBalancerProvider()
 			})
 
-			It("should include nsx.vmware.com/hostnames in to-be-removed set when absent from VirtualMachineService", func() {
+			It("should include external-dns in to-be-removed set when absent from VirtualMachineService", func() {
 				annotations, err := lbProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(annotations).To(HaveKey(AnnotationServiceNSXHostnamesKey))
 			})
 
-			It("should not include nsx.vmware.com/hostnames in to-be-removed set when present on VirtualMachineService", func() {
+			It("should not include external-dns in to-be-removed set when present on VirtualMachineService", func() {
 				vmService.Annotations[AnnotationServiceNSXHostnamesKey] = "host1.example.com"
 				annotations, err := lbProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
 				Expect(err).ToNot(HaveOccurred())

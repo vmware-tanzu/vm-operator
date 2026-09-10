@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -38,7 +37,6 @@ import (
 const (
 	finalizerName         = "vmoperator.vmware.com/virtualmachinegrouppublishrequest"
 	undefinedSpecErrorMsg = "spec.%s is undefined"
-	invalidSpecErrorMsg   = "webhooks failed to mutate/validate spec. please delete and create again."
 	delTTLMsg             = "%s vm group publish request due to TTL expired"
 )
 
@@ -54,7 +52,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx,
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
-		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorder(controllerNameShort)),
 		ctx.VMProvider,
 	)
@@ -76,7 +73,6 @@ type Reconciler struct {
 	client.Client
 	Context    context.Context
 	apiReader  client.Reader
-	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
 }
@@ -85,7 +81,6 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	apiReader client.Reader,
-	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 
@@ -93,7 +88,6 @@ func NewReconciler(
 		Context:    ctx,
 		Client:     client,
 		apiReader:  apiReader,
-		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
 	}
@@ -125,6 +119,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			vmGroupPublishRequest.Name,
 			err)
 	}
+
+	// VirtualMachineGroupPublishRequest status has both conditions and other fields
+	// that convey completeness so they need to be patched together.
+	patchHelper.DisableSeparateConditionsPatch()
 
 	defer func() {
 		if err := patchHelper.Patch(ctx, vmGroupPublishRequest); err != nil {
@@ -168,7 +166,8 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineGroupPublishReque
 		return nil
 	}
 
-	if conditions.IsTrue(vmGroupPublishReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete) {
+	if !vmGroupPublishReq.Status.CompletionTime.IsZero() &&
+		conditions.IsTrue(vmGroupPublishReq, vmopv1.VirtualMachineGroupPublishRequestConditionComplete) {
 		return r.reconcileSpecTTL(ctx)
 	}
 
@@ -226,11 +225,12 @@ func (r *Reconciler) getVMPublishRequests(
 	completedReqsSet := sets.Set[string]{}
 	for _, req := range reqs.Items {
 		if metav1.IsControlledBy(&req, ctx.VMGroupPublishRequest) {
-			existReqsMap[req.Spec.Source.Name] = req
+			name := req.Spec.Source.Name
+			existReqsMap[name] = req
 			if req.Status.Ready {
-				completedReqsSet.Insert(req.Spec.Source.Name)
+				completedReqsSet.Insert(name)
 			} else {
-				pendingReqsSet.Insert(req.Spec.Source.Name)
+				pendingReqsSet.Insert(name)
 			}
 		}
 	}
@@ -336,7 +336,7 @@ func (r *Reconciler) reconcileStatusCompletedCondition(
 
 	conditions.MarkFalse(
 		ctx.VMGroupPublishRequest,
-		vmopv1.VirtualMachinePublishRequestConditionComplete,
+		vmopv1.VirtualMachineGroupPublishRequestConditionComplete,
 		vmopv1.VirtualMachineGroupPublishRequestConditionReasonPending,
 		"waiting %d more vm publish requests to be completed",
 		pendingReqsSet.Len())
@@ -359,14 +359,13 @@ func (r *Reconciler) verifySpec(vmGroupPublishReq *vmopv1.VirtualMachineGroupPub
 	}
 
 	if len(errs) > 0 {
-		// in the rare case that webhooks were down when request was created
-		// set condition to failure
+		// Mutation and validation webhooks should prevent this.
+		err := fmt.Errorf("invalid spec: %w", errors.Join(errs...))
 		conditions.MarkError(vmGroupPublishReq,
 			vmopv1.VirtualMachineGroupPublishRequestConditionComplete,
-			invalidSpecErrorMsg,
-			errors.Join(errs...))
-
-		return pkgerr.NoRequeueError{Message: invalidSpecErrorMsg}
+			"Invalid",
+			err)
+		return pkgerr.NoRequeueError{Message: err.Error()}
 	}
 
 	return nil

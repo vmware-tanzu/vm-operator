@@ -27,7 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -89,7 +88,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx,
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
-		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorder(controllerNameShort)),
 		ctx.VMProvider,
 	)
@@ -147,7 +145,6 @@ func NewReconciler(
 	ctx context.Context,
 	client client.Client,
 	apiReader client.Reader,
-	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 
@@ -155,7 +152,6 @@ func NewReconciler(
 		Context:    ctx,
 		Client:     client,
 		apiReader:  apiReader,
-		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
 		Metrics:    metrics.NewVMPublishMetrics(),
@@ -167,7 +163,6 @@ type Reconciler struct {
 	client.Client
 	Context    context.Context
 	apiReader  client.Reader
-	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
 	Metrics    *metrics.VMPublishMetrics
@@ -183,16 +178,17 @@ func requeueResult(ctx *pkgctx.VirtualMachinePublishRequestContext) ctrl.Result 
 		return ctrl.Result{}
 	}
 
-	if conditions.GetReason(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded) == vmopv1.UploadItemIDInvalidReason {
-		return ctrl.Result{}
-	}
+	if cond := conditions.Get(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded); cond != nil {
+		if cond.Reason == vmopv1.UploadItemIDInvalidReason {
+			return ctrl.Result{}
+		}
 
-	// In case the item is uploaded but VMI is not available, or,
-	// the export task is not submitted to the vCenter task manager,
-	// requeue after a short wait time since we expect these issues to be resolved quickly.
-	if conditions.GetReason(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded) == vmopv1.UploadTaskNotStartedReason ||
-		conditions.IsTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
-		return ctrl.Result{RequeueAfter: 10 * time.Second}
+		// In case the item is uploaded but VMI is not available, or, the export task is not
+		// submitted to the vCenter task manager, requeue after a short wait time since we
+		// expect these issues to be resolved quickly.
+		if cond.Reason == vmopv1.UploadTaskNotStartedReason || cond.Status == metav1.ConditionTrue {
+			return ctrl.Result{RequeueAfter: 10 * time.Second}
+		}
 	}
 
 	// Skip checking ImageAvailable.
@@ -235,7 +231,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s/%s: %w", vmPublishReq.Namespace, vmPublishReq.Name, err)
 	}
 
-	// the patch is skipped when the VirtualMachinePublishRequest.Status().Update
+	// VirtualMachinePublishRequest status has both conditions and other fields
+	// that convey completeness so they need to be patched together.
+	patchHelper.DisableSeparateConditionsPatch()
+
+	// The patch is skipped when the VirtualMachinePublishRequest.Status().Update
 	// is called during publishVirtualMachine().
 	defer func() {
 		if vmPublishCtx.SkipPatch {
@@ -495,7 +495,6 @@ func (r *Reconciler) checkIsTargetValid(ctx *pkgctx.VirtualMachinePublishRequest
 	}
 
 	item, err := r.getItemByName(ctx)
-
 	if err != nil {
 		return fmt.Errorf("failed to get item %q from library: %w", targetItemName, err)
 	}
@@ -726,10 +725,6 @@ func (r *Reconciler) checkIsImageAvailable(ctx *pkgctx.VirtualMachinePublishRequ
 // checkIsComplete checks if condition Complete can be marked to true.
 // The condition's status is set to true only when all other conditions present on the resource have a truthy status.
 func (r *Reconciler) checkIsComplete(ctx *pkgctx.VirtualMachinePublishRequestContext) bool {
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionComplete) {
-		return true
-	}
-
 	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
 		conditions.MarkFalse(ctx.VMPublishRequest,
 			vmopv1.VirtualMachinePublishRequestConditionComplete,
@@ -749,7 +744,9 @@ func (r *Reconciler) checkIsComplete(ctx *pkgctx.VirtualMachinePublishRequestCon
 	conditions.MarkTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionComplete)
 	ctx.VMPublishRequest.Status.Ready = true
 	ctx.VMPublishRequest.Status.CompletionTime = metav1.Now()
-	ctx.Logger.Info("VM publish request completed", "time", ctx.VMPublishRequest.Status.CompletionTime)
+	ctx.Logger.Info("VM publish request completed",
+		"imageName", ctx.VMPublishRequest.Status.ImageName,
+		"time", ctx.VMPublishRequest.Status.CompletionTime)
 
 	return true
 }
@@ -822,13 +819,13 @@ func (r *Reconciler) getPublishRequestTask(ctx *pkgctx.VirtualMachinePublishRequ
 // - task succeeded, mark Uploaded to true and return the uploaded item ID.
 // - task failed, mark Uploaded to false and retry the operation.
 func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMachinePublishRequestContext) (bool, error) {
+	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
+		return false, nil
+	}
+
 	if ctx.VMPublishRequest.Status.Attempts == 0 {
 		// No VM publish task has been attempted. return immediately.
 		return true, nil
-	}
-
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
-		return false, nil
 	}
 
 	actID := getPublishRequestActID(ctx.VMPublishRequest)
@@ -859,7 +856,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *pkgctx.VirtualMach
 	if task == nil {
 		if time.Since(ctx.VMPublishRequest.Status.LastAttemptTime.Time) > waitForTaskTimeout {
 			// CreateOvf API failed to submit this task for some reason. In this case, retry VM publish.
-			ctx.Logger.Info("failed to create task, retry publishing this VM",
+			logger.Info("failed to create task, retry publishing this VM",
 				"taskName", OVFCaptureTaskDescriptionID,
 				"lastAttemptTime", ctx.VMPublishRequest.Status.LastAttemptTime.String())
 			return true, nil
@@ -1148,7 +1145,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 			res = metrics.PublishInProgress
 		}
 
-		r.Metrics.RegisterVMPublishRequest(r.Logger, vmPublishReq.Name, vmPublishReq.Namespace, res)
+		r.Metrics.RegisterVMPublishRequest(ctx, vmPublishReq.Name, vmPublishReq.Namespace, res)
 	}()
 
 	if completeCond := conditions.Get(vmPublishReq, vmopv1.VirtualMachinePublishRequestConditionComplete); completeCond != nil {
@@ -1159,7 +1156,8 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 		}
 
 		// In case the .spec.ttlSecondsAfterFinished is not set, we can return early and no need to do any reconcile.
-		if isComplete = completeCond.Status == metav1.ConditionTrue; isComplete {
+		if vmPublishReq.Status.Ready && completeCond.Status == metav1.ConditionTrue {
+			isComplete = true
 			requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
 			isDeleted = deleted
 			return ctrl.Result{RequeueAfter: requeueAfter}, err
@@ -1221,7 +1219,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachinePublishRequestContext) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(ctx.VMPublishRequest, finalizerName) ||
 		controllerutil.ContainsFinalizer(ctx.VMPublishRequest, deprecatedFinalizerName) {
-		r.Metrics.DeleteMetrics(ctx.Logger, ctx.VMPublishRequest.Name, ctx.VMPublishRequest.Namespace)
+		r.Metrics.DeleteMetrics(ctx, ctx.VMPublishRequest.Name, ctx.VMPublishRequest.Namespace)
 		controllerutil.RemoveFinalizer(ctx.VMPublishRequest, finalizerName)
 		controllerutil.RemoveFinalizer(ctx.VMPublishRequest, deprecatedFinalizerName)
 	}

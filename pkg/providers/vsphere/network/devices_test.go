@@ -427,25 +427,29 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 						{
 							Name: "eth1",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName2,
+								Name:     networkName2,
+								TypeMeta: netOPNetworkTypeMeta,
 							},
 						},
 						{
 							Name: "eth0",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName1,
+								Name:     networkName1,
+								TypeMeta: netOPNetworkTypeMeta,
 							},
 						},
 						{
 							Name: "eth2",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName2,
+								Name:     networkName2,
+								TypeMeta: netOPNetworkTypeMeta,
 							},
 						},
 						{
 							Name: "eth3",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName3,
+								Name:     networkName3,
+								TypeMeta: netOPNetworkTypeMeta,
 							},
 							MACAddr: macAddress,
 						},
@@ -506,13 +510,15 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 						{
 							Name: "eth1",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName2,
+								Name:     networkName2,
+								TypeMeta: nsxtNetworkTypeMeta,
 							},
 						},
 						{
 							Name: "eth0",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName1,
+								Name:     networkName1,
+								TypeMeta: nsxtNetworkTypeMeta,
 							},
 						},
 					}
@@ -590,19 +596,22 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 						{
 							Name: "eth1",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName2,
+								Name:     networkName2,
+								TypeMeta: vpcNetworkTypeMeta,
 							},
 						},
 						{
 							Name: "eth2",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName3,
+								Name:     networkName3,
+								TypeMeta: vpcNetworkTypeMeta,
 							},
 						},
 						{
 							Name: "eth0",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName1,
+								Name:     networkName1,
+								TypeMeta: vpcNetworkTypeMeta,
 							},
 						},
 					}
@@ -648,7 +657,8 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 						{
 							Name: "eth0",
 							Network: &vmopv1common.PartialObjectRef{
-								Name: networkName,
+								Name:     networkName,
+								TypeMeta: vpcNetworkTypeMeta,
 							},
 						},
 					}
@@ -657,6 +667,171 @@ var _ = Describe("MapEthernetDevicesToSpecIdx", func() {
 				It("returns expected mapping", func() {
 					Expect(devKeyToIdx).To(HaveLen(1))
 					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4000), 0))
+				})
+			})
+		})
+
+		Context("Named", func() {
+			const networkName = "my-network"
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.NetworkProviderType = pkgcfg.NetworkProviderTypeNamed
+				})
+
+				dev1 := &vimtypes.VirtualVmxnet3{}
+				dev1.Key = 4000
+				dev1.Backing = &vimtypes.VirtualEthernetCardNetworkBackingInfo{
+					VirtualDeviceDeviceBackingInfo: vimtypes.VirtualDeviceDeviceBackingInfo{
+						DeviceName: networkName,
+					},
+				}
+				devices = append(devices, dev1)
+
+				// Note the interface's Network has no APIVersion/TypeMeta set,
+				// as is the case for a Named network.
+				vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Network: &vmopv1common.PartialObjectRef{
+							Name: networkName,
+						},
+					},
+				}
+			})
+
+			Context("PerNamespaceNetworkProvider is disabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.PerNamespaceNetworkProvider = false
+					})
+				})
+
+				It("matches by device name", func() {
+					Expect(devKeyToIdx).To(HaveLen(1))
+					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4000), 0))
+				})
+
+				Context("and the interface spec MACAddr does not match the device", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Network.Interfaces[0].MACAddr = "aa:bb:cc:dd:ee:ff"
+					})
+
+					It("returns no mapping", func() {
+						Expect(devKeyToIdx).To(BeEmpty())
+					})
+				})
+			})
+
+			Context("PerNamespaceNetworkProvider is enabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.PerNamespaceNetworkProvider = true
+					})
+				})
+
+				It("does not use the Named matcher and returns no mapping", func() {
+					// With PerNamespaceNetworkProvider enabled, dispatch is by
+					// the interface's API group. Since a Named network has no
+					// APIVersion set, no matcher applies.
+					Expect(devKeyToIdx).To(BeEmpty())
+				})
+			})
+		})
+
+		Context("Interface's Network has no recognized API group", func() {
+			BeforeEach(func() {
+				dev1 := &vimtypes.VirtualVmxnet3{}
+				dev1.Key = 4000
+				devices = append(devices, dev1)
+
+				vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Network: &vmopv1common.PartialObjectRef{
+							Name: "some-network",
+							TypeMeta: metav1.TypeMeta{
+								APIVersion: "unknown.example.com/v1",
+							},
+						},
+					},
+				}
+			})
+
+			It("returns no mapping", func() {
+				Expect(devKeyToIdx).To(BeEmpty())
+			})
+		})
+
+		Context("Mixed VDS and VPC", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.PerNamespaceNetworkProvider = true
+				})
+			})
+
+			Context("Matches", func() {
+				const networkName1, networkName2 = "network-1", "network-2"
+				const backing1 = "dvpg-1"
+				const externalID2 = "extid-2"
+
+				BeforeEach(func() {
+					dev1 := &vimtypes.VirtualVmxnet3{}
+					dev1.Key = 4000
+					dev1.Backing = &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+						Port: vimtypes.DistributedVirtualSwitchPortConnection{
+							PortgroupKey: backing1,
+						},
+					}
+					dev2 := &vimtypes.VirtualE1000e{}
+					dev2.Key = 4001
+					dev2.ExternalId = externalID2
+					devices = append(devices, dev1, dev2)
+
+					netIf1 := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vmCtx.VM.Name, networkName1, "eth0", false),
+							Namespace: vmCtx.VM.Namespace,
+						},
+						Status: netopv1alpha1.NetworkInterfaceStatus{
+							NetworkID: backing1,
+						},
+					}
+					subnetPort2 := &vpcv1alpha1.SubnetPort{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.VPCCRName(vmCtx.VM.Name, networkName2, "eth1"),
+							Namespace: vmCtx.VM.Namespace,
+						},
+						Status: vpcv1alpha1.SubnetPortStatus{
+							Attachment: vpcv1alpha1.PortAttachment{
+								ID: externalID2,
+							},
+						},
+					}
+					initObjs = append(initObjs, netIf1, subnetPort2)
+
+					vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth1",
+							Network: &vmopv1common.PartialObjectRef{
+								Name:     networkName2,
+								TypeMeta: vpcNetworkTypeMeta,
+							},
+						},
+						{
+							Name: "eth0",
+							Network: &vmopv1common.PartialObjectRef{
+								Name:     networkName1,
+								TypeMeta: netOPNetworkTypeMeta,
+							},
+						},
+					}
+				})
+
+				It("returns expected mapping", func() {
+					Expect(devKeyToIdx).To(HaveLen(2))
+					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4000), 1))
+					Expect(devKeyToIdx).To(HaveKeyWithValue(int32(4001), 0))
 				})
 			})
 		})

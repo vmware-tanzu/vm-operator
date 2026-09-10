@@ -32,6 +32,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -47,6 +48,7 @@ func unitTests() {
 		),
 		unitTestsReconcile,
 	)
+	unitTestsConcurrentStatusUpdates()
 }
 
 func unitTestsReconcile() {
@@ -1745,4 +1747,201 @@ func assertVMVolStatusFromLegacyAttachment(
 	Expect(vmVolStatus.Attached).To(Equal(attachment.Status.Attached))
 	Expect(vmVolStatus.DiskUUID).To(Equal(diskUUID))
 	Expect(vmVolStatus.Error).To(Equal(attachment.Status.Error))
+}
+
+// unitTestsConcurrentStatusUpdates covers the scenario where the volume
+// batch controller and the main VM controller (vmlifecycle/update_status.go)
+// independently update the shared VirtualMachine status.Volumes list. A
+// reconcile that's computed against a stale snapshot must not be able to
+// silently overwrite a field (e.g. ControllerType) that the other controller
+// concurrently wrote - it must converge without losing it.
+func unitTestsConcurrentStatusUpdates() {
+	Describe(
+		"Reattaching volumes while another controller concurrently updates status",
+		Label(testlabels.Controller, testlabels.API),
+		func() {
+			const (
+				ns                = "dummy-ns-concurrent-status"
+				dummyBiosUUID     = "dummy-bios-uuid"
+				dummyInstanceUUID = "dummy-instance-uuid"
+				dummyDiskUUID     = "111-222-333-disk-uuid"
+				claimName1        = "pvc-volume-1"
+				volumeName1       = "cns-volume-1"
+			)
+
+			var (
+				reconciler       *volumebatch.Reconciler
+				ctx              *builder.UnitTestContextForController
+				vm               *vmopv1.VirtualMachine
+				vmVolumeWithPVC1 vmopv1.VirtualMachineVolume
+				boundPVC1        *corev1.PersistentVolumeClaim
+			)
+
+			BeforeEach(func() {
+				vmVolumeWithPVC1 = vmopv1.VirtualMachineVolume{
+					Name: volumeName1,
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{ClaimName: claimName1},
+						},
+					},
+					ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+					ControllerBusNumber: new(int32),
+					UnitNumber:          new(int32),
+					DiskMode:            vmopv1.VolumeDiskModePersistent,
+					SharingMode:         vmopv1.VolumeSharingModeNone,
+				}
+
+				vm = &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{Name: "dummy-vm", Namespace: ns},
+					Spec:       vmopv1.VirtualMachineSpec{Volumes: []vmopv1.VirtualMachineVolume{vmVolumeWithPVC1}},
+					Status: vmopv1.VirtualMachineStatus{
+						BiosUUID:     dummyBiosUUID,
+						InstanceUUID: dummyInstanceUUID,
+						Hardware: &vmopv1.VirtualMachineHardwareStatus{
+							Controllers: []vmopv1.VirtualControllerStatus{
+								{Type: vmopv1.VirtualControllerTypeSCSI, BusNumber: 0, DeviceKey: 1000},
+							},
+						},
+					},
+				}
+
+				boundPVC1 = &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: claimName1, Namespace: ns},
+					Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound},
+				}
+
+				// No VolumeStatus on the attachment yet - CSI hasn't
+				// reported it as attached at round 1.
+				attachment := cnsBatchAttachmentForVMVolume(vm, []vmopv1.VirtualMachineVolume{vmVolumeWithPVC1})
+
+				ctx = suite.NewUnitTestContextForController()
+				ctx.Client = fake.NewClientBuilder().
+					WithScheme(ctx.Client.Scheme()).
+					WithObjects(vm, boundPVC1, attachment).
+					WithStatusSubresource(builder.KnownObjectTypes()...).
+					WithIndex(
+						&cnsv1alpha1.CnsNodeVmAttachment{},
+						"spec.nodeuuid",
+						func(rawObj client.Object) []string {
+							attachment := rawObj.(*cnsv1alpha1.CnsNodeVmAttachment)
+							return []string{attachment.Spec.NodeUUID}
+						}).
+					Build()
+				reconciler = volumebatch.NewReconciler(ctx, ctx.Client, ctx.Logger, ctx.Recorder, ctx.VMProvider)
+			})
+
+			AfterEach(func() {
+				ctx.AfterEach()
+				ctx = nil
+			})
+
+			// simulateAttach marks the batch attachment as CSI-attached with
+			// a DiskUUID, mirroring what happens shortly after reattach.
+			simulateAttach := func() {
+				liveAttachment := &cnsv1alpha1.CnsNodeVMBatchAttachment{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{
+					Name:      util.CNSBatchAttachmentNameForVM(vm.Name),
+					Namespace: vm.Namespace,
+				}, liveAttachment)).To(Succeed())
+				liveAttachment.Status.VolumeStatus = append(liveAttachment.Status.VolumeStatus,
+					cnsv1alpha1.VolumeStatus{
+						Name: vmVolumeWithPVC1.Name,
+						PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
+							ClaimName: claimName1,
+							DiskUUID:  dummyDiskUUID,
+							Conditions: []metav1.Condition{
+								{Type: cnsv1alpha1.ConditionAttached, Status: metav1.ConditionTrue},
+							},
+						},
+					},
+				)
+				Expect(ctx.Client.Status().Update(ctx, liveAttachment)).To(Succeed())
+			}
+
+			// reconcileAndFetch runs one volume batch ReconcileNormal call
+			// against a fresh Get of the VM and returns both the mutated
+			// in-memory object and a patch.Helper capturing the "before"
+			// state from that Get - i.e. it hasn't been patched back yet.
+			reconcileAndFetch := func() (*vmopv1.VirtualMachine, *patch.Helper) {
+				fetched := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), fetched)).To(Succeed())
+				helper, err := patch.NewHelper(fetched, ctx.Client)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(reconciler.ReconcileNormal(&pkgctx.VolumeContext{
+					Context: ctx, Logger: ctx.Logger, VM: fetched,
+				})).To(Succeed())
+
+				return fetched, helper
+			}
+
+			getControllerType := func() vmopv1.VirtualControllerType {
+				latest := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), latest)).To(Succeed())
+				Expect(latest.Status.Volumes).To(HaveLen(1))
+
+				return latest.Status.Volumes[0].ControllerType
+			}
+
+			// backfillControllerType simulates the main VM controller's
+			// concurrent write (vmlifecycle/update_status.go backfilling
+			// ControllerType from vSphere hardware info), landing after the
+			// volume batch controller's Get in reconcileAndFetch above.
+			backfillControllerType := func() error {
+				freshVM := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), freshVM)).To(Succeed())
+				helper, err := patch.NewHelper(freshVM, ctx.Client)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(freshVM.Status.Volumes).To(HaveLen(1))
+				freshVM.Status.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+
+				return helper.Patch(ctx, freshVM)
+			}
+
+			It("does not lose the concurrently-written ControllerType, and converges on retry", func() {
+				// Round 1: creates the placeholder status entry
+				// (Attached=false, no ControllerType) and patches it.
+				round1VM, round1Helper := reconcileAndFetch()
+				Expect(round1VM.Status.Volumes[0].Attached).To(BeFalse())
+				Expect(round1VM.Status.Volumes[0].ControllerType).To(BeEmpty())
+				Expect(round1Helper.Patch(ctx, round1VM)).To(Succeed())
+
+				simulateAttach()
+
+				// Round 2: reads a snapshot taken right after simulateAttach,
+				// but before the concurrent ControllerType backfill below,
+				// and recomputes: Attached flips true (a genuine change from
+				// its own perspective), but ControllerType is still empty.
+				// Not patched back yet.
+				staleVM, staleHelper := reconcileAndFetch()
+				Expect(staleVM.Status.Volumes[0].Attached).To(BeTrue())
+				Expect(staleVM.Status.Volumes[0].ControllerType).To(BeEmpty())
+
+				Expect(backfillControllerType()).To(Succeed())
+				Expect(getControllerType()).To(Equal(vmopv1.VirtualControllerTypeSCSI), "sanity: fresh write landed")
+
+				// The volume batch controller now patches back its round-2
+				// result, computed before the concurrent backfill above.
+				// Attached differs from staleHelper's captured "before", so
+				// the whole Volumes list - including the stale, empty
+				// ControllerType - is part of this patch. It must fail with
+				// a conflict rather than silently overwrite the concurrent
+				// write.
+				err := staleHelper.Patch(ctx, staleVM)
+				Expect(err).To(HaveOccurred(),
+					"the stale patch must be rejected rather than silently overwrite the concurrently-written ControllerType")
+				Expect(getControllerType()).To(Equal(vmopv1.VirtualControllerTypeSCSI),
+					"the concurrently-written ControllerType must survive the rejected stale patch")
+
+				// On retry (as controller-runtime would do after a conflict
+				// error), the volume batch controller converges without
+				// loss: its next reconcile starts from a fresh snapshot that
+				// already has ControllerType set, so its own carry-forward
+				// preserves it.
+				retryVM, retryHelper := reconcileAndFetch()
+				Expect(retryHelper.Patch(ctx, retryVM)).To(Succeed())
+				Expect(getControllerType()).To(Equal(vmopv1.VirtualControllerTypeSCSI),
+					"ControllerType must still be present after the volume batch controller's retry")
+			})
+		})
 }

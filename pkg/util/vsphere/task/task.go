@@ -54,3 +54,52 @@ func ErrorMessageFromTaskInfo(taskInfo *vimtypes.TaskInfo) string {
 
 	return strings.Join(faultMsgs, "; ")
 }
+
+const (
+	// FaultMessageKeyAutoevacHostInMaintenanceMode is the vCenter autoevac
+	// fault-message key present on a NoCompatibleHost fault when a VM's
+	// power-on is rejected because a RestartOnCurrentHost-required policy
+	// pins it to its current host and that host is still in maintenance
+	// mode.
+	FaultMessageKeyAutoevacHostInMaintenanceMode = "com.vmware.cp.autoevac.RestartOnCurrentHostRequired.HostInMaintenanceMode"
+
+	// FaultMessageKeyAutoevacRestartOnCurrentHostRequired is the vCenter autoevac
+	// fault-message key present on a NoCompatibleHost fault when a
+	// RestartOnCurrentHost-required policy's original host has exited
+	// maintenance mode but DRS selected a different destination host.
+	FaultMessageKeyAutoevacRestartOnCurrentHostRequired = "com.vmware.cp.autoevac.RestartOnCurrentHostRequired"
+)
+
+// IsInfraMaintenanceFault returns true if taskInfo's failure is a
+// NoCompatibleHost fault whose nested fault messages carry the
+// com.vmware.cp.autoevac.RestartOnCurrentHostRequired.HostInMaintenanceMode or
+// com.vmware.cp.autoevac.RestartOnCurrentHostRequired key, i.e. the task
+// failed because the VM's host is in infrastructure maintenance.
+func IsInfraMaintenanceFault(taskInfo *vimtypes.TaskInfo) bool {
+	if taskInfo == nil || taskInfo.Error == nil {
+		return false
+	}
+
+	nch, ok := taskInfo.Error.Fault.(*vimtypes.NoCompatibleHost)
+	if !ok {
+		return false
+	}
+
+	for _, lmf := range nch.Error {
+		if lmf.Fault == nil {
+			continue
+		}
+		fault := lmf.Fault.GetMethodFault()
+		if fault == nil {
+			continue
+		}
+		for _, fm := range fault.FaultMessage {
+			if fm.Key == FaultMessageKeyAutoevacHostInMaintenanceMode ||
+				fm.Key == FaultMessageKeyAutoevacRestartOnCurrentHostRequired {
+				return true
+			}
+		}
+	}
+
+	return false
+}

@@ -193,6 +193,11 @@ const (
 	// has been applied but takes effect only after a guest power cycle.
 	VirtualMachinePowerCyclePendingReason = "PowerCyclePending"
 
+	// VirtualMachineInfraInMaintenanceReason is used on the PowerStateSynced
+	// condition when VM Operator's attempt to converge spec.powerState fails
+	// because the underlying infrastructure is undergoing maintenance.
+	VirtualMachineInfraInMaintenanceReason = "InfraInMaintenance"
+
 	// VirtualMachineExtraConfigErrorReason indicates that reconciliation of
 	// VirtualMachineExtraConfigSynced failed with an unexpected error.
 	VirtualMachineExtraConfigErrorReason = "ExtraConfigError"

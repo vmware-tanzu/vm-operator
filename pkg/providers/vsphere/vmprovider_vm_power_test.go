@@ -29,10 +29,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
@@ -108,6 +110,13 @@ func vmPowerStateTests() {
 			})
 			It("should not return an error", func() {
 				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			})
+			It("should set the VirtualMachinePowerStateSynced condition to True with reason Synced", func() {
+				Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+				c := conditions.Get(vm, vmopv1.VirtualMachinePowerStateSynced)
+				Expect(c).ToNot(BeNil())
+				Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				Expect(c.Reason).To(Equal("Synced"))
 			})
 		})
 
@@ -238,6 +247,10 @@ func vmPowerStateTests() {
 					vm.Spec.PowerOffMode = mode
 					Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+					c := conditions.Get(vm, vmopv1.VirtualMachinePowerStateSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionTrue))
+					Expect(c.Reason).To(Equal("Synced"))
 				},
 				Entry("hard", vmopv1.VirtualMachinePowerOpModeHard),
 				Entry("soft", vmopv1.VirtualMachinePowerOpModeSoft),
@@ -956,3 +969,92 @@ func vmPowerStateTests() {
 		})
 	})
 }
+
+var _ = Describe("SetPowerStateSyncedCondition", func() {
+
+	var (
+		vm    *vmopv1.VirtualMachine
+		vmCtx pkgctx.VirtualMachineContext
+	)
+
+	BeforeEach(func() {
+		vm = &vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				PowerState: vmopv1.VirtualMachinePowerStateOn,
+			},
+			Status: vmopv1.VirtualMachineStatus{
+				PowerState: vmopv1.VirtualMachinePowerStateOff,
+			},
+		}
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: pkgcfg.NewContextWithDefaultConfig(),
+			Logger:  suite.GetLogger(),
+			VM:      vm,
+		}
+	})
+
+	When("status.powerState matches spec.powerState", func() {
+		It("sets the condition to True with reason Synced, regardless of err", func() {
+			vmCtx.VM.Status.PowerState = vmCtx.VM.Spec.PowerState
+			vsphere.SetPowerStateSyncedCondition(vmCtx, errors.New("boom"))
+
+			c := conditions.Get(vm, vmopv1.VirtualMachinePowerStateSynced)
+			Expect(c).ToNot(BeNil())
+			Expect(c.Status).To(Equal(metav1.ConditionTrue))
+			Expect(c.Reason).To(Equal("Synced"))
+		})
+	})
+
+	When("a generic power-op error occurred", func() {
+		It("sets the condition to False with reason NotSynced", func() {
+			vsphere.SetPowerStateSyncedCondition(vmCtx, errors.New("boom"))
+
+			c := conditions.Get(vm, vmopv1.VirtualMachinePowerStateSynced)
+			Expect(c).ToNot(BeNil())
+			Expect(c.Status).To(Equal(metav1.ConditionFalse))
+			Expect(c.Reason).To(Equal("NotSynced"))
+		})
+	})
+
+	When("the power-op error wraps ErrInfraMaintenanceFault", func() {
+		infraErr := fmt.Errorf("power on failed: %w", vmutil.ErrInfraMaintenanceFault)
+
+		When("the VMEviction feature is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMEviction = true
+				})
+			})
+
+			It("sets the condition to False with reason InfraInMaintenance and no host-identifying text", func() {
+				vsphere.SetPowerStateSyncedCondition(vmCtx, infraErr)
+
+				c := conditions.Get(vm, vmopv1.VirtualMachinePowerStateSynced)
+				Expect(c).ToNot(BeNil())
+				Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				Expect(c.Reason).To(Equal(vmopv1.VirtualMachineInfraInMaintenanceReason))
+				// The message is a fixed string with no host name/moref
+				// interpolated into it, so it never identifies which host.
+				Expect(c.Message).To(Equal(
+					"Unable to reconcile virtual machine power state because the underlying infrastructure is in maintenance"))
+			})
+		})
+
+		When("the VMEviction feature is disabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMEviction = false
+				})
+			})
+
+			It("sets the condition to False with reason NotSynced, unchanged from today", func() {
+				vsphere.SetPowerStateSyncedCondition(vmCtx, infraErr)
+
+				c := conditions.Get(vm, vmopv1.VirtualMachinePowerStateSynced)
+				Expect(c).ToNot(BeNil())
+				Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				Expect(c.Reason).To(Equal("NotSynced"))
+			})
+		})
+	})
+})

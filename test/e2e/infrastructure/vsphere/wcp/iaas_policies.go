@@ -8,6 +8,8 @@ type ComputePolicyCapability string
 const (
 	ComputePolicyCapabilityVMHostAffinity     ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_host_affinity"
 	ComputePolicyCapabilityVMHostAntiAffinity ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_host_anti_affinity"
+	AutomaticVMEvictionCapability             ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.host.evacuation.automatic_vm_eviction"
+	BestEffortRestartCapability               ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm.evacuation.best_effort_restart"
 )
 
 type ComputePolicySpec struct {

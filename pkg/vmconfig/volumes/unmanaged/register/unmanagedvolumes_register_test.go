@@ -482,12 +482,82 @@ var _ = Describe("Reconcile", func() {
 							"%s/folder/vm1/regular-disk.vmdk?dcPath=%%2FDC0&dsName=LocalDS_0",
 							httpPrefix)))
 					Expect(crv.Spec.AccessMode).To(Equal(corev1.ReadWriteOnce))
-					Expect(crv.Labels["vmoperator.vmware.com/created-by"]).To(Equal(vm.Name))
 					Expect(crv.OwnerReferences).To(HaveLen(1))
 					Expect(crv.OwnerReferences[0].Kind).To(Equal("VirtualMachine"))
 					Expect(crv.OwnerReferences[0].Name).To(Equal(vm.Name))
 					Expect(*crv.OwnerReferences[0].Controller).To(BeTrue())
 					Expect(crv.Spec.BackingType).ToNot(BeEmpty())
+				})
+
+				It("should replace a CnsRegisterVolume owned by a different VM instead of trusting it", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					claimName := vmopv1util.FindByTargetID(
+						vmopv1.VirtualControllerTypeSCSI,
+						1, 0, vm.Spec.Volumes...).PersistentVolumeClaim.ClaimName
+
+					createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
+
+					// Simulate a stale CnsRegisterVolume left behind by a
+					// different VM instance that happened to produce the
+					// same deterministic PVC/CRV name (e.g. after its
+					// owning VM's controller owner ref was removed
+					// out-of-band prior to that VM's deletion).
+					staleCRV := &cnsv1alpha1.CnsRegisterVolume{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      claimName,
+							Namespace: vm.Namespace,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion: vmopv1.GroupVersion.String(),
+									Kind:       "VirtualMachine",
+									Name:       "some-other-vm",
+									UID:        "11111111-1111-1111-1111-111111111111",
+									Controller: new(true),
+								},
+							},
+						},
+						Spec: cnsv1alpha1.CnsRegisterVolumeSpec{
+							PvcName:     claimName,
+							DiskURLPath: "[LocalDS_0] some-other-vm/stale-disk.vmdk",
+						},
+						Status: cnsv1alpha1.CnsRegisterVolumeStatus{
+							Registered: true,
+						},
+					}
+					Expect(k8sClient.Create(ctx, staleCRV)).To(Succeed())
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					crv := &cnsv1alpha1.CnsRegisterVolume{}
+					Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      claimName,
+					}, crv)).To(Succeed())
+
+					// The stale, foreign object must have been replaced
+					// with a fresh one owned by this VM, not trusted as
+					// already-registered.
+					Expect(crv.OwnerReferences).To(HaveLen(1))
+					Expect(crv.OwnerReferences[0].Name).To(Equal(vm.Name))
+					Expect(crv.OwnerReferences[0].UID).To(Equal(vm.UID))
+					Expect(crv.Status.Registered).To(BeFalse())
+					Expect(crv.Spec.DiskURLPath).To(Equal(
+						fmt.Sprintf(
+							"%s/folder/vm1/regular-disk.vmdk?dcPath=%%2FDC0&dsName=LocalDS_0",
+							httpPrefix)))
 				})
 			})
 
@@ -608,7 +678,6 @@ var _ = Describe("Reconcile", func() {
 							"%s/folder/vm1/multiwriter-disk.vmdk?dcPath=%%2FDC0&dsName=LocalDS_0",
 							httpPrefix)))
 					Expect(crv.Spec.AccessMode).To(Equal(corev1.ReadWriteMany))
-					Expect(crv.Labels["vmoperator.vmware.com/created-by"]).To(Equal(vm.Name))
 					Expect(crv.OwnerReferences).To(HaveLen(1))
 					Expect(crv.OwnerReferences[0].Kind).To(Equal("VirtualMachine"))
 					Expect(crv.OwnerReferences[0].Name).To(Equal(vm.Name))
@@ -1057,9 +1126,6 @@ var _ = Describe("Reconcile", func() {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "my-vm-134e95b6",
 							Namespace: vm.Namespace,
-							Labels: map[string]string{
-								"vmoperator.vmware.com/created-by": vm.Name,
-							},
 							OwnerReferences: []metav1.OwnerReference{
 								{
 									APIVersion: vmopv1.GroupVersion.String(),
@@ -2162,9 +2228,6 @@ var _ = Describe("Reconcile", func() {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "my-vm-9eb41331",
 							Namespace: vm.Namespace,
-							Labels: map[string]string{
-								"vmoperator.vmware.com/created-by": vm.Name,
-							},
 							OwnerReferences: []metav1.OwnerReference{
 								{
 									APIVersion: vmopv1.GroupVersion.String(),
@@ -2298,8 +2361,14 @@ var _ = Describe("Reconcile", func() {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "my-vm-1aeeec80",
 							Namespace: vm.Namespace,
-							Labels: map[string]string{
-								pkgconst.CreatedByLabel: vm.Name,
+							OwnerReferences: []metav1.OwnerReference{
+								{
+									APIVersion: vmopv1.GroupVersion.String(),
+									Kind:       "VirtualMachine",
+									Name:       vm.Name,
+									UID:        vm.UID,
+									Controller: ptr.To(true),
+								},
 							},
 						},
 						Spec: cnsv1alpha1.CnsRegisterVolumeSpec{

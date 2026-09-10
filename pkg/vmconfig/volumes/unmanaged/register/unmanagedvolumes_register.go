@@ -707,7 +707,7 @@ func ensurePVCForUnmanagedDisk(
 		if !pkgcfg.FromContext(ctx).Features.VMSharedDisks {
 			volumeMode = corev1.PersistentVolumeFilesystem
 		}
-		obj.Spec.VolumeMode = ptr.To(volumeMode)
+		obj.Spec.VolumeMode = new(volumeMode)
 
 		// Set dataSourceRef to point to this VM.
 		obj.Spec.DataSourceRef = &expDSRef
@@ -822,94 +822,106 @@ func ensureCnsRegisterVolumeForDisk(
 	)
 
 	if err := k8sClient.Get(ctx, key, obj); err != nil {
-
 		if !apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf(
 				"failed to get CnsRegisterVolume %s: %w", key, err)
 		}
-
-		//
-		// The CRV is not found, create a new one.
-		//
-		// Set the object metadata.
-		obj.Name = pvc.Name
-		obj.Namespace = vm.Namespace
-
-		obj.Labels = map[string]string{
-			pkgconst.CreatedByLabel: vm.Name,
-		}
-
-		// Set a ControllerOwnerRef on the CRV pointing back to the VM.
-		obj.OwnerReferences = []metav1.OwnerReference{
-			{
-				APIVersion:         vmopv1.GroupVersion.String(),
-				BlockOwnerDeletion: ptr.To(true),
-				Controller:         ptr.To(true),
-				Kind:               "VirtualMachine",
-				Name:               vm.Name,
-				UID:                vm.UID,
-			},
-		}
-
-		// Get the datastore URL for the provided file name.
-		finder := pkgctx.GetFinder(ctx)
-		if finder == nil {
-			return nil, errors.New("failed to get finder from context")
-		}
-		datastoreURL, err := pkgdatastore.GetDatastoreURLFromDatastorePath(
-			ctx,
-			pkgctx.GetFinder(ctx),
-			diskInfo.FileName)
-		if err != nil {
+	} else if metav1.IsControlledBy(obj, vm) {
+		// The CRV already exists and belongs to this VM instance.
+		return obj, nil
+	} else {
+		// A CnsRegisterVolume with this name exists but is not owned by
+		// this VM (e.g. an orphan left behind when its owning VM's
+		// controller owner reference was removed out-of-band before the
+		// VM was deleted). Trusting its Status.Registered would silently
+		// skip real registration for the current VM's disk, so delete the
+		// stale object and fall through to create a fresh one.
+		if err := k8sClient.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf(
-				"failed to get datastore url for %q: %w",
-				diskInfo.FileName, err)
+				"failed to delete stale CnsRegisterVolume %s: %w", key, err)
+		}
+		*obj = cnsv1alpha1.CnsRegisterVolume{}
+	}
+
+	// Create a new CRV: either none existed, or the existing one was a
+	// stale, foreign object that was just deleted above.
+	//
+	// Set the object metadata.
+	obj.Name = pvc.Name
+	obj.Namespace = vm.Namespace
+
+	// Set a ControllerOwnerRef on the CRV pointing back to the VM. This
+	// owner ref, not a label, is what associates the CRV with the VM --
+	// VM names may exceed the 63-character limit for label values.
+	obj.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion:         vmopv1.GroupVersion.String(),
+			BlockOwnerDeletion: new(true),
+			Controller:         new(true),
+			Kind:               "VirtualMachine",
+			Name:               vm.Name,
+			UID:                vm.UID,
+		},
+	}
+
+	// Get the datastore URL for the provided file name.
+	finder := pkgctx.GetFinder(ctx)
+	if finder == nil {
+		return nil, errors.New("failed to get finder from context")
+	}
+	datastoreURL, err := pkgdatastore.GetDatastoreURLFromDatastorePath(
+		ctx,
+		finder,
+		diskInfo.FileName)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to get datastore url for %q: %w",
+			diskInfo.FileName, err)
+	}
+
+	var (
+		volumeMode    corev1.PersistentVolumeMode
+		vmSharedDisks = pkgcfg.FromContext(ctx).Features.VMSharedDisks
+	)
+
+	switch {
+	case pvc.Spec.VolumeMode != nil:
+		volumeMode = *pvc.Spec.VolumeMode
+
+		if !vmSharedDisks &&
+			volumeMode != corev1.PersistentVolumeFilesystem {
+			return nil, fmt.Errorf(
+				"volume mode %s not supported unless VMSharedDisks is enabled",
+				volumeMode)
 		}
 
-		var (
-			volumeMode    corev1.PersistentVolumeMode
-			vmSharedDisks = pkgcfg.FromContext(ctx).Features.VMSharedDisks
-		)
+	case !vmSharedDisks:
+		volumeMode = corev1.PersistentVolumeFilesystem
+	default:
+		volumeMode = corev1.PersistentVolumeBlock
+	}
 
-		switch {
-		case pvc.Spec.VolumeMode != nil:
-			volumeMode = *pvc.Spec.VolumeMode
+	obj.Spec = cnsv1alpha1.CnsRegisterVolumeSpec{
+		PvcName:     pvc.Name,
+		DiskURLPath: datastoreURL,
+		VolumeMode:  volumeMode,
+	}
 
-			if !vmSharedDisks &&
-				volumeMode != corev1.PersistentVolumeFilesystem {
-				return nil, fmt.Errorf(
-					"volume mode %s not supported unless VMSharedDisks is enabled",
-					volumeMode)
-			}
+	// Set the AccessMode to ReadWriteMany if the existing,
+	// underlying disk has a sharing mode set to MultiWriter. Otherwise init
+	// the AccessMode to ReadWriteOnce.
+	if diskInfo.Sharing == vimtypes.VirtualDiskSharingSharingMultiWriter {
+		obj.Spec.AccessMode = corev1.ReadWriteMany
+	} else {
+		obj.Spec.AccessMode = corev1.ReadWriteOnce
+	}
 
-		case !vmSharedDisks:
-			volumeMode = corev1.PersistentVolumeFilesystem
-		default:
-			volumeMode = corev1.PersistentVolumeBlock
-		}
+	// Set the disk backing type.
+	obj.Spec.BackingType = string(diskInfo.BackingType)
 
-		obj.Spec = cnsv1alpha1.CnsRegisterVolumeSpec{
-			PvcName:     pvc.Name,
-			DiskURLPath: datastoreURL,
-			VolumeMode:  volumeMode,
-		}
-
-		// Set the AccessMode to ReadWriteMany if the existing,
-		// underlying disk has a sharing mode set to MultiWriter. Otherwise init
-		// the AccessMode to ReadWriteOnce.
-		if diskInfo.Sharing == vimtypes.VirtualDiskSharingSharingMultiWriter {
-			obj.Spec.AccessMode = corev1.ReadWriteMany
-		} else {
-			obj.Spec.AccessMode = corev1.ReadWriteOnce
-		}
-
-		// Set the disk backing type.
-		obj.Spec.BackingType = string(diskInfo.BackingType)
-
-		// Create the CRV.
-		if err := k8sClient.Create(ctx, obj); err != nil {
-			return nil, fmt.Errorf("failed to create crv %s: %w", key, err)
-		}
+	// Create the CRV.
+	if err := k8sClient.Create(ctx, obj); err != nil {
+		return nil, fmt.Errorf("failed to create crv %s: %w", key, err)
 	}
 
 	return obj, nil
@@ -924,20 +936,22 @@ func cleanupCompletedCnsRegisterVolumesForVM(
 	k8sClient ctrlclient.Client,
 	vm *vmopv1.VirtualMachine) (bool, error) {
 
-	// List all CnsRegisterVolume objects for this VM.
+	// List all CnsRegisterVolume objects in the VM's namespace and filter to
+	// those owned by this VM.
 	crvList := &cnsv1alpha1.CnsRegisterVolumeList{}
 	if err := k8sClient.List(
 		ctx,
 		crvList,
-		ctrlclient.InNamespace(vm.Namespace),
-		ctrlclient.MatchingLabels{
-			pkgconst.CreatedByLabel: vm.Name,
-		}); err != nil {
+		ctrlclient.InNamespace(vm.Namespace)); err != nil {
 
 		return false, fmt.Errorf(
 			"failed to list CnsRegisterVolume objects for VM %s: %w",
 			vm.NamespacedName(), err)
 	}
+	crvList.Items = slices.DeleteFunc(crvList.Items,
+		func(crv cnsv1alpha1.CnsRegisterVolume) bool {
+			return !metav1.IsControlledBy(&crv, vm)
+		})
 
 	logger := pkglog.FromContextOrDefault(ctx).
 		WithName("cleanupCompletedCnsRegisterVolumesForVM")

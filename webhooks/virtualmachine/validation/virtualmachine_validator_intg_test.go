@@ -327,7 +327,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				expectedReason := field.Forbidden(field.NewPath("spec", "guestID"),
-					"updates to this field is not allowed when VM power is on").Error()
+					"updates to this field are not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -354,7 +354,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				expectedReason := field.Forbidden(field.NewPath("spec", "hardware", "cdrom[0]", "image"),
-					"updates to this field is not allowed when VM power is on").Error()
+					"updates to this field are not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -511,7 +511,7 @@ func intgTestsValidateCdromController() {
 				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "controllerType").String()))
 				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "controllerBusNumber").String()))
 				Expect(err.Error()).To(ContainSubstring(field.NewPath("spec", "hardware", "cdrom[0]", "unitNumber").String()))
-				Expect(err.Error()).To(ContainSubstring("updates to this field is not allowed when VM power is on"))
+				Expect(err.Error()).To(ContainSubstring("updates to this field are not allowed when VM power is on"))
 			})
 		})
 

@@ -108,7 +108,7 @@ func unitTestsReconcile() {
 				Expect(vmGroupPubReq.Status.Conditions).To(HaveLen(1))
 				Expect(vmGroupPubReq.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
 				Expect(specErr).To(Equal(pkgerr.NoRequeueError{
-					Message: "webhooks failed to mutate/validate spec. please delete and create again.",
+					Message: "webhooks failed to mutate/validate spec. Please delete and create again.",
 				}))
 			})
 			BeforeEach(func() {

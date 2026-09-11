@@ -6586,7 +6586,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					validate: doValidateWithMsg(
-						`spec.guestID: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.guestID: Forbidden: updates to this field are not allowed when VM power is on`,
 					),
 					expectAllowed: false,
 				},
@@ -6660,7 +6660,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					validate: doValidateWithMsg(
-						`spec.hardware.cdrom: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom: Forbidden: updates to this field are not allowed when VM power is on`,
 					),
 					expectAllowed: false,
 				},
@@ -6685,7 +6685,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					validate: doValidateWithMsg(
-						`spec.hardware.cdrom: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom: Forbidden: updates to this field are not allowed when VM power is on`,
 					),
 					expectAllowed: false,
 				},
@@ -6721,7 +6721,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					validate: doValidateWithMsg(
-						`spec.hardware.cdrom: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom: Forbidden: updates to this field are not allowed when VM power is on`,
 					),
 					expectAllowed: false,
 				},
@@ -6750,7 +6750,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					},
 					validate: doValidateWithMsg(
-						`spec.hardware.cdrom[0].image: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].image: Forbidden: updates to this field are not allowed when VM power is on`,
 					),
 					expectAllowed: false,
 				},
@@ -6826,9 +6826,9 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						ctx.vm.Spec.Hardware.Cdrom[0].UnitNumber = ptr.To(int32(1))
 					},
 					validate: doValidateWithMsg(
-						`spec.hardware.cdrom[0].controllerType: Forbidden: updates to this field is not allowed when VM power is on`,
-						`spec.hardware.cdrom[0].controllerBusNumber: Forbidden: updates to this field is not allowed when VM power is on`,
-						`spec.hardware.cdrom[0].unitNumber: Forbidden: updates to this field is not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].controllerType: Forbidden: updates to this field are not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].controllerBusNumber: Forbidden: updates to this field are not allowed when VM power is on`,
+						`spec.hardware.cdrom[0].unitNumber: Forbidden: updates to this field are not allowed when VM power is on`,
 					),
 					expectAllowed: false,
 				},
@@ -6900,7 +6900,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions: Forbidden: updates to this field is not allowed when VM power is on",
+						"spec.bootOptions: Forbidden: updates to this field are not allowed when VM power is on",
 					),
 				},
 			),
@@ -6960,7 +6960,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions: Forbidden: updates to this field is not allowed when VM power is on",
+						"spec.bootOptions: Forbidden: updates to this field are not allowed when VM power is on",
 					),
 				},
 			),
@@ -7026,7 +7026,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					},
 					expectAllowed: false,
 					validate: doValidateWithMsg(
-						"spec.bootOptions: Forbidden: updates to this field is not allowed when VM power is on",
+						"spec.bootOptions: Forbidden: updates to this field are not allowed when VM power is on",
 					),
 				},
 			),

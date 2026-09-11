@@ -959,7 +959,7 @@ func backupTests() {
 							Expect(c).NotTo(BeNil())
 							Expect(c.Status).To(Equal(metav1.ConditionFalse))
 							Expect(c.Reason).To(Equal(vmopv1.VirtualMachineBackupFailedReason))
-							Expect(c.Message).To(Equal(`Failed to backup VM. err: strconv.ParseInt: parsing "invalid": invalid syntax`))
+							Expect(c.Message).To(Equal(`Failed to back up VM. err: strconv.ParseInt: parsing "invalid": invalid syntax`))
 						})
 					})
 
@@ -1004,7 +1004,7 @@ func backupTests() {
 							Expect(c).NotTo(BeNil())
 							Expect(c.Status).To(Equal(metav1.ConditionFalse))
 							Expect(c.Reason).To(Equal(vmopv1.VirtualMachineBackupFailedReason))
-							Expect(c.Message).To(Equal(`Failed to backup VM. err: strconv.ParseInt: parsing "invalid": invalid syntax`))
+							Expect(c.Message).To(Equal(`Failed to back up VM. err: strconv.ParseInt: parsing "invalid": invalid syntax`))
 						})
 					})
 				})

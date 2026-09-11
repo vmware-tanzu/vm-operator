@@ -390,7 +390,7 @@ var _ = Describe("OnResult", Label(testlabels.Crypto), func() {
 					})
 					It("should return nil error and set a condition with the expected message", func() {
 						Expect(err).ToNot(HaveOccurred())
-						assertStateNotSynced(vm, "Must specify a key that can be located and not have encryption IO filter when updating unencrypted vm")
+						assertStateNotSynced(vm, "Must specify a key that can be located and not have encryption IO filter when updating unencrypted the VM")
 					})
 				})
 				When("there are three faults", func() {
@@ -425,7 +425,7 @@ var _ = Describe("OnResult", Label(testlabels.Crypto), func() {
 					})
 					It("should return nil error and set a condition with the expected message", func() {
 						Expect(err).ToNot(HaveOccurred())
-						assertStateNotSynced(vm, "Must specify a key that can be located, not have encryption IO filter, and be powered off when updating unencrypted vm")
+						assertStateNotSynced(vm, "Must specify a key that can be located, not have encryption IO filter, and be powered off when updating unencrypted the VM")
 					})
 				})
 			})

@@ -58,7 +58,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) (result error) {
 				opts.VMCtx.VM,
 				vmopv1.VirtualMachineBackupUpToDateCondition,
 				vmopv1.VirtualMachineBackupFailedReason,
-				"Failed to backup VM. err: %v", result.Error(),
+				"Failed to back up VM. err: %v", result.Error(),
 			)
 		}
 	}()

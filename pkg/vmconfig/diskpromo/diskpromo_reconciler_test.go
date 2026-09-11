@@ -857,7 +857,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						Expect(c).ToNot(BeNil())
 						Expect(c.Status).To(Equal(metav1.ConditionFalse))
 						Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
-						Expect(c.Message).To(Equal("Cannot promote disks when VM has running task"))
+						Expect(c.Message).To(Equal("Cannot promote disks when VM has a running task"))
 					})
 				})
 

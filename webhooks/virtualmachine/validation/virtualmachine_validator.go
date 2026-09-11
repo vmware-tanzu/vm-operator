@@ -69,7 +69,7 @@ const (
 
 	readinessProbeOnlyOneAction                = "only one action can be specified"
 	tcpReadinessProbeNotAllowedVPC             = "VPC networking doesn't allow TCP readiness probe to be specified"
-	updatesNotAllowedWhenPowerOn               = "updates to this field is not allowed when VM power is on"
+	updatesNotAllowedWhenPowerOn               = "updates to this field are not allowed when VM power is on"
 	addingNewCdromNotAllowedWhenPowerOn        = "adding new CD-ROMs is not allowed when VM is powered on"
 	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
 	removingBackfilledVolumeNotAllowed         = "removing volume backfilled from classic disk is not allowed"
@@ -153,7 +153,6 @@ var (
 		"vnet":                        true,
 		"wakeonpcktrcv":               true,
 	}
-
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -3661,7 +3660,6 @@ func isFirstClassVMAdvancedProperty(key string) bool {
 	_, ok := vmopv1util.AdvancedVMXKeyMap()[key]
 	return ok
 }
-
 
 func isSystemReservedNetworkDeviceProperty(key string) bool {
 	return systemReservedNetworkDeviceProperties[key]

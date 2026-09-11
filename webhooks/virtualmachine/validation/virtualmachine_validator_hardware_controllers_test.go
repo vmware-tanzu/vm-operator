@@ -967,7 +967,7 @@ func controllerValidationTests() {
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.hardware.scsiControllers[0].sharingMode: Forbidden: updates to this field is not allowed when VM power is on"),
+						validate:      doValidateWithMsg("spec.hardware.scsiControllers[0].sharingMode: Forbidden: updates to this field are not allowed when VM power is on"),
 					},
 				),
 				Entry("should deny when scsiController type is updated",
@@ -989,7 +989,7 @@ func controllerValidationTests() {
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.hardware.scsiControllers[0].type: Forbidden: updates to this field is not allowed when VM power is on"),
+						validate:      doValidateWithMsg("spec.hardware.scsiControllers[0].type: Forbidden: updates to this field are not allowed when VM power is on"),
 					},
 				),
 			)

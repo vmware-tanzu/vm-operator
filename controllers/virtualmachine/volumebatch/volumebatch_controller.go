@@ -968,7 +968,7 @@ func (r *Reconciler) validateHardwareVersion(ctx *pkgctx.VolumeContext) error {
 	// If hardware version is 0, which means we failed to parse the version
 	// from VM, then just assume that it is above minimal requirement.
 	if hardwareVersion.IsValid() && hardwareVersion < pkgconst.MinSupportedHWVersionForPVC {
-		retErr := fmt.Errorf("vm has an unsupported "+
+		retErr := fmt.Errorf("VM has an unsupported "+
 			"hardware version %d for PersistentVolumes. "+
 			"Minimum supported hardware version %d",
 			hardwareVersion, pkgconst.MinSupportedHWVersionForPVC)

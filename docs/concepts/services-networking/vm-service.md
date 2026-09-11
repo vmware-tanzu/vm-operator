@@ -122,6 +122,44 @@ This is because VM workloads do not share the same networking stack as the nodes
 The `VirtualMachineService` API also does not support type [`ExternalName`](https://kubernetes.io/docs/concepts/services-networking/service/#externalname). This type maps a service to the contents of the `externalName` field (for example, to the hostname `api.foo.bar.example`). The mapping configures the cluster's DNS server to return a `CNAME` record with that external hostname value. If this type of service is required, simply create a `Service` resource directly instead of using a `VirtualMachineService`.
 
 
+## IP families
+
+The `spec.ipFamilies` and `spec.ipFamilyPolicy` fields control whether a `VirtualMachineService` is single-stack or dual-stack, mirroring the equivalent fields on the Kubernetes `Service` API. These fields apply to the `ClusterIP` (including headless) and `LoadBalancer` [service types](#service-type); they are wiped when updating a `VirtualMachineService` to `type: ExternalName`.
+
+`spec.ipFamilyPolicy` may be one of:
+
+- `SingleStack` — a single IP family. This is the default if the field is not set.
+- `PreferDualStack` — two IP families on dual-stack-configured clusters, or a single IP family on single-stack clusters.
+- `RequireDualStack` — two IP families on dual-stack-configured clusters; fails otherwise.
+
+`spec.ipFamilies` requests up to two IP families (`IPv4`, `IPv6`, or both, in either order), and must correspond to the values of `spec.clusterIPs` if that field is set:
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha6
+kind: VirtualMachineService
+metadata:
+  name: my-vm-service
+spec:
+  selector:
+    app.kubernetes.io/name: my-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 9376
+  ipFamilies:
+  - IPv4
+  - IPv6
+  ipFamilyPolicy: PreferDualStack
+```
+
+!!! note "Cluster-level constraints"
+
+    Requesting an IP family that the cluster does not support (for example, requesting `IPv6` when no IPv6 `Service` range exists) usually surfaces as an error reconciling the underlying `Service`, not as a rejection of the `VirtualMachineService` object at create time.
+
+!!! note "`ipFamilies` is conditionally mutable"
+
+    `spec.ipFamilies` allows adding or removing a secondary IP family after creation, but it does not allow changing the primary IP family (the first entry).
+
 ## Status
 
 ### Conditions

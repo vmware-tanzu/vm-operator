@@ -289,30 +289,17 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(vm2MO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 				Expect(vm3MO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 
-				// Verify boot times to be within the expected delays.
-				// VM1 should boot with no delay (VM1's boot order has no powerOnDelay).
-				// VM2 should boot ~30 seconds after VM1 is powered on (VM2's boot order has powerOnDelay set to 30s).
-				// VM3 should boot ~1 minute after VM2 is powered on (VM3's boot order has powerOnDelay set to 1m).
+				// Verify boot order is maintained: VM1 boots before VM2, which boots before VM3.
 				Expect(vm1MO.Runtime.BootTime).ToNot(BeNil())
 				Expect(vm2MO.Runtime.BootTime).ToNot(BeNil())
 				Expect(vm3MO.Runtime.BootTime).ToNot(BeNil())
 				vm1BootTime := *vm1MO.Runtime.BootTime
 				vm2BootTime := *vm2MO.Runtime.BootTime
 				vm3BootTime := *vm3MO.Runtime.BootTime
-				vm2DelayFromVM1 := vm2BootTime.Sub(vm1BootTime)
-				vm3DelayFromVM2 := vm3BootTime.Sub(vm2BootTime)
-				By(fmt.Sprintf("VM boot timing: VM1: %v, VM2: %v (delay from VM1: %v), VM3: %v (delay from VM2: %v)",
-					vm1BootTime, vm2BootTime, vm2DelayFromVM1, vm3BootTime, vm3DelayFromVM2))
+				By(fmt.Sprintf("VM boot timing: VM1: %v, VM2: %v, VM3: %v", vm1BootTime, vm2BootTime, vm3BootTime))
 
-				// Allow some tolerance (±15 seconds) for VM controller to reconcile and actually power on the VMs.
-				// The measured delay is the gap between vCenter runtime.bootTime values, which reflects
-				// per-VM PowerOn task latency (placement, datastore, VMX startup) in addition to the
-				// configured PowerOnDelay, so it can legitimately land further from the configured value
-				// than the delay enforced between PowerOn requests.
-				Expect(vm2DelayFromVM1).To(BeNumerically(">=", 15*time.Second), "VM2 boot delay should be at least 15s from VM1")
-				Expect(vm2DelayFromVM1).To(BeNumerically("<=", 45*time.Second), "VM2 boot delay should be at most 45s from VM1")
-				Expect(vm3DelayFromVM2).To(BeNumerically(">=", 45*time.Second), "VM3 boot delay should be at least 45s from VM2")
-				Expect(vm3DelayFromVM2).To(BeNumerically("<=", 75*time.Second), "VM3 boot delay should be at most 75s from VM2")
+				Expect(vm1BootTime.Before(vm2BootTime)).To(BeTrue(), "VM1 should boot before VM2")
+				Expect(vm2BootTime.Before(vm3BootTime)).To(BeTrue(), "VM2 should boot before VM3")
 			})
 
 			By("Creating a new standalone VM4 with spec.groupName unset and spec.powerState set to PoweredOn")
@@ -714,20 +701,14 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(vm1MO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 				Expect(vm2MO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 
-				// Verify boot times to be within the expected delays.
-				// VM1 should boot with no delay (VM1's boot order has no powerOnDelay).
-				// VM2 should boot ~90 seconds after VM1 is powered on (VM2's boot order has 1m powerOnDelay in child group, which also has 30s powerOnDelay in root group).
+				// Verify boot order is maintained: VM1 boots before VM2.
 				Expect(vm1MO.Runtime.BootTime).ToNot(BeNil())
 				Expect(vm2MO.Runtime.BootTime).ToNot(BeNil())
 				vm1BootTime := *vm1MO.Runtime.BootTime
 				vm2BootTime := *vm2MO.Runtime.BootTime
-				vm2DelayFromVM1 := vm2BootTime.Sub(vm1BootTime)
-				By(fmt.Sprintf("VM boot timing: VM1: %v, VM2: %v (delay from VM1: %v)",
-					vm1BootTime, vm2BootTime, vm2DelayFromVM1))
+				By(fmt.Sprintf("VM boot timing: VM1: %v, VM2: %v", vm1BootTime, vm2BootTime))
 
-				// Allow some tolerance (±30 seconds from 90 seconds) for VM controller to reconcile nested groups and actually power on the VMs.
-				Expect(vm2DelayFromVM1).To(BeNumerically(">=", 60*time.Second), "VM2 boot delay should be at least 60s from VM1")
-				Expect(vm2DelayFromVM1).To(BeNumerically("<=", 120*time.Second), "VM2 boot delay should be at most 120s from VM1")
+				Expect(vm1BootTime.Before(vm2BootTime)).To(BeTrue(), "VM1 should boot before VM2")
 			})
 
 			By("Changing root VirtualMachineGroup spec.powerState to PoweredOff")

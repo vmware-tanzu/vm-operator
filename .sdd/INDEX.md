@@ -38,6 +38,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 005 | [ipv6-template-funcs](specs/005-ipv6-template-funcs/) | Differentiate IPv4/IPv6 vApp/Sysprep template functions (V1alpha6) | In Progress | vmop-1152 |
 | 006 | [tag-controller-for-affinity](specs/006-tag-controller-for-affinity/) | Tag CRD + Tag Controller for Affinity | In Progress | vmop-3882 |
 | 007 | [vm-eviction-policy](specs/007-vm-eviction-policy/) | VM Eviction Compute Policies (`AutomaticVMEvictionPolicy`, `BestEffortRestartPolicy`) | Draft | vmop-4057, vmop-4058, vmop-4059 |
+| 008 | [nic-unit-numbers](specs/008-nic-unit-numbers/) | NIC Unit Numbers | In Progress | vmop-3982 |
 
 ### Finding the right spec
 

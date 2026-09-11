@@ -7,6 +7,7 @@ package virtualmachine
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
@@ -115,6 +117,14 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy,
 			consts.TelcoVMServiceAPICapabilityName)
+
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
+			ctx,
+			[]string{config.GetVariable("VMOPNamespace")},
+			clusterProxy.GetRESTConfig(),
+			filepath.Join(input.ArtifactFolder, specName),
+		)
+		DeferCleanup(cancelPodWatches)
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(
 			ctx, &config.Config, svClusterClient, vmNamespace,

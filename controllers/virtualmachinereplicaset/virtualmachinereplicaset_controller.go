@@ -500,7 +500,7 @@ func (r *Reconciler) syncReplicas(
 			}
 
 			log.V(5).Info("Created VM", "index", i+1, "totalVMsToBeCreated", diff)
-			r.Recorder.Eventf(rs, "SuccessfulCreate", "Created vm %q", vm.Name)
+			r.Recorder.Eventf(rs, "SuccessfulCreate", "Created VM %q", vm.Name)
 			vmList = append(vmList, vm)
 		}
 

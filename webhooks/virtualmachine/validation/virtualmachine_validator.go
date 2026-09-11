@@ -65,7 +65,7 @@ const (
 
 	readinessProbeOnlyOneAction                = "only one action can be specified"
 	tcpReadinessProbeNotAllowedVPC             = "VPC networking doesn't allow TCP readiness probe to be specified"
-	updatesNotAllowedWhenPowerOn               = "updates to this field is not allowed when VM power is on"
+	updatesNotAllowedWhenPowerOn               = "updates to this field are not allowed when VM power is on"
 	addingNewCdromNotAllowedWhenPowerOn        = "adding new CD-ROMs is not allowed when VM is powered on"
 	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
 	storageClassNotFoundFmt                    = "Storage policy %s does not exist"
@@ -102,7 +102,50 @@ const (
 	forbiddenRemovableVolume                   = "cannot remove volume with removable=false"
 )
 
-// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha5-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha5,name=default.validating.virtualmachine.v1alpha5.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
+var (
+	capvDefaultServiceAccount = regexp.MustCompile("^system:serviceaccount:svc-tkg-domain-[^:]+:default$")
+
+	// systemReservedNetworkDeviceProperties is the set of ethernet device suffixes reserved by the system.
+	systemReservedNetworkDeviceProperties = map[string]bool{
+		"address":                     true,
+		"addresstype":                 true,
+		"allowguestconnectioncontrol": true,
+		"devname":                     true,
+		"dvs.connectionid":            true,
+		"dvs.portgroupid":             true,
+		"dvs.portid":                  true,
+		"dvs.switchid":                true,
+		"externalid":                  true,
+		"filename":                    true,
+		"generatedaddress":            true,
+		"key":                         true,
+		"limit":                       true,
+		"measurelatency":              true,
+		"migrateconnect":              true,
+		"name":                        true,
+		"networkname":                 true,
+		"opaquenetwork.id":            true,
+		"opaquenetwork.type":          true,
+		"present":                     true,
+		"pxm":                         true,
+		"realtime":                    true,
+		"reservation":                 true,
+		"rtdisableoffload":            true,
+		"rtmaxrxqueues":               true,
+		"rtmaxtxqueues":               true,
+		"rtrxdataringdescsize":        true,
+		"rttxdataringdescsize":        true,
+		"shares":                      true,
+		"startconnected":              true,
+		"upt":                         true,
+		"uptcompatibility":            true,
+		"virtualdev":                  true,
+		"vnet":                        true,
+		"wakeonpcktrcv":               true,
+	}
+)
+
+// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha6,name=default.validating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get
 
@@ -2433,8 +2476,6 @@ func (v validator) validateCdromWhenPoweredOn(
 	return allErrs
 }
 
-var capvDefaultServiceAccount = regexp.MustCompile("^system:serviceaccount:svc-tkg-domain-[^:]+:default$")
-
 // isCAPVServiceAccount checks if the username matches that of the CAPV service account.
 func isCAPVServiceAccount(username string) bool {
 	return capvDefaultServiceAccount.Match([]byte(username))
@@ -3066,4 +3107,21 @@ func (v validator) validateBiosUUID(_ *pkgctx.WebhookRequestContext, vm *vmopv1.
 	}
 
 	return allErrs
+}
+
+func isFirstClassVMAdvancedProperty(key string) bool {
+	_, ok := vmopv1util.AdvancedVMXKeyMap()[key]
+	return ok
+}
+
+func isSystemReservedNetworkDeviceProperty(key string) bool {
+	return systemReservedNetworkDeviceProperties[key]
+}
+
+func isFirstClassNICAdvancedProperty(key string) bool {
+	return vmopv1util.IsFirstClassVMXnet3NICKey(key)
+}
+
+func isNetworkDeviceProperty(key string) bool {
+	return vmopv1util.IsEthernetDeviceKey(key)
 }

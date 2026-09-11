@@ -848,7 +848,7 @@ func unitTestsValidateCreate() {
 						Name: "new-class-instance",
 					}
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.ImmutableClasses = true
 					})
 				},
@@ -865,7 +865,7 @@ func unitTestsValidateCreate() {
 					createVMClass(ctx)
 					createInactiveClassInstance(ctx, "new-class-instance")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.ImmutableClasses = true
 					})
 				},
@@ -882,7 +882,7 @@ func unitTestsValidateCreate() {
 					createVMClass(ctx)
 					createActiveClassInstanceWithWrongOwner(ctx, "new-class-instance", "random-vm-class")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.ImmutableClasses = true
 					})
 				},
@@ -899,7 +899,7 @@ func unitTestsValidateCreate() {
 					createVMClass(ctx)
 					createActiveClassInstance(ctx, "new-class-instance", newVMClass)
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.ImmutableClasses = true
 					})
 				},
@@ -5421,7 +5421,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					ctx.oldVM.Spec.ClassName = oldVMClass
 					ctx.vm.Spec.ClassName = newVMClass
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = false
 						config.Features.VMResizeCPUMemory = false
 					})
 				},
@@ -5430,26 +5429,12 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 				),
 			},
 		),
-		Entry("should allow className change when VMResize feature is enabled",
-			testParams{
-				setup: func(ctx *unitValidatingWebhookContext) {
-					ctx.oldVM.Spec.ClassName = oldVMClass
-					ctx.vm.Spec.ClassName = newVMClass
-					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
-						config.Features.ImmutableClasses = false
-					})
-				},
-				expectAllowed: true,
-			},
-		),
 		Entry("should allow className change when VMResizeCPUMemory feature is enabled",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.oldVM.Spec.ClassName = oldVMClass
 					ctx.vm.Spec.ClassName = newVMClass
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = false
 						config.Features.VMResizeCPUMemory = true
 						config.Features.ImmutableClasses = false
 					})
@@ -5464,7 +5449,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					ctx.vm.Spec.ClassName = ""
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.VMImportNewNet = false
 						config.Features.ImmutableClasses = false
 					})
@@ -5481,7 +5466,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					ctx.vm.Spec.ClassName = ""
 					ctx.IsPrivilegedAccount = true
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.VMImportNewNet = true
 						config.Features.ImmutableClasses = false
 					})
@@ -5498,7 +5483,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						Name: "new-class-instance",
 					}
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.ImmutableClasses = true
 					})
 				},
@@ -5517,7 +5502,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					createVMClass(ctx)
 					createInactiveClassInstance(ctx, "new-class-instance")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.ImmutableClasses = true
 					})
 				},
@@ -5536,7 +5521,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					createVMClass(ctx)
 					createActiveClassInstanceWithWrongOwner(ctx, "new-class-instance", "random-vm-class")
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.ImmutableClasses = true
 					})
 				},
@@ -5554,7 +5539,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 					createVMClass(ctx)
 					createActiveClassInstance(ctx, "new-class-instance", newVMClass)
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.VMResize = true
+						config.Features.VMResizeCPUMemory = true
 						config.Features.ImmutableClasses = true
 					})
 				},
@@ -6141,49 +6126,6 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 	Context("ClassName", func() {
 
 		DescribeTable("class name", doTest,
-
-			Entry("disallow changing class name when FSS_WCP_VMSERVICE_RESIZE is disabled",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.oldVM.Spec.ClassName = "class"
-
-						ctx.vm = ctx.oldVM.DeepCopy()
-						ctx.vm.Spec.ClassName = newVMClass
-					},
-					validate: doValidateWithMsg(
-						`spec.className: Invalid value: "new-class": field is immutable`),
-				},
-			),
-
-			Entry("allow changing class name when FSS_WCP_VMSERVICE_RESIZE is enabled",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.VMResize = true
-						})
-
-						ctx.oldVM.Spec.ClassName = "small-class"
-						ctx.vm = ctx.oldVM.DeepCopy()
-						ctx.vm.Spec.ClassName = "big-class"
-					},
-					expectAllowed: true,
-				},
-			),
-
-			Entry("disallow changing class name to empty string when FSS_WCP_VMSERVICE_RESIZE is enabled",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.VMResize = true
-						})
-
-						ctx.oldVM.Spec.ClassName = "small-class"
-						ctx.vm = ctx.oldVM.DeepCopy()
-						ctx.vm.Spec.ClassName = ""
-					},
-					validate: doValidateWithMsg("spec.className: Required value"),
-				},
-			),
 
 			Entry("disallow changing class name when FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY is disabled",
 				testParams{

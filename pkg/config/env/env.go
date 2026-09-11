@@ -54,7 +54,6 @@ const (
 	FSSInstanceStorage
 	FSSK8sWorkloadMgmtAPI
 	FSSPodVMOnStretchedSupervisor
-	FSSVMResize
 	FSSVMResizeCPUMemory
 	FSSVMImportNewNet
 	FSSWorkloadDomainIsolation
@@ -179,8 +178,6 @@ func (n VarName) String() string {
 		return "FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API"
 	case FSSPodVMOnStretchedSupervisor:
 		return "FSS_PODVMONSTRETCHEDSUPERVISOR"
-	case FSSVMResize:
-		return "FSS_WCP_VMSERVICE_RESIZE"
 	case FSSVMResizeCPUMemory:
 		return "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
 	case FSSVMImportNewNet:

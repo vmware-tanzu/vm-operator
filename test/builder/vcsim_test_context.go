@@ -109,9 +109,7 @@ type VCSimTestConfig struct {
 	// WithInstanceStorage enables the WCP_INSTANCE_STORAGE FSS.
 	WithInstanceStorage bool
 
-	// WithVMResize enables the FSS_WCP_VMSERVICE_RESIZE FSS.
-	WithVMResize bool
-	// WithVMResize enables the FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY FSS.
+	// WithVMResizeCPUMemory enables the FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY FSS.
 	WithVMResizeCPUMemory bool
 
 	// WithVMIncrementalRestore enables the FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE FSS.
@@ -665,7 +663,6 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.JSONExtraConfig = config.WithJSONExtraConfig
 
 		cc.Features.InstanceStorage = config.WithInstanceStorage
-		cc.Features.VMResize = config.WithVMResize
 		cc.Features.VMResizeCPUMemory = config.WithVMResizeCPUMemory
 		cc.Features.WorkloadDomainIsolation = !config.WithoutWorkloadDomainIsolation
 		cc.Features.VMIncrementalRestore = config.WithVMIncrementalRestore

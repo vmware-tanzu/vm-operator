@@ -193,7 +193,6 @@ type FeatureStates struct {
 	K8sWorkloadMgmtAPI           bool // FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
 	PodVMOnStretchedSupervisor   bool // FSS_PODVMONSTRETCHEDSUPERVISOR
 	TKGMultipleCL                bool // to be fetched dynamically from capability
-	VMResize                     bool // FSS_WCP_VMSERVICE_RESIZE
 	VMResizeCPUMemory            bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
 	VMImportNewNet               bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
 	WorkloadDomainIsolation      bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION

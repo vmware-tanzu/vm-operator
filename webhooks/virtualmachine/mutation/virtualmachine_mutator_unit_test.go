@@ -1259,84 +1259,73 @@ func unitTestsMutating() {
 	Describe("SetLastResizeAnnotation", func() {
 		const newClassName = "my-new-class"
 
-		DescribeTableSubtree("Resize Tests",
-			func(fullResize bool) {
-				var (
-					oldVM *vmopv1.VirtualMachine
-				)
-
-				BeforeEach(func() {
-					pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
-						if fullResize {
-							config.Features.VMResize = true
-						} else {
-							config.Features.VMResizeCPUMemory = true
-						}
-					})
-					oldVM = ctx.vm.DeepCopy()
-				})
-
-				When("vm ClassName does not change", func() {
-					It("does not set last-resize annotation", func() {
-						updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(updated).To(BeFalse())
-
-						_, _, _, exists := vmopv1util.GetLastResizedAnnotation(*ctx.vm)
-						Expect(exists).To(BeFalse())
-					})
-				})
-
-				When("existing vm ClassName changes", func() {
-					It("set last-resize annotation", func() {
-						ctx.vm.Spec.ClassName = newClassName
-
-						updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(updated).To(BeTrue())
-
-						className, _, _, exists := vmopv1util.GetLastResizedAnnotation(*ctx.vm)
-						Expect(exists).To(BeTrue())
-						Expect(className).To(Equal(oldVM.Spec.ClassName))
-					})
-				})
-
-				When("existing vm is classless", func() {
-					It("set last-resize annotation", func() {
-						oldVM.Spec.ClassName = ""
-						ctx.vm.Spec.ClassName = newClassName
-
-						updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(updated).To(BeTrue())
-
-						className, uid, gen, exists := vmopv1util.GetLastResizedAnnotation(*ctx.vm)
-						Expect(exists).To(BeTrue())
-						Expect(className).To(Equal(oldVM.Spec.ClassName))
-						Expect(uid).To(BeEmpty())
-						Expect(gen).To(BeZero())
-					})
-				})
-
-				When("vm already has last-resize annotation", func() {
-					It("annotation is not changed", func() {
-						vmClass := builder.DummyVirtualMachineClass("my-class")
-						vmopv1util.MustSetLastResizedAnnotation(ctx.vm, *vmClass)
-
-						updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(updated).To(BeFalse())
-
-						className, _, _, exists := vmopv1util.GetLastResizedAnnotation(*ctx.vm)
-						Expect(exists).To(BeTrue())
-						Expect(className).To(Equal(vmClass.Name))
-					})
-				})
-			},
-
-			Entry("Full", true),
-			Entry("CPU & Memory", false),
+		var (
+			oldVM *vmopv1.VirtualMachine
 		)
+
+		BeforeEach(func() {
+			pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMResizeCPUMemory = true
+			})
+			oldVM = ctx.vm.DeepCopy()
+		})
+
+		When("vm ClassName does not change", func() {
+			It("does not set last-resize annotation", func() {
+				updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updated).To(BeFalse())
+
+				_, _, _, exists := vmopv1util.GetLastResizedAnnotation(*ctx.vm)
+				Expect(exists).To(BeFalse())
+			})
+		})
+
+		When("existing vm ClassName changes", func() {
+			It("set last-resize annotation", func() {
+				ctx.vm.Spec.ClassName = newClassName
+
+				updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updated).To(BeTrue())
+
+				className, _, _, exists := vmopv1util.GetLastResizedAnnotation(*ctx.vm)
+				Expect(exists).To(BeTrue())
+				Expect(className).To(Equal(oldVM.Spec.ClassName))
+			})
+		})
+
+		When("existing vm is classless", func() {
+			It("set last-resize annotation", func() {
+				oldVM.Spec.ClassName = ""
+				ctx.vm.Spec.ClassName = newClassName
+
+				updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updated).To(BeTrue())
+
+				className, uid, gen, exists := vmopv1util.GetLastResizedAnnotation(*ctx.vm)
+				Expect(exists).To(BeTrue())
+				Expect(className).To(Equal(oldVM.Spec.ClassName))
+				Expect(uid).To(BeEmpty())
+				Expect(gen).To(BeZero())
+			})
+		})
+
+		When("vm already has last-resize annotation", func() {
+			It("annotation is not changed", func() {
+				vmClass := builder.DummyVirtualMachineClass("my-class")
+				vmopv1util.MustSetLastResizedAnnotation(ctx.vm, *vmClass)
+
+				updated, err := mutation.SetLastResizeAnnotations(&ctx.WebhookRequestContext, ctx.vm, oldVM)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updated).To(BeFalse())
+
+				className, _, _, exists := vmopv1util.GetLastResizedAnnotation(*ctx.vm)
+				Expect(exists).To(BeTrue())
+				Expect(className).To(Equal(vmClass.Name))
+			})
+		})
 	})
 
 	Describe("SetDefaultCdromImgKindOnCreate", func() {

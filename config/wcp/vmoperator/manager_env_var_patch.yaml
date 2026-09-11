@@ -79,12 +79,6 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: FSS_WCP_VMSERVICE_RESIZE
-    value: "<FSS_WCP_VMSERVICE_RESIZE_VALUE>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
     name: FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
     value: "<FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY_VALUE>"
 

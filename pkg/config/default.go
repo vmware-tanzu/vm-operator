@@ -15,7 +15,7 @@ const defaultPrefix = "vmoperator-"
 
 // Default returns a Config object with default values.
 func Default() Config {
-	return Config{
+	return Config{ //nolint:gosec // VCCredsSecretName/WebhookSecretName below are k8s Secret object names, not credential material.
 		BuildCommit:  pkg.BuildCommit,
 		BuildNumber:  pkg.BuildNumber,
 		BuildVersion: pkg.BuildVersion,

@@ -22,10 +22,12 @@ linters:
   - cyclop            # 5
   - dupl              # 50
   - dupword           # 11
+  - embeddedstructfieldcheck # 179
   - err113            # 50
   - errname           # 6
   - exhaustive        # 29
   - exhaustruct       # 50
+  - exhaustruct_v5    # 50
   - exptostd          # 2
   - fatcontext        # 3
   - forbidigo         # 1
@@ -36,6 +38,8 @@ linters:
   - gochecknoglobals  # 50
   - gochecknoinits    # 3
   - gocognit          # 43
+  - goconst
+  - gocritic          # 6
   - godox             # 50
   - gomoddirectives   # 9
   - inamedparam       # 11
@@ -47,16 +51,19 @@ linters:
   - maintidx          # 26
   - mirror            # 2
   - mnd               # 50
+  - modernize
   - musttag           # 3
   - nestif            # 50
   - nilnil            # 3
   - nlreturn          # 9
   - noctx             # 4
+  - noinlineerr
   - nolintlint        # 5
   - nonamedreturns    # 23
   - nosprintfhostport # 3
   - paralleltest      # 50
   - perfsprint        # 7
+  - prealloc
   - recvcheck         # 5
   - tagalign          # 33
   - tagliatelle       # 8
@@ -67,6 +74,7 @@ linters:
   - whitespace        # 6
   - wrapcheck         # 50
   - wsl               # 50
+  - wsl_v5            # 50
 
   settings:
 
@@ -317,7 +325,7 @@ linters:
 
     - linters:
       - staticcheck
-      text: "^SA1019: corev1.(Endpoints|EndpointSubset) is deprecated: This API is deprecated in v1.33+.*"
+      text: "^SA1019: .*\\.(Endpoints|EndpointSubset) is deprecated: This API is deprecated in v1.33+.*"
     - linters:
       - staticcheck
       text: "^SA1019: [^.]+.Wait is deprecated: Please use WaitEx instead."
@@ -329,7 +337,13 @@ linters:
       text: "^SA1019: .*TCPSocket is deprecated"
     - linters:
       - staticcheck
-      text: "^SA1019: c?vmiAfter.Status.ContentLibraryRef is deprecated"
+      text: "^SA1019: .*ContentLibraryRef is deprecated"
+    - linters:
+      - staticcheck
+      text: "^SA1019: .*MMPowerOffVMExtraConfigKey is deprecated"
+    - linters:
+      - staticcheck
+      text: "^SA1019: .*Result\\).Requeue is deprecated: Use `RequeueAfter` instead."
     - linters:
       - staticcheck
       text: "QF1008: could remove embedded field"

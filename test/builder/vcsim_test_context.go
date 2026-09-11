@@ -696,8 +696,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 		Certificates: []tls.Certificate{
 			tlsCert,
 		},
-		PreferServerCipherSuites: true,
-		MinVersion:               tls.VersionTLS12,
+		MinVersion: tls.VersionTLS12,
 	}
 
 	c.model = vcModel

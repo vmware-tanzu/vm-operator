@@ -617,7 +617,9 @@ func fastDeployDirectCopyDisks(
 		wg.Add(1)
 		copyDiskTasks[i] = t
 
-		go func() {
+		// Background is used so the copy always runs to completion even if
+		// the parent is canceled.
+		go func() { //nolint:gosec
 			defer wg.Done()
 			if err := t.Wait(context.Background()); err != nil {
 				copyDiskErrs <- fmt.Errorf(

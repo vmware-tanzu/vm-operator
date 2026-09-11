@@ -16,7 +16,7 @@ const (
 	// LastResizedAnnotationKey denotes the VM Class that the VM was last resized from.
 	LastResizedAnnotationKey = vmopv1.GroupName + "/last-resized-vm-class"
 
-	// LastResizedAnnotationKey denotes the
+	// LastResizedInstanceAnnotationKey denotes the
 	// VirtualMachineClassInstance that the VM was last resized from.
 	LastResizedInstanceAnnotationKey = vmopv1.GroupName + "/last-resized-vm-class-instance"
 )

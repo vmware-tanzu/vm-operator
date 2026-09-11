@@ -18,7 +18,7 @@ func IsNil(arg any) bool {
 		return true
 	}
 	switch v.Kind() {
-	case reflect.Ptr,
+	case reflect.Pointer,
 		reflect.Interface,
 		reflect.Slice,
 		reflect.Map,

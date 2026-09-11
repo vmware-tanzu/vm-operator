@@ -146,7 +146,7 @@ func cpuSizeField() computeFieldDef {
 				return false
 			}
 			if res := vm.Spec.Resources; res != nil && res.Size != nil && res.Size.CPU != nil {
-				return int32(res.Size.CPU.Value()) > ci.Hardware.NumCPU
+				return int32(res.Size.CPU.Value()) > ci.Hardware.NumCPU //nolint:gosec
 			}
 			return false
 		},

@@ -32,10 +32,10 @@ const (
 	// RequestClientCertificateContextKey is the key used to store and extract
 	// client cert data from http requests.
 	RequestClientCertificateContextKey contextKey = iota
-
-	// The apiserver client CN.
-	apiserverCN = "apiserver-webhook-client"
 )
+
+// The apiserver client CN.
+const apiserverCN = "apiserver-webhook-client"
 
 var caCertPool atomic.Pointer[x509.CertPool]
 

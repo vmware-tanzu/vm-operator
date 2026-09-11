@@ -256,6 +256,7 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					ClusterProxy:     svClusterProxy,
 					Config:           config,
 					WCPClient:        wcpClient,
+					ArtifactFolder:   artifactFolder,
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			})
@@ -267,6 +268,7 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					ClusterProxy:     svClusterProxy,
 					Config:           config,
 					WCPClient:        wcpClient,
+					ArtifactFolder:   artifactFolder,
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			})

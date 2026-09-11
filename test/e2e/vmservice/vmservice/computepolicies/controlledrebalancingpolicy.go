@@ -9,6 +9,7 @@ package computepolicies
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -21,6 +22,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -75,6 +77,14 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		svClusterClient = clusterProxy.GetClient()
 
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.ControlledRebalancingPolicyCapabilityName)
+
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
+			ctx,
+			[]string{input.Config.GetVariable("VMOPNamespace")},
+			clusterProxy.GetRESTConfig(),
+			filepath.Join(input.ArtifactFolder, specName),
+		)
+		DeferCleanup(cancelPodWatches)
 
 		adminProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to get admin cluster proxy")

@@ -13,7 +13,7 @@ require (
 	golang.org/x/tools v0.49.0
 	golang.org/x/vuln v1.7.0
 	k8s.io/code-generator v0.37.0
-	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.24.1
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.25.0
 	sigs.k8s.io/controller-tools v0.22.0
 	sigs.k8s.io/kind v0.33.0
 	sigs.k8s.io/kubebuilder/v3 v3.15.1

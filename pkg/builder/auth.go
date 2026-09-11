@@ -131,6 +131,9 @@ func InPrivilegedUsersList(
 			// Neither the authenticating user nor the current privileged user
 			// is a service account, so compare the user names directly.
 			//
+			// Usernames here may originate from an external IDP/AD source,
+			// which is not guaranteed to be case-preserving, so compare
+			// case-insensitively.
 			if strings.EqualFold(userInfo.Username, privUser) {
 				return true
 			}

@@ -5,12 +5,20 @@
 package util_test
 
 import (
+	"context"
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var _ = DescribeTable("SanitizeCNSErrorMessage",
@@ -30,6 +38,76 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 \\\"The resource 'volume' is in use.\\\"\\n})\\n\". opId: \"67d69c68\""
 `, "failed to attach cns volume"),
 )
+
+var _ = Describe("GetCnsNodeVMAttachmentsForVM", func() {
+
+	const namespace = "test-namespace"
+
+	// nodeUUIDIndexerFunc mirrors the field indexer registered by the
+	// volume/volumebatch controllers' AddToManager, which normalizes
+	// spec.nodeuuid to lowercase before indexing.
+	nodeUUIDIndexerFunc := func(obj client.Object) []string {
+		attachment := obj.(*cnsv1alpha1.CnsNodeVmAttachment)
+		return []string{strings.ToLower(attachment.Spec.NodeUUID)}
+	}
+
+	newClientWithAttachment := func(attachmentNodeUUID string) client.Client {
+		attachment := &cnsv1alpha1.CnsNodeVmAttachment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-attachment",
+				Namespace: namespace,
+			},
+			Spec: cnsv1alpha1.CnsNodeVmAttachmentSpec{
+				NodeUUID: attachmentNodeUUID,
+			},
+		}
+		return fake.NewClientBuilder().
+			WithScheme(builder.NewScheme()).
+			WithObjects(attachment).
+			WithIndex(&cnsv1alpha1.CnsNodeVmAttachment{}, "spec.nodeuuid", nodeUUIDIndexerFunc).
+			Build()
+	}
+
+	DescribeTable("finds attachments regardless of BiosUUID/NodeUUID letter casing",
+		func(vmBiosUUID, attachmentNodeUUID string, expectMatch bool) {
+			vm := &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace},
+				Status:     vmopv1.VirtualMachineStatus{BiosUUID: vmBiosUUID},
+			}
+
+			attachments, err := util.GetCnsNodeVMAttachmentsForVM(
+				context.Background(), newClientWithAttachment(attachmentNodeUUID), vm)
+			Expect(err).ToNot(HaveOccurred())
+
+			if expectMatch {
+				Expect(attachments).To(HaveLen(1))
+				Expect(attachments).To(HaveKey("my-attachment"))
+			} else {
+				Expect(attachments).To(BeEmpty())
+			}
+		},
+		Entry("identical casing matches",
+			"4212a4b6-9f8e-4b1a-9b1e-0123456789ab",
+			"4212a4b6-9f8e-4b1a-9b1e-0123456789ab",
+			true),
+		Entry("uppercase BiosUUID matches lowercase NodeUUID",
+			"4212A4B6-9F8E-4B1A-9B1E-0123456789AB",
+			"4212a4b6-9f8e-4b1a-9b1e-0123456789ab",
+			true),
+		Entry("lowercase BiosUUID matches uppercase NodeUUID",
+			"4212a4b6-9f8e-4b1a-9b1e-0123456789ab",
+			"4212A4B6-9F8E-4B1A-9B1E-0123456789AB",
+			true),
+		Entry("mixed-case BiosUUID matches mixed-case NodeUUID",
+			"4212A4b6-9F8e-4b1A-9b1E-0123456789Ab",
+			"4212a4B6-9f8E-4B1a-9B1e-0123456789aB",
+			true),
+		Entry("non-matching UUIDs do not match",
+			"4212a4b6-9f8e-4b1a-9b1e-0123456789ab",
+			"ffffffff-ffff-ffff-ffff-ffffffffffff",
+			false),
+	)
+})
 
 var _ = Describe("GetCnsDiskModeFromDiskMode", func() {
 	DescribeTable("disk mode conversion",

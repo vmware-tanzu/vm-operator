@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -2096,6 +2097,16 @@ var _ = Describe("UpdateVirtualMachine", func() {
 			})
 
 			By("exit early without adding the vm to the cluster module", func() {
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
+			})
+
+			By("simulate vsphere-cluster-module-group-uuid annotation differing only by letter case", func() {
+				metav1.SetMetaDataAnnotation(&vmCtx.VM.ObjectMeta,
+					pkgconst.ClusterModuleUUIDAnnotationKey,
+					strings.ToUpper(dummyRP.Status.ClusterModules[0].ModuleUuid))
+			})
+
+			By("still exit early since the module uuid is the same modulo case", func() {
 				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
 			})
 

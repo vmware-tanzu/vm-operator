@@ -3993,6 +3993,33 @@ var _ = Describe("UpdateStatus", func() {
 					})
 				})
 
+				When("volume is attached but status DiskUUID differs from hardware UUID only by letter case", func() {
+					BeforeEach(func() {
+						setupPVCVolume("pvc-volume-1", "test-pvc", vmopv1.VirtualControllerTypeSCSI, 0, 0)
+						setupSCSIControllerInSpec(0)
+
+						// Set up MoVM.Config.Hardware.Device to have a SCSI controller with a disk.
+						// The hardware-reported UUID is lowercase.
+						vmCtx.MoVM.Config = builder.DummyVirtualMachineConfigInfo(
+							builder.DummySCSIController(1000, 0),
+							builder.DummyVirtualDisk(2000, 1000, ptr.To(int32(0)), "disk-uuid-123", ""),
+						)
+						// Status.Volumes DiskUUID (as populated by the volume/CNS controllers)
+						// differs only in letter case from the hardware UUID above.
+						vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "pvc-volume-1",
+								DiskUUID: "DISK-UUID-123",
+								Type:     vmopv1.VolumeTypeManaged,
+							},
+						}
+					})
+
+					It("should still mark the condition as true", func() {
+						assertConditionTrue()
+					})
+				})
+
 				When("unexpected volume is attached", func() {
 					BeforeEach(func() {
 						vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -165,7 +166,10 @@ func unitTestsReconcile() {
 				"spec.nodeuuid",
 				func(rawObj client.Object) []string {
 					attachment := rawObj.(*cnsv1alpha1.CnsNodeVmAttachment)
-					return []string{attachment.Spec.NodeUUID}
+					// Mirrors the real indexer registered in AddToManager,
+					// which lowercases NodeUUID so lookups by BiosUUID are
+					// case-insensitive.
+					return []string{strings.ToLower(attachment.Spec.NodeUUID)}
 				}).
 			Build()
 
@@ -890,6 +894,35 @@ func unitTestsReconcile() {
 
 					By("VM Status.Volumes should contain refreshed volume that is tracked by batch attachment, with minimum status", func() {
 						assertVMVolStatusFromBatchAttachmentSpec(vm, batchAttachment, 0, 0)
+					})
+				})
+			})
+
+			When("legacy attachment NodeUUID matches BiosUUID only when case-folded", func() {
+				BeforeEach(func() {
+					// Legacy attachment's NodeUUID differs from the VM's
+					// BiosUUID only by letter casing; the volume is in the
+					// VM spec, so a case-sensitive match would wrongly treat
+					// this as orphaned/stale and delete it.
+					legacyAttachment1.Spec.NodeUUID = strings.ToUpper(dummyBiosUUID)
+					legacyAttachment1.Spec.VolumeName = legacyPVCName1
+
+					vm.Spec.Volumes = append(vm.Spec.Volumes, *vmVolWithLegacy1)
+					initObjects = append(initObjects, legacyAttachment1, legacyPVC1)
+				})
+
+				It("is still found via the case-insensitive NodeUUID index and not treated as orphaned", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					legacyKey1 := client.ObjectKey{Name: legacyAttachment1.Name, Namespace: ns}
+					attachment1 := &cnsv1alpha1.CnsNodeVmAttachment{}
+					Expect(ctx.Client.Get(ctx, legacyKey1, attachment1)).To(Succeed(),
+						"legacy attachment matching BiosUUID modulo case should not be deleted as orphaned")
+
+					By("VM Status.Volumes should contain legacy volume that is tracked by legacy attachment", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						assertVMVolStatusFromLegacyAttachment(legacyVolumeName1, attachment1, vm.Status.Volumes[0])
 					})
 				})
 			})

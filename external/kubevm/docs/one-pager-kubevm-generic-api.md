@@ -7,7 +7,15 @@ The types it describes are
 implemented as a strawman in this repository so the shape can be reviewed
 concretely; see the repository README for what is and is not built.
 
-## Business Problem
+## Summary
+
+This document proposes **KubeVM**, a generic and vendor-neutral `VirtualMachine` API served under the `kube-vm.io` group, together with a provider model that lets hypervisors and cloud VM services expose their machines — and, critically, their accelerators — through one portable, Kubernetes-native interface.
+KubeVM is intended to complement KubeVirt, not to replace it: it addresses the hypervisor-native design point that the VM-as-Pod model leaves unaddressed.
+The `VirtualMachine` resource is the starting point rather than the whole proposal.
+Standardizing the machine is what makes a set, a service, a rolling deployment, quota, policy, health checking, and capacity-aware placement across providers — and eventually a workload model spanning both VMs and Pods — something the ecosystem writes once instead of once per platform.
+That trajectory is described in *Beyond a single machine*, and it is where most of the long-term value of a generic API lies.
+
+## Motivation
 
 Kubernetes has become the default control plane for modern infrastructure, yet the ecosystem still lacks a cross-platform, VM-centric API: a single declarative surface through which any hypervisor or cloud can expose both the full lifecycle of a virtual machine and the hardware capabilities that demanding workloads depend on.
 This gap is becoming urgent because a new class of workload is arriving faster than the tooling to run it.
@@ -21,23 +29,15 @@ Both are strong at their design point.
 What neither sets out to be is a portable, Kubernetes-native front door to a full-blown, hypervisor-native estate — an existing vSphere deployment or a public-cloud VM service — that exposes that platform's own lifecycle and hardware capabilities (GPUs, SR-IOV, passthrough) through one vendor-neutral API.
 That is the gap KubeVM fills, and it is complementary to both.
 
-This document proposes **KubeVM**, a generic and vendor-neutral `VirtualMachine` API served under the `kube-vm.io` group, together with a provider model that lets hypervisors and cloud VM services expose their machines — and, critically, their accelerators — through one portable, Kubernetes-native interface.
-KubeVM is intended to complement KubeVirt, not to replace it: it addresses the hypervisor-native design point that the VM-as-Pod model leaves unaddressed.
-The `VirtualMachine` resource is the starting point rather than the whole proposal.
-Standardizing the machine is what makes a set, a service, a rolling deployment — and eventually a workload model spanning both VMs and Pods — something the ecosystem writes once instead of once per platform.
-That trajectory is described in *Beyond a single machine*, and it is where most of the long-term value of a generic API lies.
+### Goals
 
-## Goals
+- Define a portable, vendor-neutral `VirtualMachine` API that expresses a machine's full intent — sizing, image, bootstrap, networking, storage, and power state — independently of the platform that realizes it.
+- Define a provider contract narrow enough that a provider implements only what is genuinely specific to its platform, and stable enough that the generic core imports no provider code and does not change when a provider is added.
+- Make hypervisor-native hardware capabilities, accelerators first among them, reachable through that portable API rather than only through each vendor's own CRD.
+- Establish the machine as a stable substrate for higher-level orchestration — sets, services, deployments, quota, policy, health checking, and placement — so that each is written once for the ecosystem rather than once per platform.
+- Fill the gap in the CNCF landscape between the VM-as-Pod model and single-vendor facades over a cloud's VM API.
 
-- As a **DevOps user**, I should be able to declare a virtual machine — its size, image, bootstrap configuration, networking, storage, and accelerators — through a single portable API, regardless of the platform that ultimately runs it.
-- As a **DevOps user**, I should be able to request GPU-backed VMs through the portable sizing profile, with the provider resolving that profile to its own accelerator representation.
-  Note that this is a weaker guarantee than "identically everywhere": where a platform models accelerators as a separate per-instance attachment rather than as a property of the profile, v1 cannot express it.
-  Richer accelerator types (SR-IOV, arbitrary passthrough) follow as a portable shape is established.
-- As a **platform engineer**, I should be able to target different providers — vSphere, EC2, or GCP — with the same portable `VirtualMachine` schema, so that moving a workload means pointing at a different provider object and supplying that platform's specifics, not re-authoring the machine's shape.
-- As a **provider author**, I should be able to ship a thin provider that maps the generic API onto my platform, implementing only the behavior that is genuinely unique to it.
-- As a member of the **CNCF community**, I should have a hypervisor-native, vendor-neutral VM API that is well suited to agentic and accelerated workloads and that fills the gap left open by the VM-as-Pod model.
-
-## Non Goals
+### Non-Goals
 
 - KubeVM does not replace KubeVirt.
   The VM-as-Pod model remains valid for clusters where Kubernetes is the only infrastructure layer, and KubeVM can even expose a KubeVirt provider; the two are complementary points in the design space.
@@ -51,7 +51,43 @@ That trajectory is described in *Beyond a single machine*, and it is where most 
   Cross-provider migration of a live VM or its data, and import of pre-existing VMs not created through the API, are out of scope for the initial version.
 - Backup and disaster recovery, marketplace, and billing integrations are outside the scope of the initial version.
 
-## Big Picture
+## Proposal
+
+### User Stories
+
+**Declaring a machine.**
+As a DevOps user, I declare a virtual machine — its size, image, bootstrap configuration, networking, storage, and accelerators — through a single portable API, regardless of the platform that ultimately runs it.
+
+**Requesting accelerators.**
+As a DevOps user, I request GPU-backed VMs through the portable sizing profile, and the provider resolves that profile to its own accelerator representation.
+This is a weaker guarantee than "identically everywhere": where a platform models accelerators as a separate per-instance attachment rather than as a property of the profile, v1 cannot express it.
+Richer accelerator types (SR-IOV, arbitrary passthrough) follow once a portable shape is established.
+
+**Naming an image.**
+As a DevOps user, I name the operating-system image I want, and the provider resolves it to its native artifact — a vSphere Content Library item, an EC2 AMI, or a GCP image.
+What ports is the reference and the resolution mechanism, not the artifact itself: the same name has to have been published into each platform's catalog by its administrator for the same manifest to boot in both places.
+Making the catalog itself portable is the `VirtualMachineImage` work owed by v1, and OCI-based distribution is under evaluation as the cross-provider format that would close the remaining gap.
+
+**Moving a workload to a cluster on different infrastructure.**
+As a platform engineer, I move a workload to a cluster backed by a different provider by pointing at a different provider object and supplying that platform's specifics — not by re-authoring the machine's shape.
+Concretely: the portable `VirtualMachine` carries over unchanged, what changes is `spec.infrastructureRef` and the provider object behind it, and every catalog name the machine references — image, sizing profile, storage class — has to resolve at the destination.
+This is portability of the *declaration*, not migration of a running instance or its disks, which is a non-goal.
+How close this comes to a re-target rather than a rewrite is the honest measure of whether the portable core is wide enough, and it is the first thing a conformance suite should test.
+
+**Bursting into another provider when the primary is full.**
+As a platform engineer, when my primary cluster's infrastructure has no capacity for the machines a set needs, I want the remaining replicas placed against a second provider rather than left pending indefinitely.
+This is only expressible because the machine is portable; it is described in *Capacity-aware placement across providers*.
+
+**Governing what a namespace may ask for.**
+As a tenant admin, I set quota and policy — how much CPU and memory a namespace may run in total, which sizing profiles and images it may reference, floors and ceilings on machine size — once, and have them enforced identically no matter which provider backs the namespace.
+
+**Shipping a provider.**
+As a provider author, I ship a provider that maps the generic API onto my platform, implementing only the behavior that is genuinely unique to it — and I inherit every abstraction above the machine without implementing any of them.
+
+**Having a place to stand in the ecosystem.**
+As a member of the CNCF community, I have a hypervisor-native, vendor-neutral VM API that is well suited to agentic and accelerated workloads and that fills the gap left open by the VM-as-Pod model.
+
+### Big Picture
 
 The proposal introduces a new API group, `kube-vm.io`, whose central resource is a `VirtualMachine` supported by a small set of companion types for sizing, images, networking, and snapshots.
 The design deliberately places the common surface — everything that is shared across backends — in the generic API, so that a provider needs to contribute only the settings that are unique to its platform.
@@ -190,7 +226,37 @@ Each portable field resolves to the platform's native concept during reconciliat
 In this idealized shape the provider object never restates the portable intent — it exists to add the platform-specific capabilities that have no portable equivalent, and to publish status back through the contract.
 (The vSphere provider is deliberately not idealized: it reuses VM Operator's full native CRD as the provider object, which is thicker — see *VM Operator, the vSphere provider*.)
 
-## Architecture Areas
+### Risks and Mitigations
+
+**The API becomes a least common denominator.**
+This is the central risk, and discipline alone does not answer it.
+Two things are meant to hold it off.
+The first is the field-promotion rule: a field enters the portable core only once two providers converge on a shape for it, so the core grows from demonstrated agreement rather than from whoever asks loudest, and a platform's unique capability stays reachable on its provider object in the meantime rather than being lost.
+The second, and the more important one, is that the value of this API is not concentrated in the machine's field list at all.
+It is in what can be built above a portable machine — sets, services, deployments, quota, policy, health checking, capacity-aware placement — none of which a provider-specific CRD can offer at any level of polish, and all of which every provider inherits without implementing anything.
+A narrow core is the precondition for that layer, not a concession made in spite of it.
+
+**The abstraction leaks, because operators always need to tweak what is underneath.**
+They do, particularly for security and performance, and the design assumes it rather than resisting it.
+The provider object is a deliberate, first-class escape hatch: anything the portable core cannot express is expressed there, and the two objects are reconciled rather than placed in competition.
+The cost is scoped and explicit — a machine that depends on a provider-specific field stops being portable *in that respect*, which is a far narrower loss than the machine not being expressible at all.
+The status contract also makes the boundary observable rather than silent: a provider that cannot honor a field this API defines reports `UnsupportedByProvider` instead of ignoring the request or failing the write.
+
+**Overlap and confusion with KubeVirt.**
+The two occupy different design points, but that distinction is not self-evident from the outside, and a new VM API in the CNCF landscape that has not been reconciled with the incumbent one will be read as competition regardless of intent.
+The mitigation is engagement rather than documentation: walking the KubeVirt maintainers through the API and the provider model, identifying the overlap explicitly, and exploring a KubeVirt provider as the clearest demonstration that the two compose.
+This is a prerequisite for taking the proposal to the wider community, not a follow-up to it.
+
+**Providers diverge and the contract drifts.**
+Independent release cadences make skew inevitable.
+Contract versioning is the mechanism (see *API versioning and skew*), and a conformance suite defining what "supports KubeVM" means is the enforcement — gated on a second provider existing, since a conformance suite written against a single implementation only encodes that implementation.
+
+**The proposal is shaped by one provider's experience.**
+VM Operator is the reference provider, which is a genuine source of maturity and an equally genuine source of bias.
+The accelerator discussion in *Hardware specification* is the worked example of what that bias costs: the portable core as specified does not serve a provider that models accelerators as a per-instance attachment, and that gap was found by examining a second and third platform rather than by reasoning outward from the first.
+Recruiting provider authors from other platforms early, and treating their objections as API input rather than as porting problems, is the only real mitigation.
+
+## Design Details
 
 ### The KubeVM API and the field-promotion philosophy
 
@@ -332,7 +398,7 @@ This lets the generic core, VM Operator, and the cloud providers upgrade on thei
 
 A portable `VirtualMachine` is the substrate, not the destination.
 The reason to standardize the machine first is that everything layered above it can then be written once.
-A controller that maintains a set of machines, keeps them behind a stable network identity, or replaces them in waves during an image update needs to understand *a* machine — not vSphere's machine, EC2's machine, and GCE's machine as three separate problems.
+A controller that maintains a set of machines, keeps them behind a stable network identity, enforces a namespace's quota, replaces unhealthy members, or rolls them in waves during an image update needs to understand *a* machine — not vSphere's machine, EC2's machine, and GCE's machine as three separate problems.
 That is where the leverage of a generic API actually comes from, and it is not something a provider-specific CRD can offer at any level of polish.
 
 Kubernetes itself is the clearest precedent.
@@ -345,22 +411,100 @@ The sequence below is ordered by dependency rather than ambition, since each ste
 | Horizon | Resources | Why it is credible, and what it needs first |
 |---|---|---|
 | **Owed by v1** | `VirtualMachineImage` | Already referenced by `bootDisk.source.image` but not yet defined. The catalog question — whether images are portable types or provider-owned — has to be answered before the boot path is complete. |
-| **Next** | `VirtualMachineTemplate`, `VirtualMachineSet` | A template is only worth its indirection once something fans out from it, so the two arrive together. `VirtualMachineSpec` is already a standalone, embeddable struct, so a template is additive rather than a restructuring — the same relationship `PodTemplateSpec` has to `PodSpec`. Providers need matching template kinds so a set can stamp out provider objects alongside portable ones. |
-| **Next** | `VirtualMachineService` | The least speculative item here: VM Operator already ships a `VirtualMachineService`, so the shape has been exercised in production. Generalizing it means expressing membership by label selector and publishing endpoints the way a `Service` does, so that existing Kubernetes tooling and load balancers apply unchanged. |
+| **Next** | `VirtualMachineTemplate`, `VirtualMachineSet` | A template is only worth its indirection once something fans out from it, so the two arrive together. `VirtualMachineSpec` is already a standalone, embeddable struct, so a template is additive rather than a restructuring — the same relationship `PodTemplateSpec` has to `PodSpec`. Providers need matching template kinds so a set can stamp out provider objects alongside portable ones. The argument for a set is not that KubeVM would ship a VM autoscaler. It is that a `/scale` subresource on `VirtualMachineSet` makes `kubectl scale` and every GitOps tool that understands scale work against virtual machines unchanged, on every provider, with no new code on either side — leverage from standardization rather than from features. `HorizontalPodAutoscaler` can target the same subresource, but not for free: its resource-metrics path reads CPU and memory from the Pods behind a target, so scaling on machine utilization needs a metrics source for machines before HPA is usable here. |
+| **Next** | `VirtualMachineService` | The least speculative item here, and the cleanest instance of the whole argument, because the generic layer does not implement load balancing at all. VM Operator's `VirtualMachineService` controller reconciles a core `Service` and the endpoints behind it from the VMs' addresses; the cluster's existing service controller and load-balancer provider — NSX on Supervisor, the cloud load-balancer controller anywhere else — does the actual work. Generalizing it means every cloud LB controller, MetalLB, ingress controller, service mesh, and `kubectl port-forward` applies to virtual machines unchanged, and a provider that implements nothing beyond the machine contract gets `type: LoadBalancer` in front of its VMs on day one. It also asks nothing new of the contract: endpoint reconciliation consumes exactly the addresses and readiness the duck-typed status already requires, which is evidence the contract was sized correctly. Three things to settle — publish `EndpointSlice` rather than the deprecated `Endpoints` VM Operator still writes; state plainly that endpoints assume the VM addresses are routable from the cluster, which holds on Supervisor and is a real constraint elsewhere; and decide what endpoint membership should key on, since `Ready` is defined as "running and usable" and does not assert that the guest is serving on the port, which is the distinction a readiness probe would have to introduce. |
 | **Then** | `VirtualMachineDeployment` | Rolling replacement over a set. This is also where the strongest safety property of the Cluster API model becomes available: fields that cannot be changed on a live machine are handled by replacing the machine rather than by failing the edit, which a single hand-authored VM cannot do without destroying its disks. |
+| **Then** | Portable quota | Kubernetes `ResourceQuota` can count custom-resource *objects* — `count/virtualmachines.kube-vm.io` — but it cannot count the CPU, memory, or disk *inside* them, so a namespace capped at ten VMs is not capped at any amount of compute. The generic layer can close this precisely because it is the layer that resolves a sizing profile into concrete CPU and memory, before any provider is involved. This is the item with the most scar tissue behind it. Supervisor hit exactly this wall and had to build `StoragePolicyQuota`, tracking reserved-versus-used accounting per storage class, because the upstream primitive did not reach far enough. Reserved-versus-used is the part that is easy to miss and expensive to retrofit: quota has to be charged at admission against machines that do not exist yet, or concurrent creates oversubscribe it. Solving it once in the generic layer means no other provider has to learn that lesson the same way. |
+| **Then** | Portable sizing and configuration policy | Floors and ceilings on CPU and memory, permitted sizing profiles and images, required or forbidden configuration. What matters is *where* it is enforced. Because the portable object carries the machine's full intent, an administrator's policy is evaluated at admission, against the generic `VirtualMachine`, before a provider object is created or a platform API is ever called — so a rejected request costs nothing and produces a comprehensible Kubernetes error, rather than a machine that is created and then fails somewhere inside a vendor's API with a vendor's error text. *Security and tenancy* already covers the catalog half of this, where administrators publish the profiles and images a namespace may reference; the additive part is expressing the constraints themselves, for which CEL and `ValidatingAdmissionPolicy` are the natural vehicle and require no new controller at all. |
+| **Then** | `VirtualMachineHealthCheck` | Cluster API's `MachineHealthCheck`, applied to virtual machines: express a health condition and a remediation policy, and have unhealthy machines replaced. It is a pure consumer of the status contract — watch the duck-typed conditions, delete the machine, let the set recreate it — so it adds no provider obligation whatsoever, and the Cluster API precedent it follows is already this design's spine. Needs sets to exist first, since remediation without something to recreate the machine is only deletion. |
+| **Then** | Warm pools | Pre-provisioned, powered-on capacity that a set claims from, so a request is satisfied by assignment rather than by a create call against the platform. This is the piece the agentic case needs most, and the one a single-machine API cannot supply: sandbox-per-task workloads are dominated by time-to-ready, and provisioning latency differs by an order of magnitude across platforms — exactly the kind of difference an abstraction above the machine is able to absorb. Depends on sets, and on the power-state contract that already exists. |
+| **Then** | Scheduled lifecycle and TTL | Expire a machine after a deadline, or power it off when idle and back on when needed. Small and entirely generic — the power-state and deletion semantics it needs are already in the contract — and it carries an obvious cost story for precisely the ephemeral, sandbox-shaped workloads that motivate this proposal. Listed last among the near-term items because it is the least structural, not because it is the least useful. |
 | **Then** | A bootstrap and customization provider contract | A second provider contract alongside the infrastructure one, mirroring Cluster API's separation of bootstrap providers from infrastructure providers. There is already a concrete gap driving it: the API defines cloud-init as its only bootstrap path, which does not reach Windows guests on platforms that use a different mechanism. |
 | **Further out** | A workload model spanning VMs and Pods | Deliberately speculative. Once machines, sets, and services are portable, a higher-level workload composed of both virtual machines and Pods becomes expressible — an application whose database runs in a VM with passthrough storage and whose stateless tier runs in Pods, described and rolled out as one unit. This is the most valuable direction and the least specified; it is listed to show where the model leads, not as a commitment. |
 
 One boundary is worth stating plainly, because it is easy to misread.
 Everything above orchestrates *above* the machine and continues to delegate *below* it.
 A `VirtualMachineDeployment` replacing machines in waves is workload orchestration; it is not this API re-implementing live migration, high availability, or host-level placement, which remain the provider's to implement and are listed as non-goals for exactly that reason.
-The higher-level controllers add no new provider obligations beyond the machine contract itself.
+The higher-level controllers add no new provider obligations beyond the machine contract itself — which is the property that makes them free for every provider, and the test any future addition to this list has to pass.
 
 This trajectory also sharpens the agentic case that motivates the proposal.
-Workloads that create a sandbox per task need a set-shaped primitive, warm capacity, and fast replacement far more than they need any individual field on a single machine.
-Those are properties of the layer above the machine, which is another reason to get the machine's contract right first rather than widening it.
+Workloads that create a sandbox per task need a set-shaped primitive, warm capacity, fast replacement, and an expiry far more than they need any individual field on a single machine — the set, warm pool, health-check, and TTL rows above, none of which are properties of a machine.
+That is another reason to get the machine's contract right first rather than widening it.
 
-None of this is part of the initial version, and the ordering is deliberate: each step assumes the contract beneath it is stable, and adding higher-level resources before the machine contract settles would bake today's open questions into more places than one.
+None of the resources in the table above is part of the initial version, and their ordering there is deliberate: each step assumes the contract beneath it is stable, and adding higher-level resources before the machine contract settles would bake today's open questions into more places than one.
+
+### Who implements these
+
+One rule keeps the layer above the machine from becoming ambiguous: **where the generic layer implements a capability, it owns it.**
+A provider is not asked to implement quota, policy, health checking, or placement, and is not offered a hook to implement them differently.
+
+That is deliberate.
+The claim being made here is that a provider receives these without doing any work, and a contract that let each provider substitute its own version would reintroduce, one level up, exactly the divergence the portable machine exists to remove.
+Two enforcement paths with no stated precedence is a worse outcome than one.
+
+This is a statement about delegation, not about the platform underneath.
+Whatever a platform enforces on its own — vSphere's resource pools, a cloud's service quotas, the network fabric's own policy — remains in force beneath the provider, and a request that satisfies KubeVM's policy can still be refused there.
+`WaitingForCapacity` and `UnsupportedByProvider` exist to report precisely that.
+What KubeVM does not do is consult the provider before making its own decision.
+
+If a provider later brings a concrete case for delegating one of these, the contract can grow capability advertisement to support it, using the same mechanism *API versioning and skew* already describes for contract versions.
+Adding that flexibility before anyone has asked for it would be speculative, and it would cost the simplicity that makes the claim above true in the first place.
+
+### Capacity-aware placement across providers
+
+Everything above sits above *one* provider at a time.
+The question that goes further — and the one most likely to be asked by someone deciding whether a portable machine is worth adopting at all — is whether a workload can spill into a second provider when the first runs out.
+
+Nothing in the single-machine API answers that, and no provider-specific CRD can: a controller cannot place a machine somewhere else when "somewhere else" has a different schema.
+A portable machine makes it expressible for the first time.
+The line drawn above holds here: this selects a *provider*, not a host.
+Which hypervisor, zone, or node a machine lands on within a provider remains that provider's scheduling decision, and nothing here reaches into it.
+
+A set would carry more than one placement target — an ordered list of provider references, or a policy that selects among them — and the portable `VirtualMachine` stamped out against each target is the same object; only `spec.infrastructureRef` and the provider object behind it differ.
+
+The status contract already anticipates the signal this needs.
+`WaitingForCapacity` is defined as explicitly non-terminal, for exactly the cases that drive this — EC2's `InsufficientInstanceCapacity` and GCE's `ZONE_RESOURCE_POOL_EXHAUSTED` — and `Preempted` reports spot and preemptible reclamation.
+A placement controller needs no new provider obligation to act on those; it needs the reasons providers are already required to report.
+
+What this makes possible, concretely:
+
+- **Overflow.** The primary provider cannot satisfy the next replica, so it is placed against the next target rather than left pending.
+- **Cost and capability arbitrage.** GPU capacity that is scarce on-premises and available, at a price, in a cloud — or the reverse, for workloads whose economics invert at scale.
+- **Preemption absorption.** A set backed partly by spot or preemptible capacity refills from on-demand or on-premises capacity as replicas are reclaimed.
+- **Evacuation.** Draining a provider for maintenance by replacing its machines elsewhere, one wave at a time, reusing the rolling-replacement machinery a `VirtualMachineDeployment` already needs.
+
+And what it is not, because the limits matter as much as the capability:
+
+- It places *new* machines. It does not move a running one or its disks; cross-provider migration of a live instance is a non-goal and nothing here changes that. Overflow serves workloads that a replacement replica can satisfy — the set-shaped, sandbox-shaped case this proposal is motivated by — and does not serve a pet.
+- Network identity does not follow automatically. The `VirtualMachineService` story holds within a routable network; a burst target on another provider needs its own ingress, or an overlay, and reconciling that is a harder problem than the placement decision itself.
+- It presumes the catalog resolves in both places. An image or sizing profile published only on the primary makes the second target unusable, which ties this directly to the `VirtualMachineImage` work owed by v1.
+- Data gravity and egress cost are real and are not modeled. A machine placed away from its data can be worse than no machine at all.
+
+None of this is close to specified, and it sits further out than everything in the table above.
+It is described here because it is the clearest answer to what a portable machine is actually *for*: the capability is not a field on anything, and it is not available at any price without a portable machine underneath it.
+
+## Alternatives
+
+**Extend KubeVirt's `VirtualMachine` rather than define a new API.**
+This is the most serious alternative and the one that most deserves a real conversation with the KubeVirt maintainers before this proposal advances.
+It is not adopted here because KubeVirt's object is tied to the VM-as-Pod realization model — a `virt-launcher` Pod on a Kubernetes node — and much of its schema describes a libvirt domain rather than a machine in the abstract.
+Reaching a hypervisor-native estate through it would mean either widening that schema with fields meaningless to its own implementation, or adding an indirection to a provider that its design does not have.
+The narrower observation is that KubeVirt is an excellent *provider* under this contract, which is the composition worth pursuing.
+
+**Use Cluster API's `Machine` directly.**
+Cluster API already has a portable machine with an infrastructure reference and a duck-typed status contract, and this proposal borrows that pattern deliberately.
+It is not reused because a CAPI `Machine` exists to become a Kubernetes node: it is bound to a cluster, carries a bootstrap contract that produces kubeadm configuration, and its lifecycle is governed by cluster membership.
+A virtual machine that runs a database, a Windows desktop, or an agent sandbox is not a node and should not have to pretend to be one.
+The pattern generalizes; the type does not.
+
+**Ship no generic API and let each platform expose its own CRD.**
+This is the status quo, and it works adequately for a single machine on a single platform — which is the substance of the least-common-denominator critique.
+It fails at everything above the machine: sets, services, quota, policy, health checking, and placement have to be written once per platform, which in practice means they are written well for one and poorly or not at all for the rest.
+*Beyond a single machine* is the argument against this option in full.
+
+**Build a single-vendor facade over one cloud's VM API.**
+AWS Controllers for Kubernetes and Azure Service Operator take this approach, and it is studied in *Prior art and related work* as precedent for owning an API surface rather than exposing a dependency's native one.
+It is rejected as the goal here for the obvious reason that it produces no portability, and the abstractions above the machine remain unavailable to anyone else.
 
 ## In this repository
 

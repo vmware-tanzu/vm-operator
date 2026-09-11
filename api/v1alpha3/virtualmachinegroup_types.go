@@ -170,7 +170,7 @@ type VirtualMachinePlacementStatus struct {
 	// +optional
 
 	// Zone describes the recommended zone for this VM.
-	Zone string `json:"zoneID,omitempty"`
+	Zone string `json:"zone,omitempty"`
 
 	// +optional
 

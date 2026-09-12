@@ -68,6 +68,18 @@ var _ = DescribeTable("IsPrivilegedAccount",
 		true,
 	),
 	Entry(
+		"is in priv user list with different letter casing",
+		&pkgctx.WebhookContext{
+			Context: pkgcfg.WithConfig(pkgcfg.Config{
+				PrivilegedUsers: "hello,world,fubar",
+			}),
+		},
+		authv1.UserInfo{
+			Username: "WORLD",
+		},
+		true,
+	),
+	Entry(
 		"is vm op service account",
 		&pkgctx.WebhookContext{
 			Context:            pkgcfg.NewContext(),

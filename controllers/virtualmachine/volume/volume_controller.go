@@ -57,7 +57,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		"spec.nodeuuid",
 		func(rawObj client.Object) []string {
 			attachment := rawObj.(*cnsv1alpha1.CnsNodeVmAttachment)
-			return []string{attachment.Spec.NodeUUID}
+			return []string{strings.ToLower(attachment.Spec.NodeUUID)}
 		}); err != nil {
 		return err
 	}
@@ -360,7 +360,7 @@ func (r *Reconciler) getAttachmentsForVM(ctx *pkgctx.VolumeContext) (map[string]
 	list := &cnsv1alpha1.CnsNodeVmAttachmentList{}
 	err := r.Client.List(ctx, list,
 		client.InNamespace(ctx.VM.Namespace),
-		client.MatchingFields{"spec.nodeuuid": ctx.VM.Status.BiosUUID})
+		client.MatchingFields{"spec.nodeuuid": strings.ToLower(ctx.VM.Status.BiosUUID)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list CnsNodeVmAttachments: %w", err)
 	}
@@ -665,7 +665,7 @@ func (r *Reconciler) createCNSAttachmentButAlreadyExists(
 		return fmt.Errorf("the CnsNodeVmAttachment %s has a different controlling owner", attachmentName)
 	}
 
-	if attachment.Spec.NodeUUID != ctx.VM.Status.BiosUUID {
+	if !strings.EqualFold(attachment.Spec.NodeUUID, ctx.VM.Status.BiosUUID) {
 		// We are the owners of this attachment but the BiosUUIDs are different. What's most likely
 		// happened is the VC VM was deleted, and then the VC VM is being recreated, generating a new
 		// BiosUUID. Since this attachment is ours, delete it to let CNS remove the attachment from

@@ -76,7 +76,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		"spec.nodeuuid",
 		func(rawObj client.Object) []string {
 			attachment := rawObj.(*cnsv1alpha1.CnsNodeVmAttachment)
-			return []string{attachment.Spec.NodeUUID}
+			return []string{strings.ToLower(attachment.Spec.NodeUUID)}
 		}); err != nil {
 		return err
 	}

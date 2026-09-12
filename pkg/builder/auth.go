@@ -131,7 +131,10 @@ func InPrivilegedUsersList(
 			// Neither the authenticating user nor the current privileged user
 			// is a service account, so compare the user names directly.
 			//
-			if userInfo.Username == privUser {
+			// This is an SSO username. VC already normalizes these to
+			// lower-case before they reach Supervisor, but compare
+			// case-insensitively as a defensive measure.
+			if strings.EqualFold(userInfo.Username, privUser) {
 				return true
 			}
 

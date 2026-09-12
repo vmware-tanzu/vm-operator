@@ -73,7 +73,7 @@ func (u *User) checkIfUserExists() (bool, error) {
 	// Check if the user already exists.
 	cmd := fmt.Sprintf("%s user find-by-name --account '%s' ", binaryPath, u.Credentials.Username)
 	cmd = addAdminCredentialsToCommand(cmd, u.adminCreds)
-	fmt.Printf("Running command %s\n", cmd)
+	fmt.Printf("Running command %s\n", dcli.RedactSensitiveFlags(cmd))
 	result, err := u.cmdRunner.RunCommand(cmd)
 	// This command can fail either due to intermittent issues, or because
 	// the user does not exist. Either way, return false, and the
@@ -114,7 +114,7 @@ func (u *User) Create() error {
 
 	cmd := fmt.Sprintf("%s user create --account '%s' --user-password '%s' --first-name '%s First name' --last-name '%s Last name'", binaryPath, u.Credentials.Username, u.Credentials.Password, u.Credentials.Username, u.Credentials.Username)
 	cmd = addAdminCredentialsToCommand(cmd, u.adminCreds)
-	fmt.Printf("Running command %s\n", cmd)
+	fmt.Printf("Running command %s\n", dcli.RedactSensitiveFlags(cmd))
 	result, err := u.cmdRunner.RunCommand(cmd)
 	fmt.Printf("Command output: %s\n", string(result))
 

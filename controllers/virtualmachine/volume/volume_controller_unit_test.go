@@ -7,6 +7,7 @@ package volume_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -163,7 +164,10 @@ func unitTestsReconcile() {
 				"spec.nodeuuid",
 				func(rawObj client.Object) []string {
 					attachment := rawObj.(*cnsv1alpha1.CnsNodeVmAttachment)
-					return []string{attachment.Spec.NodeUUID}
+					// Mirrors the real indexer registered in AddToManager,
+					// which lowercases NodeUUID so lookups by BiosUUID are
+					// case-insensitive.
+					return []string{strings.ToLower(attachment.Spec.NodeUUID)}
 				}).
 			Build()
 
@@ -910,6 +914,36 @@ func unitTestsReconcile() {
 							Expect(attachment).ToNot(BeNil())
 							assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 						})
+					})
+				})
+			})
+
+			When("CnsNodeVmAttachment has OwnerRef of this VM and NodeUUID matches BiosUUID only when case-folded", func() {
+
+				BeforeEach(func() {
+					vmVol = *vmVolumeWithPVC1
+					vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+					initObjects = append(initObjects, boundPVC1)
+
+					attachment := cnsAttachmentForVMVolume(vm, vmVol)
+					attachment.Spec.NodeUUID = strings.ToUpper(vm.Status.BiosUUID)
+					attachment.Status.Attached = true
+					attachment.Status.AttachmentMetadata = map[string]string{
+						cnsv1alpha1.AttributeFirstClassDiskUUID: dummyDiskUUID,
+					}
+					initObjects = append(initObjects, attachment)
+				})
+
+				It("is not treated as stale and is not deleted", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					By("Expected VM Status.Volumes", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+
+						attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+						Expect(attachment).ToNot(BeNil())
+						Expect(attachment.Spec.NodeUUID).To(Equal(strings.ToUpper(vm.Status.BiosUUID)))
 					})
 				})
 			})

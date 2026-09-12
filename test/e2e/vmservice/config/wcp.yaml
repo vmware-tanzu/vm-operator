@@ -43,7 +43,7 @@ intervals:
   # Please keep the wait-virtual-machine values in sync between the different
   # configuration files.
   default/wait-virtual-machine-creation: ["5m", "3s"]
-  default/wait-virtual-machine-deletion: ["5m", "3s"]
+  default/wait-virtual-machine-deletion: ["10m", "3s"]
   default/wait-virtual-machine-condition-update: ["5m", "3s"]
   # Boot-disk promotion for this spec is a live Storage vMotion (VM home on
   # nfsDatastore, child disk vSAN-backed) and has been observed taking well

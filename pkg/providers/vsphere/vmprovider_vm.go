@@ -1098,6 +1098,14 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 						"snapshot wait-for-crv condition", reconcileErr, setErr)
 				}
 			}
+
+			// Even if it's a NoRequeueError (like ErrReconfigure), we MUST reconcile status
+			// so that any changes made by reconcileConfig (like appending to vm.Status.Volumes)
+			// are properly reflected and cleaned up by updateVolumeStatus.
+			if statusErr := vs.reconcileStatus(vmCtx, vcVM); statusErr != nil {
+				reconcileErr = getReconcileErr("status", reconcileErr, statusErr)
+			}
+
 			return errOrReconcileErr(reconcileErr, err)
 		}
 		reconcileErr = getReconcileErr("config", reconcileErr, err)

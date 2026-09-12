@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -159,6 +160,7 @@ var (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get
 // +kubebuilder:rbac:groups=netoperator.vmware.com,resources=networksettings,verbs=get;list;watch
+// +kubebuilder:rbac:groups=authorization.k8s.io,resources=subjectaccessreviews,verbs=create
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
@@ -1595,7 +1597,7 @@ func (v validator) validateVolumes(
 			}
 		}
 
-		// Validate that no two volumes have the same PVC claim name.
+		// Validate that no two volumes have the same PVC claim name or same snapshot disk.
 		if pvc := vol.PersistentVolumeClaim; pvc != nil {
 			if claimName := pvc.ClaimName; claimName != "" {
 				if volumePVCNamesSet.Has(claimName) {
@@ -1724,9 +1726,21 @@ func (v validator) validateVolume(
 	volPath *field.Path) field.ErrorList {
 
 	var (
-		allErrs field.ErrorList
-		pvcPath = volPath.Child("persistentVolumeClaim")
+		allErrs  field.ErrorList
+		pvcPath  = volPath.Child("persistentVolumeClaim")
+		snapPath = volPath.Child("virtualMachineSnapshot")
 	)
+
+	hasPVC := vol.PersistentVolumeClaim != nil
+	hasSnap := vol.VirtualMachineSnapshot != nil
+
+	if hasPVC && hasSnap {
+		allErrs = append(allErrs, field.Forbidden(
+			volPath, "only one of persistentVolumeClaim or virtualMachineSnapshot can be specified"))
+	} else if !hasPVC && !hasSnap && !isBackfilledVolume(&vol) {
+		allErrs = append(allErrs, field.Required(
+			volPath, "one of persistentVolumeClaim or virtualMachineSnapshot must be specified"))
+	}
 
 	if pvc := vol.PersistentVolumeClaim; pvc != nil {
 		if pvc.ReadOnly {
@@ -1739,6 +1753,10 @@ func (v validator) validateVolume(
 		}
 	}
 
+	if snap := vol.VirtualMachineSnapshot; snap != nil {
+		allErrs = append(allErrs, v.validateSnapshotVolume(ctx, vm, vol, snap, volPath, snapPath)...)
+	}
+
 	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks &&
 		!pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
 
@@ -1747,7 +1765,7 @@ func (v validator) validateVolume(
 
 	if oldVol != nil && oldVol.Name == vol.Name {
 		allErrs = append(allErrs,
-			v.validateVolumeImmutableFields(vol, oldVol, *volPath)...,
+			v.validateVolumeImmutableFields(vm, vol, oldVol, *volPath)...,
 		)
 	}
 
@@ -1800,6 +1818,7 @@ func (v validator) validateVolume(
 }
 
 func (v validator) validateVolumeImmutableFields(
+	vm *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
 	oldVol *vmopv1.VirtualMachineVolume,
 	volPath field.Path) field.ErrorList {
@@ -1834,6 +1853,29 @@ func (v validator) validateVolumeImmutableFields(
 		vol.UnitNumber,
 		oldVol.UnitNumber,
 		volPath.Child("unitNumber"))...)
+
+	// Check if the volume is attached.
+	attached := false
+	for _, statusVol := range vm.Status.Volumes {
+		if statusVol.Name == vol.Name && statusVol.Attached {
+			attached = true
+			break
+		}
+	}
+
+	if attached {
+		if vol.VirtualMachineSnapshot != nil && oldVol.VirtualMachineSnapshot != nil {
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.VirtualMachineSnapshot.Name,
+				oldVol.VirtualMachineSnapshot.Name,
+				volPath.Child("virtualMachineSnapshot", "name"))...)
+
+			allErrs = append(allErrs, validation.ValidateImmutableField(
+				vol.VirtualMachineSnapshot.DiskID,
+				oldVol.VirtualMachineSnapshot.DiskID,
+				volPath.Child("virtualMachineSnapshot", "diskID"))...)
+		}
+	}
 
 	return allErrs
 }
@@ -2080,7 +2122,7 @@ func (v validator) validateBackfilledVolumesNotRemoved(
 // isBackfilledVolume checks if a volume is a backfilled volume from a classic disk.
 // Backfilled volumes have no PersistentVolumeClaim but have a target ID.
 func isBackfilledVolume(vol *vmopv1.VirtualMachineVolume) bool {
-	if vol.PersistentVolumeClaim != nil {
+	if vol.PersistentVolumeClaim != nil || vol.VirtualMachineSnapshot != nil {
 		return false
 	}
 
@@ -3671,4 +3713,75 @@ func isFirstClassNICAdvancedProperty(key string) bool {
 
 func isNetworkDeviceProperty(key string) bool {
 	return vmopv1util.IsEthernetDeviceKey(key)
+}
+
+func (v validator) validateSnapshotVolume(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	vol vmopv1.VirtualMachineVolume,
+	snap *vmopv1.VirtualMachineSnapshotDiskSpec,
+	volPath, snapPath *field.Path) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if !pkgcfg.FromContext(ctx).Features.CSIBackupAPI {
+		allErrs = append(allErrs, field.Forbidden(
+			snapPath, "VirtualMachineSnapshot volume source is not supported because CSIBackupAPI feature is disabled"))
+	}
+
+	if snap.Name == "" {
+		allErrs = append(allErrs, field.Required(
+			snapPath.Child("name"), ""))
+	}
+	if snap.DiskID == "" {
+		allErrs = append(allErrs, field.Required(
+			snapPath.Child("diskID"), ""))
+	}
+	if vol.DiskMode != vmopv1.VolumeDiskModeIndependentNonPersistent {
+		allErrs = append(allErrs, field.Invalid(
+			volPath.Child("diskMode"),
+			vol.DiskMode,
+			"diskMode must be IndependentNonPersistent when using a VirtualMachineSnapshot volume source"))
+	}
+	if vol.Removable != nil && !*vol.Removable {
+		allErrs = append(allErrs, field.Invalid(
+			volPath.Child("removable"),
+			*vol.Removable,
+			"removable must be true when using a VirtualMachineSnapshot volume source"))
+	}
+
+	snapNamespace := vm.Namespace
+
+	sarExtra := make(map[string]authorizationv1.ExtraValue)
+	for k, v := range ctx.UserInfo.Extra {
+		sarExtra[k] = authorizationv1.ExtraValue(v)
+	}
+
+	for _, verb := range []string{"get", "create", "delete"} {
+		sar := &authorizationv1.SubjectAccessReview{
+			Spec: authorizationv1.SubjectAccessReviewSpec{
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Namespace: snapNamespace,
+					Verb:      verb,
+					Group:     vmopv1.GroupVersion.Group,
+					Resource:  "virtualmachinesnapshots",
+					Name:      snap.Name,
+				},
+				User:   ctx.UserInfo.Username,
+				Groups: ctx.UserInfo.Groups,
+				UID:    ctx.UserInfo.UID,
+				Extra:  sarExtra,
+			},
+		}
+
+		if err := v.client.Create(ctx, sar); err != nil {
+			allErrs = append(allErrs, field.InternalError(snapPath, err))
+			break
+		} else if !sar.Status.Allowed {
+			allErrs = append(allErrs, field.Forbidden(snapPath, fmt.Sprintf("user %s cannot %s VirtualMachineSnapshot %s in namespace %s", ctx.UserInfo.Username, verb, snap.Name, snapNamespace)))
+			break
+		}
+	}
+
+	return allErrs
 }

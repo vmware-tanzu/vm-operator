@@ -9,6 +9,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 )
 
@@ -46,4 +47,46 @@ func batchAttachConditionsIncludeCacheMissMsg(
 		}
 	}
 	return false
+}
+
+// IsSnapshotVolume reports whether the volume with the given name is a VirtualMachineSnapshot volume,
+// either specified in vm.Spec.Volumes or present in vm.Status.Volumes.
+func IsSnapshotVolume(vm *vmopv1.VirtualMachine, volName string) bool {
+	if vm == nil {
+		return false
+	}
+	for _, vol := range vm.Spec.Volumes {
+		if vol.Name == volName && vol.VirtualMachineSnapshot != nil {
+			return true
+		}
+	}
+	// Also check if it's in the status but not in the spec (detaching)
+	for _, vol := range vm.Status.Volumes {
+		if vol.Name == volName && vol.Type == vmopv1.VolumeTypeClassic && vol.Attached {
+			return true
+		}
+	}
+	return false
+}
+
+// ShouldDeleteVolumeStatus reports whether the volume status entry should be removed
+// during volume controller reconciliation of managed volumes.
+// Classic volumes and VirtualMachineSnapshot volumes are preserved because they are
+// managed by the virtualmachine controller, not CNS.
+func ShouldDeleteVolumeStatus(vm *vmopv1.VirtualMachine, e vmopv1.VirtualMachineVolumeStatus) bool {
+	if IsSnapshotVolume(vm, e.Name) {
+		return false
+	}
+	if strings.HasSuffix(e.Name, ":detaching") {
+		originalName := strings.TrimSuffix(e.Name, ":detaching")
+		if IsSnapshotVolume(vm, originalName) {
+			return false
+		}
+	}
+
+	if e.Type == vmopv1.VolumeTypeClassic {
+		return false
+	}
+
+	return true
 }

@@ -637,6 +637,24 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
+				name: "spec.volumes.virtualMachineSnapshot",
+				hub: &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Volumes: []vmopv1.VirtualMachineVolume{
+							{
+								Name: "snap-vol",
+								VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+									VirtualMachineSnapshot: &vmopv1.VirtualMachineSnapshotDiskSpec{
+										Name:   "my-snap",
+										DiskID: "my-disk",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
 				name: "status.network.interfaces[].vnumaNodeID and vmxnet3",
 				hub: &vmopv1.VirtualMachine{
 					Status: vmopv1.VirtualMachineStatus{

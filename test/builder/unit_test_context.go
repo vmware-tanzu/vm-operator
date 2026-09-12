@@ -138,6 +138,26 @@ func NewUnitTestContextForValidatingWebhook(
 	return ctx
 }
 
+func NewUnitTestContextForValidatingWebhookWithFuncs(
+	funcs interceptor.Funcs,
+	validatorFn builder.ValidatorFunc,
+	obj, oldObj *unstructured.Unstructured,
+	initObjects ...client.Object) *UnitTestContextForValidatingWebhook {
+
+	fakeClient := NewFakeClientWithInterceptors(funcs, initObjects...)
+	fakeManagerContext := fake.NewControllerManagerContext()
+	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
+
+	ctx := &UnitTestContextForValidatingWebhook{
+		WebhookRequestContext: *(fake.NewWebhookRequestContext(fakeWebhookContext, obj, oldObj)),
+		Client:                fakeClient,
+		Key:                   client.ObjectKey{Namespace: obj.GetNamespace(), Name: obj.GetName()},
+		Validator:             validatorFn(fakeClient),
+	}
+
+	return ctx
+}
+
 // UnitTestContextForMutatingWebhook is used for unit testing mutating webhooks.
 type UnitTestContextForMutatingWebhook struct {
 	// WebhookRequestContext is initialized with fake.NewWebhookRequestContext

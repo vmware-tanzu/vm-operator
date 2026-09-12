@@ -93,6 +93,10 @@ func CreateInstanceStorageDiskDevices(isVolumes []vmopv1.VirtualMachineVolume) [
 				Id: constants.InstanceStorageVDiskID,
 			},
 		}
+		if volume.UnitNumber != nil {
+			unitNumber := *volume.UnitNumber
+			device.UnitNumber = &unitNumber
+		}
 		devices = append(devices, device)
 		deviceKey--
 	}

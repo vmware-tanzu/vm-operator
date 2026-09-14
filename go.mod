@@ -37,7 +37,7 @@ require (
 
 // The version of Ginkgo must match the version in hack/tools/go.mod and api/test/go.mod.
 // If updating one, please update the others.
-require github.com/onsi/ginkgo/v2 v2.32.1
+require github.com/onsi/ginkgo/v2 v2.32.2
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0

@@ -1920,7 +1920,6 @@ func (d *wcpDcliClient) BackupKeyProvider(provider string) error {
 	return nil
 }
 
-
 // AssignLicenseEntitlement assigns the given license entitlement to the cluster using the dcli cis command.
 func (d *wcpDcliClient) AssignLicenseEntitlement(signedEntitlement string) (string, error) {
 	cmd := fmt.Sprintf("%s %s entitlements update-task --other-vc-usages '[]' --configuration '%s'", showUnreleased, dcliCISLicenseEntitlementPrefix, signedEntitlement)
@@ -2132,18 +2131,24 @@ func (d *wcpDcliClient) AssignTagsToHost(tagIDs []string, hostID string) error {
 }
 
 // CreateComputePolicy creates a compute policy with the given spec and returns the created compute policy ID.
+// HostTagID is optional -- some capabilities (e.g. DisableDrsVmotion) only
+// take a VM tag.
 func (d *wcpDcliClient) CreateComputePolicy(spec ComputePolicySpec) (string, error) {
-	cmd := fmt.Sprintf("%s %s compute policies create --capability %s --name %s --description \"%s\" --host-tag %s --vm-tag %s",
+	var cmd strings.Builder
+	fmt.Fprintf(&cmd, "%s %s compute policies create --capability %s --name %s --description \"%s\" --vm-tag %s",
 		dcliVCenterPrefix,
 		showUnreleased,
 		spec.Capability,
 		spec.Name,
 		spec.Description,
-		spec.HostTagID,
 		spec.VMTagID,
 	)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	if spec.HostTagID != "" {
+		fmt.Fprintf(&cmd, " --host-tag %s", spec.HostTagID)
+	}
+
+	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
 	if err != nil {
 		return "", DcliError{
 			rawResponse: string(resp),

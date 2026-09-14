@@ -732,34 +732,6 @@ func matchLabelSelector(labels map[string]string) []metav1.LabelSelectorRequirem
 	return matchExpressions
 }
 
-// createTagPolicy creates a TagPolicy CR directly via an admin client.
-//
-// TODO(vmop-4104): replace with a call into a WCP admin API once one exists
-// for this CRD, mirroring how wcp.WorkloadManagementAPI.CreateInfraPolicy
-// mirrors ComputePolicy CRs from the WCP InfraPolicy admin API today.
-func createTagPolicy(
-	ctx context.Context,
-	adminClient ctrlclient.Client,
-	namespace, name string,
-	tagIDs []string) *vspherepolv1.TagPolicy {
-
-	GinkgoHelper()
-
-	obj := &vspherepolv1.TagPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: vspherepolv1.TagPolicySpec{
-			Tags: tagIDs,
-		},
-	}
-
-	Expect(adminClient.Create(ctx, obj)).To(Succeed(), "failed to create TagPolicy %q", name)
-
-	return obj
-}
-
 // wcpEnforcementMode converts a vspherepolv1.PolicyEnforcementMode
 // ("Mandatory"/"Optional") into the casing the WCP admin API's
 // InfraPolicyEnforcementMode enum uses ("MANDATORY"/"OPTIONAL").
@@ -787,80 +759,6 @@ func waitForVSpherePolicyCreated(
 		}, obj)).To(Succeed())
 	}, input.Config.GetIntervals("default", "wait-policy-evaluation-creation")...).
 		Should(Succeed(), "%T %q should be mirrored into the Supervisor cluster", obj, name)
-}
-
-// createVSphereInfraPolicy creates the real vCenter compute policy and WCP
-// infrastructure policy backing an AutomaticVMEvictionPolicy/
-// BestEffortRestartPolicy admin object's required PolicyID field, exactly
-// mirroring how pinVMToHost creates a host-affinity ComputePolicy+InfraPolicy
-// pair (see virtualmachinelcm.go): a host tag/VM tag pair is created, the
-// host tag is assigned to an arbitrary real host (the eviction/restart
-// mechanism doesn't act on a specific host, but CreateComputePolicy always
-// requires a host tag), and vmTagID -- the real vSphere tag the caller
-// already created via createVSphereTag -- becomes the ComputePolicy's VM
-// tag. Applying the resulting InfraPolicy to the namespace is what causes
-// WCP to mirror it into the Supervisor cluster as the corresponding CR --
-// including an internally-created TagPolicy wrapping vmTagID, which the
-// caller never manages directly. The only thing that determines which CR
-// kind (ComputePolicy/AutomaticVMEvictionPolicy/BestEffortRestartPolicy)
-// gets mirrored down is the capability of the underlying ComputePolicy.
-//
-// UpdateNamespaceWithInfraPolicies sets the namespace's infra-policy list
-// rather than appending to it (every other caller in this suite always
-// passes the full accumulated list in one call -- see pinVMToHost), so
-// callers applying more than one infra policy to the same namespace must
-// thread the returned list through each successive call to avoid dropping
-// an earlier one.
-func createVSphereInfraPolicy(
-	wcpClient wcp.WorkloadManagementAPI,
-	namespace, name string,
-	capability wcp.ComputePolicyCapability,
-	enforcementMode wcp.InfraPolicyEnforcementMode,
-	matchLabel map[string]string,
-	vmTagID string,
-	existingInfraPolicyNames []string) []string {
-
-	GinkgoHelper()
-
-	By("Creating a real vCenter compute policy to back the policy's PolicyID")
-	hostIDs, err := wcpClient.ListHostIDs()
-	Expect(err).ToNot(HaveOccurred(), "failed to list host IDs")
-	Expect(hostIDs).NotTo(BeEmpty(), "at least one host should be available")
-
-	tagCategoryID, err := wcpClient.CreateTagCategory(
-		fmt.Sprintf("%s-host-category-%s", name, capiutil.RandomString(4)), "e2e VM eviction policy test")
-	Expect(err).ToNot(HaveOccurred(), "failed to create host tag category")
-
-	hostTagID, err := wcpClient.CreateTag(
-		fmt.Sprintf("%s-host-tag-%s", name, capiutil.RandomString(4)), "e2e VM eviction policy test", tagCategoryID)
-	Expect(err).ToNot(HaveOccurred(), "failed to create host tag")
-
-	Expect(wcpClient.AssignTagsToHost([]string{hostTagID}, hostIDs[0])).
-		To(Succeed(), "failed to assign tag to host %q", hostIDs[0])
-
-	computePolicyID, err := wcpClient.CreateComputePolicy(wcp.ComputePolicySpec{
-		Name:        fmt.Sprintf("%s-compute-policy-%s", name, capiutil.RandomString(4)),
-		Description: "e2e VM eviction policy test",
-		HostTagID:   hostTagID,
-		VMTagID:     vmTagID,
-		Capability:  capability,
-	})
-	Expect(err).ToNot(HaveOccurred(), "failed to create compute policy")
-	Expect(computePolicyID).NotTo(BeEmpty(), "compute policy ID should be returned")
-
-	Expect(wcpClient.CreateInfraPolicy(wcp.InfraPolicySpec{
-		Name:               name,
-		Description:        "e2e VM eviction policy test",
-		ComputePolicyID:    computePolicyID,
-		EnforcementMode:    enforcementMode,
-		MatchWorkloadLabel: matchLabel,
-	})).To(Succeed(), "failed to create infrastructure policy %q", name)
-
-	allInfraPolicyNames := append(append([]string{}, existingInfraPolicyNames...), name)
-	Expect(wcpClient.UpdateNamespaceWithInfraPolicies(namespace, allInfraPolicyNames...)).
-		To(Succeed(), "failed to apply infrastructure policy %q to namespace", name)
-
-	return allInfraPolicyNames
 }
 
 // createAutomaticVMEvictionPolicy creates the real vCenter compute policy

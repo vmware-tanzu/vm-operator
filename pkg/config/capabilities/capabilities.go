@@ -146,6 +146,12 @@ const (
 	// BestEffortRestartPolicy CRDs as well as the VirtualMachinePowerStateSynced
 	// condition's InfraInMaintenance reason.
 	CapabilityKeyVMEviction = "supports_infrapolicy_vm_evacuation"
+
+	// CapabilityKeyControlledRebalancingPolicy is the name of the capability
+	// key defined in the Supervisor capabilities CRD for the
+	// ControlledRebalancingPolicy CRD, which excludes matching workloads from
+	// DRS evacuation during cluster load balancing.
+	CapabilityKeyControlledRebalancingPolicy = "supports_infrapolicy_controlled_rebalancing"
 )
 
 var (
@@ -326,6 +332,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.ExtensionCompatConstraint = capStatus.Activated
 		case CapabilityKeyVMEviction:
 			fs.VMEviction = capStatus.Activated
+		case CapabilityKeyControlledRebalancingPolicy:
+			fs.ControlledRebalancingPolicy = capStatus.Activated
 		}
 
 	}

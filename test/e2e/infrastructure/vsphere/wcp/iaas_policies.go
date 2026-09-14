@@ -10,6 +10,11 @@ const (
 	ComputePolicyCapabilityVMHostAntiAffinity ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_host_anti_affinity"
 	AutomaticVMEvictionCapability             ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.host.evacuation.automatic_vm_eviction"
 	BestEffortRestartCapability               ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm.evacuation.best_effort_restart"
+	// ControlledRebalancingCapability backs the ControlledRebalancingPolicy
+	// CRD. It is gated behind the vCenter FSS LatencySensitiveVmsResourceMgmt,
+	// same as the Supervisor capability that mirrors the CR down
+	// (consts.ControlledRebalancingPolicyCapabilityName).
+	ControlledRebalancingCapability ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.disable_drs_vmotion"
 )
 
 type ComputePolicySpec struct {

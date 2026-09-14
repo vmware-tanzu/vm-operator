@@ -81,6 +81,14 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 					policyToPolicyEvaluationMapperFn(ctx, r.Client)))
 	}
 
+	if pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy {
+		builder = builder.
+			Watches(
+				&vspherepolv1.ControlledRebalancingPolicy{},
+				handler.EnqueueRequestsFromMapFunc(
+					policyToPolicyEvaluationMapperFn(ctx, r.Client)))
+	}
+
 	return builder.
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
@@ -127,6 +135,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=automaticvmevictionpolicies/status,verbs=get
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=besteffortrestartpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=besteffortrestartpolicies/status,verbs=get
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=controlledrebalancingpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=controlledrebalancingpolicies/status,verbs=get
 
 func (r *Reconciler) Reconcile(
 	ctx context.Context,
@@ -215,10 +225,11 @@ func (r *Reconciler) ReconcileNormal(
 
 // matchablePolicy is implemented by every policy kind that can be matched
 // against a PolicyEvaluation (ComputePolicy, AutomaticVMEvictionPolicy,
-// BestEffortRestartPolicy, ...). Each policy kind keeps its own explicit
-// List/loop (see reconcileMandatoryComputePolicies,
+// BestEffortRestartPolicy, ControlledRebalancingPolicy, ...). Each policy
+// kind keeps its own explicit List/loop (see reconcileMandatoryComputePolicies,
 // reconcileMandatoryAutomaticVMEvictionPolicies,
-// reconcileMandatoryBestEffortRestartPolicies below) and only converges here
+// reconcileMandatoryBestEffortRestartPolicies,
+// reconcileMandatoryControlledRebalancingPolicies below) and only converges here
 // to share the match-evaluation and result-recording logic, operating on the
 // fetched policy object.
 type matchablePolicy interface {
@@ -278,6 +289,13 @@ func (r *Reconciler) reconcileMandatoryPolicies(
 		if err := r.reconcileMandatoryBestEffortRestartPolicies(ctx, obj); err != nil {
 			return fmt.Errorf(
 				"failed to reconcile mandatory best-effort restart policies: %w", err)
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy {
+		if err := r.reconcileMandatoryControlledRebalancingPolicies(ctx, obj); err != nil {
+			return fmt.Errorf(
+				"failed to reconcile mandatory controlled rebalancing policies: %w", err)
 		}
 	}
 
@@ -351,6 +369,23 @@ func (r *Reconciler) reconcileMandatoryBestEffortRestartPolicies(
 
 	return r.processMandatoryPolicies(
 		ctx, obj, bestEffortRestartPolicyKind, toMatchablePolicies(list.Items))
+}
+
+func (r *Reconciler) reconcileMandatoryControlledRebalancingPolicies(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation) error {
+
+	var list vspherepolv1.ControlledRebalancingPolicyList
+	if err := r.Client.List(
+		ctx,
+		&list,
+		ctrlclient.InNamespace(obj.Namespace)); err != nil {
+
+		return fmt.Errorf("failed to list controlled rebalancing policies: %w", err)
+	}
+
+	return r.processMandatoryPolicies(
+		ctx, obj, controlledRebalancingPolicyKind, toMatchablePolicies(list.Items))
 }
 
 func matchesPolicy(
@@ -632,16 +667,21 @@ func matchesGuestFamily(
 }
 
 const (
-	computePolicyKind             = "ComputePolicy"
-	automaticVMEvictionPolicyKind = "AutomaticVMEvictionPolicy"
-	bestEffortRestartPolicyKind   = "BestEffortRestartPolicy"
+	computePolicyKind               = "ComputePolicy"
+	automaticVMEvictionPolicyKind   = "AutomaticVMEvictionPolicy"
+	bestEffortRestartPolicyKind     = "BestEffortRestartPolicy"
+	controlledRebalancingPolicyKind = "ControlledRebalancingPolicy"
 )
 
 func (r *Reconciler) reconcileExplicitPolicies(
 	ctx context.Context,
 	obj *vspherepolv1.PolicyEvaluation) error {
 
-	vmEvictionEnabled := pkgcfg.FromContext(ctx).Features.VMEviction
+	logger := pkglog.FromContextOrDefault(ctx)
+
+	features := pkgcfg.FromContext(ctx).Features
+	vmEvictionEnabled := features.VMEviction
+	controlledRebalancingEnabled := features.ControlledRebalancingPolicy
 
 	for _, ref := range obj.Spec.Policies {
 		switch ref.Kind {
@@ -653,7 +693,7 @@ func (r *Reconciler) reconcileExplicitPolicies(
 			}
 		case automaticVMEvictionPolicyKind:
 			if !vmEvictionEnabled {
-				r.Logger.Info("skipping disabled policy kind",
+				logger.Info("skipping disabled policy kind",
 					"kind", ref.Kind, "name", ref.Name)
 				continue
 			}
@@ -664,7 +704,7 @@ func (r *Reconciler) reconcileExplicitPolicies(
 			}
 		case bestEffortRestartPolicyKind:
 			if !vmEvictionEnabled {
-				r.Logger.Info("skipping disabled policy kind",
+				logger.Info("skipping disabled policy kind",
 					"kind", ref.Kind, "name", ref.Name)
 				continue
 			}
@@ -673,9 +713,20 @@ func (r *Reconciler) reconcileExplicitPolicies(
 					"failed to add explicit best-effort restart policy %s: %w",
 					ref.Name, err)
 			}
+		case controlledRebalancingPolicyKind:
+			if !controlledRebalancingEnabled {
+				logger.Info("skipping disabled policy kind",
+					"kind", ref.Kind, "name", ref.Name)
+				continue
+			}
+			if err := r.addControlledRebalancingPolicyRef(ctx, obj, ref); err != nil {
+				return fmt.Errorf(
+					"failed to add explicit controlled rebalancing policy %s: %w",
+					ref.Name, err)
+			}
 		default:
 			// Log and skip unknown policy kinds
-			r.Logger.Info("skipping unknown policy kind",
+			logger.Info("skipping unknown policy kind",
 				"kind", ref.Kind,
 				"name", ref.Name)
 		}
@@ -742,6 +793,26 @@ func (r *Reconciler) addBestEffortRestartPolicyRef(
 	}
 
 	return r.addExplicitPolicyMatch(ctx, obj, bestEffortRestartPolicyKind, &pol)
+}
+
+func (r *Reconciler) addControlledRebalancingPolicyRef(
+	ctx context.Context,
+	obj *vspherepolv1.PolicyEvaluation,
+	ref vspherepolv1.LocalObjectRef) error {
+
+	var (
+		pol vspherepolv1.ControlledRebalancingPolicy
+		key = ctrlclient.ObjectKey{
+			Namespace: obj.Namespace,
+			Name:      ref.Name,
+		}
+	)
+
+	if err := r.Client.Get(ctx, key, &pol); err != nil {
+		return fmt.Errorf("failed to get controlled rebalancing policy: %w", err)
+	}
+
+	return r.addExplicitPolicyMatch(ctx, obj, controlledRebalancingPolicyKind, &pol)
 }
 
 // addExplicitPolicyMatch evaluates p's MatchSpec against obj on behalf of an
@@ -856,7 +927,8 @@ func virtualMachineToPolicyEvaluationMapperFn(
 
 // policyToPolicyEvaluationMapperFn returns a mapper function that returns the
 // PolicyEvaluations that need to be reconciled for a compute-policy-kind
-// event (ComputePolicy, AutomaticVMEvictionPolicy, BestEffortRestartPolicy).
+// event (ComputePolicy, AutomaticVMEvictionPolicy, BestEffortRestartPolicy,
+// ControlledRebalancingPolicy).
 // For now, we just return all the objects in the namespace to force a
 // re-evaluation but it should be smarter: we could see if it matches here
 // (but at the cost of double evaluation), or check the PolicyEval

@@ -82,18 +82,38 @@ type ControlledRebalancingPolicy struct {
 	Status ControlledRebalancingPolicyStatus `json:"status,omitempty"`
 }
 
-func (p ControlledRebalancingPolicy) GetConditions() []metav1.Condition {
+// GetPolicyEnforcementMode returns the policy's enforcement mode.
+func (p *ControlledRebalancingPolicy) GetPolicyEnforcementMode() PolicyEnforcementMode {
+	return p.Spec.EnforcementMode
+}
+
+// GetPolicyMatch returns the policy's match spec.
+func (p *ControlledRebalancingPolicy) GetPolicyMatch() *MatchSpec {
+	return p.Spec.Match
+}
+
+// GetPolicyTagNames returns the names of the TagPolicy objects associated
+// with this policy.
+func (p *ControlledRebalancingPolicy) GetPolicyTagNames() []string {
+	return p.Spec.Tags
+}
+
+// GetConditions returns the conditions associated with the policy.
+func (p *ControlledRebalancingPolicy) GetConditions() []metav1.Condition {
 	return p.Status.Conditions
 }
 
+// SetConditions sets the conditions associated with the policy.
 func (p *ControlledRebalancingPolicy) SetConditions(conditions []metav1.Condition) {
 	p.Status.Conditions = conditions
 }
 
-func (p ControlledRebalancingPolicyStatus) GetConditions() []metav1.Condition {
+// GetConditions returns the conditions associated with the policy status.
+func (p *ControlledRebalancingPolicyStatus) GetConditions() []metav1.Condition {
 	return p.Conditions
 }
 
+// SetConditions sets the conditions associated with the policy status.
 func (p *ControlledRebalancingPolicyStatus) SetConditions(conditions []metav1.Condition) {
 	p.Conditions = conditions
 }

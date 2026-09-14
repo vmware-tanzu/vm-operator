@@ -261,6 +261,17 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
+		Context("CONTROLLED-REBALANCING-POLICY", func() {
+			computepolicies.ControlledRebalancingSpec(context.TODO(), func() computepolicies.SpecInput {
+				return computepolicies.SpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					WCPClient:        wcpClient,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
 		Context("VM-LOCATION", func() {
 			virtualmachine.VMLocationSpec(context.TODO(), func() virtualmachine.VMLocationSpecInput {
 				return virtualmachine.VMLocationSpecInput{

@@ -1058,6 +1058,9 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// directly (runs before the outer cleanup since DeferCleanup is LIFO) so
 			// that cleanup isn't left waiting on it. A no-op if RegisterVM already
 			// reconciled this FCD away via the normal (passing) path.
+			// origFCDID is also used below to wait for CNS to drop this volume
+			// before RegisterVM is invoked; capture both before the later
+			// findDisk calls reassign `disk`.
 			origDatastore, origFCDID := ds, disk.VDiskId.Id
 			DeferCleanup(func(ctx context.Context) {
 				task, err := fcdManager.Delete(ctx, origDatastore, origFCDID)
@@ -1108,6 +1111,22 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(err).ToNot(HaveOccurred())
 			err = task.Wait(ctx)
 			Expect(err).ToNot(HaveOccurred())
+
+			// The FCD is already gone by this point (asserted above), but CNS
+			// only learns that asynchronously -- roughly 3.5 minutes in practice.
+			// RegisterVM decides whether the original PVC is dangling by querying
+			// CNS exactly once, with no retry, so invoking it before CNS has
+			// caught up makes it keep the stale volume and simply append the
+			// restored one, leaving three volumes instead of two. Wait for CNS to
+			// drop the original volume so RegisterVM observes a settled state.
+			By("Waiting for CNS to drop the original volume")
+			Eventually(func(g Gomega) {
+				res, err := cnsClient.QueryVolume(ctx, &cnstypes.CnsQueryFilter{
+					VolumeIds: []cnstypes.CnsVolumeId{{Id: origFCDID}},
+				})
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(res.Volumes).To(BeEmpty(), "CNS still reports volume %s; RegisterVM would not detect it as dangling", origFCDID)
+			}, 8*time.Minute, 15*time.Second).Should(Succeed())
 
 			taskInfo, err := vmservice.InvokeRegisterVM(ctx, vmMoID, existingVM.Namespace, clusterProxy, wcpClient)
 

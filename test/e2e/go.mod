@@ -53,7 +53,7 @@ replace (
 
 require (
 	github.com/antchfx/htmlquery v1.3.6
-	github.com/onsi/ginkgo/v2 v2.32.1
+	github.com/onsi/ginkgo/v2 v2.32.2
 	github.com/onsi/gomega v1.43.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20260619161849-aeb1b9769d4b

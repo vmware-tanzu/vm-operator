@@ -40,6 +40,9 @@ const (
 	// EnableDiskUUIDExtraConfigKey Enable UUID ExtraConfig key.
 	EnableDiskUUIDExtraConfigKey = "disk.enableUUID"
 
+	// AllowDupDiskUUIDExtraConfigKey Allow duplicate disk UUID ExtraConfig key.
+	AllowDupDiskUUIDExtraConfigKey = "disk.AllowDupUUID"
+
 	// MMPowerOffVMExtraConfigKey ExtraConfig key to enable DRS to powerOff VMs
 	// when the underlying host enters into maintenance mode. This is to ensure
 	// the maintenance mode workflow is consistent for VMs with vGPU/DDPIO

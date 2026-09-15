@@ -284,14 +284,16 @@ func ensureUnmanagedDisksConfigsAreUpdated(
 
 		newCapacity := info.Disks[i].NewCapacityInBytes
 
-		if info.Disks[i].StoragePolicyID == "" || newCapacity > 0 {
-			hasConfigSpecChanges = true
-
-			var pid string
-			if info.Disks[i].StoragePolicyID == "" {
-				pid = sc2pol[info.Disks[i].StorageClass]
+		var pid string
+		if info.Disks[i].StoragePolicyID == "" {
+			pid = sc2pol[info.Disks[i].StorageClass]
+			if pid != "" {
 				info.Disks[i].StoragePolicyID = pid
 			}
+		}
+
+		if pid != "" || newCapacity > 0 {
+			hasConfigSpecChanges = true
 
 			alreadyChanged := false
 			for j := range configSpec.DeviceChange {

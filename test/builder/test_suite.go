@@ -371,6 +371,14 @@ func (s *TestSuite) NewUnitTestContextForValidatingWebhook(
 // suite's mutator.
 //
 // Returns nil if unit testing is disabled.
+
+func (s *TestSuite) NewUnitTestContextForValidatingWebhookWithFuncs(
+	funcs interceptor.Funcs,
+	obj, oldObj *unstructured.Unstructured,
+	initObjects ...client.Object) *UnitTestContextForValidatingWebhook {
+
+	return NewUnitTestContextForValidatingWebhookWithFuncs(funcs, s.validatorFn, obj, oldObj, initObjects...)
+}
 func (s *TestSuite) NewUnitTestContextForMutatingWebhook(obj *unstructured.Unstructured) *UnitTestContextForMutatingWebhook {
 	return NewUnitTestContextForMutatingWebhook(s.mutatorFn, obj)
 }

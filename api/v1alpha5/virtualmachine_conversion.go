@@ -14,6 +14,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
+func Convert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(
+	in *vmopv1.VirtualMachineVolumeSource, out *VirtualMachineVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(in, out, s)
+}
+
 func Convert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha5_VirtualMachineNetworkSpec(
 	in *vmopv1.VirtualMachineNetworkSpec, out *VirtualMachineNetworkSpec, s apiconversion.Scope) error {
 
@@ -201,6 +207,20 @@ func restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, src *vmopv1.VirtualMachi
 	dst.Spec.MemoryAdvanced = src.Spec.MemoryAdvanced
 }
 
+func restore_v1alpha6_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
+	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
+	for i := range src.Spec.Volumes {
+		vol := &src.Spec.Volumes[i]
+		srcVolMap[vol.Name] = vol
+	}
+	for i := range dst.Spec.Volumes {
+		dstVol := &dst.Spec.Volumes[i]
+		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
+			dstVol.VirtualMachineSnapshot = srcVol.VirtualMachineSnapshot
+		}
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachine)
@@ -224,6 +244,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineResources(dst, restored)
 	restore_v1alpha6_VirtualMachineCPUAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, restored)
+	restore_v1alpha6_VirtualMachineVolumes(dst, restored)
 
 	// END RESTORE
 

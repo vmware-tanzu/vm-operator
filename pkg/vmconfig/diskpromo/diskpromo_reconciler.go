@@ -13,6 +13,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -253,6 +254,12 @@ func (r reconciler) Reconcile(
 				// again.
 				//
 				// Ensure the promotion is marked completed.
+				pkgcond.MarkTrue(
+					vm,
+					vmopv1.VirtualMachineDiskPromotionSynced)
+			} else if c.Status != metav1.ConditionTrue {
+				logger.V(4).Info(
+					"Skipping disk promotion for VM with no disks to promote")
 				pkgcond.MarkTrue(
 					vm,
 					vmopv1.VirtualMachineDiskPromotionSynced)

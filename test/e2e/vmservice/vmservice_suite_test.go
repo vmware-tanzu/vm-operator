@@ -483,9 +483,9 @@ func deployVMWithCloudInit(ctx context.Context, ns, vmName, vmiName string) {
 		ResourcePolicy:   config.InfraConfig.ManagementClusterConfig.Resources.VMResourcePolicyName,
 		Transport:        "CloudInit",
 		SecretName:       secretName,
-		PowerState:       "poweredOn",
+		PowerState:       "PoweredOn",
 	}
-	vmYaml := manifestbuilders.GetVirtualMachineYaml(vmParameters)
+	vmYaml := manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
 	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM:\n%s", string(vmYaml))
 }
 

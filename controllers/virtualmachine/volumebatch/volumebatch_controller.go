@@ -326,10 +326,10 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	}
 
 	// Get existing VM managed volumes status. Since we only update managed
-	// volumes here, we skip all classic volumes.
+	// volumes here, we skip all classic volumes and snapshot volumes.
 	existingVMManagedVolStatus := map[string]vmopv1.VirtualMachineVolumeStatus{}
 	for _, vol := range ctx.VM.Status.Volumes {
-		if vol.Type != vmopv1.VolumeTypeClassic {
+		if vol.Type != vmopv1.VolumeTypeClassic && !vmopv1util.IsSnapshotVolume(ctx.VM, vol.Name) {
 			existingVMManagedVolStatus[vol.Name] = vol
 		}
 	}
@@ -365,7 +365,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 	// Record the volumes currently in status so we can log what's removed.
 	beforeStatusVolumes := make(map[string]string, len(ctx.VM.Spec.Volumes))
 	for _, vol := range ctx.VM.Status.Volumes {
-		if vol.Type == vmopv1.VolumeTypeManaged {
+		if vol.Type == vmopv1.VolumeTypeManaged && !vmopv1util.IsSnapshotVolume(ctx.VM, vol.Name) {
 			name := strings.TrimSuffix(vol.Name, volumeNameDetachSuffix)
 			beforeStatusVolumes[name] = vol.DiskUUID
 		}
@@ -394,7 +394,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VolumeContext) error {
 
 	if len(beforeStatusVolumes) > 0 {
 		for _, vol := range ctx.VM.Status.Volumes {
-			if vol.Type != vmopv1.VolumeTypeManaged {
+			if vol.Type != vmopv1.VolumeTypeManaged || vmopv1util.IsSnapshotVolume(ctx.VM, vol.Name) {
 				continue
 			}
 
@@ -792,7 +792,7 @@ func (r *Reconciler) getVMVolStatusesFromBatchAttachment(
 	// Target IDs of the classic disks in VM volume status.
 	existingClassicDiskTargetIDs := sets.New[string]()
 	for _, volStatus := range ctx.VM.Status.Volumes {
-		if volStatus.Type == vmopv1.VolumeTypeClassic {
+		if volStatus.Type == vmopv1.VolumeTypeClassic || vmopv1util.IsSnapshotVolume(ctx.VM, volStatus.Name) {
 			existingClassicDiskTargetIDs.Insert(vmopv1util.GetTargetID(volStatus))
 		}
 	}
@@ -1246,7 +1246,7 @@ func updateVMVolumeStatus(
 	// Remove any managed volumes from the existing status.
 	ctx.VM.Status.Volumes = slices.DeleteFunc(ctx.VM.Status.Volumes,
 		func(e vmopv1.VirtualMachineVolumeStatus) bool {
-			return e.Type != vmopv1.VolumeTypeClassic
+			return vmopv1util.ShouldDeleteVolumeStatus(ctx.VM, e)
 		})
 
 	ctx.VM.Status.Volumes = append(ctx.VM.Status.Volumes, v1...)

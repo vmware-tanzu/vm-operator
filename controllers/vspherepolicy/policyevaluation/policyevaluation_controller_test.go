@@ -2389,6 +2389,242 @@ var _ = Describe("Reconcile", func() {
 				})
 			})
 
+			Context("with ControlledRebalancingPolicy feature enabled", func() {
+				BeforeEach(func() {
+					ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.ControlledRebalancingPolicy = true
+					})
+				})
+
+				Context("with mandatory ControlledRebalancingPolicy", func() {
+					var rebalancingPolicy *vspherepolv1.ControlledRebalancingPolicy
+
+					BeforeEach(func() {
+						rebalancingPolicy = &vspherepolv1.ControlledRebalancingPolicy{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "test-rebalancing-policy",
+								Namespace: namespace,
+							},
+							Spec: vspherepolv1.ControlledRebalancingPolicySpec{
+								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+							},
+						}
+						withObjs = append(withObjs, rebalancingPolicy)
+					})
+
+					It("should add matching policy to status", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(Equal(ctrl.Result{}))
+
+						var updated vspherepolv1.PolicyEvaluation
+						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+						Expect(updated.Status.Policies).To(HaveLen(1))
+						Expect(updated.Status.Policies[0].APIVersion).To(Equal(vspherepolv1.GroupVersion.String()))
+						Expect(updated.Status.Policies[0].Kind).To(Equal("ControlledRebalancingPolicy"))
+						Expect(updated.Status.Policies[0].Name).To(Equal(rebalancingPolicy.Name))
+						Expect(updated.Status.Policies[0].Generation).To(Equal(rebalancingPolicy.Generation))
+						Expect(updated.Status.Policies[0].Tags).To(BeEmpty())
+					})
+
+					Context("with tags", func() {
+						var tagPolicy *vspherepolv1.TagPolicy
+
+						BeforeEach(func() {
+							tagPolicy = &vspherepolv1.TagPolicy{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "rebalancing-tag-policy",
+									Namespace: namespace,
+								},
+								Spec: vspherepolv1.TagPolicySpec{
+									Tags: []string{"uuid1", "uuid2"},
+								},
+							}
+							withObjs = append(withObjs, tagPolicy)
+							rebalancingPolicy.Spec.Tags = []string{"rebalancing-tag-policy"}
+						})
+
+						It("should resolve the policy's tags", func() {
+							req := ctrl.Request{
+								NamespacedName: types.NamespacedName{
+									Name:      obj.Name,
+									Namespace: obj.Namespace,
+								},
+							}
+
+							result, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(result).To(Equal(ctrl.Result{}))
+
+							var updated vspherepolv1.PolicyEvaluation
+							Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+							Expect(updated.Status.Policies).To(HaveLen(1))
+							Expect(updated.Status.Policies[0].Tags).To(ConsistOf("uuid1", "uuid2"))
+						})
+					})
+
+					Context("when a ComputePolicy also matches the VM", func() {
+						var computePolicy *vspherepolv1.ComputePolicy
+
+						BeforeEach(func() {
+							computePolicy = &vspherepolv1.ComputePolicy{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "test-compute-policy",
+									Namespace: namespace,
+								},
+								Spec: vspherepolv1.ComputePolicySpec{
+									EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+								},
+							}
+							withObjs = append(withObjs, computePolicy)
+						})
+
+						It("should surface both kinds in status.policies", func() {
+							req := ctrl.Request{
+								NamespacedName: types.NamespacedName{
+									Name:      obj.Name,
+									Namespace: obj.Namespace,
+								},
+							}
+
+							result, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(result).To(Equal(ctrl.Result{}))
+
+							var updated vspherepolv1.PolicyEvaluation
+							Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+							Expect(updated.Status.Policies).To(HaveLen(2))
+							Expect(updated.Status.Policies).To(ContainElements(
+								WithTransform(func(p vspherepolv1.PolicyEvaluationResult) string { return p.Kind }, Equal("ComputePolicy")),
+								WithTransform(func(p vspherepolv1.PolicyEvaluationResult) string { return p.Kind }, Equal("ControlledRebalancingPolicy")),
+							))
+						})
+					})
+				})
+
+				Context("with explicit ControlledRebalancingPolicy reference", func() {
+					BeforeEach(func() {
+						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+							{
+								APIVersion: vspherepolv1.GroupVersion.String(),
+								Kind:       "ControlledRebalancingPolicy",
+								Name:       "explicit-rebalancing-policy",
+							},
+						}
+					})
+
+					Context("when the referenced policy does not exist", func() {
+						It("should return an error", func() {
+							req := ctrl.Request{
+								NamespacedName: types.NamespacedName{
+									Name:      obj.Name,
+									Namespace: obj.Namespace,
+								},
+							}
+
+							result, err := reconciler.Reconcile(ctx, req)
+							Expect(err).To(HaveOccurred())
+							Expect(err.Error()).To(ContainSubstring("failed to add explicit controlled rebalancing policy"))
+							Expect(err.Error()).To(ContainSubstring("failed to get controlled rebalancing policy"))
+							Expect(result).To(Equal(ctrl.Result{}))
+						})
+					})
+
+					Context("when the referenced policy does not match", func() {
+						BeforeEach(func() {
+							withObjs = append(withObjs, &vspherepolv1.ControlledRebalancingPolicy{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "explicit-rebalancing-policy",
+									Namespace: namespace,
+								},
+								Spec: vspherepolv1.ControlledRebalancingPolicySpec{
+									EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+									Match: &vspherepolv1.MatchSpec{
+										Workload: &vspherepolv1.MatchWorkloadSpec{
+											Labels: []metav1.LabelSelectorRequirement{
+												{
+													Key:      "env",
+													Operator: metav1.LabelSelectorOpIn,
+													Values:   []string{"dev"},
+												},
+											},
+										},
+									},
+								},
+							})
+						})
+
+						It("should return an error", func() {
+							req := ctrl.Request{
+								NamespacedName: types.NamespacedName{
+									Name:      obj.Name,
+									Namespace: obj.Namespace,
+								},
+							}
+
+							result, err := reconciler.Reconcile(ctx, req)
+							Expect(err).To(HaveOccurred())
+							Expect(err.Error()).To(ContainSubstring("ControlledRebalancingPolicy \"explicit-rebalancing-policy\" does not match"))
+							Expect(result).To(Equal(ctrl.Result{}))
+						})
+					})
+
+					Context("when the referenced policy matches", func() {
+						BeforeEach(func() {
+							withObjs = append(withObjs, &vspherepolv1.ControlledRebalancingPolicy{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "explicit-rebalancing-policy",
+									Namespace: namespace,
+								},
+								Spec: vspherepolv1.ControlledRebalancingPolicySpec{
+									EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+									Match: &vspherepolv1.MatchSpec{
+										Workload: &vspherepolv1.MatchWorkloadSpec{
+											Labels: []metav1.LabelSelectorRequirement{
+												{
+													Key:      "env",
+													Operator: metav1.LabelSelectorOpIn,
+													Values:   []string{"prod"},
+												},
+											},
+										},
+									},
+								},
+							})
+							obj.Spec.Workload = &vspherepolv1.PolicyEvaluationWorkloadSpec{
+								Labels: map[string]string{"env": "prod"},
+							}
+						})
+
+						It("should add the policy to the status", func() {
+							req := ctrl.Request{
+								NamespacedName: types.NamespacedName{
+									Name:      obj.Name,
+									Namespace: obj.Namespace,
+								},
+							}
+
+							result, err := reconciler.Reconcile(ctx, req)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(result).To(Equal(ctrl.Result{}))
+
+							var updated vspherepolv1.PolicyEvaluation
+							Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+							Expect(updated.Status.Policies).To(HaveLen(1))
+							Expect(updated.Status.Policies[0].Kind).To(Equal("ControlledRebalancingPolicy"))
+							Expect(updated.Status.Policies[0].Name).To(Equal("explicit-rebalancing-policy"))
+						})
+					})
+				})
+			})
+
 			Context("with VMEviction feature disabled (the default)", func() {
 				Context("with a mandatory AutomaticVMEvictionPolicy present", func() {
 					BeforeEach(func() {
@@ -2488,6 +2724,66 @@ var _ = Describe("Reconcile", func() {
 								APIVersion: vspherepolv1.GroupVersion.String(),
 								Kind:       "BestEffortRestartPolicy",
 								Name:       "explicit-restart-policy",
+							},
+						}
+					})
+
+					It("should skip the disabled policy kind without error", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(Equal(ctrl.Result{}))
+
+						var updated vspherepolv1.PolicyEvaluation
+						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+						Expect(updated.Status.Policies).To(BeEmpty())
+					})
+				})
+
+				Context("with a mandatory ControlledRebalancingPolicy present", func() {
+					BeforeEach(func() {
+						withObjs = append(withObjs, &vspherepolv1.ControlledRebalancingPolicy{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "test-rebalancing-policy",
+								Namespace: namespace,
+							},
+							Spec: vspherepolv1.ControlledRebalancingPolicySpec{
+								EnforcementMode: vspherepolv1.PolicyEnforcementModeMandatory,
+							},
+						})
+					})
+
+					It("should not evaluate the policy", func() {
+						req := ctrl.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      obj.Name,
+								Namespace: obj.Namespace,
+							},
+						}
+
+						result, err := reconciler.Reconcile(ctx, req)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(result).To(Equal(ctrl.Result{}))
+
+						var updated vspherepolv1.PolicyEvaluation
+						Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &updated)).To(Succeed())
+						Expect(updated.Status.Policies).To(BeEmpty())
+					})
+				})
+
+				Context("with an explicit ControlledRebalancingPolicy reference", func() {
+					BeforeEach(func() {
+						obj.Spec.Policies = []vspherepolv1.LocalObjectRef{
+							{
+								APIVersion: vspherepolv1.GroupVersion.String(),
+								Kind:       "ControlledRebalancingPolicy",
+								Name:       "explicit-rebalancing-policy",
 							},
 						}
 					})

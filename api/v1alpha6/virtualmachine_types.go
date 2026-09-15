@@ -1225,7 +1225,7 @@ type VirtualMachineSpec struct {
 	// type=Optional may be applied explicitly to a VM.
 	//
 	// Valid policy types are: ComputePolicy, AutomaticVMEvictionPolicy,
-	// BestEffortRestartPolicy.
+	// BestEffortRestartPolicy, ControlledRebalancingPolicy.
 	Policies []PolicySpec `json:"policies,omitempty"`
 
 	// +optional

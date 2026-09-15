@@ -55,4 +55,9 @@ const (
 	// BestEffortRestartPolicy CRDs; must match
 	// pkg/config/capabilities.CapabilityKeyVMEviction.
 	VMEvictionCapabilityName = "supports_infrapolicy_vm_evacuation"
+
+	// ControlledRebalancingPolicyCapabilityName gates the
+	// ControlledRebalancingPolicy CRD; must match
+	// pkg/config/capabilities.CapabilityKeyControlledRebalancingPolicy.
+	ControlledRebalancingPolicyCapabilityName = "supports_infrapolicy_controlled_rebalancing"
 )

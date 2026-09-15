@@ -398,6 +398,7 @@ rules:
   - automaticvmevictionpolicies
   - besteffortrestartpolicies
   - computepolicies
+  - controlledrebalancingpolicies
   - tagpolicies
   verbs:
   - get
@@ -409,6 +410,7 @@ rules:
   - automaticvmevictionpolicies/status
   - besteffortrestartpolicies/status
   - computepolicies/status
+  - controlledrebalancingpolicies/status
   - tagpolicies/status
   verbs:
   - get

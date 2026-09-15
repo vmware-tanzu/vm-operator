@@ -2022,7 +2022,7 @@ spec:
     name: my-compute-policy
 ```
 
-Only `ComputePolicy`, `AutomaticVMEvictionPolicy`, and `BestEffortRestartPolicy` objects with `spec.enforcementMode: Optional` can be explicitly applied to VMs through the `spec.policies` field. Mandatory policies are automatically applied based on their match criteria and do not need to be specified.
+Only `ComputePolicy`, `AutomaticVMEvictionPolicy`, `BestEffortRestartPolicy`, and `ControlledRebalancingPolicy` objects with `spec.enforcementMode: Optional` can be explicitly applied to VMs through the `spec.policies` field. Mandatory policies are automatically applied based on their match criteria and do not need to be specified.
 
 ### Status
 
@@ -2069,6 +2069,15 @@ A `BestEffortRestartPolicy` controls whether a VM powered off by DRS for host ma
 
 - **Mandatory**: Automatically applied to VMs based on match criteria
 - **Optional**: Must be explicitly referenced in the VM's `spec.policies` field
+
+#### ControlledRebalancingPolicy
+
+A `ControlledRebalancingPolicy` excludes a matching VM from evacuation by DRS during cluster load balancing, so the VM stays on its current host until it is explicitly relocated. It reuses `ComputePolicy`'s spec/status shape and can be:
+
+- **Mandatory**: Automatically applied to VMs based on match criteria
+- **Optional**: Must be explicitly referenced in the VM's `spec.policies` field
+
+Like `ComputePolicy`, it may include references to `TagPolicy` objects that define the vSphere tag(s) applied to activate the policy. VM Operator does not decide when a VM is rebalanced — it only applies the vSphere tag that DRS acts on.
 
 #### TagPolicy
 

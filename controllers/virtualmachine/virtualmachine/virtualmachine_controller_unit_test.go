@@ -262,7 +262,7 @@ func unitTestsReconcile() {
 				expectEvents(ctx, "CreateSuccess")
 			})
 
-			It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation that returns a NoRequeueErr", func() {
+			It("Should emit a CreatePending event if ReconcileNormal returns a NoRequeueErr during create", func() {
 				providerfake.SetCreateOrUpdateFunction(
 					vmCtx,
 					fakeVMProvider,
@@ -273,7 +273,7 @@ func unitTestsReconcile() {
 				)
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
-				expectEvents(ctx, "CreateSuccess")
+				expectEvents(ctx, "CreatePending")
 			})
 
 			It("Should emit CreateFailure event if ReconcileNormal causes a failed VM create", func() {
@@ -311,7 +311,7 @@ func unitTestsReconcile() {
 				expectEvents(ctx, "CreateSuccess")
 			})
 
-			It("Should emit a CreateSuccess event if ReconcileNormal causes a successful VM creation that returns a NoRequeueErr", func() {
+			It("Should emit a CreatePending event if ReconcileNormal returns a NoRequeueErr during create", func() {
 				providerfake.SetCreateOrUpdateFunction(
 					vmCtx,
 					fakeVMProvider,
@@ -322,7 +322,7 @@ func unitTestsReconcile() {
 				)
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
-				expectEvents(ctx, "CreateSuccess")
+				expectEvents(ctx, "CreatePending")
 			})
 
 			It("Should emit CreateFailure event if ReconcileNormal causes a failed VM create", func() {

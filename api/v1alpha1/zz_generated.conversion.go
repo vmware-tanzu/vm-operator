@@ -719,7 +719,7 @@ func Convert_v1alpha5_DynamicDirectPathIODevice_To_v1alpha1_DynamicDirectPathIOD
 }
 
 func autoConvert_v1alpha1_GuestHeartbeatAction_To_v1alpha5_GuestHeartbeatAction(in *GuestHeartbeatAction, out *v1alpha5.GuestHeartbeatAction, s conversion.Scope) error {
-	out.ThresholdStatus = v1alpha5.GuestHeartbeatStatus(in.ThresholdStatus)
+	*out = *(*v1alpha5.GuestHeartbeatAction)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -729,7 +729,7 @@ func Convert_v1alpha1_GuestHeartbeatAction_To_v1alpha5_GuestHeartbeatAction(in *
 }
 
 func autoConvert_v1alpha5_GuestHeartbeatAction_To_v1alpha1_GuestHeartbeatAction(in *v1alpha5.GuestHeartbeatAction, out *GuestHeartbeatAction, s conversion.Scope) error {
-	out.ThresholdStatus = GuestHeartbeatStatus(in.ThresholdStatus)
+	*out = *(*GuestHeartbeatAction)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -739,8 +739,7 @@ func Convert_v1alpha5_GuestHeartbeatAction_To_v1alpha1_GuestHeartbeatAction(in *
 }
 
 func autoConvert_v1alpha1_InstanceStorage_To_v1alpha5_InstanceStorage(in *InstanceStorage, out *v1alpha5.InstanceStorage, s conversion.Scope) error {
-	out.StorageClass = in.StorageClass
-	out.Volumes = *(*[]v1alpha5.InstanceStorageVolume)(unsafe.Pointer(&in.Volumes))
+	*out = *(*v1alpha5.InstanceStorage)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -750,8 +749,7 @@ func Convert_v1alpha1_InstanceStorage_To_v1alpha5_InstanceStorage(in *InstanceSt
 }
 
 func autoConvert_v1alpha5_InstanceStorage_To_v1alpha1_InstanceStorage(in *v1alpha5.InstanceStorage, out *InstanceStorage, s conversion.Scope) error {
-	out.StorageClass = in.StorageClass
-	out.Volumes = *(*[]InstanceStorageVolume)(unsafe.Pointer(&in.Volumes))
+	*out = *(*InstanceStorage)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -761,7 +759,7 @@ func Convert_v1alpha5_InstanceStorage_To_v1alpha1_InstanceStorage(in *v1alpha5.I
 }
 
 func autoConvert_v1alpha1_InstanceStorageVolume_To_v1alpha5_InstanceStorageVolume(in *InstanceStorageVolume, out *v1alpha5.InstanceStorageVolume, s conversion.Scope) error {
-	out.Size = in.Size
+	*out = *(*v1alpha5.InstanceStorageVolume)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -771,7 +769,7 @@ func Convert_v1alpha1_InstanceStorageVolume_To_v1alpha5_InstanceStorageVolume(in
 }
 
 func autoConvert_v1alpha5_InstanceStorageVolume_To_v1alpha1_InstanceStorageVolume(in *v1alpha5.InstanceStorageVolume, out *InstanceStorageVolume, s conversion.Scope) error {
-	out.Size = in.Size
+	*out = *(*InstanceStorageVolume)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -781,8 +779,7 @@ func Convert_v1alpha5_InstanceStorageVolume_To_v1alpha1_InstanceStorageVolume(in
 }
 
 func autoConvert_v1alpha1_InstanceVolumeClaimVolumeSource_To_v1alpha5_InstanceVolumeClaimVolumeSource(in *InstanceVolumeClaimVolumeSource, out *v1alpha5.InstanceVolumeClaimVolumeSource, s conversion.Scope) error {
-	out.StorageClass = in.StorageClass
-	out.Size = in.Size
+	*out = *(*v1alpha5.InstanceVolumeClaimVolumeSource)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -792,8 +789,7 @@ func Convert_v1alpha1_InstanceVolumeClaimVolumeSource_To_v1alpha5_InstanceVolume
 }
 
 func autoConvert_v1alpha5_InstanceVolumeClaimVolumeSource_To_v1alpha1_InstanceVolumeClaimVolumeSource(in *v1alpha5.InstanceVolumeClaimVolumeSource, out *InstanceVolumeClaimVolumeSource, s conversion.Scope) error {
-	out.StorageClass = in.StorageClass
-	out.Size = in.Size
+	*out = *(*InstanceVolumeClaimVolumeSource)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -803,8 +799,7 @@ func Convert_v1alpha5_InstanceVolumeClaimVolumeSource_To_v1alpha1_InstanceVolume
 }
 
 func autoConvert_v1alpha1_LoadBalancerIngress_To_v1alpha5_LoadBalancerIngress(in *LoadBalancerIngress, out *v1alpha5.LoadBalancerIngress, s conversion.Scope) error {
-	out.IP = in.IP
-	out.Hostname = in.Hostname
+	*out = *(*v1alpha5.LoadBalancerIngress)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -814,8 +809,7 @@ func Convert_v1alpha1_LoadBalancerIngress_To_v1alpha5_LoadBalancerIngress(in *Lo
 }
 
 func autoConvert_v1alpha5_LoadBalancerIngress_To_v1alpha1_LoadBalancerIngress(in *v1alpha5.LoadBalancerIngress, out *LoadBalancerIngress, s conversion.Scope) error {
-	out.IP = in.IP
-	out.Hostname = in.Hostname
+	*out = *(*LoadBalancerIngress)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -825,7 +819,7 @@ func Convert_v1alpha5_LoadBalancerIngress_To_v1alpha1_LoadBalancerIngress(in *v1
 }
 
 func autoConvert_v1alpha1_LoadBalancerStatus_To_v1alpha5_LoadBalancerStatus(in *LoadBalancerStatus, out *v1alpha5.LoadBalancerStatus, s conversion.Scope) error {
-	out.Ingress = *(*[]v1alpha5.LoadBalancerIngress)(unsafe.Pointer(&in.Ingress))
+	*out = *(*v1alpha5.LoadBalancerStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -835,7 +829,7 @@ func Convert_v1alpha1_LoadBalancerStatus_To_v1alpha5_LoadBalancerStatus(in *Load
 }
 
 func autoConvert_v1alpha5_LoadBalancerStatus_To_v1alpha1_LoadBalancerStatus(in *v1alpha5.LoadBalancerStatus, out *LoadBalancerStatus, s conversion.Scope) error {
-	out.Ingress = *(*[]LoadBalancerIngress)(unsafe.Pointer(&in.Ingress))
+	*out = *(*LoadBalancerStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -845,9 +839,7 @@ func Convert_v1alpha5_LoadBalancerStatus_To_v1alpha1_LoadBalancerStatus(in *v1al
 }
 
 func autoConvert_v1alpha1_NetworkDeviceStatus_To_v1alpha5_NetworkDeviceStatus(in *NetworkDeviceStatus, out *v1alpha5.NetworkDeviceStatus, s conversion.Scope) error {
-	out.Gateway4 = in.Gateway4
-	out.MacAddress = in.MacAddress
-	out.IPAddresses = *(*[]string)(unsafe.Pointer(&in.IPAddresses))
+	*out = *(*v1alpha5.NetworkDeviceStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -857,9 +849,7 @@ func Convert_v1alpha1_NetworkDeviceStatus_To_v1alpha5_NetworkDeviceStatus(in *Ne
 }
 
 func autoConvert_v1alpha5_NetworkDeviceStatus_To_v1alpha1_NetworkDeviceStatus(in *v1alpha5.NetworkDeviceStatus, out *NetworkDeviceStatus, s conversion.Scope) error {
-	out.Gateway4 = in.Gateway4
-	out.MacAddress = in.MacAddress
-	out.IPAddresses = *(*[]string)(unsafe.Pointer(&in.IPAddresses))
+	*out = *(*NetworkDeviceStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -869,8 +859,7 @@ func Convert_v1alpha5_NetworkDeviceStatus_To_v1alpha1_NetworkDeviceStatus(in *v1
 }
 
 func autoConvert_v1alpha1_NetworkStatus_To_v1alpha5_NetworkStatus(in *NetworkStatus, out *v1alpha5.NetworkStatus, s conversion.Scope) error {
-	out.Devices = *(*[]v1alpha5.NetworkDeviceStatus)(unsafe.Pointer(&in.Devices))
-	out.Nameservers = *(*[]string)(unsafe.Pointer(&in.Nameservers))
+	*out = *(*v1alpha5.NetworkStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -880,8 +869,7 @@ func Convert_v1alpha1_NetworkStatus_To_v1alpha5_NetworkStatus(in *NetworkStatus,
 }
 
 func autoConvert_v1alpha5_NetworkStatus_To_v1alpha1_NetworkStatus(in *v1alpha5.NetworkStatus, out *NetworkStatus, s conversion.Scope) error {
-	out.Devices = *(*[]NetworkDeviceStatus)(unsafe.Pointer(&in.Devices))
-	out.Nameservers = *(*[]string)(unsafe.Pointer(&in.Nameservers))
+	*out = *(*NetworkStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -908,13 +896,7 @@ func autoConvert_v1alpha5_PersistentVolumeClaimVolumeSource_To_v1alpha1_Persiste
 }
 
 func autoConvert_v1alpha1_ResourcePoolSpec_To_v1alpha5_ResourcePoolSpec(in *ResourcePoolSpec, out *v1alpha5.ResourcePoolSpec, s conversion.Scope) error {
-	out.Name = in.Name
-	if err := Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha5_VirtualMachineResourceSpec(&in.Reservations, &out.Reservations, s); err != nil {
-		return err
-	}
-	if err := Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha5_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
-		return err
-	}
+	*out = *(*v1alpha5.ResourcePoolSpec)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -924,13 +906,7 @@ func Convert_v1alpha1_ResourcePoolSpec_To_v1alpha5_ResourcePoolSpec(in *Resource
 }
 
 func autoConvert_v1alpha5_ResourcePoolSpec_To_v1alpha1_ResourcePoolSpec(in *v1alpha5.ResourcePoolSpec, out *ResourcePoolSpec, s conversion.Scope) error {
-	out.Name = in.Name
-	if err := Convert_v1alpha5_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Reservations, &out.Reservations, s); err != nil {
-		return err
-	}
-	if err := Convert_v1alpha5_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
-		return err
-	}
+	*out = *(*ResourcePoolSpec)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -940,8 +916,7 @@ func Convert_v1alpha5_ResourcePoolSpec_To_v1alpha1_ResourcePoolSpec(in *v1alpha5
 }
 
 func autoConvert_v1alpha1_ResourcePoolStatus_To_v1alpha5_ResourcePoolStatus(in *ResourcePoolStatus, out *v1alpha5.ResourcePoolStatus, s conversion.Scope) error {
-	out.ClusterMoID = in.ClusterMoID
-	out.ChildResourcePoolMoID = in.ChildResourcePoolMoID
+	*out = *(*v1alpha5.ResourcePoolStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -951,8 +926,7 @@ func Convert_v1alpha1_ResourcePoolStatus_To_v1alpha5_ResourcePoolStatus(in *Reso
 }
 
 func autoConvert_v1alpha5_ResourcePoolStatus_To_v1alpha1_ResourcePoolStatus(in *v1alpha5.ResourcePoolStatus, out *ResourcePoolStatus, s conversion.Scope) error {
-	out.ClusterMoID = in.ClusterMoID
-	out.ChildResourcePoolMoID = in.ChildResourcePoolMoID
+	*out = *(*ResourcePoolStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -962,8 +936,7 @@ func Convert_v1alpha5_ResourcePoolStatus_To_v1alpha1_ResourcePoolStatus(in *v1al
 }
 
 func autoConvert_v1alpha1_TCPSocketAction_To_v1alpha5_TCPSocketAction(in *TCPSocketAction, out *v1alpha5.TCPSocketAction, s conversion.Scope) error {
-	out.Port = in.Port
-	out.Host = in.Host
+	*out = *(*v1alpha5.TCPSocketAction)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -973,8 +946,7 @@ func Convert_v1alpha1_TCPSocketAction_To_v1alpha5_TCPSocketAction(in *TCPSocketA
 }
 
 func autoConvert_v1alpha5_TCPSocketAction_To_v1alpha1_TCPSocketAction(in *v1alpha5.TCPSocketAction, out *TCPSocketAction, s conversion.Scope) error {
-	out.Port = in.Port
-	out.Host = in.Host
+	*out = *(*TCPSocketAction)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -984,7 +956,7 @@ func Convert_v1alpha5_TCPSocketAction_To_v1alpha1_TCPSocketAction(in *v1alpha5.T
 }
 
 func autoConvert_v1alpha1_VGPUDevice_To_v1alpha5_VGPUDevice(in *VGPUDevice, out *v1alpha5.VGPUDevice, s conversion.Scope) error {
-	out.ProfileName = in.ProfileName
+	*out = *(*v1alpha5.VGPUDevice)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -994,7 +966,7 @@ func Convert_v1alpha1_VGPUDevice_To_v1alpha5_VGPUDevice(in *VGPUDevice, out *v1a
 }
 
 func autoConvert_v1alpha5_VGPUDevice_To_v1alpha1_VGPUDevice(in *v1alpha5.VGPUDevice, out *VGPUDevice, s conversion.Scope) error {
-	out.ProfileName = in.ProfileName
+	*out = *(*VGPUDevice)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1176,9 +1148,7 @@ func Convert_v1alpha5_VirtualMachineClassList_To_v1alpha1_VirtualMachineClassLis
 }
 
 func autoConvert_v1alpha1_VirtualMachineClassPolicies_To_v1alpha5_VirtualMachineClassPolicies(in *VirtualMachineClassPolicies, out *v1alpha5.VirtualMachineClassPolicies, s conversion.Scope) error {
-	if err := Convert_v1alpha1_VirtualMachineClassResources_To_v1alpha5_VirtualMachineClassResources(&in.Resources, &out.Resources, s); err != nil {
-		return err
-	}
+	*out = *(*v1alpha5.VirtualMachineClassPolicies)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1188,9 +1158,7 @@ func Convert_v1alpha1_VirtualMachineClassPolicies_To_v1alpha5_VirtualMachineClas
 }
 
 func autoConvert_v1alpha5_VirtualMachineClassPolicies_To_v1alpha1_VirtualMachineClassPolicies(in *v1alpha5.VirtualMachineClassPolicies, out *VirtualMachineClassPolicies, s conversion.Scope) error {
-	if err := Convert_v1alpha5_VirtualMachineClassResources_To_v1alpha1_VirtualMachineClassResources(&in.Resources, &out.Resources, s); err != nil {
-		return err
-	}
+	*out = *(*VirtualMachineClassPolicies)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1200,12 +1168,7 @@ func Convert_v1alpha5_VirtualMachineClassPolicies_To_v1alpha1_VirtualMachineClas
 }
 
 func autoConvert_v1alpha1_VirtualMachineClassResources_To_v1alpha5_VirtualMachineClassResources(in *VirtualMachineClassResources, out *v1alpha5.VirtualMachineClassResources, s conversion.Scope) error {
-	if err := Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha5_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
-		return err
-	}
-	if err := Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha5_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
-		return err
-	}
+	*out = *(*v1alpha5.VirtualMachineClassResources)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1215,12 +1178,7 @@ func Convert_v1alpha1_VirtualMachineClassResources_To_v1alpha5_VirtualMachineCla
 }
 
 func autoConvert_v1alpha5_VirtualMachineClassResources_To_v1alpha1_VirtualMachineClassResources(in *v1alpha5.VirtualMachineClassResources, out *VirtualMachineClassResources, s conversion.Scope) error {
-	if err := Convert_v1alpha5_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
-		return err
-	}
-	if err := Convert_v1alpha5_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
-		return err
-	}
+	*out = *(*VirtualMachineClassResources)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1270,6 +1228,7 @@ func Convert_v1alpha5_VirtualMachineClassSpec_To_v1alpha1_VirtualMachineClassSpe
 }
 
 func autoConvert_v1alpha1_VirtualMachineClassStatus_To_v1alpha5_VirtualMachineClassStatus(in *VirtualMachineClassStatus, out *v1alpha5.VirtualMachineClassStatus, s conversion.Scope) error {
+	*out = *(*v1alpha5.VirtualMachineClassStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1279,6 +1238,7 @@ func Convert_v1alpha1_VirtualMachineClassStatus_To_v1alpha5_VirtualMachineClassS
 }
 
 func autoConvert_v1alpha5_VirtualMachineClassStatus_To_v1alpha1_VirtualMachineClassStatus(in *v1alpha5.VirtualMachineClassStatus, out *VirtualMachineClassStatus, s conversion.Scope) error {
+	*out = *(*VirtualMachineClassStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1380,10 +1340,7 @@ func autoConvert_v1alpha5_VirtualMachineImageOSInfo_To_v1alpha1_VirtualMachineIm
 }
 
 func autoConvert_v1alpha1_VirtualMachineImageProductInfo_To_v1alpha5_VirtualMachineImageProductInfo(in *VirtualMachineImageProductInfo, out *v1alpha5.VirtualMachineImageProductInfo, s conversion.Scope) error {
-	out.Product = in.Product
-	out.Vendor = in.Vendor
-	out.Version = in.Version
-	out.FullVersion = in.FullVersion
+	*out = *(*v1alpha5.VirtualMachineImageProductInfo)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1393,10 +1350,7 @@ func Convert_v1alpha1_VirtualMachineImageProductInfo_To_v1alpha5_VirtualMachineI
 }
 
 func autoConvert_v1alpha5_VirtualMachineImageProductInfo_To_v1alpha1_VirtualMachineImageProductInfo(in *v1alpha5.VirtualMachineImageProductInfo, out *VirtualMachineImageProductInfo, s conversion.Scope) error {
-	out.Product = in.Product
-	out.Vendor = in.Vendor
-	out.Version = in.Version
-	out.FullVersion = in.FullVersion
+	*out = *(*VirtualMachineImageProductInfo)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1589,9 +1543,7 @@ func Convert_v1alpha5_VirtualMachinePublishRequestList_To_v1alpha1_VirtualMachin
 }
 
 func autoConvert_v1alpha1_VirtualMachinePublishRequestSource_To_v1alpha5_VirtualMachinePublishRequestSource(in *VirtualMachinePublishRequestSource, out *v1alpha5.VirtualMachinePublishRequestSource, s conversion.Scope) error {
-	out.Name = in.Name
-	out.APIVersion = in.APIVersion
-	out.Kind = in.Kind
+	*out = *(*v1alpha5.VirtualMachinePublishRequestSource)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1601,9 +1553,7 @@ func Convert_v1alpha1_VirtualMachinePublishRequestSource_To_v1alpha5_VirtualMach
 }
 
 func autoConvert_v1alpha5_VirtualMachinePublishRequestSource_To_v1alpha1_VirtualMachinePublishRequestSource(in *v1alpha5.VirtualMachinePublishRequestSource, out *VirtualMachinePublishRequestSource, s conversion.Scope) error {
-	out.Name = in.Name
-	out.APIVersion = in.APIVersion
-	out.Kind = in.Kind
+	*out = *(*VirtualMachinePublishRequestSource)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1697,12 +1647,7 @@ func Convert_v1alpha5_VirtualMachinePublishRequestStatus_To_v1alpha1_VirtualMach
 }
 
 func autoConvert_v1alpha1_VirtualMachinePublishRequestTarget_To_v1alpha5_VirtualMachinePublishRequestTarget(in *VirtualMachinePublishRequestTarget, out *v1alpha5.VirtualMachinePublishRequestTarget, s conversion.Scope) error {
-	if err := Convert_v1alpha1_VirtualMachinePublishRequestTargetItem_To_v1alpha5_VirtualMachinePublishRequestTargetItem(&in.Item, &out.Item, s); err != nil {
-		return err
-	}
-	if err := Convert_v1alpha1_VirtualMachinePublishRequestTargetLocation_To_v1alpha5_VirtualMachinePublishRequestTargetLocation(&in.Location, &out.Location, s); err != nil {
-		return err
-	}
+	*out = *(*v1alpha5.VirtualMachinePublishRequestTarget)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1712,12 +1657,7 @@ func Convert_v1alpha1_VirtualMachinePublishRequestTarget_To_v1alpha5_VirtualMach
 }
 
 func autoConvert_v1alpha5_VirtualMachinePublishRequestTarget_To_v1alpha1_VirtualMachinePublishRequestTarget(in *v1alpha5.VirtualMachinePublishRequestTarget, out *VirtualMachinePublishRequestTarget, s conversion.Scope) error {
-	if err := Convert_v1alpha5_VirtualMachinePublishRequestTargetItem_To_v1alpha1_VirtualMachinePublishRequestTargetItem(&in.Item, &out.Item, s); err != nil {
-		return err
-	}
-	if err := Convert_v1alpha5_VirtualMachinePublishRequestTargetLocation_To_v1alpha1_VirtualMachinePublishRequestTargetLocation(&in.Location, &out.Location, s); err != nil {
-		return err
-	}
+	*out = *(*VirtualMachinePublishRequestTarget)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1727,8 +1667,7 @@ func Convert_v1alpha5_VirtualMachinePublishRequestTarget_To_v1alpha1_VirtualMach
 }
 
 func autoConvert_v1alpha1_VirtualMachinePublishRequestTargetItem_To_v1alpha5_VirtualMachinePublishRequestTargetItem(in *VirtualMachinePublishRequestTargetItem, out *v1alpha5.VirtualMachinePublishRequestTargetItem, s conversion.Scope) error {
-	out.Name = in.Name
-	out.Description = in.Description
+	*out = *(*v1alpha5.VirtualMachinePublishRequestTargetItem)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1738,8 +1677,7 @@ func Convert_v1alpha1_VirtualMachinePublishRequestTargetItem_To_v1alpha5_Virtual
 }
 
 func autoConvert_v1alpha5_VirtualMachinePublishRequestTargetItem_To_v1alpha1_VirtualMachinePublishRequestTargetItem(in *v1alpha5.VirtualMachinePublishRequestTargetItem, out *VirtualMachinePublishRequestTargetItem, s conversion.Scope) error {
-	out.Name = in.Name
-	out.Description = in.Description
+	*out = *(*VirtualMachinePublishRequestTargetItem)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1749,9 +1687,7 @@ func Convert_v1alpha5_VirtualMachinePublishRequestTargetItem_To_v1alpha1_Virtual
 }
 
 func autoConvert_v1alpha1_VirtualMachinePublishRequestTargetLocation_To_v1alpha5_VirtualMachinePublishRequestTargetLocation(in *VirtualMachinePublishRequestTargetLocation, out *v1alpha5.VirtualMachinePublishRequestTargetLocation, s conversion.Scope) error {
-	out.Name = in.Name
-	out.APIVersion = in.APIVersion
-	out.Kind = in.Kind
+	*out = *(*v1alpha5.VirtualMachinePublishRequestTargetLocation)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1761,9 +1697,7 @@ func Convert_v1alpha1_VirtualMachinePublishRequestTargetLocation_To_v1alpha5_Vir
 }
 
 func autoConvert_v1alpha5_VirtualMachinePublishRequestTargetLocation_To_v1alpha1_VirtualMachinePublishRequestTargetLocation(in *v1alpha5.VirtualMachinePublishRequestTargetLocation, out *VirtualMachinePublishRequestTargetLocation, s conversion.Scope) error {
-	out.Name = in.Name
-	out.APIVersion = in.APIVersion
-	out.Kind = in.Kind
+	*out = *(*VirtualMachinePublishRequestTargetLocation)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1773,8 +1707,7 @@ func Convert_v1alpha5_VirtualMachinePublishRequestTargetLocation_To_v1alpha1_Vir
 }
 
 func autoConvert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha5_VirtualMachineResourceSpec(in *VirtualMachineResourceSpec, out *v1alpha5.VirtualMachineResourceSpec, s conversion.Scope) error {
-	out.Cpu = in.Cpu
-	out.Memory = in.Memory
+	*out = *(*v1alpha5.VirtualMachineResourceSpec)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1784,8 +1717,7 @@ func Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha5_VirtualMachineResou
 }
 
 func autoConvert_v1alpha5_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(in *v1alpha5.VirtualMachineResourceSpec, out *VirtualMachineResourceSpec, s conversion.Scope) error {
-	out.Cpu = in.Cpu
-	out.Memory = in.Memory
+	*out = *(*VirtualMachineResourceSpec)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1849,10 +1781,7 @@ func Convert_v1alpha5_VirtualMachineServiceList_To_v1alpha1_VirtualMachineServic
 }
 
 func autoConvert_v1alpha1_VirtualMachineServicePort_To_v1alpha5_VirtualMachineServicePort(in *VirtualMachineServicePort, out *v1alpha5.VirtualMachineServicePort, s conversion.Scope) error {
-	out.Name = in.Name
-	out.Protocol = in.Protocol
-	out.Port = in.Port
-	out.TargetPort = in.TargetPort
+	*out = *(*v1alpha5.VirtualMachineServicePort)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1862,10 +1791,7 @@ func Convert_v1alpha1_VirtualMachineServicePort_To_v1alpha5_VirtualMachineServic
 }
 
 func autoConvert_v1alpha5_VirtualMachineServicePort_To_v1alpha1_VirtualMachineServicePort(in *v1alpha5.VirtualMachineServicePort, out *VirtualMachineServicePort, s conversion.Scope) error {
-	out.Name = in.Name
-	out.Protocol = in.Protocol
-	out.Port = in.Port
-	out.TargetPort = in.TargetPort
+	*out = *(*VirtualMachineServicePort)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1875,13 +1801,7 @@ func Convert_v1alpha5_VirtualMachineServicePort_To_v1alpha1_VirtualMachineServic
 }
 
 func autoConvert_v1alpha1_VirtualMachineServiceSpec_To_v1alpha5_VirtualMachineServiceSpec(in *VirtualMachineServiceSpec, out *v1alpha5.VirtualMachineServiceSpec, s conversion.Scope) error {
-	out.Type = v1alpha5.VirtualMachineServiceType(in.Type)
-	out.Ports = *(*[]v1alpha5.VirtualMachineServicePort)(unsafe.Pointer(&in.Ports))
-	out.Selector = *(*map[string]string)(unsafe.Pointer(&in.Selector))
-	out.LoadBalancerIP = in.LoadBalancerIP
-	out.LoadBalancerSourceRanges = *(*[]string)(unsafe.Pointer(&in.LoadBalancerSourceRanges))
-	out.ClusterIP = in.ClusterIP
-	out.ExternalName = in.ExternalName
+	*out = *(*v1alpha5.VirtualMachineServiceSpec)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1891,13 +1811,7 @@ func Convert_v1alpha1_VirtualMachineServiceSpec_To_v1alpha5_VirtualMachineServic
 }
 
 func autoConvert_v1alpha5_VirtualMachineServiceSpec_To_v1alpha1_VirtualMachineServiceSpec(in *v1alpha5.VirtualMachineServiceSpec, out *VirtualMachineServiceSpec, s conversion.Scope) error {
-	out.Type = VirtualMachineServiceType(in.Type)
-	out.Ports = *(*[]VirtualMachineServicePort)(unsafe.Pointer(&in.Ports))
-	out.Selector = *(*map[string]string)(unsafe.Pointer(&in.Selector))
-	out.LoadBalancerIP = in.LoadBalancerIP
-	out.LoadBalancerSourceRanges = *(*[]string)(unsafe.Pointer(&in.LoadBalancerSourceRanges))
-	out.ClusterIP = in.ClusterIP
-	out.ExternalName = in.ExternalName
+	*out = *(*VirtualMachineServiceSpec)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1907,9 +1821,7 @@ func Convert_v1alpha5_VirtualMachineServiceSpec_To_v1alpha1_VirtualMachineServic
 }
 
 func autoConvert_v1alpha1_VirtualMachineServiceStatus_To_v1alpha5_VirtualMachineServiceStatus(in *VirtualMachineServiceStatus, out *v1alpha5.VirtualMachineServiceStatus, s conversion.Scope) error {
-	if err := Convert_v1alpha1_LoadBalancerStatus_To_v1alpha5_LoadBalancerStatus(&in.LoadBalancer, &out.LoadBalancer, s); err != nil {
-		return err
-	}
+	*out = *(*v1alpha5.VirtualMachineServiceStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -1919,9 +1831,7 @@ func Convert_v1alpha1_VirtualMachineServiceStatus_To_v1alpha5_VirtualMachineServ
 }
 
 func autoConvert_v1alpha5_VirtualMachineServiceStatus_To_v1alpha1_VirtualMachineServiceStatus(in *v1alpha5.VirtualMachineServiceStatus, out *VirtualMachineServiceStatus, s conversion.Scope) error {
-	if err := Convert_v1alpha5_LoadBalancerStatus_To_v1alpha1_LoadBalancerStatus(&in.LoadBalancer, &out.LoadBalancer, s); err != nil {
-		return err
-	}
+	*out = *(*VirtualMachineServiceStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -2023,8 +1933,7 @@ func autoConvert_v1alpha5_VirtualMachineSetResourcePolicySpec_To_v1alpha1_Virtua
 }
 
 func autoConvert_v1alpha1_VirtualMachineSetResourcePolicyStatus_To_v1alpha5_VirtualMachineSetResourcePolicyStatus(in *VirtualMachineSetResourcePolicyStatus, out *v1alpha5.VirtualMachineSetResourcePolicyStatus, s conversion.Scope) error {
-	out.ResourcePools = *(*[]v1alpha5.ResourcePoolStatus)(unsafe.Pointer(&in.ResourcePools))
-	out.ClusterModules = *(*[]v1alpha5.VSphereClusterModuleStatus)(unsafe.Pointer(&in.ClusterModules))
+	*out = *(*v1alpha5.VirtualMachineSetResourcePolicyStatus)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -2034,8 +1943,7 @@ func Convert_v1alpha1_VirtualMachineSetResourcePolicyStatus_To_v1alpha5_VirtualM
 }
 
 func autoConvert_v1alpha5_VirtualMachineSetResourcePolicyStatus_To_v1alpha1_VirtualMachineSetResourcePolicyStatus(in *v1alpha5.VirtualMachineSetResourcePolicyStatus, out *VirtualMachineSetResourcePolicyStatus, s conversion.Scope) error {
-	out.ResourcePools = *(*[]ResourcePoolStatus)(unsafe.Pointer(&in.ResourcePools))
-	out.ClusterModules = *(*[]ClusterModuleStatus)(unsafe.Pointer(&in.ClusterModules))
+	*out = *(*VirtualMachineSetResourcePolicyStatus)(unsafe.Pointer(in))
 	return nil
 }
 

@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -310,7 +311,7 @@ type fakeManager struct {
 	client client.Client
 }
 
-func (f fakeManager) GetEventRecorder(name string) events.EventRecorder {
+func (f fakeManager) GetEventRecorder(name string) recorder.EventRecorder {
 	return nil
 }
 

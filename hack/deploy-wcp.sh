@@ -41,6 +41,10 @@ FLAGS:
   -c Supervisor cluster, eg 'domain-c8'
   -C Deploy CRDs matching glob pattern (e.g. '*.vmoperator.vmware.com')
      Supports comma-separated patterns and glob wildcards (* and ?)
+  -k Path, on the Supervisor CP node, to the admin kubeconfig used to apply
+     CRDs (default: /etc/kubernetes/admin.conf). This is the same kubeconfig
+     'kubectl-sudo' switches to after its interactive confirmation prompt;
+     applying CRDs with it directly avoids that prompt.
 "
 
 #########################################
@@ -65,6 +69,12 @@ SV_CLUSTER=
 
 DEPLOY_CRD_PATTERN=
 LOCAL_DEPLOYMENT_YAML="artifacts/local-deployment.yaml"
+
+# Admin kubeconfig on the Supervisor CP node, needed to apply CRDs. This is
+# the same file 'kubectl-sudo' (confirm_and_kubectl_sudo) switches KUBECONFIG
+# to after its interactive "(y/N)" prompt; using it directly here lets CRD
+# apply run non-interactively over SSH.
+SV_ADMIN_KUBECONFIG="/etc/kubernetes/admin.conf"
 
 VMOP_YAML="/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/vmop.yaml"
 VMOP_YAML_TEMPLATE="/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/.vmop.yaml.template"
@@ -121,7 +131,7 @@ function sv_deploy_crds() {
     fi
 
     log "Deploying CRDs to $ip..."
-    echo "$crds_yaml" | sv_cp_ssh_cmd "$ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply --server-side=true --force-conflicts -f -"
+    echo "$crds_yaml" | sv_cp_ssh_cmd "$ip" "KUBECONFIG='$SV_ADMIN_KUBECONFIG' kubectl apply --server-side=true --force-conflicts -f -"
 }
 
 function vc_ssh_cmd() {
@@ -263,7 +273,7 @@ function sv_restart_vmop_deployment() {
 
 #########################################
 
-while getopts ":hc:s:S:v:V:T:C:" opt ; do
+while getopts ":hc:s:S:v:V:T:C:k:" opt ; do
     case $opt in
         h)
             echo "$USAGE"
@@ -289,6 +299,9 @@ while getopts ":hc:s:S:v:V:T:C:" opt ; do
             ;;
         C)
             DEPLOY_CRD_PATTERN=$OPTARG
+            ;;
+        k)
+            SV_ADMIN_KUBECONFIG=$OPTARG
             ;;
         *)
             fatal "$USAGE"

@@ -111,3 +111,9 @@ intervals:
   # Empirically, Sysprep GOSC on this image reliably reports an IP in
   # 5.5-6 minutes so this spec needs a little more room.
   windows-sysprep/wait-virtual-machine-vmip: ["10m", "3s"]
+
+  # linux-guest-customization overrides apply only to specs that boot VMs
+  # with LinuxPrep guest customization (VMGOSCSpec's LinuxPrep and vAppConfig
+  # contexts). LinuxPrep customization triggers a guest network restart/reboot
+  # that can push the guest's IP report past the default 5m budget.
+  linux-guest-customization/wait-virtual-machine-vmip: ["8m", "3s"]

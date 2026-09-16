@@ -16,6 +16,11 @@ The argument can be a comma-separated patterns and glob wildcards (* and ?)
 of the CRD names. Updated deployment yaml that contains the CRDs  is
 generated via make kustomize-wcp.
 
+The -C argument also re-applies the vmware-system-vmop-manager-role
+ClusterRole from the same local-deployment.yaml, so that RBAC additions
+(e.g. access to the kube-vm.io VirtualMachine resource) reach the Supervisor
+without a full vmop.yaml redeploy.
+
 If you have testbedInfo.json file - either a local file or the URL - that
 can be specified with the -T argument. This script will then use that file
 to log into VC and obtain the necessary Supervisor info.
@@ -40,7 +45,8 @@ FLAGS:
   -T testbedInfo.json file or URL
   -c Supervisor cluster, eg 'domain-c8'
   -C Deploy CRDs matching glob pattern (e.g. '*.vmoperator.vmware.com')
-     Supports comma-separated patterns and glob wildcards (* and ?)
+     Supports comma-separated patterns and glob wildcards (* and ?).
+     Also re-applies the vmware-system-vmop-manager-role ClusterRole.
   -k Path, on the Supervisor CP node, to the admin kubeconfig used to apply
      CRDs (default: /etc/kubernetes/admin.conf). This is the same kubeconfig
      'kubectl-sudo' switches to after its interactive confirmation prompt;

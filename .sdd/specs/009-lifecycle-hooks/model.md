@@ -50,18 +50,18 @@ The coordination surface VM Operator reads and writes at each stage checkpoint.
 3. If `workflowPaused=true`: check `status.stages[stage].conditions[HooksReady]`. If `True`: patch `workflowResumed=true`, set the VM's stage condition to `True`, proceed with the reconcile step. If not `True`: exit without error/requeue.
 4. VM Operator's controller watches `LifecycleState` updates (mapped back to the owning `VirtualMachine`) so a `HooksReady` flip promptly re-triggers reconciliation instead of waiting for the next poll.
 
-## New `VirtualMachine` API surface (this repo, `api/v1alphaN`)
+## New `VirtualMachine` API surface (this repo, `api/v1alpha6`)
 
-One condition type per stage — exact names are `[NEEDS CLARIFICATION]` in `spec.md` pending review, proposed as:
+One condition type per stage, finalized per `spec.md` "Resolved decisions":
 
 | Condition type | Set during | `True` means | `False` reason |
 |---|---|---|---|
 | `VirtualMachineConditionLifecycleCreateReady` | before vSphere VM create | no blocking hook registered, or all hooks ready | `HooksPending` |
-| `VirtualMachineConditionLifecyclePowerStateReady` | before a power-state change is applied | — | `HooksPending` |
+| `VirtualMachineConditionLifecyclePowerStateChangeReady` | before a power-state change is applied | — | `HooksPending` |
 | `VirtualMachineConditionLifecycleDeleteReady` | before vSphere VM delete | — | `HooksPending` |
 | `VirtualMachineConditionLifecycleResourceDeleteReady` | before CR finalizer removal | — | `HooksPending` |
 
-These conditions are additive to `api/v1alphaN`'s existing condition set (see `api/v1alpha4/condition_consts.go` for the current pattern) — no field removal, no version bump required for the condition types themselves.
+These conditions are additive to `api/v1alpha6`'s existing condition set (see `api/v1alpha6/condition_consts.go` for the current pattern) — no field removal, no version bump required for the condition types themselves. `v1alpha6` is `main`'s current storage version.
 
 ### `HooksReady` handling (single reason, no failure-detail parsing)
 
@@ -78,7 +78,7 @@ VM Operator's stage condition has exactly one `False` reason (`HooksPending`) re
 
 ## Capability gating
 
-A new Supervisor capability (name TBD, e.g. `supports_vm_service_lifecycle_hooks`) gates the entire feature, following the same mechanism `supports_telco_vm_service_api` uses today: `pkg/config/capabilities/capabilities.go` reads the `Capability` CR's `Activated` status and sets `pkgcfg.Features.LifecycleHooks` accordingly (see `research.md`'s BYOK/`BringYourOwnEncryptionKey` cross-reference — BYOK is also capability-drivable via this same code path). When the capability is disabled, `Features.LifecycleHooks` is `false` and every stage checkpoint is a pure no-op: no `LifecycleState` `Get`/`Create`, no watch, no pause — behavior is identical to the feature not existing (per `spec.md` US4).
+The Supervisor capability `supports_vm_service_lifecycle_hooks` gates the entire feature, following the same mechanism `supports_telco_vm_service_api` uses today: `pkg/config/capabilities/capabilities.go` reads the `Capability` CR's `Activated` status and sets `pkgcfg.Features.LifecycleHooks` accordingly (see `research.md`'s BYOK/`BringYourOwnEncryptionKey` cross-reference — BYOK is also capability-drivable via this same code path). When the capability is disabled, `Features.LifecycleHooks` is `false` and every stage checkpoint is a pure no-op: no `LifecycleState` `Get`/`Create`, no watch, no pause — behavior is identical to the feature not existing (per `spec.md`'s Platform engineer stories).
 
 ## Static `LifecycleStages` instance
 

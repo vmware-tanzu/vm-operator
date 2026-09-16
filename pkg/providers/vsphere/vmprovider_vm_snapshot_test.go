@@ -229,6 +229,11 @@ func vmSnapshotTests() {
 
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
+			// Verify the spec.currentSnapshot is cleared, since reverting
+			// to the VM's already-current snapshot is a no-op and must
+			// still converge rather than getting stuck.
+			Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty())
+
 			// Verify VM status reflects current snapshot.
 			Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 			Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))

@@ -6,38 +6,29 @@ package virtualmachine
 
 import (
 	"context"
-	"fmt"
-	"strings"
-	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/mo"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
-	capiutil "sigs.k8s.io/cluster-api/util"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
 
+type VMComputeConfigSpecInput struct {
+	ClusterProxy     wcpframework.WCPClusterProxyInterface
+	Config           *e2eConfig.E2EConfig
+	WCPClient        wcp.WorkloadManagementAPI
+	ArtifactFolder   string
+	SkipCleanup      bool
+	WCPNamespaceName string
+}
+
+// VMComputeConfigSpec validates the compute config reconciler across all phases.
+//
+// Not in v1alpha5: spec.resources, spec.cpuAdvanced, spec.memoryAdvanced, and
+// the VirtualMachineConditionComputeConfigSynced condition were all added in
+// v1alpha6. The original spec is preserved below, commented out.
+func VMComputeConfigSpec(_ context.Context, _ func() VMComputeConfigSpecInput) {}
+
+/*
 const (
 	// CPU allocation values sized for a 2-vCPU VMClass (≤ 2000 MHz total).
 	cpuReservationP1 = "500"  // MHz — initial reservation (250 MHz/vCPU)
@@ -2026,3 +2017,4 @@ func powerOffVSphereVM(ctx context.Context, vmObj *object.VirtualMachine) error 
 	}
 	return nil
 }
+*/

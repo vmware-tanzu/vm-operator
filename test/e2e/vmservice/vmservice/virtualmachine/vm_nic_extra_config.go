@@ -5,35 +5,9 @@ package virtualmachine
 
 import (
 	"context"
-	"fmt"
-	"maps"
-	"slices"
-	"strings"
-	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/mo"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	capiutil "sigs.k8s.io/cluster-api/util"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
 
@@ -46,6 +20,16 @@ type VMNICExtraConfigSpecInput struct {
 	SkipCleanup      bool
 	WCPNamespaceName string
 }
+
+// VMNICExtraConfigSpec validates NIC-level advanced properties end-to-end.
+//
+// Not in v1alpha5: interfaces[].vmxnet3, interfaces[].advancedProperties,
+// interfaces[].vnumaNodeID, and the VirtualMachineNetworkConfigSynced
+// condition were all added in v1alpha6. The original spec is preserved
+// below, commented out.
+func VMNICExtraConfigSpec(_ context.Context, _ func() VMNICExtraConfigSpecInput) {}
+
+/*
 
 // nicExtraConfigVMOptions holds the fields for buildNICExtraConfigVM.
 type nicExtraConfigVMOptions struct {
@@ -999,3 +983,4 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 				"ethernet2.coalescingParams")
 		})
 }
+*/

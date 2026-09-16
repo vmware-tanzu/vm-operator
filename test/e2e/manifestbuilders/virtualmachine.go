@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/fixtures"
 )
 

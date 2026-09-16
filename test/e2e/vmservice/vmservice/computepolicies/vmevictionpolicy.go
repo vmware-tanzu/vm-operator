@@ -28,7 +28,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -477,96 +477,99 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				nil)
 		})
 
-	// VM2/VM3's real, directly-created vm_host_affinity ComputePolicy (see pinVMToHost) mimics a real-world
-	// VM that DRS cannot evacuate off its host -- e.g. one with a PCI-passthrough/GPU device -- which is what
-	// actually drives the InfraInMaintenance condition, regardless of which policy kind is involved. That
-	// ComputePolicy capability is gated by consts.IaaSComputePoliciesCapabilityName, the same capability every
-	// other use of wcp.ComputePolicyCapabilityVMHostAffinity in this suite skips on (see virtualmachinelcm.go's
-	// "IaaS Policies" Context) -- a different, independently-toggled capability than the
-	// consts.VMEvictionCapabilityName this Spec's BeforeEach already checks, hence the extra skip below.
-	It("Should surface VirtualMachinePowerStateSynced=False with reason InfraInMaintenance for VMs that "+
-		"cannot be evacuated off a host entering maintenance mode, and clear once it exits",
-		Label("core-functional", "experimental"),
-		func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.IaaSComputePoliciesCapabilityName)
-
-			By("Creating a Mandatory AutomaticVMEvictionPolicy matching all three VMs' label")
-			evictionTagID := createVSphereTag(input.WCPClient, tagManager, "vm-eviction-mm")
-			var infraPolicyNames []string
-			evacuationPolicy, infraPolicyNames = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
-				fmt.Sprintf("vm-eviction-mm-policy-%s", capiutil.RandomString(4)),
-				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, infraPolicyNames)
-
-			By("Creating an Optional BestEffortRestartPolicy matching the test label")
-			restartTagID := createVSphereTag(input.WCPClient, tagManager, "vm-eviction-mm-restart")
-			restartPolicy, infraPolicyNames = createBestEffortRestartPolicy(ctx, adminClient, input,
-				fmt.Sprintf("vm-eviction-mm-restart-policy-%s", capiutil.RandomString(4)),
-				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
-
-			By("Creating VM1, a normal VM matching only the mandatory AutomaticVMEvictionPolicy")
-			vm1Name := fmt.Sprintf("%s-vm1-%s", specName, capiutil.RandomString(4))
-			createAndWaitForPoweredOnVM(ctx, input, svClusterClient, vm1Name, matchLabel)
-
-			hostMoRef := getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, vm1Name)
-			if len(listClusterHostMoRefs(ctx, vCenterClient, hostMoRef)) < 2 {
-				Skip("this spec requires more than one host in the cluster to distinguish VM relocation " +
-					"from a VM that cannot be evacuated")
-			}
-
-			By("Creating VM2, pinned to VM1's host, matching only the mandatory AutomaticVMEvictionPolicy")
-			vm2Name := fmt.Sprintf("%s-vm2-%s", specName, capiutil.RandomString(4))
-			vm2PinLabel := map[string]string{
-				"vmoperator.vmware.com/e2e-vm-eviction-pin": capiutil.RandomString(6),
-			}
-			createAndWaitForPoweredOnVM(ctx, input, svClusterClient, vm2Name, mergeLabels(matchLabel, vm2PinLabel))
-			infraPolicyNames = pinVMToHost(ctx, input.WCPClient, tagManager, svClusterClient, input.Config,
-				input.WCPNamespaceName, vm2Name, hostMoRef, vm2PinLabel, "vm-eviction-mm-vm2", infraPolicyNames)
-			waitForVMHost(ctx, vCenterClient, svClusterClient, input.Config, input.WCPNamespaceName, vm2Name, hostMoRef)
-
-			By("Creating VM3, pinned to VM1's host and explicitly referencing the BestEffortRestartPolicy")
-			vm3Name := fmt.Sprintf("%s-vm3-%s", specName, capiutil.RandomString(4))
-			vm3PinLabel := map[string]string{
-				"vmoperator.vmware.com/e2e-vm-eviction-pin": capiutil.RandomString(6),
-			}
-			createAndWaitForPoweredOnVM(ctx, input, svClusterClient, vm3Name, mergeLabels(matchLabel, vm3PinLabel),
-				explicitPolicyRef(bestEffortRestartPolicyKind, restartPolicy.Name))
-			pinVMToHost(ctx, input.WCPClient, tagManager, svClusterClient, input.Config,
-				input.WCPNamespaceName, vm3Name, hostMoRef, vm3PinLabel, "vm-eviction-mm-vm3", infraPolicyNames)
-			waitForVMHost(ctx, vCenterClient, svClusterClient, input.Config, input.WCPNamespaceName, vm3Name, hostMoRef)
-
-			By("Putting VM1's host into maintenance mode")
-			enterTask := enterHostMaintenanceMode(ctx, vCenterClient, hostMoRef)
-			DeferCleanup(func(cleanupCtx context.Context) {
-				exitHostMaintenanceMode(cleanupCtx, vCenterClient, hostMoRef, enterTask)
-			})
-
-			By("Verifying VM1 is relocated off the host entering maintenance mode")
-			Eventually(func(g Gomega) {
-				g.Expect(getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, vm1Name)).
-					ToNot(Equal(hostMoRef), "VM1 should be relocated off the host entering maintenance mode")
-			}, input.Config.GetIntervals("default", "wait-policy-evaluation-compliant")...).Should(Succeed())
-			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vm1Name,
-				metav1.Condition{Type: vmopv1.VirtualMachinePowerStateSynced, Status: metav1.ConditionTrue})
-
-			By("Verifying DRS powers off VM2 and VM3 (unable to evacuate them) and VirtualMachinePowerStateSynced " +
-				"surfaces False/InfraInMaintenance once VM Operator's own power-on retry hits the same fault")
-			waitForInfraInMaintenance(ctx, input, svClusterClient, vm2Name)
-			waitForInfraInMaintenance(ctx, input, svClusterClient, vm3Name)
-
-			By("Taking the host out of maintenance mode")
-			exitHostMaintenanceMode(ctx, vCenterClient, hostMoRef, enterTask)
-			enterTask = nil
-
-			By("Verifying VM2 powers back on, on the same host")
-			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vm2Name,
-				metav1.Condition{Type: vmopv1.VirtualMachinePowerStateSynced, Status: metav1.ConditionTrue})
-			Expect(getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, vm2Name)).To(Equal(hostMoRef),
-				"VM2 should power back on on the same host it was pinned to")
-
-			By("Verifying VM3 powers back on, on any host")
-			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vm3Name,
-				metav1.Condition{Type: vmopv1.VirtualMachinePowerStateSynced, Status: metav1.ConditionTrue})
-		})
+	// Not in v1alpha5: VirtualMachineInfraInMaintenanceReason and the DRS
+	// autoevac / infra-maintenance power-state-synced behavior it tests were
+	// added in v1alpha6. Commented out below.
+	// 	// VM2/VM3's real, directly-created vm_host_affinity ComputePolicy (see pinVMToHost) mimics a real-world
+	// 	// VM that DRS cannot evacuate off its host -- e.g. one with a PCI-passthrough/GPU device -- which is what
+	// 	// actually drives the InfraInMaintenance condition, regardless of which policy kind is involved. That
+	// 	// ComputePolicy capability is gated by consts.IaaSComputePoliciesCapabilityName, the same capability every
+	// 	// other use of wcp.ComputePolicyCapabilityVMHostAffinity in this suite skips on (see virtualmachinelcm.go's
+	// 	// "IaaS Policies" Context) -- a different, independently-toggled capability than the
+	// 	// consts.VMEvictionCapabilityName this Spec's BeforeEach already checks, hence the extra skip below.
+	// 	It("Should surface VirtualMachinePowerStateSynced=False with reason InfraInMaintenance for VMs that "+
+	// 		"cannot be evacuated off a host entering maintenance mode, and clear once it exits",
+	// 		Label("core-functional", "experimental"),
+	// 		func() {
+	// 			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.IaaSComputePoliciesCapabilityName)
+	//
+	// 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching all three VMs' label")
+	// 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, "vm-eviction-mm")
+	// 			var infraPolicyNames []string
+	// 			evacuationPolicy, infraPolicyNames = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+	// 				fmt.Sprintf("vm-eviction-mm-policy-%s", capiutil.RandomString(4)),
+	// 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, infraPolicyNames)
+	//
+	// 			By("Creating an Optional BestEffortRestartPolicy matching the test label")
+	// 			restartTagID := createVSphereTag(input.WCPClient, tagManager, "vm-eviction-mm-restart")
+	// 			restartPolicy, infraPolicyNames = createBestEffortRestartPolicy(ctx, adminClient, input,
+	// 				fmt.Sprintf("vm-eviction-mm-restart-policy-%s", capiutil.RandomString(4)),
+	// 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
+	//
+	// 			By("Creating VM1, a normal VM matching only the mandatory AutomaticVMEvictionPolicy")
+	// 			vm1Name := fmt.Sprintf("%s-vm1-%s", specName, capiutil.RandomString(4))
+	// 			createAndWaitForPoweredOnVM(ctx, input, svClusterClient, vm1Name, matchLabel)
+	//
+	// 			hostMoRef := getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, vm1Name)
+	// 			if len(listClusterHostMoRefs(ctx, vCenterClient, hostMoRef)) < 2 {
+	// 				Skip("this spec requires more than one host in the cluster to distinguish VM relocation " +
+	// 					"from a VM that cannot be evacuated")
+	// 			}
+	//
+	// 			By("Creating VM2, pinned to VM1's host, matching only the mandatory AutomaticVMEvictionPolicy")
+	// 			vm2Name := fmt.Sprintf("%s-vm2-%s", specName, capiutil.RandomString(4))
+	// 			vm2PinLabel := map[string]string{
+	// 				"vmoperator.vmware.com/e2e-vm-eviction-pin": capiutil.RandomString(6),
+	// 			}
+	// 			createAndWaitForPoweredOnVM(ctx, input, svClusterClient, vm2Name, mergeLabels(matchLabel, vm2PinLabel))
+	// 			infraPolicyNames = pinVMToHost(ctx, input.WCPClient, tagManager, svClusterClient, input.Config,
+	// 				input.WCPNamespaceName, vm2Name, hostMoRef, vm2PinLabel, "vm-eviction-mm-vm2", infraPolicyNames)
+	// 			waitForVMHost(ctx, vCenterClient, svClusterClient, input.Config, input.WCPNamespaceName, vm2Name, hostMoRef)
+	//
+	// 			By("Creating VM3, pinned to VM1's host and explicitly referencing the BestEffortRestartPolicy")
+	// 			vm3Name := fmt.Sprintf("%s-vm3-%s", specName, capiutil.RandomString(4))
+	// 			vm3PinLabel := map[string]string{
+	// 				"vmoperator.vmware.com/e2e-vm-eviction-pin": capiutil.RandomString(6),
+	// 			}
+	// 			createAndWaitForPoweredOnVM(ctx, input, svClusterClient, vm3Name, mergeLabels(matchLabel, vm3PinLabel),
+	// 				explicitPolicyRef(bestEffortRestartPolicyKind, restartPolicy.Name))
+	// 			pinVMToHost(ctx, input.WCPClient, tagManager, svClusterClient, input.Config,
+	// 				input.WCPNamespaceName, vm3Name, hostMoRef, vm3PinLabel, "vm-eviction-mm-vm3", infraPolicyNames)
+	// 			waitForVMHost(ctx, vCenterClient, svClusterClient, input.Config, input.WCPNamespaceName, vm3Name, hostMoRef)
+	//
+	// 			By("Putting VM1's host into maintenance mode")
+	// 			enterTask := enterHostMaintenanceMode(ctx, vCenterClient, hostMoRef)
+	// 			DeferCleanup(func(cleanupCtx context.Context) {
+	// 				exitHostMaintenanceMode(cleanupCtx, vCenterClient, hostMoRef, enterTask)
+	// 			})
+	//
+	// 			By("Verifying VM1 is relocated off the host entering maintenance mode")
+	// 			Eventually(func(g Gomega) {
+	// 				g.Expect(getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, vm1Name)).
+	// 					ToNot(Equal(hostMoRef), "VM1 should be relocated off the host entering maintenance mode")
+	// 			}, input.Config.GetIntervals("default", "wait-policy-evaluation-compliant")...).Should(Succeed())
+	// 			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vm1Name,
+	// 				metav1.Condition{Type: vmopv1.VirtualMachinePowerStateSynced, Status: metav1.ConditionTrue})
+	//
+	// 			By("Verifying DRS powers off VM2 and VM3 (unable to evacuate them) and VirtualMachinePowerStateSynced " +
+	// 				"surfaces False/InfraInMaintenance once VM Operator's own power-on retry hits the same fault")
+	// 			waitForInfraInMaintenance(ctx, input, svClusterClient, vm2Name)
+	// 			waitForInfraInMaintenance(ctx, input, svClusterClient, vm3Name)
+	//
+	// 			By("Taking the host out of maintenance mode")
+	// 			exitHostMaintenanceMode(ctx, vCenterClient, hostMoRef, enterTask)
+	// 			enterTask = nil
+	//
+	// 			By("Verifying VM2 powers back on, on the same host")
+	// 			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vm2Name,
+	// 				metav1.Condition{Type: vmopv1.VirtualMachinePowerStateSynced, Status: metav1.ConditionTrue})
+	// 			Expect(getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, vm2Name)).To(Equal(hostMoRef),
+	// 				"VM2 should power back on on the same host it was pinned to")
+	//
+	// 			By("Verifying VM3 powers back on, on any host")
+	// 			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vm3Name,
+	// 				metav1.Condition{Type: vmopv1.VirtualMachinePowerStateSynced, Status: metav1.ConditionTrue})
+	// 		})
 }
 
 // createVSphereTag creates a real vSphere tag category and tag, registering
@@ -1087,6 +1090,9 @@ func waitForVMHost(
 		"VM %q should be relocated to host %q", vmName, wantHostMoRef.Value)
 }
 
+// Not in v1alpha5: VirtualMachineInfraInMaintenanceReason was added in
+// v1alpha6. Commented out below, along with its only caller above.
+//
 // waitForInfraInMaintenance waits for the named VM's VirtualMachinePowerStateSynced
 // condition to surface False/InfraInMaintenance. spec.powerState is never
 // touched here: the named VM stays pinned to a host that is in maintenance
@@ -1095,18 +1101,18 @@ func waitForVMHost(
 // with the now-PoweredOff status -- attempts to power it back on, which
 // fails with the same NoCompatibleHost/autoevac fault, surfacing the
 // condition.
-func waitForInfraInMaintenance(
-	ctx context.Context,
-	input SpecInput,
-	svClusterClient ctrlclient.Client,
-	vmName string) {
-
-	GinkgoHelper()
-
-	vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName,
-		metav1.Condition{
-			Type:   vmopv1.VirtualMachinePowerStateSynced,
-			Status: metav1.ConditionFalse,
-			Reason: vmopv1.VirtualMachineInfraInMaintenanceReason,
-		})
-}
+// func waitForInfraInMaintenance(
+// 	ctx context.Context,
+// 	input SpecInput,
+// 	svClusterClient ctrlclient.Client,
+// 	vmName string) {
+//
+// 	GinkgoHelper()
+//
+// 	vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName,
+// 		metav1.Condition{
+// 			Type:   vmopv1.VirtualMachinePowerStateSynced,
+// 			Status: metav1.ConditionFalse,
+// 			Reason: vmopv1.VirtualMachineInfraInMaintenanceReason,
+// 		})
+// }

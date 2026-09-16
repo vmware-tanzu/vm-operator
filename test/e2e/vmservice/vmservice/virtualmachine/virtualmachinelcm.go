@@ -26,7 +26,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
@@ -404,7 +404,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				ResourcePolicy:   clusterResources.VMResourcePolicyName,
 				PowerState:       poweredOnState,
 			}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
+			vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
 			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, poweredOnState)
@@ -488,7 +488,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       poweredOnState,
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
+		vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 

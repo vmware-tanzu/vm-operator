@@ -462,11 +462,27 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 	}
 
-	createAndVerifyVMA5 := func(ctx context.Context, vmParameters manifestbuilders.VirtualMachineYaml) {
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+	// waitForVirtualMachineIPWithGuestCustomizationInterval waits for the VM's
+	// primary IPv4 using the longer "linux-guest-customization" interval
+	// (see wcp.yaml) instead of the "default" one vmoperator.WaitForVirtualMachineIP
+	// uses. LinuxPrep guest customization triggers a guest network
+	// restart/reboot that can push the guest's IP report past the default
+	// budget -- the same reasoning as the "windows-sysprep" override used
+	// for Sysprep VMs. Callers that hit this (LinuxPrep and vAppConfig
+	// specs) should verify VM existence/condition/power-state themselves
+	// and call this in place of vmoperator.WaitForVirtualMachineIP.
+	waitForVirtualMachineIPWithGuestCustomizationInterval := func(ctx context.Context, vmName string) {
+		By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", input.WCPNamespaceName, vmName))
+		Eventually(func() bool {
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			if err != nil {
+				return false
+			}
 
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
-		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			return vm.Status.Network != nil &&
+				vm.Status.Network.PrimaryIP4 != "" &&
+				net.ParseIP(vm.Status.Network.PrimaryIP4).To4() != nil
+		}, config.GetIntervals("linux-guest-customization", "wait-virtual-machine-vmip")...).Should(BeTrue())
 	}
 
 	verifyLoginAndRunCmds := func(ctx context.Context, vmIp string, cmds []string, expectedOutput []string) {
@@ -687,7 +703,15 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			})
 
 			It("should successfully deploy VM and set latch to false", func() {
-				createAndVerifyVMA5(ctx, v1a5vmParameters)
+				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(v1a5vmParameters)
+				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
+
+				By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", input.WCPNamespaceName, vmName))
+				vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				waitForVirtualMachineIPWithGuestCustomizationInterval(ctx, vmName)
+
 				vmoperator.WaitForLinuxPrepCustomizeNextPowerOnFalse(ctx, config, svClusterClient, input.WCPNamespaceName, v1a5vmParameters.Name)
 			})
 		})
@@ -845,15 +869,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			})
 
 			It("should successfully apply vAppConfig properties to VM", Label("experimental"), func() {
-				// The IP wait is rolled inline rather than createAndVerifyVM /
-				// vmoperator.WaitForVirtualMachineIP so this spec can use the
-				// longer "linux-guest-customization" interval (see wcp.yaml)
-				// without changing that shared helper's timeout for every
-				// other caller -- the LinuxPrep customization used here
-				// triggers a guest network restart/reboot that can push the
-				// guest's IP report past the default budget, the same
-				// reasoning as the "windows-sysprep" override used for
-				// Sysprep VMs.
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA2(v1a2vmParameters)
 				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
 
@@ -861,18 +876,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-
-				By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", input.WCPNamespaceName, vmName))
-				Eventually(func() bool {
-					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-					if err != nil {
-						return false
-					}
-
-					return vm.Status.Network != nil &&
-						vm.Status.Network.PrimaryIP4 != "" &&
-						net.ParseIP(vm.Status.Network.PrimaryIP4).To4() != nil
-				}, config.GetIntervals("linux-guest-customization", "wait-virtual-machine-vmip")...).Should(BeTrue())
+				waitForVirtualMachineIPWithGuestCustomizationInterval(ctx, vmName)
 
 				// Verify that the vAppConfig properties are actually applied to the VM
 				vmmoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)

@@ -16923,6 +16923,23 @@ spec:
                         unit number of the SCSI controller on its own bus.
                       format: int32
                       type: integer
+                    virtualMachineSnapshot:
+                      description: VirtualMachineSnapshot defines a specific disk
+                        from a VirtualMachineSnapshot.
+                      properties:
+                        diskID:
+                          description: |-
+                            DiskID is the ID of the disk as it appears in
+                            VirtualMachineSnapshot.status.disks[].id.
+                          type: string
+                        name:
+                          description: Name is the name of the VirtualMachineSnapshot
+                            object for the source VirtualMachine.
+                          type: string
+                      required:
+                      - diskID
+                      - name
+                      type: object
                   required:
                   - name
                   type: object

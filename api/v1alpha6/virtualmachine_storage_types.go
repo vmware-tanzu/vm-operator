@@ -231,6 +231,25 @@ type VirtualMachineVolumeSource struct {
 	// More information is available at
 	// https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims.
 	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+
+	// +optional
+
+	// VirtualMachineSnapshot defines a specific disk from a VirtualMachineSnapshot.
+	VirtualMachineSnapshot *VirtualMachineSnapshotDiskSpec `json:"virtualMachineSnapshot,omitempty"`
+}
+
+// VirtualMachineSnapshotDiskSpec defines a specific disk from a VirtualMachineSnapshot.
+type VirtualMachineSnapshotDiskSpec struct {
+	// +required
+
+	// Name is the name of the VirtualMachineSnapshot object for the source VirtualMachine.
+	Name string `json:"name"`
+
+	// +required
+
+	// DiskID is the ID of the disk as it appears in
+	// VirtualMachineSnapshot.status.disks[].id.
+	DiskID string `json:"diskID"`
 }
 
 // PersistentVolumeClaimVolumeSource is a composite for the Kubernetes

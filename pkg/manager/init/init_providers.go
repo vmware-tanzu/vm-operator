@@ -5,8 +5,6 @@
 package manager
 
 import (
-	"fmt"
-
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -17,8 +15,7 @@ import (
 func InitializeProviders(
 	ctx *pkgctx.ControllerManagerContext,
 	mgr ctrlmgr.Manager) error {
-	vmProviderName := fmt.Sprintf("%s/%s/vmProvider", ctx.Namespace, ctx.Name)
-	recorder := record.New(mgr.GetEventRecorder(vmProviderName))
+	recorder := record.New(mgr.GetEventRecorder("vmProvider"))
 	ctx.VMProvider = vsphere.NewVSphereVMProviderFromClient(ctx, mgr.GetClient(), recorder)
 	return nil
 }

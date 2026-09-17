@@ -37,7 +37,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controlledType      = &corev1.Secret{}
 		controllerName      = "infra-secret"
 		controllerNameShort = fmt.Sprintf("%s-controller", controllerName)
-		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
 	vcCredsKey := ctrlclient.ObjectKey{
@@ -59,7 +58,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx,
 		cache,
 		ctrl.Log.WithName("controllers").WithName(controllerName),
-		record.New(mgr.GetEventRecorder(controllerNameLong)),
+		record.New(mgr.GetEventRecorder(controllerNameShort)),
 		ctx.VMProvider,
 		vcCredsKey,
 	)

@@ -71,7 +71,6 @@ func NewValidatingWebhook(
 	var (
 		webhookNameShort = generateValidateName(webhookName, validator.For())
 		webhookPath      = "/" + webhookNameShort
-		webhookNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, webhookNameShort)
 	)
 
 	// Build the webhookContext.
@@ -80,7 +79,7 @@ func NewValidatingWebhook(
 		Name:                            webhookNameShort,
 		Namespace:                       ctx.Namespace,
 		ServiceAccountName:              ctx.ServiceAccountName,
-		Recorder:                        record.New(mgr.GetEventRecorder(webhookNameLong)),
+		Recorder:                        record.New(mgr.GetEventRecorder(webhookNameShort)),
 		Logger:                          ctx.Logger.WithName(webhookNameShort),
 		EnableWebhookClientVerification: ctx.EnableWebhookClientVerification,
 	}

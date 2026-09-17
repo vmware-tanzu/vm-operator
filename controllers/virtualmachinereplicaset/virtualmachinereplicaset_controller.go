@@ -381,6 +381,9 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineReplicaSetContext
 	// TODO: Handle in place propagation of fields to machines before syncing replicas.
 
 	syncErr := r.syncReplicas(ctx, ctx.ReplicaSet, filteredVMs)
+	if syncErr == nil {
+		conditions.Delete(ctx.ReplicaSet, vmopv1.VirtualMachineReplicaSetReplicaFailure)
+	}
 
 	// Update the status of the VirtualMachineReplicaSet even in case of error
 	// since syncing might have resulted in replicas being added or removed.
@@ -505,7 +508,14 @@ func (r *Reconciler) syncReplicas(
 		}
 
 		if len(errs) > 0 {
-			return apierrorsutil.NewAggregate(errs)
+			aggErr := apierrorsutil.NewAggregate(errs)
+			conditions.Set(rs, &metav1.Condition{
+				Type:    vmopv1.VirtualMachineReplicaSetReplicaFailure,
+				Status:  metav1.ConditionTrue,
+				Reason:  vmopv1.VirtualMachineCreationFailedReason,
+				Message: aggErr.Error(),
+			})
+			return aggErr
 		}
 
 		return r.waitForVMCreation(ctx, vmList)
@@ -543,7 +553,14 @@ func (r *Reconciler) syncReplicas(
 		}
 
 		if len(errs) > 0 {
-			return apierrorsutil.NewAggregate(errs)
+			aggErr := apierrorsutil.NewAggregate(errs)
+			conditions.Set(rs, &metav1.Condition{
+				Type:    vmopv1.VirtualMachineReplicaSetReplicaFailure,
+				Status:  metav1.ConditionTrue,
+				Reason:  vmopv1.VirtualMachineDeletionFailedReason,
+				Message: aggErr.Error(),
+			})
+			return aggErr
 		}
 		return r.waitForVMDeletion(ctx, vmsToDelete)
 	}
@@ -687,5 +704,20 @@ func (r *Reconciler) updateStatus(
 		// This means that we have sufficient number of VirtualMachine objects.
 		conditions.MarkTrue(rs, vmopv1.VirtualMachinesCreatedCondition)
 	}
-	// TODO: Set aggregate condition based on the condition of the individual Virtual Machines
+
+	switch {
+	// An empty desired set is trivially/vacuously ready.
+	case desiredReplicas == 0:
+		conditions.MarkTrue(rs, vmopv1.VirtualMachinesReadyCondition)
+	case newStatus.ReadyReplicas >= desiredReplicas:
+		conditions.MarkTrue(rs, vmopv1.VirtualMachinesReadyCondition)
+	default:
+		conditions.MarkFalse(
+			rs,
+			vmopv1.VirtualMachinesReadyCondition,
+			vmopv1.VirtualMachinesNotReadyReason,
+			"%d of %d replicas ready",
+			newStatus.ReadyReplicas,
+			desiredReplicas)
+	}
 }

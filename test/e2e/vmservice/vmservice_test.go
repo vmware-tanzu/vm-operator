@@ -284,6 +284,16 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
+		Context("VM-SET-RESOURCE-POLICY", func() {
+			virtualmachine.VMSetResourcePolicySpec(context.TODO(), func() virtualmachine.VMSetResourcePolicySpecInput {
+				return virtualmachine.VMSetResourcePolicySpecInput{
+					ClusterProxy:   svClusterProxy,
+					Config:         config,
+					ArtifactFolder: artifactFolder,
+				}
+			})
+		})
+
 		Context("VM-EXTRACONFIG", func() {
 			virtualmachine.VMExtraConfigSpec(context.TODO(), func() virtualmachine.VMExtraConfigSpecInput {
 				return virtualmachine.VMExtraConfigSpecInput{

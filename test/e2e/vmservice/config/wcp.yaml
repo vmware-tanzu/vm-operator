@@ -76,6 +76,7 @@ intervals:
   default/wait-virtual-machine-web-console-request-creation: ["30s", "5s"]
   default/wait-virtual-machine-cns-node-batch-attachment-creation: ["10m", "5s"]
   default/wait-virtual-machine-cns-node-batch-attachment-deletion: ["5m", "5s"]
+  default/wait-vmsetrp-clustermodules: ["3m", "5s"]
   default/wait-content-library-name: ["2m", "5s"]
   default/wait-storage-class-ready: ["5m", "15s"]
   default/wait-namespace-ready: ["5m", "10s"]

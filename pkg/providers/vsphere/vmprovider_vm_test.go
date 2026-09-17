@@ -5079,7 +5079,7 @@ func vmTests() {
 									Expect(c).ToNot(BeNil())
 									Expect(c.Status).To(Equal(metav1.ConditionFalse))
 									Expect(c.Reason).To(Equal("InvalidState"))
-									Expect(c.Message).To(Equal("Must use encryption storage class or have vTPM when encrypting vm"))
+									Expect(c.Message).To(Equal("Must use encryption storage class or have vTPM when encrypting the VM"))
 								})
 							})
 

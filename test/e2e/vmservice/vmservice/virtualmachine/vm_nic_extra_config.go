@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
@@ -331,7 +333,7 @@ func powerCycleVM(
 // prerequisites, VNUMANodeID prerequisites, and live-mode fields alongside
 // concurrent disk promotion.
 func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConfigSpecInput) {
-	const specName = "nic-extra-config"
+	const specName = "vm-nic-extra-config"
 
 	var (
 		input            VMNICExtraConfigSpecInput
@@ -365,6 +367,14 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = clusterProxy.GetClient()
 		vmNamespace = input.WCPNamespaceName
+
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
+			ctx,
+			[]string{config.GetVariable("VMOPNamespace")},
+			clusterProxy.GetRESTConfig(),
+			filepath.Join(input.ArtifactFolder, specName),
+		)
+		DeferCleanup(cancelPodWatches)
 
 		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 		DeferCleanup(func() {

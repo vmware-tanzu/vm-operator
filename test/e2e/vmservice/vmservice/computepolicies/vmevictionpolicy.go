@@ -10,6 +10,7 @@ package computepolicies
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,6 +31,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -48,6 +50,7 @@ type SpecInput struct {
 	ClusterProxy     wcpframework.WCPClusterProxyInterface
 	Config           *e2eConfig.E2EConfig
 	WCPClient        wcp.WorkloadManagementAPI
+	ArtifactFolder   string
 	WCPNamespaceName string
 }
 
@@ -103,6 +106,14 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		svClusterClient = clusterProxy.GetClient()
 
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMEvictionCapabilityName)
+
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
+			ctx,
+			[]string{input.Config.GetVariable("VMOPNamespace")},
+			clusterProxy.GetRESTConfig(),
+			filepath.Join(input.ArtifactFolder, specName),
+		)
+		DeferCleanup(cancelPodWatches)
 
 		adminProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to get admin cluster proxy")

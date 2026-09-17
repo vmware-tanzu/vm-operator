@@ -32,6 +32,14 @@ const (
 	// generate a VirtualMachine object.
 	VirtualMachineCreationFailedReason = "VirtualMachineCreationFailed"
 
+	// VirtualMachineDeletionFailedReason documents a VirtualMachineReplicaSet failing to
+	// delete a VirtualMachine object while scaling down.
+	VirtualMachineDeletionFailedReason = "VirtualMachineDeletionFailed"
+
+	// VirtualMachinesNotReadyReason documents that not all of the virtual machines
+	// controlled by the VirtualMachineReplicaSet are ready yet.
+	VirtualMachinesNotReadyReason = "VirtualMachinesNotReady"
+
 	// ResizedCondition documents a VirtualMachineReplicaSet is resizing the set of controlled VirtualMachines.
 	ResizedCondition = "Resized"
 

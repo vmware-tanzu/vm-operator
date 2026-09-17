@@ -1,0 +1,98 @@
+{
+  "environment": {
+    "runAt": "2026-08-23T15:06:33Z",
+    "vcName": "10.162.38.193 (VMware vCenter Server 9.2.0.0.25689988)",
+    "vcVersion": "9.2.0",
+    "vcBuild": "25689988",
+    "vcAPIVersion": "9.1.2.0.rc0",
+    "hostName": "10.162.34.186",
+    "hostVersion": "9.2.0",
+    "hostBuild": "25690016",
+    "hardwareVersion": "vmx-15",
+    "datacenter": "/dc",
+    "resourcePool": "/dc/host/dc-cluster/Resources",
+    "datastore": "/dc/datastore/sharedVmfs-0",
+    "folder": "/dc/vm",
+    "network": "VM Network",
+    "supportMatrix": "vCenter 9.2.0 build 25689988 / ESX 9.2.0 build 25690016 (E02 discriminator rerun, units [10,16], excluding 7)",
+    "govmomiVersion": "v0.56.0-alpha.0.0.20260720221020-d993be43fe66"
+  },
+  "results": [
+    {
+      "id": "E02",
+      "title": "OVF content-library deploy honours explicit NIC unit numbers",
+      "questions": [
+        "Q1",
+        "Q2"
+      ],
+      "status": "HONOURED",
+      "steps": [
+        {
+          "name": "Deploy the OVF with no ConfigSpec NIC entries (baseline)",
+          "observed": [
+            {
+              "kind": "VirtualVmxnet3",
+              "key": 4000,
+              "unitNumber": 7,
+              "controllerKey": 100,
+              "macAddress": "00:50:56:a7:78:dc",
+              "addressType": "assigned",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "notes": [
+            "These are the NICs the OVF descriptor itself contributes, and the slots the platform gave them with no ConfigSpec involvement."
+          ]
+        },
+        {
+          "name": "Deploy the OVF with ConfigSpec NIC Adds at units [10 16]",
+          "requested": [
+            {
+              "kind": "add VirtualVmxnet3",
+              "key": -639861565,
+              "unitNumber": 10,
+              "controllerKey": 0,
+              "addressType": "generated",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            },
+            {
+              "kind": "add VirtualVmxnet3",
+              "key": -1889164362,
+              "unitNumber": 16,
+              "controllerKey": 0,
+              "addressType": "generated",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "observed": [
+            {
+              "kind": "VirtualVmxnet3",
+              "key": 4003,
+              "unitNumber": 10,
+              "controllerKey": 100,
+              "macAddress": "00:50:56:a7:79:b3",
+              "addressType": "assigned",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            },
+            {
+              "kind": "VirtualVmxnet3",
+              "key": 4009,
+              "unitNumber": 16,
+              "controllerKey": 100,
+              "macAddress": "00:50:56:a7:04:f4",
+              "addressType": "assigned",
+              "backing": "VirtualEthernetCardNetworkBackingInfo(VM Network)"
+            }
+          ],
+          "notes": [
+            "Compare against the baseline step: 1 NIC(s) came from the OVF alone, 2 are present here."
+          ]
+        }
+      ],
+      "findings": [
+        "Every explicitly requested unit number was observed on the resulting hardware.",
+        "The NIC count is not baseline + ConfigSpec adds (2 != 1 + 2): the OVF's own NICs and the ConfigSpec Add entries interact rather than accumulate. Record which."
+      ]
+    }
+  ]
+}

@@ -748,6 +748,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyExtensionCompatConstraint, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyExtensionCompatConstraint] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("ExtensionCompatConstraint=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -806,6 +819,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyVMAffinityDuringExecution: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyExtensionCompatConstraint: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -833,6 +849,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.GuestCustomizationVCDParity = true
 					config.Features.VSpherePolicies = true
 					config.Features.VMAffinityDuringExecution = true
+					config.Features.ExtensionCompatConstraint = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -881,7 +898,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyVMAffinityDuringExecution, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeTrue())
 			})
-
+			Specify(capabilities.CapabilityKeyExtensionCompatConstraint, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -899,11 +918,13 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.GuestCustomizationVCDParity = false
 					config.Features.VSpherePolicies = false
 					config.Features.VMAffinityDuringExecution = false
+					config.Features.ExtensionCompatConstraint = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true"))
+
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -946,6 +967,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyVMAffinityDuringExecution, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyExtensionCompatConstraint, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint).To(BeFalse())
 			})
 		})
 	})

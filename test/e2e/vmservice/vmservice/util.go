@@ -1422,6 +1422,29 @@ func UpdateVMRestartMode(
 	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-restart-mode-update")...).Should(Succeed())
 }
 
+func UpdateVMPowerOffMode(
+	ctx context.Context,
+	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcE2EConfig *config.E2EConfig,
+	vmName, vmNamespace string,
+	powerOffMode vmopv1.VirtualMachinePowerOpMode,
+) {
+	GinkgoHelper()
+
+	vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+	Expect(err).NotTo(HaveOccurred())
+
+	vmPatch := vm.DeepCopy()
+	vmPatch.Spec.PowerOffMode = powerOffMode
+	Expect(vmSvcClusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed())
+	framework.Logf("Update VM PowerOffMode:\n%s", powerOffMode)
+	Eventually(func(g Gomega) {
+		vm, err := utils.GetVirtualMachine(ctx, vmSvcClusterProxy.GetClient(), vmNamespace, vmName)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(vm.Spec.PowerOffMode).To(Equal(powerOffMode))
+	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-restart-mode-update")...).Should(Succeed())
+}
+
 func GetDefaultImageDisplayName(clusterResources *config.Resources) string {
 	if os.Getenv("RUN_CANONICAL_TEST") == "true" {
 		Expect(clusterResources.UbuntuImageDisplayName).ToNot(BeEmpty(), "Invalid argument. UbuntuImageDisplayName can't be empty")

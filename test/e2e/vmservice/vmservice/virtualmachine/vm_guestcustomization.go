@@ -18,14 +18,11 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -61,6 +58,8 @@ func vAppProp(key, value string) vmopv1common.KeyValueOrSecretKeySelectorPair {
 	}
 }
 
+// Not in v1alpha5: dual-stack IPAM (interfaces[].ipamModes) and the V1alpha6_* vApp template functions were added in v1alpha6.
+/*
 // buildVAppConfigVM builds a *vmopv1.VirtualMachine as a typed Go struct
 // rather than rendered YAML, with LinuxPrep + VAppConfig bootstrap and, when
 // dualStack is true, a single interface requesting both IPAM families.
@@ -121,6 +120,7 @@ func createAndVerifyVAppConfigVM(
 	vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, namespace, name)
 	return vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, namespace, name)
 }
+*/
 
 // verifyVAppConfigs asserts that the vApp properties configured on the VM in
 // vCenter match expectedProperties. It is shared with vm_publishrequest.go,
@@ -196,6 +196,8 @@ func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid 
 	}
 }
 
+// Not in v1alpha5: dual-stack IPAM (interfaces[].ipamModes) and the V1alpha6_* vApp template functions were added in v1alpha6.
+/*
 // getVAppPropertyValues fetches config.vAppConfig from vCenter for vmmoid
 // and returns a map of vApp property key -> rendered value.
 func getVAppPropertyValues(ctx context.Context, vCenterClient *vim25.Client, vmmoid string) map[string]string {
@@ -376,6 +378,7 @@ func verifyV1alpha6RemainingTemplateFunctionsRoundC(ctx context.Context, vCenter
 	Expect(ok).To(BeTrue(), "string-empty vApp property should exist")
 	Expect(formatIPValue).To(Equal("192.168.1.10/16"), "%s should have rendered 192.168.1.10/16, got %q", constants.V1alpha6FormatIP, formatIPValue)
 }
+*/
 
 func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 	const (
@@ -882,101 +885,104 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			})
 		})
 
-		Context("Property values use V1alpha6 template functions", func() {
-			// These VMs are built directly as typed vmopv1.VirtualMachine
-			// Go structs and created via svClusterClient.Create, rather than
-			// through the manifestbuilders/.yaml.in text-template pipeline --
-			// vApp property values here are themselves Go-template source
-			// (e.g. `{{ V1alpha6_IsUsableIP "fe80::1" }}`), and round-tripping
-			// that through a second, YAML-rendering text/template pass just
-			// to turn it back into a Go string is an unnecessary source of
-			// quoting bugs (see v1a6singlevm.yaml.in's history). They're
-			// v1alpha6 (not v1a2) so that spec.network.interfaces can request
-			// dual-stack IPAM via ipamModes, letting the IPv6 template
-			// functions exercise a real IPv6 address end-to-end instead of
-			// only ever having IPv4 to work with.
-			//
-			// This Context manages its own VM lifecycle (skipCleanup=true
-			// bypasses the shared, YAML-based AfterEach above, which has no
-			// YAML to delete here).
-			var vm *vmopv1.VirtualMachine
+		// Not in v1alpha5: dual-stack IPAM (interfaces[].ipamModes) and the V1alpha6_* vApp template functions were added in v1alpha6.
+		/*
+			Context("Property values use V1alpha6 template functions", func() {
+				// These VMs are built directly as typed vmopv1.VirtualMachine
+				// Go structs and created via svClusterClient.Create, rather than
+				// through the manifestbuilders/.yaml.in text-template pipeline --
+				// vApp property values here are themselves Go-template source
+				// (e.g. `{{ V1alpha6_IsUsableIP "fe80::1" }}`), and round-tripping
+				// that through a second, YAML-rendering text/template pass just
+				// to turn it back into a Go string is an unnecessary source of
+				// quoting bugs (see v1a6singlevm.yaml.in's history). They're
+				// v1alpha6 (not v1a2) so that spec.network.interfaces can request
+				// dual-stack IPAM via ipamModes, letting the IPv6 template
+				// functions exercise a real IPv6 address end-to-end instead of
+				// only ever having IPv4 to work with.
+				//
+				// This Context manages its own VM lifecycle (skipCleanup=true
+				// bypasses the shared, YAML-based AfterEach above, which has no
+				// YAML to delete here).
+				var vm *vmopv1.VirtualMachine
 
-			BeforeEach(func() {
-				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.WorkloadIPv6CapabilityName)
-				skipCleanup = true
-				vm = nil
+				BeforeEach(func() {
+					skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.WorkloadIPv6CapabilityName)
+					skipCleanup = true
+					vm = nil
+				})
+
+				AfterEach(func() {
+					if vm == nil || CurrentSpecReport().State.String() == "skipped" {
+						return
+					}
+					Expect(svClusterClient.Delete(ctx, vm)).To(Succeed(), "failed to delete virtualmachine")
+					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+				})
+
+				// Reuse the same OVF image and property keys across all three
+				// "rounds" below -- vApp property values are only applied if
+				// userConfigurable and pre-existing on the deployed OVF image, so
+				// a new property key would be silently dropped, and this image
+				// only exposes 4 usable (string-typed, readable-back) properties
+				// plus 1 bool and 1 int slot. There are 14 registered V1alpha6_*
+				// template functions in total, so covering all of them takes
+				// several VM creations, one "round" each, reusing the same
+				// property keys for a different function each time.
+				It("round A: should render IPv4/IPv6-specific V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
+					properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
+						vAppProp("string-valid", "{{ "+constants.V1alpha6FirstIPv4+" }}"),
+						vAppProp("string-trimmed", "{{ "+constants.V1alpha6FirstIPv6+" }}"),
+						vAppProp("string-padding-user-configurable", "{{ "+constants.V1alpha6FirstIPv4FromNIC+" 0 }}"),
+						vAppProp("string-empty", "{{ "+constants.V1alpha6FirstIPv6FromNIC+" 0 }}"),
+						// Dummy, fixed input -- doesn't depend on the VM's network.
+						vAppProp("bool-user-configurable-1", `{{ `+constants.V1alpha6IsUsableIP+` "192.168.1.10" }}`),
+						vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "10.0.0.0/24" }}`),
+					}
+					vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+					vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+
+					vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+					verifyV1alpha6TemplateFunctionProperties(ctx, vCenterClient, vmmoid)
+				})
+
+				It("round B: should render the remaining network-dependent V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
+					properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
+						vAppProp("string-valid", "{{ "+constants.V1alpha6FirstIP+" }}"),
+						vAppProp("string-trimmed", "{{ "+constants.V1alpha6FirstIPFromNIC+" 0 }}"),
+						vAppProp("string-padding-user-configurable", "{{ "+constants.V1alpha6FirstNicMacAddr+" }}"),
+						vAppProp("string-empty", "{{range "+constants.V1alpha6IPsFromNIC+" 0}}{{.}} {{end}}"),
+						// Dummy, fixed, link-local input -- doesn't depend on the VM's network.
+						vAppProp("bool-user-configurable-1", `{{ `+constants.V1alpha6IsUsableIP+` "fe80::1" }}`),
+						// Dummy, fixed, IPv6 input -- doesn't depend on the VM's network.
+						vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "2001:db8::/64" }}`),
+					}
+					vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+					vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+
+					vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+					verifyV1alpha6RemainingTemplateFunctionsRoundB(ctx, vCenterClient, vmmoid)
+				})
+
+				It("round C: should render the remaining fixed-input V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
+					// This round doesn't need dual-stack IPAM -- every function
+					// under test here (besides FormatNameservers) takes its
+					// input as a literal argument rather than reading the VM's
+					// network status.
+					properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
+						vAppProp("string-valid", `{{ `+constants.V1alpha6FormatNameservers+` -1 "," }}`),
+						vAppProp("string-trimmed", `{{ `+constants.V1alpha6SubnetMask+` "10.0.0.0/24" }}`),
+						vAppProp("string-padding-user-configurable", `{{ `+constants.V1alpha6IP+` "192.168.1.10" }}`),
+						vAppProp("string-empty", `{{ `+constants.V1alpha6FormatIP+` "192.168.1.10/24" "/16" }}`),
+					}
+					vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
+					vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+
+					vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+					verifyV1alpha6RemainingTemplateFunctionsRoundC(ctx, vCenterClient, vmmoid)
+				})
 			})
-
-			AfterEach(func() {
-				if vm == nil || CurrentSpecReport().State.String() == "skipped" {
-					return
-				}
-				Expect(svClusterClient.Delete(ctx, vm)).To(Succeed(), "failed to delete virtualmachine")
-				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			})
-
-			// Reuse the same OVF image and property keys across all three
-			// "rounds" below -- vApp property values are only applied if
-			// userConfigurable and pre-existing on the deployed OVF image, so
-			// a new property key would be silently dropped, and this image
-			// only exposes 4 usable (string-typed, readable-back) properties
-			// plus 1 bool and 1 int slot. There are 14 registered V1alpha6_*
-			// template functions in total, so covering all of them takes
-			// several VM creations, one "round" each, reusing the same
-			// property keys for a different function each time.
-			It("round A: should render IPv4/IPv6-specific V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
-				properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
-					vAppProp("string-valid", "{{ "+constants.V1alpha6FirstIPv4+" }}"),
-					vAppProp("string-trimmed", "{{ "+constants.V1alpha6FirstIPv6+" }}"),
-					vAppProp("string-padding-user-configurable", "{{ "+constants.V1alpha6FirstIPv4FromNIC+" 0 }}"),
-					vAppProp("string-empty", "{{ "+constants.V1alpha6FirstIPv6FromNIC+" 0 }}"),
-					// Dummy, fixed input -- doesn't depend on the VM's network.
-					vAppProp("bool-user-configurable-1", `{{ `+constants.V1alpha6IsUsableIP+` "192.168.1.10" }}`),
-					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "10.0.0.0/24" }}`),
-				}
-				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
-				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
-
-				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-				verifyV1alpha6TemplateFunctionProperties(ctx, vCenterClient, vmmoid)
-			})
-
-			It("round B: should render the remaining network-dependent V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
-				properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
-					vAppProp("string-valid", "{{ "+constants.V1alpha6FirstIP+" }}"),
-					vAppProp("string-trimmed", "{{ "+constants.V1alpha6FirstIPFromNIC+" 0 }}"),
-					vAppProp("string-padding-user-configurable", "{{ "+constants.V1alpha6FirstNicMacAddr+" }}"),
-					vAppProp("string-empty", "{{range "+constants.V1alpha6IPsFromNIC+" 0}}{{.}} {{end}}"),
-					// Dummy, fixed, link-local input -- doesn't depend on the VM's network.
-					vAppProp("bool-user-configurable-1", `{{ `+constants.V1alpha6IsUsableIP+` "fe80::1" }}`),
-					// Dummy, fixed, IPv6 input -- doesn't depend on the VM's network.
-					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "2001:db8::/64" }}`),
-				}
-				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
-				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
-
-				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-				verifyV1alpha6RemainingTemplateFunctionsRoundB(ctx, vCenterClient, vmmoid)
-			})
-
-			It("round C: should render the remaining fixed-input V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
-				// This round doesn't need dual-stack IPAM -- every function
-				// under test here (besides FormatNameservers) takes its
-				// input as a literal argument rather than reading the VM's
-				// network status.
-				properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
-					vAppProp("string-valid", `{{ `+constants.V1alpha6FormatNameservers+` -1 "," }}`),
-					vAppProp("string-trimmed", `{{ `+constants.V1alpha6SubnetMask+` "10.0.0.0/24" }}`),
-					vAppProp("string-padding-user-configurable", `{{ `+constants.V1alpha6IP+` "192.168.1.10" }}`),
-					vAppProp("string-empty", `{{ `+constants.V1alpha6FormatIP+` "192.168.1.10/24" "/16" }}`),
-				}
-				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
-				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
-
-				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-				verifyV1alpha6RemainingTemplateFunctionsRoundC(ctx, vCenterClient, vmmoid)
-			})
-		})
+		*/
 	})
 
 	Context("Sysprep", Label(consts.WindowsSysprepLabel, "experimental"), func() {

@@ -6,35 +6,9 @@ package virtualmachine
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"path/filepath"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/mo"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
-	capiutil "sigs.k8s.io/cluster-api/util"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
 
@@ -47,6 +21,14 @@ type VMLocationSpecInput struct {
 	WCPNamespaceName string
 }
 
+// VMLocationSpec validates that the VirtualMachineLocationValid condition is set correctly
+// when a VM is created in, moved out of, or returned to the expected vCenter inventory location.
+//
+// Not in v1alpha5: the VirtualMachineLocationValid condition was added in
+// v1alpha6. The original spec is preserved below, commented out.
+func VMLocationSpec(_ context.Context, _ func() VMLocationSpecInput) {}
+
+/*
 // VMLocationSpec validates that the VirtualMachineLocationValid condition is set correctly
 // when a VM is created in, moved out of, or returned to the expected vCenter inventory location.
 func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput) {
@@ -407,3 +389,4 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 		})
 	})
 }
+*/

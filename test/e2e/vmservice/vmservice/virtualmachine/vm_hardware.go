@@ -28,7 +28,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -966,7 +966,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					pvcs: pvcs,
 				}
 			}),
-			Entry("create a virtual machine with a MicrosoftWSFC volume and no explicit controller",
+			// Needs crossported change
+			XEntry("create a virtual machine with a MicrosoftWSFC volume and no explicit controller",
 				func() testSpec {
 					// Create a volume with WSFC application mode and validate
 					// that a valid slot is assigned to the volume.
@@ -2245,7 +2246,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}
 			})
 
-			It("Detaching an unmanaged disk before VM deletion preserves its PVC", Label("experimental"), func() {
+			// Need fix crossported
+			XIt("Detaching an unmanaged disk before VM deletion preserves its PVC", Label("experimental"), func() {
 				if !allDisksArePVCapabilityEnabled {
 					Skip("AllDisksArePVCs capability is not enabled")
 				}

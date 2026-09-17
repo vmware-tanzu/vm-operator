@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 // FindBootDiskVolumeStatus identifies the boot disk entry inside
@@ -39,10 +39,10 @@ import (
 //
 // Returns nil when no boot disk can be identified (e.g. no volumes have
 // been attached yet).
-func FindBootDiskVolumeStatus(vm *vmopv1a6.VirtualMachine) *vmopv1a6.VirtualMachineVolumeStatus {
+func FindBootDiskVolumeStatus(vm *vmopv1.VirtualMachine) *vmopv1.VirtualMachineVolumeStatus {
 	// Pass 1 – Classic disk (OVF boot disk).
 	for i := range vm.Status.Volumes {
-		if vm.Status.Volumes[i].Type == vmopv1a6.VolumeTypeClassic {
+		if vm.Status.Volumes[i].Type == vmopv1.VolumeTypeClassic {
 			return &vm.Status.Volumes[i]
 		}
 	}
@@ -90,10 +90,10 @@ func StorageClassNameForBootDisk(
 	ctx context.Context,
 	vimClient *vim25.Client,
 	k8sClient ctrlclient.Client,
-	vm *vmopv1a6.VirtualMachine,
-	bootVol *vmopv1a6.VirtualMachineVolumeStatus,
+	vm *vmopv1.VirtualMachine,
+	bootVol *vmopv1.VirtualMachineVolumeStatus,
 ) (string, error) {
-	if bootVol.Type == vmopv1a6.VolumeTypeManaged {
+	if bootVol.Type == vmopv1.VolumeTypeManaged {
 		return storageClassNameForManagedDisk(ctx, k8sClient, vm, bootVol.Name)
 	}
 	// Classic disk: use PBM.
@@ -129,7 +129,7 @@ func StorageClassNameForBootDisk(
 func storageClassNameForManagedDisk(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
-	vm *vmopv1a6.VirtualMachine,
+	vm *vmopv1.VirtualMachine,
 	volName string,
 ) (string, error) {
 	// Find the matching spec.volumes entry to get the PVC claim name.

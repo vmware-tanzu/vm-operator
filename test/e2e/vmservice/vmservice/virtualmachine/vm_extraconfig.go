@@ -6,40 +6,30 @@ package virtualmachine
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"path/filepath"
-	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/mo"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
-	capiutil "sigs.k8s.io/cluster-api/util"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
-
-	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
 
+// VMExtraConfigSpecInput is the input for the ExtraConfig test spec.
+type VMExtraConfigSpecInput struct {
+	ClusterProxy     wcpframework.WCPClusterProxyInterface
+	Config           *e2eConfig.E2EConfig
+	ArtifactFolder   string
+	SkipCleanup      bool
+	WCPNamespaceName string
+}
+
+// VMExtraConfigSpec validates the ExtraConfig reconciler end-to-end on a live WCP cluster.
+//
+// Not in v1alpha5: spec.advanced.extraConfig, and the first-class advanced
+// fields PreferHTEnabled/TimeTrackerLowLatencyEnabled/
+// CPUAffinityExclusiveNoStatsEnabled/VMXSwapEnabled, along with the
+// ExtraConfigSynced/PowerCyclePending/PowerOffRequired conditions, were all
+// added in v1alpha6. The original spec is preserved below, commented out.
+func VMExtraConfigSpec(_ context.Context, _ func() VMExtraConfigSpecInput) {}
+
+/*
 // VMX key names for first-class advanced fields (mirrors the vmx struct tags).
 const (
 	vmxPreferHT          = "numa.vcpu.preferHT"
@@ -1189,3 +1179,4 @@ func findVSphereVMByBiosUUID(ctx context.Context, vimClient *vim25.Client, biosU
 	}
 	return object.NewVirtualMachine(vimClient, ref.Reference())
 }
+*/

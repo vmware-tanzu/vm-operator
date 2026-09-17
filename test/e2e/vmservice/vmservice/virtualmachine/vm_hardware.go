@@ -813,6 +813,10 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}
 			}),
 			Entry("create a virtual machine with a combination of placements, controller types, and sharing modes with ezt", func() testSpec {
+				// PVCs must exist before the VM is created, otherwise the
+				// validation webhook skips PVC-dependent checks (e.g. the
+				// ReadWriteMany/MultiWriter sharing-mode combinations and the
+				// OracleRAC/MicrosoftWSFC application-type checks below).
 				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				defer vcenter.LogoutVimClient(vCenterClient)
 
@@ -927,7 +931,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}, 1)...)
 
 				return testSpec{
-					pvcs: pvcs,
+					precreatePVCs: true,
+					pvcs:          pvcs,
 					hardware: vmopv1.VirtualMachineHardwareSpec{
 						SCSIControllers: []vmopv1.SCSIControllerSpec{
 							{

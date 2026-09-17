@@ -10,6 +10,12 @@ import "regexp"
 // so their value can be redacted before the command is logged.
 var sensitiveFlagPattern = regexp.MustCompile(`(?i)([-+]{1,2}[\w-]*(?:password|secret|pwd|passwd)[\w-]*\s+)'[^']*'`)
 
+// sensitiveVarAssignmentPattern matches unquoted key=value pairs whose key is
+// a password or other secret (e.g. Packer's "-var ssh_password=x" style,
+// produced by exec.Cmd.String()), so the value can be redacted before the
+// command is logged.
+var sensitiveVarAssignmentPattern = regexp.MustCompile(`(?i)([\w-]*(?:password|secret|pwd|passwd)[\w-]*=)\S+`)
+
 // sensitiveOutputLinePattern matches "key: value" style lines commonly
 // emitted by VC-side tooling (e.g. decryptK8Pwd.py prints "PWD: <secret>"),
 // so the value can be redacted before command output is logged.
@@ -19,7 +25,8 @@ var sensitiveOutputLinePattern = regexp.MustCompile(`(?im)^([ \t]*(?:pwd|passwor
 // password- or secret-like flags replaced with '***'. It is safe to call
 // on any CLI command string before printing or logging it.
 func RedactSensitiveFlags(cmd string) string {
-	return sensitiveFlagPattern.ReplaceAllString(cmd, "${1}'***'")
+	cmd = sensitiveFlagPattern.ReplaceAllString(cmd, "${1}'***'")
+	return sensitiveVarAssignmentPattern.ReplaceAllString(cmd, "${1}***")
 }
 
 // RedactSensitiveOutput returns a copy of output with the values of any

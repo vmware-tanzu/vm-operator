@@ -62,7 +62,7 @@ func RunPackerBuildCmd(ctx context.Context, opts PackerBuildCmdOpts) ([]byte, er
 
 	// Set the command directory to ensure packer-plugin-vsphere binary is accessible.
 	cmd.Dir = pluginDirPath
-	e2eframework.Logf("Running command: %s (in %s)", cmd.String(), cmd.Dir)
+	e2eframework.Logf("Running command: %s (in %s)", e2essh.RedactSensitiveFlags(cmd.String()), cmd.Dir)
 
 	return cmd.Output()
 }

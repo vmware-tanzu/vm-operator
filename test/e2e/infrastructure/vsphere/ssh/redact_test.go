@@ -60,6 +60,16 @@ var _ = Describe("RedactSensitiveFlags", func() {
 			``,
 			``,
 		),
+
+		Entry("packer -var key=value style with password and secret keys",
+			`/usr/bin/packer build -var kubeconfig_path=/tmp/kubeconfig -var ssh_password=SuperSecret123 -var ssh_bastion_password=GwPass456 -var source_name=vm-1 /templates/foo.pkr.hcl`,
+			`/usr/bin/packer build -var kubeconfig_path=/tmp/kubeconfig -var ssh_password=*** -var ssh_bastion_password=*** -var source_name=vm-1 /templates/foo.pkr.hcl`,
+		),
+
+		Entry("does not redact non-sensitive key=value assignments",
+			`/usr/bin/packer build -var source_name=vm-1 -var image_name=ubuntu-vmi`,
+			`/usr/bin/packer build -var source_name=vm-1 -var image_name=ubuntu-vmi`,
+		),
 	)
 })
 

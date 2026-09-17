@@ -8,13 +8,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	apirecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 var _ = Describe("Event utils", func() {
-	fakeRecorder := apirecord.NewFakeRecorder(100)
+	fakeRecorder := events.NewFakeRecorder(100)
 	recorder := record.New(fakeRecorder)
 
 	Context("Publish event", func() {

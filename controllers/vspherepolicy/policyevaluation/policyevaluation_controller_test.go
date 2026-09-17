@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	apirecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -97,7 +97,7 @@ var _ = Describe("Reconcile", func() {
 			ctx,
 			client,
 			log.Log.WithName("test"),
-			record.New(apirecord.NewFakeRecorder(100)),
+			record.New(events.NewFakeRecorder(100)),
 		)
 	})
 

@@ -17,6 +17,43 @@ VM Operator does not own the coordination mechanism itself. A separate Lifecycle
 
 ---
 
+## Reconcile pipeline (big picture)
+
+```
+Reconcile(req)
+  │
+  └─DeletionTimestamp set?
+      │
+      ├─no  ─▶ ReconcileNormal
+      │           │
+      │           ├─Create stage checkpoint (once per VM lifecycle)
+      │           │     not yet created + hook registered + not ready ─▶ pause, skip provider Create
+      │           │     ready or no hook ─▶ proceed to provider Create
+      │           │
+      │           └─PowerStateChange stage checkpoint (every power transition)
+      │                 desired power state ≠ observed + hook registered + not ready ─▶ pause,
+      │                 skip the power-state apply only — all other config/device reconcile continues
+      │                 ready or no hook ─▶ apply the power-state change
+      │
+      └─yes ─▶ ReconcileDelete
+                  │
+                  ├─Delete stage checkpoint (vSphere-side, once)
+                  │     hook registered + not ready ─▶ pause, skip provider Delete, keep finalizer
+                  │     ready or no hook ─▶ delete the vSphere VM
+                  │
+                  └─ResourceDelete stage checkpoint (Kubernetes-side, once — never in
+                     parallel with Delete; only evaluated once Delete has fully resolved)
+                        hook registered + not ready ─▶ pause, skip RemoveFinalizer
+                        ready or no hook ─▶ RemoveFinalizer, object is garbage-collected
+```
+
+Every checkpoint above is the same shared operation — get-or-create the VM's
+`LifecycleState`, check `workflowPaused`/`HooksReady`, pause or proceed — applied at
+four different points in the reconcile flow. See "Reconcile flows" below for the
+per-checkpoint decision logic and its two failure-free exits (no capability, no hook).
+
+---
+
 ## Goals
 
 - **G1**: VM Operator MUST expose exactly four lifecycle stages for `VirtualMachine`: **Create**, **PowerStateChange**, **Delete** (vSphere-side deletion), and **ResourceDelete** (Kubernetes CR finalizer removal).
@@ -103,6 +140,81 @@ A DevOps user needs to tell, from the VM object alone, whether any stage is curr
 
 ---
 
+## Reconcile flows
+
+The diagrams below give the checkpoint decision logic in detail: the shared
+stage-check applied identically at all four points, and where each one sits inside
+`Reconcile`'s `ReconcileNormal`/`ReconcileDelete` split.
+
+### Diagram A — Reconcile entrypoint
+
+```mermaid
+flowchart TD
+    Start([Reconcile#40;req#41;]) --> CapCheck{Features.LifecycleHooks<br/>enabled?}
+    CapCheck -- no --> Skip[Skip every checkpoint below —<br/>behavior identical to feature absent]
+    CapCheck -- yes --> DelTS{DeletionTimestamp set?}
+    DelTS -- no --> Normal[ReconcileNormal]
+    DelTS -- yes --> Delete[ReconcileDelete]
+    Skip --> Normal2[ReconcileNormal / ReconcileDelete<br/>#40;unchanged today's behavior#41;]
+```
+
+### Diagram B — ReconcileNormal: Create and PowerStateChange checkpoints
+
+```mermaid
+flowchart TD
+    Start([ReconcileNormal]) --> CreateChk[checkStage#40;vm, Create,<br/>ConditionLifecycleCreateReady#41;]
+    CreateChk --> CreateProceed{proceed?}
+    CreateProceed -- no --> CreateExit([Exit — vSphere VM not created,<br/>condition = False/HooksPending])
+    CreateProceed -- yes --> ProviderCreate[Provider: create VM in vSphere<br/>#40;if not already created#41;]
+    ProviderCreate --> OtherRecon[Config/device/status reconcile steps<br/>#40;unaffected by PowerStateChange gating#41;]
+    OtherRecon --> PowerDiff{desired powerState ≠<br/>observed powerState?}
+    PowerDiff -- no --> Done([Reconcile complete])
+    PowerDiff -- yes --> PowerChk[checkStage#40;vm, PowerStateChange,<br/>ConditionLifecyclePowerStateChangeReady#41;]
+    PowerChk --> PowerProceed{proceed?}
+    PowerProceed -- no --> PowerExit([Exit — power-state apply skipped only;<br/>condition = False/HooksPending])
+    PowerProceed -- yes --> ApplyPower[Apply power-state change to vSphere]
+    ApplyPower --> Done
+```
+
+### Diagram C — ReconcileDelete: Delete and ResourceDelete checkpoints
+
+```mermaid
+flowchart TD
+    Start([ReconcileDelete]) --> DeleteChk[checkStage#40;vm, Delete,<br/>ConditionLifecycleDeleteReady#41;]
+    DeleteChk --> DeleteProceed{proceed?}
+    DeleteProceed -- no --> DeleteExit([Exit — finalizer kept,<br/>condition = False/HooksPending])
+    DeleteProceed -- yes --> ProviderDelete[Provider: delete/unregister<br/>the vSphere VM]
+    ProviderDelete --> RDChk[checkStage#40;vm, ResourceDelete,<br/>ConditionLifecycleResourceDeleteReady#41;]
+    RDChk --> RDProceed{proceed?}
+    RDProceed -- no --> RDExit([Exit — finalizer kept,<br/>condition = False/HooksPending])
+    RDProceed -- yes --> RemoveFin[controllerutil.RemoveFinalizer]
+    RemoveFin --> GC([Kubernetes garbage-collects the object])
+```
+
+### Diagram D — shared `checkStage` decision logic
+
+Every checkpoint in Diagrams B and C calls this same routine (see `model.md`
+"VM Operator's read/write contract per stage checkpoint"):
+
+```mermaid
+flowchart TD
+    Start([checkStage#40;vm, stageName, conditionType#41;]) --> GetLS{LifecycleState<br/>exists?}
+    GetLS -- no --> HookExists{Any LifecycleHook<br/>registered for this stage?}
+    HookExists -- no --> ProceedNoHook[MarkTrue#40;conditionType#41;<br/>Return proceed=true]
+    HookExists -- yes --> CreateLS[Create LifecycleState]
+    CreateLS --> PauseIt
+    GetLS -- yes --> Paused{spec.stages#91;stageName#93;<br/>.workflowPaused == true?}
+    Paused -- no --> PauseIt[Patch workflowPaused=true<br/>MarkFalse#40;conditionType, HooksPending#41;<br/>emit stage event]
+    PauseIt --> ExitPause([Return proceed=false])
+    Paused -- yes --> HooksReady{status.stages#91;stageName#93;<br/>.conditions#91;HooksReady#93; == True?}
+    HooksReady -- no --> StillWaiting[MarkFalse#40;conditionType, HooksPending#41;]
+    StillWaiting --> ExitWait([Return proceed=false])
+    HooksReady -- yes --> Resume[Patch workflowResumed=true<br/>MarkTrue#40;conditionType#41;]
+    Resume --> ExitProceed([Return proceed=true])
+```
+
+---
+
 ## Resolved decisions
 
 All open questions from the prior draft have been resolved:
@@ -130,7 +242,7 @@ All open questions from the prior draft have been resolved:
 
 ## Open questions
 
-None outstanding.
+- [NEEDS CLARIFICATION: G6 ("no `LifecycleHook` anywhere → zero measurable behavior change from today") may not be achievable relying solely on the Lifecycle framework's own create-time contract — see `research.md` "Zero-hook cost." All four handshake options the framework side has documented (populate-all-stages vs. populate-subscribed-only, crossed with who populates) cost something for the common zero-hook VM: either a per-stage-reach round trip (4 writes, 2 round trips, forever) or a one-time creation-time wait for `StagesConverged`. Satisfying G6 likely requires VM Operator to pre-check `LifecycleHook` existence itself (e.g. a cached list/watch) before ever entering the framework's handshake, rather than deferring "direct list vs. rely on `LifecycleState` absence" to `plan.md` as a pure implementation detail. Needs a decision before `plan.md`'s reconcile-pipeline design (see "Reconcile pipeline" diagrams above) can be finalized.]
 
 ## Review & acceptance checklist
 
@@ -142,3 +254,4 @@ None outstanding.
 - [x] Condition/reason names and the capability name are specified.
 - [x] Out-of-scope items (Lifecycle Operator, eventing system, additional stages, hook-failure-detail parsing) are listed.
 - [x] Feature-flag/capability-off behavior is specified (G7, SC-005).
+- [x] The reconcile pipeline and the per-checkpoint decision logic (shared `checkStage`) are diagrammed.

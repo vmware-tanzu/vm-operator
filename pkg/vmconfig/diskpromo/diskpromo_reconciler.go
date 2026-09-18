@@ -249,7 +249,7 @@ func (r reconciler) Reconcile(
 			vm,
 			vmopv1.VirtualMachineDiskPromotionSynced,
 			ReasonPending,
-			"Cannot promote disks when VM has running task")
+			"Cannot promote disks when VM has a running task")
 		return nil
 	}
 
@@ -261,7 +261,7 @@ func (r reconciler) Reconcile(
 				vm,
 				vmopv1.VirtualMachineDiskPromotionSynced,
 				ReasonPending,
-				"Cannot online promote disks when VM has snapshot")
+				"Cannot online promote disks when VM has a snapshot")
 			logger.V(4).Info(
 				"Skipping online disk promotion for VM with snapshot(s)")
 			return nil

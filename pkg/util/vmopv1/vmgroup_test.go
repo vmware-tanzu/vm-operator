@@ -189,7 +189,7 @@ var _ = Describe("Validating RetrieveVMGroupMembers",
 				_, err := vmopv1util.RetrieveVMGroupMembers(ctx, ctx.Client,
 					ctrlclient.ObjectKeyFromObject(vmGroup), visitedGroups)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal(fmt.Sprintf("a loop is detected among groups: %q visisted", vmGroup.Name)))
+				Expect(err.Error()).To(Equal(fmt.Sprintf("a loop is detected among groups: %q visited", vmGroup.Name)))
 			})
 		})
 

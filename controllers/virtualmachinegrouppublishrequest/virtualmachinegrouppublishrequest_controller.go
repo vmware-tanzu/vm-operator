@@ -38,7 +38,7 @@ import (
 const (
 	finalizerName         = "vmoperator.vmware.com/virtualmachinegrouppublishrequest"
 	undefinedSpecErrorMsg = "spec.%s is undefined"
-	invalidSpecErrorMsg   = "webhooks failed to mutate/validate spec. please delete and create again."
+	invalidSpecErrorMsg   = "webhooks failed to mutate/validate spec. Please delete and create again."
 	delTTLMsg             = "%s vm group publish request due to TTL expired"
 )
 

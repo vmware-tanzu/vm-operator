@@ -48,6 +48,7 @@ intervals:
   default/wait-virtual-machine-resize: ["5m", "3s"]
   default/wait-virtual-machine-moid: ["5m", "3s"]
   default/wait-virtual-machine-vmip: ["5m", "3s"]
+  default/wait-virtual-machine-disk-promotion: ["5m", "3s"]
   default/wait-virtual-machine-image-creation: ["20s", "2s"]
   default/consistent-virtual-machine-condition: ["30s", "5s"]
   default/wait-virtual-machine-annotation-update: ["30s", "5s"]

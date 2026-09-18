@@ -52,7 +52,7 @@ const (
 	// This template file exists in the packer-plugin-vsphere repo.
 	// Make sure to update the repo if you are changing this file.
 	packerSpecTemplateName = "general-template.pkr.hcl"
-	randomSSOUserName      = "packer-plugin-random-user"
+	randomSSOUserNameBase  = "packer-plugin-random-user"
 	randomSSOUserPassword  = "Password!23"
 )
 
@@ -170,11 +170,18 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 
 	It("Packer command to build and deploy a VM from a view only access SSO user", func() {
 		// Create SSO user and associate to the namespace with view only access.
+		randomSSOUserName := fmt.Sprintf("%s-%s", randomSSOUserNameBase, capiutil.RandomString(6))
 		sshCommandRunner, _, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, kubeconfigPath)
 		vCenterAdminCreds := dcli.VCenterUserCredentials{Username: testbed.AdminUsername, Password: testbed.AdminPassword}
 		nonAdminUser := vcenter.NewUser(randomSSOUserName, randomSSOUserPassword).WithAdminCreds(vCenterAdminCreds).WithSSHCommandRunner(sshCommandRunner)
 		kubectlPlugin := testutils.CreateUserAndLogin(nonAdminUser, supervisorClusterIP, "", "")
 		testutils.SetUserPermissionsOnNamespace(wcpClient, nonAdminUser, wcp.ViewAccessType, input.WCPNamespaceName)
+
+		DeferCleanup(func() {
+			if !input.SkipCleanup {
+				vcenter.DeleteUserOrFail(nonAdminUser)
+			}
+		})
 
 		// Get the SSO user's kubeconfig path and set in the packer command variables.
 		kubeconfigAbsPath, err := filepath.Abs(kubectlPlugin.KubeconfigPath())
@@ -184,9 +191,6 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 		cmdOut, err := RunPackerBuildCmd(ctx, packerCmdOpts)
 		Expect(err).To(HaveOccurred())
 		Expect(string(cmdOut)).To(ContainSubstring((" cannot create resource")))
-
-		// Delete the SSO user.
-		vcenter.DeleteUserOrFail(nonAdminUser)
 	})
 
 	It("Packer command to build and deploy a VM from VMI with valid configs and keep_input_artifact set to true", func() {

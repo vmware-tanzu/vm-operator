@@ -28,6 +28,7 @@ type VirtualMachineNetworkRouteSpec struct {
 
 // +kubebuilder:validation:XValidation:rule="!has(self.vmxnet3) || self.type == 'VMXNet3'",message="vmxnet3 tuning fields require interface type VMXNet3"
 // +kubebuilder:validation:XValidation:rule="!has(self.ipamModes) || self.ipamModes.all(m, m == 'IPv4' || m == 'IPv6')",message="each ipamModes entry must be IPv4 or IPv6"
+// +kubebuilder:validation:XValidation:rule="(!has(oldSelf.ipamModes) && !has(self.ipamModes)) || (has(oldSelf.ipamModes) && has(self.ipamModes) && self.ipamModes == oldSelf.ipamModes)",message="ipamModes cannot be changed after creation"
 
 // VirtualMachineNetworkInterfaceSpec describes the desired state of a VM's
 // network interface.
@@ -248,6 +249,14 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	//
 	// When unset, the provider's default applies for which families are allocated.
 	// When set, the controller forwards the requested families to the provider for this interface.
+	//
+	// IPAMModes is immutable for this network interface once the interface is
+	// created, including the transition from unset to set or set to unset.
+	// There is no supported way to convert an interface between single-stack
+	// and dual-stack, or between IPv4-only and IPv6-only, after creation.
+	// Removing this interface entry and adding a new one with the same name
+	// but different IPAMModes is not a supported way to work around this
+	// restriction; it deletes and recreates the underlying network interface.
 	IPAMModes []corev1.IPFamily `json:"ipamModes,omitempty"`
 }
 

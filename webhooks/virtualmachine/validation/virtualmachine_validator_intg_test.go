@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -65,6 +66,17 @@ func intgTests() {
 			testlabels.Webhook,
 		),
 		intgTestsValidateDelete,
+	)
+	Describe(
+		"CEL: ipamModes immutability",
+		Label(
+			testlabels.Update,
+			testlabels.EnvTest,
+			testlabels.API,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		intgTestsValidateIPAMModesImmutability,
 	)
 }
 
@@ -525,6 +537,132 @@ func intgTestsValidateCdromController() {
 			It("should allow the request", func() {
 				Expect(err).ToNot(HaveOccurred())
 			})
+		})
+	})
+}
+
+const ipamModesImmutableMsg = "ipamModes cannot be changed after creation"
+
+func intgTestsValidateIPAMModesImmutability() {
+	var (
+		ctx *intgValidatingWebhookContext
+	)
+
+	BeforeEach(func() {
+		ctx = newIntgValidatingWebhookContext()
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	When("ipamModes is unset at creation", func() {
+		BeforeEach(func() {
+			Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+		})
+
+		It("rejects setting ipamModes on update", func() {
+			ctx.vm.Spec.Network.Interfaces[0].IPAMModes = []corev1.IPFamily{corev1.IPv4Protocol}
+			updateErr := ctx.Client.Update(ctx, ctx.vm)
+			Expect(apierrors.IsInvalid(updateErr)).To(BeTrue())
+			Expect(updateErr.Error()).To(ContainSubstring(ipamModesImmutableMsg))
+		})
+
+		It("allows an update that leaves ipamModes unset", func() {
+			ctx.vm.Spec.MinHardwareVersion += 2
+			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+		})
+	})
+
+	When("ipamModes is set to a single family at creation", func() {
+		BeforeEach(func() {
+			ctx.vm.Spec.Network.Interfaces[0].IPAMModes = []corev1.IPFamily{corev1.IPv4Protocol}
+			Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+		})
+
+		It("rejects converting to dual-stack", func() {
+			ctx.vm.Spec.Network.Interfaces[0].IPAMModes = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+			updateErr := ctx.Client.Update(ctx, ctx.vm)
+			Expect(apierrors.IsInvalid(updateErr)).To(BeTrue())
+			Expect(updateErr.Error()).To(ContainSubstring(ipamModesImmutableMsg))
+		})
+
+		It("rejects converting to the other single family", func() {
+			ctx.vm.Spec.Network.Interfaces[0].IPAMModes = []corev1.IPFamily{corev1.IPv6Protocol}
+			updateErr := ctx.Client.Update(ctx, ctx.vm)
+			Expect(apierrors.IsInvalid(updateErr)).To(BeTrue())
+			Expect(updateErr.Error()).To(ContainSubstring(ipamModesImmutableMsg))
+		})
+
+		It("rejects clearing ipamModes", func() {
+			ctx.vm.Spec.Network.Interfaces[0].IPAMModes = nil
+			updateErr := ctx.Client.Update(ctx, ctx.vm)
+			Expect(apierrors.IsInvalid(updateErr)).To(BeTrue())
+			Expect(updateErr.Error()).To(ContainSubstring(ipamModesImmutableMsg))
+		})
+
+		It("allows reordering interfaces without touching ipamModes", func() {
+			ctx.vm.Spec.Network.Interfaces = append(ctx.vm.Spec.Network.Interfaces,
+				vmopv1.VirtualMachineNetworkInterfaceSpec{Name: "eth1"})
+			Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+
+			// listType=map matches by name, not position, so swapping the
+			// slice order must not trip the immutability rule.
+			ifaces := ctx.vm.Spec.Network.Interfaces
+			ifaces[0], ifaces[1] = ifaces[1], ifaces[0]
+			Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+		})
+	})
+
+	When("ipamModes is set to dual-stack at creation", func() {
+		BeforeEach(func() {
+			ctx.vm.Spec.Network.Interfaces[0].IPAMModes = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+			Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+		})
+
+		It("allows reordering the two families since listType=set makes them order-insensitive", func() {
+			ctx.vm.Spec.Network.Interfaces[0].IPAMModes = []corev1.IPFamily{corev1.IPv6Protocol, corev1.IPv4Protocol}
+			Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+		})
+
+		It("rejects dropping to single-stack", func() {
+			ctx.vm.Spec.Network.Interfaces[0].IPAMModes = []corev1.IPFamily{corev1.IPv4Protocol}
+			updateErr := ctx.Client.Update(ctx, ctx.vm)
+			Expect(apierrors.IsInvalid(updateErr)).To(BeTrue())
+			Expect(updateErr.Error()).To(ContainSubstring(ipamModesImmutableMsg))
+		})
+	})
+
+	When("adding a new interface", func() {
+		BeforeEach(func() {
+			Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+		})
+
+		It("allows the new interface to set ipamModes since it has no prior state", func() {
+			ctx.vm.Spec.Network.Interfaces = append(ctx.vm.Spec.Network.Interfaces,
+				vmopv1.VirtualMachineNetworkInterfaceSpec{
+					Name:      "eth1",
+					IPAMModes: []corev1.IPFamily{corev1.IPv6Protocol},
+				})
+			Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+		})
+	})
+
+	When("removing an interface that had ipamModes set", func() {
+		BeforeEach(func() {
+			ctx.vm.Spec.Network.Interfaces = append(ctx.vm.Spec.Network.Interfaces,
+				vmopv1.VirtualMachineNetworkInterfaceSpec{
+					Name:      "eth1",
+					IPAMModes: []corev1.IPFamily{corev1.IPv4Protocol},
+				})
+			Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+		})
+
+		It("allows deleting the interface entry entirely", func() {
+			ctx.vm.Spec.Network.Interfaces = ctx.vm.Spec.Network.Interfaces[:1]
+			Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
 		})
 	})
 }

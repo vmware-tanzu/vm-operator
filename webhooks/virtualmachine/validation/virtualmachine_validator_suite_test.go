@@ -24,6 +24,8 @@ var suite = builder.NewTestSuiteForValidatingWebhookWithContext(
 func TestWebhook(t *testing.T) {
 	pkgcfg.SetContext(suite, func(config *pkgcfg.Config) {
 		config.Features.VMSharedDisks = true
+		config.Features.WorkloadIPv6 = true
+		config.Features.MutableNetworks = true
 		config.BuildVersion = testBuildVersion // Match annotations set in test VMs
 	})
 

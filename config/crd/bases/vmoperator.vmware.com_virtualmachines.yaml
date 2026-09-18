@@ -12,7 +12,7 @@ spec:
     listKind: VirtualMachineList
     plural: virtualmachines
     shortNames:
-    - vm
+    - vspherevm
     singular: virtualmachine
   scope: Namespaced
   versions:

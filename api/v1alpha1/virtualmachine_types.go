@@ -701,7 +701,7 @@ func (vm *VirtualMachine) SetConditions(conditions Conditions) {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced,shortName=vm
+// +kubebuilder:resource:scope=Namespaced,shortName=vspherevm
 // +kubebuilder:storageversion:false
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Power-State",type="string",JSONPath=".status.powerState"

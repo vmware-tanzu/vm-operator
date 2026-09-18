@@ -442,6 +442,9 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 		crd:crdVersions=v1 \
 		output:crd:dir=$(CRD_ROOT) \
 		output:none
+	$(MAKE) -C ./external/kubevm generate-manifests
+	@cp -f ./external/kubevm/config/crd/bases/kube-vm.io_virtualmachines.yaml \
+		$(EXTERNAL_CRD_ROOT)/kube-vm.io_virtualmachines.yaml
 	$(CONTROLLER_GEN) \
 		paths=./webhooks/... \
 		output:webhook:dir=$(WEBHOOK_ROOT) \

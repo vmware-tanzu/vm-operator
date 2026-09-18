@@ -1630,7 +1630,7 @@ type VirtualMachineStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced,shortName=vm
+// +kubebuilder:resource:scope=Namespaced,shortName=vspherevm
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Power-State",type="string",JSONPath=".status.powerState"

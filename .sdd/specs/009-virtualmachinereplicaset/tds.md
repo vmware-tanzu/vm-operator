@@ -125,10 +125,10 @@ Each scenario is written as **Given / When / Then**, is implementation-agnostic,
     And any *subsequent* scale-up creates new replicas using T2, producing a (temporarily) heterogeneous set — this divergence is expected and must not be "corrected" by the ReplicaSet controller.
 
 16. **Template metadata (labels/annotations) changes: in-place propagation or not?**
-    `[NEEDS CLARIFICATION]` — Kubernetes Pod `ReplicaSet` never mutates existing Pods' labels/annotations after creation, only stamps them at creation time. Confirm expected behavior:
+    **RESOLVED**: option (a) — Pod `ReplicaSet` parity. Existing VMs keep their original labels/annotations; `spec.template.metadata` is stamped only at VM-creation time and is never re-applied to already-existing replicas on a template edit. This matches the current implementation (the sync loop only ever adds the `vmoperator.vmware.com/replicaset-name` label to an existing VM if missing; it does not diff/re-apply the rest of `spec.template.metadata`) and avoids mixing behavior with `VirtualMachineDeployment`'s metadata-only propagation. Codified in `controllers/virtualmachinereplicaset/virtualmachinereplicaset_controller_test.go`'s "does not propagate template metadata-label edits to existing replicas" spec (SC16).
     Given a running ReplicaSet with 3 replicas.
     When `spec.template.metadata.labels` (a non-selector-breaking label) is edited.
-    Then either (a) existing VMs keep their original labels (Pod ReplicaSet parity — recommended default), or (b) labels are propagated in place. Whichever is chosen must be codified as a test and documented; silently doing (b) while other systems assume (a) resembles the risk called out for `VirtualMachineDeployment`'s metadata-only propagation, so mixing behavior between the two CRDs is confusing and should be an explicit, tested decision.
+    Then existing VMs keep their original labels.
 
 ### 2.4 Ownership, orphans, and adoption
 
@@ -179,10 +179,12 @@ Each scenario is written as **Given / When / Then**, is implementation-agnostic,
 26. **`ReplicaFailure` condition surfaces ongoing failure to maintain desired count**
     Given a scenario where a required replica keeps failing to become healthy (e.g., a class/image that always fails to power on, or a finalizer that blocks deletion of a replica the controller is trying to replace).
     Then a condition/reason around `ReplicaFailure` is set, distinguishing "we are still trying and failing" from "everything converged."
+    **Gap found and fixed**: `virtualmachinereplicaset_controller.go`'s `syncReplicas` previously never referenced `vmopv1.VirtualMachineReplicaSetReplicaFailure` — the condition was defined in the API type but never set. It is now set `True` (reason `VirtualMachineCreationFailedReason` / `VirtualMachineDeletionFailedReason`) on a failed create or delete attempt, and cleared in `ReconcileNormal` once a sync completes without error. Codified in the "sets a ReplicaFailure condition..." spec.
 
 27. **`VirtualMachinesReady` condition aggregates readiness**
     Given `status.readyReplicas < spec.replicas`.
-    Then `VirtualMachinesReady` is `False`. Once `status.readyReplicas == spec.replicas` (and `>= 1` if replicas is nonzero), it becomes `True`. For `spec.replicas == 0`, define and test the expected condition state explicitly (`[NEEDS CLARIFICATION]`: likely `True`/vacuously-ready, but must be codified rather than left ambiguous, since some Ready aggregations for empty sets choose `Unknown` instead).
+    Then `VirtualMachinesReady` is `False`. Once `status.readyReplicas == spec.replicas` (and `>= 1` if replicas is nonzero), it becomes `True`. For `spec.replicas == 0`, **RESOLVED**: `True`/vacuously-ready (not `Unknown`) — an empty desired set is trivially satisfied, consistent with how `VirtualMachinesCreated`/`Resized` already treat the `replicas == 0` case as converged in `updateStatus`. Codified in the "marks VirtualMachinesReady True vacuously" spec.
+    **Gap found and fixed**: `virtualmachinereplicaset_controller.go`'s `updateStatus` previously never set the `VirtualMachinesReady` condition at all. It now marks it `True` when `readyReplicas >= desiredReplicas` (including the vacuous `desiredReplicas == 0` case) and `False` (reason `VirtualMachinesNotReadyReason`) otherwise.
 
 28. **`observedGeneration` freshness**
     Given a spec edit (e.g., scale from 2 to 4).

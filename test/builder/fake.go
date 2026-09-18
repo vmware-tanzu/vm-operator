@@ -116,6 +116,7 @@ func KnownObjectTypes() []client.Object {
 	return []client.Object{
 		&vmopv1.VirtualMachine{},
 		&vmopv1.VirtualMachineGroup{},
+		&vmopv1.VirtualMachineReplicaSet{},
 		&vmopv1.VirtualMachineService{},
 		&vmopv1.VirtualMachineClass{},
 		&vmopv1.VirtualMachineClassInstance{},

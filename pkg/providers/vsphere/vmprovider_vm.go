@@ -285,11 +285,17 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		decrementConcurrentCreatesFn()
 	}
 
+	var asyncCreateStarted bool
+	defer func() {
+		// If the async create go routine was started then it will call
+		// the cleanupFn when it is done.
+		if !asyncCreateStarted {
+			cleanupFn()
+		}
+	}()
+
 	createArgs, err := vs.getCreateArgs(vmCtx, client)
 	if err != nil {
-		// If getting the create args failed, the concurrent counter needs to be
-		// decremented before returning.
-		cleanupFn()
 		return nil, err
 	}
 
@@ -307,6 +313,8 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 		createArgs,
 		chanErr,
 		cleanupFn)
+
+	asyncCreateStarted = true
 
 	// Return with the error channel. The VM will be re-enqueued once the create
 	// completes with success or failure.
@@ -2133,7 +2141,7 @@ func (vs *vSphereVMProvider) vmCreateGetArgs(
 		return nil, err
 	}
 
-	err = vs.vmCreateGenConfigSpec(vmCtx, createArgs)
+	err = vs.vmCreateGenConfigSpec(vmCtx, vcClient, createArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -2395,6 +2403,7 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	vmCtx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
 	// TODO: This is a partial dupe of what's done in the update path in the remaining Session code. I got
@@ -2450,7 +2459,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 			if err := vmconfcrypto.Reconcile(
 				vmCtx,
 				vs.k8sClient,
-				vs.vcClient.VimClient(),
+				vcClient.VimClient(),
 				vmCtx.VM,
 				vmCtx.MoVM,
 				&createArgs.ConfigSpec); err != nil {
@@ -2463,7 +2472,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	if err := vmconfbootoptions.Reconcile(
 		vmCtx,
 		vs.k8sClient,
-		vs.vcClient.VimClient(),
+		vcClient.VimClient(),
 		vmCtx.VM,
 		vmCtx.MoVM,
 		&createArgs.ConfigSpec); err != nil {

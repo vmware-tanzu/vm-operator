@@ -76,6 +76,12 @@ func NewHelper(obj client.Object, crClient client.Client) (*Helper, error) {
 	}, nil
 }
 
+// DisableSeparateConditionsPatch disables the isConditionsSetter flag so that the object's
+// entire status - conditions and everything else - is done in a single patch.
+func (h *Helper) DisableSeparateConditionsPatch() {
+	h.isConditionsSetter = false
+}
+
 // Patch will attempt to patch the given object, including its status.
 func (h *Helper) Patch(ctx context.Context, obj client.Object, opts ...Option) error {
 	// Return early if the object is nil.

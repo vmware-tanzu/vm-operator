@@ -599,6 +599,48 @@ func intgTests() {
 						reflect.DeepEqual(obj.Spec, objAfter.Spec)
 				}, timeout).Should(BeTrue())
 			})
+
+			Specify("updating both spec, status, and adding a condition when disable separate conditions patch", func() {
+				obj := obj.DeepCopy()
+				obj.ObjectMeta.Namespace = ctx.Namespace
+
+				By("Creating the object")
+				Expect(ctx.Client.Create(ctx, obj)).ToNot(HaveOccurred())
+				key := client.ObjectKey{Name: obj.Name, Namespace: obj.Namespace}
+				defer func() {
+					Expect(ctx.Client.Delete(ctx, obj)).To(Succeed())
+				}()
+
+				By("Creating a new patch helper")
+				patcher, err := NewHelper(obj, ctx.Client)
+				Expect(err).NotTo(HaveOccurred())
+
+				patcher.DisableSeparateConditionsPatch()
+
+				By("Updating the object spec")
+				obj.Spec.ImageName = "image-name"
+
+				By("Updating the object status")
+				obj.Status.NodeName = "vm-host-2"
+
+				By("Setting Ready condition")
+				conditions.MarkTrue(obj, vmopv1.ReadyConditionType)
+
+				By("Patching the object")
+				Expect(patcher.Patch(ctx, obj)).To(Succeed())
+
+				By("Validating the object has been updated")
+				Eventually(func() bool {
+					objAfter := obj.DeepCopy()
+					if err := ctx.Client.Get(ctx, key, objAfter); err != nil {
+						return false
+					}
+
+					return obj.Status.NodeName == objAfter.Status.NodeName &&
+						conditions.IsTrue(objAfter, vmopv1.ReadyConditionType) &&
+						reflect.DeepEqual(obj.Spec, objAfter.Spec)
+				}, timeout).Should(BeTrue())
+			})
 		})
 
 		/*

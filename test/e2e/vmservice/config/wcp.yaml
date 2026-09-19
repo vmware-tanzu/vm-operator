@@ -88,6 +88,7 @@ intervals:
   default/wait-policy-evaluation-compliant: ["2m", "10s"]
   default/wait-policy-evaluation-update: ["3m", "10s"]
   default/wait-maintenance-mode: ["5m", "10s"]
+  default/wait-compute-policy-deletion: ["2m", "10s"]
 
   default/wait-config-target-condition-update: ["5m", "10s"]
   default/wait-vm-config-options-creation: ["5m", "10s"]

@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vapi/tags"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -39,6 +40,7 @@ import (
 // than one infra policy to the same namespace must thread the returned list
 // through each successive call to avoid dropping an earlier one.
 func createInfraPolicyForComputePolicy(
+	input SpecInput,
 	wcpClient wcp.WorkloadManagementAPI,
 	namespace, computePolicyID string,
 	infraPolicySpec wcp.InfraPolicySpec,
@@ -50,20 +52,29 @@ func createInfraPolicyForComputePolicy(
 	Expect(wcpClient.CreateInfraPolicy(infraPolicySpec)).
 		To(Succeed(), "failed to create infrastructure policy %q", infraPolicySpec.Name)
 
-	DeferCleanup(func(ctx context.Context) {
+	intervals := input.Config.GetIntervals("default", "wait-compute-policy-deletion")
+	timeout, err := time.ParseDuration(intervals[0].(string))
+	Expect(err).ToNot(HaveOccurred(), "failed to parse compute-policy-deletion timeout interval %q", intervals[0])
+	poll, err := time.ParseDuration(intervals[1].(string))
+	Expect(err).ToNot(HaveOccurred(), "failed to parse compute-policy-deletion polling interval %q", intervals[1])
+
+	DeferCleanup(func(_ context.Context) {
 		// Delete the infra policy before the compute policy it references.
 		_ = wcpClient.DeleteInfraPolicy(infraPolicySpec.Name)
 
 		// Deleting the compute policy right after the infra policy that
 		// referenced it can transiently fail while WCP propagates the infra
-		// policy removal, so retry for up to a minute. This is best-effort
-		// cleanup -- a timeout here is fine and must not fail the spec, so
-		// use a Gomega whose fail handler is a no-op instead of the global
-		// one.
-		g := NewGomega(func(_ string, _ ...int) {})
-		g.Eventually(ctx, func() error {
-			return wcpClient.DeleteComputePolicy(computePolicyID)
-		}).WithTimeout(time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+		// policy removal. Retry in the background rather than blocking this
+		// cleanup on it. This is best-effort cleanup, so a fire-and-forget
+		// retry that never blocks. Even it fails, this is fine as
+		// the policy is never reused.
+		go func() {
+			_ = wait.PollUntilContextTimeout(
+				context.Background(), poll, timeout, true,
+				func(_ context.Context) (bool, error) {
+					return wcpClient.DeleteComputePolicy(computePolicyID) == nil, nil
+				})
+		}()
 	})
 
 	allInfraPolicyNames := append(append([]string{}, existingInfraPolicyNames...), infraPolicySpec.Name)
@@ -77,6 +88,7 @@ func createInfraPolicyForComputePolicy(
 // by computePolicySpec, then creates and applies the WCP infrastructure
 // policy for it (see createInfraPolicyForComputePolicy).
 func createVSphereInfraPolicy(
+	input SpecInput,
 	wcpClient wcp.WorkloadManagementAPI,
 	namespace string,
 	computePolicySpec wcp.ComputePolicySpec,
@@ -90,7 +102,7 @@ func createVSphereInfraPolicy(
 	Expect(err).ToNot(HaveOccurred(), "failed to create compute policy")
 	Expect(computePolicyID).NotTo(BeEmpty(), "compute policy ID should be returned")
 
-	return createInfraPolicyForComputePolicy(wcpClient, namespace, computePolicyID, infraPolicySpec, existingInfraPolicyNames)
+	return createInfraPolicyForComputePolicy(input, wcpClient, namespace, computePolicyID, infraPolicySpec, existingInfraPolicyNames)
 }
 
 // createVSphereTag creates a real vSphere tag category and tag, registering

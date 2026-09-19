@@ -982,6 +982,7 @@ func wcpEnforcementMode(mode vspherepolv1.PolicyEnforcementMode) wcp.InfraPolicy
 // this can't just build a wcp.ComputePolicySpec for createVSphereInfraPolicy
 // like every other capability in this suite does.
 func createAutomaticVMEvictionComputePolicy(
+	input SpecInput,
 	wcpClient wcp.WorkloadManagementAPI,
 	namespace string,
 	infraPolicySpec wcp.InfraPolicySpec,
@@ -1009,7 +1010,7 @@ func createAutomaticVMEvictionComputePolicy(
 	Expect(err).ToNot(HaveOccurred(), "failed to create compute policy")
 	Expect(computePolicyID).NotTo(BeEmpty(), "compute policy ID should be returned")
 
-	return createInfraPolicyForComputePolicy(wcpClient, namespace, computePolicyID, infraPolicySpec, existingInfraPolicyNames)
+	return createInfraPolicyForComputePolicy(input, wcpClient, namespace, computePolicyID, infraPolicySpec, existingInfraPolicyNames)
 }
 
 // createAutomaticVMEvictionPolicy creates the real vCenter compute policy
@@ -1035,7 +1036,7 @@ func createAutomaticVMEvictionPolicy(
 
 	GinkgoHelper()
 
-	infraPolicyNames := createAutomaticVMEvictionComputePolicy(input.WCPClient, input.WCPNamespaceName, wcp.InfraPolicySpec{
+	infraPolicyNames := createAutomaticVMEvictionComputePolicy(input, input.WCPClient, input.WCPNamespaceName, wcp.InfraPolicySpec{
 		Name:               name,
 		Description:        "e2e VM eviction policy test",
 		EnforcementMode:    wcpEnforcementMode(enforcementMode),
@@ -1069,7 +1070,7 @@ func createBestEffortRestartPolicy(
 
 	GinkgoHelper()
 
-	infraPolicyNames := createVSphereInfraPolicy(input.WCPClient, input.WCPNamespaceName, wcp.ComputePolicySpec{
+	infraPolicyNames := createVSphereInfraPolicy(input, input.WCPClient, input.WCPNamespaceName, wcp.ComputePolicySpec{
 		Name:        fmt.Sprintf("%s-compute-policy", name),
 		Description: "e2e VM eviction policy test",
 		VMTagID:     vmTagID,

@@ -375,7 +375,7 @@ func (r *result) fail(err error) *result {
 }
 
 // find returns a finding line.
-func (r *result) find(format string, args ...any) {
+func (r *result) find(format string, args ...any) { //nolint:goprintffuncname
 	r.Findings = append(r.Findings, fmt.Sprintf(format, args...))
 }
 
@@ -759,7 +759,7 @@ func typeName(v any) string {
 	}
 
 	t := reflect.TypeOf(v)
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 

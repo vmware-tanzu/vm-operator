@@ -381,7 +381,7 @@ func createControlledRebalancingPolicy(
 
 	GinkgoHelper()
 
-	_ = createVSphereInfraPolicy(input.WCPClient, input.WCPNamespaceName, wcp.ComputePolicySpec{
+	_ = createVSphereInfraPolicy(input, input.WCPClient, input.WCPNamespaceName, wcp.ComputePolicySpec{
 		Name:        fmt.Sprintf("%s-compute-policy", name),
 		Description: "e2e controlled rebalancing policy test",
 		VMTagID:     vmTagID,

@@ -16,6 +16,7 @@ import (
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
 	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/redact"
 )
 
 const (
@@ -62,7 +63,7 @@ func RunPackerBuildCmd(ctx context.Context, opts PackerBuildCmdOpts) ([]byte, er
 
 	// Set the command directory to ensure packer-plugin-vsphere binary is accessible.
 	cmd.Dir = pluginDirPath
-	e2eframework.Logf("Running command: %s (in %s)", cmd.String(), cmd.Dir)
+	e2eframework.Logf("Running command: %s (in %s)", redact.RedactSensitiveFlags(cmd.String()), cmd.Dir)
 
 	return cmd.Output()
 }

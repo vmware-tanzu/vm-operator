@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -16,19 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/redact"
 )
-
-// sensitiveFlagPattern matches CLI flags whose value is a password or other
-// secret (e.g. +password 'x', --user-password 'x', --image-registry-password 'x'),
-// so their value can be redacted before the command is logged.
-var sensitiveFlagPattern = regexp.MustCompile(`(?i)([-+]{1,2}[\w-]*(?:password|secret|pwd|passwd)[\w-]*\s+)'[^']*'`)
-
-// RedactSensitiveFlags returns a copy of cmd with the values of any
-// password- or secret-like flags replaced with '***'. It is safe to call
-// on any DCLI/CLI command string before printing or logging it.
-func RedactSensitiveFlags(cmd string) string {
-	return sensitiveFlagPattern.ReplaceAllString(cmd, "${1}'***'")
-}
 
 // DCLICommandRunner knows how to run DCLI commands on a vCenter instance.
 type DCLICommandRunner interface {
@@ -82,7 +70,7 @@ func (d *dcliCommandRunnerImpl) RunCommandAndUnmarshalJSONResult(cmd string, unm
 
 func (d *dcliCommandRunnerImpl) RunDCLICommand(cmd string) ([]byte, error) {
 	cmdWithCreds := addDCLIParameters(cmd, d.adminCredentials.Username, d.adminCredentials.Password)
-	fmt.Printf("\nRunning command: %s", RedactSensitiveFlags(cmdWithCreds))
+	fmt.Printf("\nRunning command: %s", redact.RedactSensitiveFlags(cmdWithCreds))
 
 	var (
 		stdout  []byte
@@ -94,7 +82,7 @@ func (d *dcliCommandRunnerImpl) RunDCLICommand(cmd string) ([]byte, error) {
 		var err error
 
 		stdout, err = d.sshHelper.RunCommand(cmdWithCreds)
-		fmt.Printf("\nSTDOUT: %s", string(stdout))
+		fmt.Printf("\nSTDOUT: %s", redact.RedactSensitiveOutput(string(stdout)))
 
 		if err == nil {
 			return true, nil

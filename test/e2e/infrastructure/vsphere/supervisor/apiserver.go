@@ -158,8 +158,6 @@ func GetSvAPIServerAsGateway(ctx context.Context, kubeconfigPath string) (*e2ess
 		return nil, err
 	}
 
-	fmt.Print("The API server pwd is " + apiServerCredentials.Password)
-
 	return &e2essh.Gateway{
 		Hostname:    apiServerCredentials.ManagementAPIServerIP,
 		Username:    apiServerCredentials.Username,

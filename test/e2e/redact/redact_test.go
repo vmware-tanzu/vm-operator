@@ -1,19 +1,19 @@
 // Copyright (c) 2026 Broadcom. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package dcli_test
+package redact_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/redact"
 )
 
 var _ = Describe("RedactSensitiveFlags", func() {
 	DescribeTable("redacting CLI command strings",
 		func(cmd, expected string) {
-			Expect(dcli.RedactSensitiveFlags(cmd)).To(Equal(expected))
+			Expect(redact.RedactSensitiveFlags(cmd)).To(Equal(expected))
 		},
 
 		Entry("dcli +password flag",
@@ -57,6 +57,44 @@ var _ = Describe("RedactSensitiveFlags", func() {
 		),
 
 		Entry("empty command string is a no-op",
+			``,
+			``,
+		),
+
+		Entry("packer -var key=value style with password and secret keys",
+			`/usr/bin/packer build -var kubeconfig_path=/tmp/kubeconfig -var ssh_password=SuperSecret123 -var ssh_bastion_password=GwPass456 -var source_name=vm-1 /templates/foo.pkr.hcl`,
+			`/usr/bin/packer build -var kubeconfig_path=/tmp/kubeconfig -var ssh_password=*** -var ssh_bastion_password=*** -var source_name=vm-1 /templates/foo.pkr.hcl`,
+		),
+
+		Entry("does not redact non-sensitive key=value assignments",
+			`/usr/bin/packer build -var source_name=vm-1 -var image_name=ubuntu-vmi`,
+			`/usr/bin/packer build -var source_name=vm-1 -var image_name=ubuntu-vmi`,
+		),
+	)
+})
+
+var _ = Describe("RedactSensitiveOutput", func() {
+	DescribeTable("redacting command output strings",
+		func(output, expected string) {
+			Expect(redact.RedactSensitiveOutput(output)).To(Equal(expected))
+		},
+
+		Entry("decryptK8Pwd.py style Cluster/IP/PWD block",
+			"Cluster: domain-c9:21d4eaa0-4c40-4aab-9a64-f45afa4b59ef\nIP: 10.144.29.123\nPWD: v4YQ_$/9eXgu2uIv\n",
+			"Cluster: domain-c9:21d4eaa0-4c40-4aab-9a64-f45afa4b59ef\nIP: 10.144.29.123\nPWD: ***\n",
+		),
+
+		Entry("is case-insensitive on the key name",
+			"password: SuperSecret1\n",
+			"password: ***\n",
+		),
+
+		Entry("does not redact unrelated lines",
+			"Cluster: domain-c9\nIP: 10.144.29.123\n",
+			"Cluster: domain-c9\nIP: 10.144.29.123\n",
+		),
+
+		Entry("empty output string is a no-op",
 			``,
 			``,
 		),

@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/redact"
 )
 
 // DCLICommandRunner knows how to run DCLI commands on a vCenter instance.
@@ -69,7 +70,7 @@ func (d *dcliCommandRunnerImpl) RunCommandAndUnmarshalJSONResult(cmd string, unm
 
 func (d *dcliCommandRunnerImpl) RunDCLICommand(cmd string) ([]byte, error) {
 	cmdWithCreds := addDCLIParameters(cmd, d.adminCredentials.Username, d.adminCredentials.Password)
-	fmt.Printf("\nRunning command: %s", e2essh.RedactSensitiveFlags(cmdWithCreds))
+	fmt.Printf("\nRunning command: %s", redact.RedactSensitiveFlags(cmdWithCreds))
 
 	var (
 		stdout  []byte
@@ -81,7 +82,7 @@ func (d *dcliCommandRunnerImpl) RunDCLICommand(cmd string) ([]byte, error) {
 		var err error
 
 		stdout, err = d.sshHelper.RunCommand(cmdWithCreds)
-		fmt.Printf("\nSTDOUT: %s", e2essh.RedactSensitiveOutput(string(stdout)))
+		fmt.Printf("\nSTDOUT: %s", redact.RedactSensitiveOutput(string(stdout)))
 
 		if err == nil {
 			return true, nil

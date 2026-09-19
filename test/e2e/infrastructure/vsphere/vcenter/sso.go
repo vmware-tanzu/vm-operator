@@ -13,6 +13,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/redact"
 )
 
 // sso contains helpers to manage users on a vCenter instance.
@@ -73,7 +74,7 @@ func (u *User) checkIfUserExists() (bool, error) {
 	// Check if the user already exists.
 	cmd := fmt.Sprintf("%s user find-by-name --account '%s' ", binaryPath, u.Credentials.Username)
 	cmd = addAdminCredentialsToCommand(cmd, u.adminCreds)
-	fmt.Printf("Running command %s\n", ssh.RedactSensitiveFlags(cmd))
+	fmt.Printf("Running command %s\n", redact.RedactSensitiveFlags(cmd))
 	result, err := u.cmdRunner.RunCommand(cmd)
 	// This command can fail either due to intermittent issues, or because
 	// the user does not exist. Either way, return false, and the
@@ -87,7 +88,7 @@ func (u *User) checkIfUserExists() (bool, error) {
 			return false, nil
 		}
 		// Lookup may have failed intermittently. Return an error.
-		fmt.Printf("Command output: %s\n", ssh.RedactSensitiveOutput(string(result)))
+		fmt.Printf("Command output: %s\n", redact.RedactSensitiveOutput(string(result)))
 
 		return false, err
 	}
@@ -114,9 +115,9 @@ func (u *User) Create() error {
 
 	cmd := fmt.Sprintf("%s user create --account '%s' --user-password '%s' --first-name '%s First name' --last-name '%s Last name'", binaryPath, u.Credentials.Username, u.Credentials.Password, u.Credentials.Username, u.Credentials.Username)
 	cmd = addAdminCredentialsToCommand(cmd, u.adminCreds)
-	fmt.Printf("Running command %s\n", ssh.RedactSensitiveFlags(cmd))
+	fmt.Printf("Running command %s\n", redact.RedactSensitiveFlags(cmd))
 	result, err := u.cmdRunner.RunCommand(cmd)
-	fmt.Printf("Command output: %s\n", ssh.RedactSensitiveOutput(string(result)))
+	fmt.Printf("Command output: %s\n", redact.RedactSensitiveOutput(string(result)))
 
 	return err
 }

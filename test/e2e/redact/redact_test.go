@@ -1,19 +1,19 @@
 // Copyright (c) 2026 Broadcom. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package ssh_test
+package redact_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/redact"
 )
 
 var _ = Describe("RedactSensitiveFlags", func() {
 	DescribeTable("redacting CLI command strings",
 		func(cmd, expected string) {
-			Expect(ssh.RedactSensitiveFlags(cmd)).To(Equal(expected))
+			Expect(redact.RedactSensitiveFlags(cmd)).To(Equal(expected))
 		},
 
 		Entry("dcli +password flag",
@@ -76,7 +76,7 @@ var _ = Describe("RedactSensitiveFlags", func() {
 var _ = Describe("RedactSensitiveOutput", func() {
 	DescribeTable("redacting command output strings",
 		func(output, expected string) {
-			Expect(ssh.RedactSensitiveOutput(output)).To(Equal(expected))
+			Expect(redact.RedactSensitiveOutput(output)).To(Equal(expected))
 		},
 
 		Entry("decryptK8Pwd.py style Cluster/IP/PWD block",

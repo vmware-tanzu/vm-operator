@@ -1,7 +1,12 @@
 // Copyright (c) 2026 Broadcom. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package ssh
+// Package redact provides helpers to mask password- and secret-like values
+// out of CLI command strings and command output before they are printed or
+// logged. It has no dependencies beyond the standard library so that any
+// E2E helper — SSH-based, exec.Command-based, or otherwise — can use it
+// without pulling in an unrelated transport package.
+package redact
 
 import "regexp"
 

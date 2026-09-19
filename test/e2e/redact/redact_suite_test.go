@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Broadcom. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package ssh_test
+package redact_test
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestSSH(t *testing.T) {
+func TestRedact(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "SSH Suite")
+	RunSpecs(t, "Redact Suite")
 }

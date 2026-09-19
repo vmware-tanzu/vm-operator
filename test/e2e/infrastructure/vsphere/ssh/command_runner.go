@@ -17,6 +17,7 @@ import (
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/redact"
 )
 
 const (
@@ -131,7 +132,7 @@ func NewSSHCommandRunnerWithinGateway(hostname string, port int, user string, au
 }
 
 func (s *sshCommandRunnerImpl) RunCommand(cmd string) ([]byte, error) {
-	e2eframework.Logf("Running command via SSH; remote: %s, command: %s", s.client.RemoteAddr(), RedactSensitiveFlags(cmd))
+	e2eframework.Logf("Running command via SSH; remote: %s, command: %s", s.client.RemoteAddr(), redact.RedactSensitiveFlags(cmd))
 
 	if s.client == nil {
 		return nil, fmt.Errorf("s.client is nil")
@@ -149,13 +150,13 @@ func (s *sshCommandRunnerImpl) RunCommand(cmd string) ([]byte, error) {
 
 	combinedOutput, err := session.CombinedOutput(cmd)
 
-	e2eframework.Logf("Ran command via SSH; remote: %s, command: %s, output: %s, error: %v", s.client.RemoteAddr(), RedactSensitiveFlags(cmd), RedactSensitiveOutput(string(combinedOutput)), err)
+	e2eframework.Logf("Ran command via SSH; remote: %s, command: %s, output: %s, error: %v", s.client.RemoteAddr(), redact.RedactSensitiveFlags(cmd), redact.RedactSensitiveOutput(string(combinedOutput)), err)
 
 	return combinedOutput, err
 }
 
 func (s *sshCommandRunnerImpl) RunCommandWindows(cmd string) ([]byte, error) {
-	e2eframework.Logf("Running command via SSH; remote: %s, command: %s", s.client.RemoteAddr(), RedactSensitiveFlags(cmd))
+	e2eframework.Logf("Running command via SSH; remote: %s, command: %s", s.client.RemoteAddr(), redact.RedactSensitiveFlags(cmd))
 
 	if s.client == nil {
 		return nil, fmt.Errorf("s.client is nil")
@@ -168,7 +169,7 @@ func (s *sshCommandRunnerImpl) RunCommandWindows(cmd string) ([]byte, error) {
 
 	combinedOutput, err := session.CombinedOutput(cmd)
 
-	e2eframework.Logf("Ran command via SSH; remote: %s, command: %s, output: %s, error: %v", s.client.RemoteAddr(), RedactSensitiveFlags(cmd), RedactSensitiveOutput(string(combinedOutput)), err)
+	e2eframework.Logf("Ran command via SSH; remote: %s, command: %s, output: %s, error: %v", s.client.RemoteAddr(), redact.RedactSensitiveFlags(cmd), redact.RedactSensitiveOutput(string(combinedOutput)), err)
 
 	return combinedOutput, err
 }

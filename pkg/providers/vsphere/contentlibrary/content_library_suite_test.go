@@ -20,7 +20,10 @@ func vcSimTests() {
 var suite = builder.NewTestSuite()
 
 func TestContentLibrary(t *testing.T) {
-	suite.Register(t, "vSphere Provider ContentLibrary Suite", nil, vcSimTests)
+	suite.Register(t, "vSphere Provider ContentLibrary Suite", nil, func() {
+		downloadSessionBackoffTests(t)
+		vcSimTests()
+	})
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

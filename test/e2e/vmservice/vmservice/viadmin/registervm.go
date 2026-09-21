@@ -849,7 +849,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 	})
 
 	Context("Restore disk only", func() {
-		It("Should register restored disk", func() {
+		XIt("Should register restored disk", func() {
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}

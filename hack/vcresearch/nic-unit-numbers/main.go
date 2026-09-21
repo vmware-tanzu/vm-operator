@@ -374,8 +374,8 @@ func (r *result) fail(err error) *result {
 	return r
 }
 
-// find returns a finding line.
-func (r *result) find(format string, args ...any) {
+// findf returns a finding line.
+func (r *result) findf(format string, args ...any) {
 	r.Findings = append(r.Findings, fmt.Sprintf(format, args...))
 }
 
@@ -759,7 +759,7 @@ func typeName(v any) string {
 	}
 
 	t := reflect.TypeOf(v)
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -1302,7 +1302,7 @@ func (r *result) judgeHonoured(s step) {
 	ok, mismatches := honouredUnits(s.Requested, s.Observed)
 	if ok {
 		r.Status = statusHonoured
-		r.find("Every explicitly requested unit number was observed on the resulting hardware.")
+		r.findf("Every explicitly requested unit number was observed on the resulting hardware.")
 
 		return
 	}
@@ -1310,7 +1310,7 @@ func (r *result) judgeHonoured(s step) {
 	r.Status = statusNotHonoured
 
 	for _, m := range mismatches {
-		r.find("%s", m)
+		r.findf("%s", m)
 	}
 }
 
@@ -1466,7 +1466,7 @@ func (r *runner) runE02(ctx context.Context) *result {
 	res.judgeHonoured(s)
 
 	if len(s.Observed) != len(baseline.Observed)+len(explicitUnits) {
-		res.find("The NIC count is not baseline + ConfigSpec adds (%d != %d + %d): the OVF's own "+
+		res.findf("The NIC count is not baseline + ConfigSpec adds (%d != %d + %d): the OVF's own "+
 			"NICs and the ConfigSpec Add entries interact rather than accumulate. Record which.",
 			len(s.Observed), len(baseline.Observed), len(explicitUnits))
 	}
@@ -1626,14 +1626,14 @@ func (r *runner) runE04(ctx context.Context) *result {
 	res.Status = statusRecorded
 
 	if len(s1.Observed) == 1 && s1.Observed[0].UnitNumber != nil {
-		res.find("First NIC landed at unit %d (expected %d).", *s1.Observed[0].UnitNumber, nicUnitNumberFirst)
+		res.findf("First NIC landed at unit %d (expected %d).", *s1.Observed[0].UnitNumber, nicUnitNumberFirst)
 	}
 
 	if len(s2.Observed) == 2 && s2.Observed[1].UnitNumber != nil {
-		res.find("Second NIC landed at unit %d.", *s2.Observed[1].UnitNumber)
+		res.findf("Second NIC landed at unit %d.", *s2.Observed[1].UnitNumber)
 	}
 
-	res.find("Every observed unit number must fall in %d-%d for the CRD range markers in T004 to be correct.",
+	res.findf("Every observed unit number must fall in %d-%d for the CRD range markers in T004 to be correct.",
 		nicUnitNumberFirst, nicUnitNumberLast)
 
 	return res
@@ -1709,7 +1709,7 @@ func (r *runner) runE05(ctx context.Context) *result {
 
 	err = r.powerState(ctx, vm, false)
 	if err != nil {
-		res.find("Failed to power the VM back off: %v", err)
+		res.findf("Failed to power the VM back off: %v", err)
 	}
 
 	return res
@@ -1821,7 +1821,7 @@ func (r *runner) runE06(ctx context.Context) *result {
 
 	if s.Err != "" {
 		res.Status = statusNotHonoured
-		res.find("Same-slot Remove+Add in one task was REJECTED. T017's convergence path cannot " +
+		res.findf("Same-slot Remove+Add in one task was REJECTED. T017's convergence path cannot " +
 			"replace a device in place and the design needs revisiting.")
 
 		return res
@@ -1840,7 +1840,7 @@ func (r *runner) runE06(ctx context.Context) *result {
 		// fresh one for the new device.
 		changedKey := newCard.Key != removed.Key
 		changedMAC := newCard.MACAddress != removed.MACAddress
-		res.find("The device at unit %d after the task has key %d and MAC %q; the removed device "+
+		res.findf("The device at unit %d after the task has key %d and MAC %q; the removed device "+
 			"had key %d and MAC %q (key changed: %v, MAC changed: %v). A changed MAC — and, on "+
 			"builds where the key is not derived from the unit number, a changed key — confirms "+
 			"the slot was genuinely reused by new hardware rather than the remove being ignored.",
@@ -1848,7 +1848,7 @@ func (r *runner) runE06(ctx context.Context) *result {
 			changedKey, changedMAC)
 
 		if !changedKey {
-			res.find("Key was UNCHANGED across the same-slot Remove+Add (both %d). This build "+
+			res.findf("Key was UNCHANGED across the same-slot Remove+Add (both %d). This build "+
 				"appears to derive an ethernet card's Key deterministically from its unit number "+
 				"rather than from creation order; do not rely on a changed Key alone as replacement "+
 				"evidence on this platform.", newCard.Key)
@@ -1945,11 +1945,11 @@ func (r *runner) runE07(ctx context.Context) *result {
 
 	switch {
 	case s.Err != "":
-		res.find("The Edit was rejected. Relocating a NIC's unit number is not an available operation.")
+		res.findf("The Edit was rejected. Relocating a NIC's unit number is not an available operation.")
 	case findInfoAtUnit(s.Observed, editTo) != nil:
-		res.find("The Edit was accepted and the NIC now occupies unit %d.", editTo)
+		res.findf("The Edit was accepted and the NIC now occupies unit %d.", editTo)
 	default:
-		res.find("The Edit task succeeded but the NIC did not move to unit %d — accepted and "+
+		res.findf("The Edit task succeeded but the NIC did not move to unit %d — accepted and "+
 			"silently ignored, which is the worst of the three answers for a future Edit-based design.", editTo)
 	}
 
@@ -1975,7 +1975,7 @@ func (r *runner) runE08(ctx context.Context) *result {
 
 	for _, s := range res.Steps {
 		if s.Err == "" {
-			res.find("Step %q did NOT fault. vSphere accepted a duplicate unit number; the "+
+			res.findf("Step %q did NOT fault. vSphere accepted a duplicate unit number; the "+
 				"webhook uniqueness check is the only thing preventing it and the reconciler "+
 				"has no fault to key error handling off.", s.Name)
 
@@ -1983,7 +1983,7 @@ func (r *runner) runE08(ctx context.Context) *result {
 		}
 
 		for _, f := range s.Faults {
-			res.find("Step %q returned fault `%s`%s.", s.Name, f.Type, deviceIndexSuffix(f))
+			res.findf("Step %q returned fault `%s`%s.", s.Name, f.Type, deviceIndexSuffix(f))
 		}
 	}
 
@@ -2110,7 +2110,7 @@ func (r *runner) runE09(ctx context.Context) *result {
 	res.Status = statusRecorded
 
 	if len(s.Requested) > 0 {
-		res.find("The requested payload carried ControllerKey=%d (unset).", s.Requested[0].ControllerKey)
+		res.findf("The requested payload carried ControllerKey=%d (unset).", s.Requested[0].ControllerKey)
 	}
 
 	if len(s.Observed) > 0 && len(controllers) > 0 {
@@ -2118,10 +2118,10 @@ func (r *runner) runE09(ctx context.Context) *result {
 		observedKey := s.Observed[0].ControllerKey
 
 		if observedKey == pciKey {
-			res.find("vSphere resolved the NIC onto the PCI controller (key %d) with no operator "+
+			res.findf("vSphere resolved the NIC onto the PCI controller (key %d) with no operator "+
 				"involvement. No design change follows.", pciKey)
 		} else {
-			res.find("The NIC's observed ControllerKey %d is not the PCI controller key %d — "+
+			res.findf("The NIC's observed ControllerKey %d is not the PCI controller key %d — "+
 				"investigate before relying on implicit controller resolution.", observedKey, pciKey)
 		}
 	}
@@ -2190,19 +2190,19 @@ func (r *runner) runE10(ctx context.Context) *result {
 			strings.Contains(strings.ToLower(d.Kind), "e1000")
 
 		if isNIC && !inNICBand {
-			res.find("NIC %s fell OUTSIDE the %d-%d band — the CRD range markers in T004 are wrong.",
+			res.findf("NIC %s fell OUTSIDE the %d-%d band — the CRD range markers in T004 are wrong.",
 				d.Kind, nicUnitNumberFirst, nicUnitNumberLast)
 		}
 
 		if !isNIC && inNICBand {
-			res.find("Non-NIC device %s occupies unit %d, inside the NIC band %d-%d — the band is "+
+			res.findf("Non-NIC device %s occupies unit %d, inside the NIC band %d-%d — the band is "+
 				"not NIC-exclusive and the uniqueness model needs revisiting.",
 				d.Kind, *d.UnitNumber, nicUnitNumberFirst, nicUnitNumberLast)
 		}
 	}
 
 	if len(res.Findings) == 0 {
-		res.find("Every NIC stayed within %d-%d and no non-NIC device entered the band.",
+		res.findf("Every NIC stayed within %d-%d and no non-NIC device entered the band.",
 			nicUnitNumberFirst, nicUnitNumberLast)
 	}
 
@@ -2283,12 +2283,12 @@ func (r *runner) runE11(ctx context.Context) *result {
 
 	switch {
 	case slices.Contains(newUnits, freed):
-		res.find("vSphere REUSED the freed unit %d for the new NIC.", freed)
+		res.findf("vSphere REUSED the freed unit %d for the new NIC.", freed)
 	case highest.UnitNumber != nil && slices.Contains(newUnits, *highest.UnitNumber+1):
-		res.find("vSphere did NOT reuse unit %d; the new NIC took the next available unit %d.",
+		res.findf("vSphere did NOT reuse unit %d; the new NIC took the next available unit %d.",
 			freed, *highest.UnitNumber+1)
 	default:
-		res.find("The new NIC landed among units %v; unit %d was freed. Record which slot it took.",
+		res.findf("The new NIC landed among units %v; unit %d was freed. Record which slot it took.",
 			newUnits, freed)
 	}
 
@@ -2366,12 +2366,12 @@ func (r *runner) runE12(ctx context.Context) *result {
 	afterUnits := unitsOf(afterStep.Observed)
 
 	if slices.Equal(beforeUnits, onUnits) && slices.Equal(beforeUnits, afterUnits) {
-		res.find("Unit numbers were unchanged across the power cycle: %v.", beforeUnits)
+		res.findf("Unit numbers were unchanged across the power cycle: %v.", beforeUnits)
 
 		return res
 	}
 
-	res.find("Unit numbers CHANGED across the power cycle: before %v, powered on %v, after %v. "+
+	res.findf("Unit numbers CHANGED across the power cycle: before %v, powered on %v, after %v. "+
 		"A unit number is not a stable identity and the matching design in T017 must be revisited.",
 		beforeUnits, onUnits, afterUnits)
 
@@ -2438,13 +2438,13 @@ func (r *runner) runE13(ctx context.Context) *result {
 	}
 
 	if preserved {
-		res.find("The existing NICs kept units %v; the out-of-band NIC took the remainder of %v.",
+		res.findf("The existing NICs kept units %v; the out-of-band NIC took the remainder of %v.",
 			beforeUnits, afterUnits)
 
 		return res
 	}
 
-	res.find("An out-of-band add SHIFTED existing NICs: before %v, after %v. Operators must expect "+
+	res.findf("An out-of-band add SHIFTED existing NICs: before %v, after %v. Operators must expect "+
 		"this and the docs in T030 should say so.", beforeUnits, afterUnits)
 
 	return res
@@ -2517,10 +2517,10 @@ func (r *runner) runE14(ctx context.Context) *result {
 		}
 
 		if *d.UnitNumber >= nicUnitNumberFirst && *d.UnitNumber <= nicUnitNumberLast {
-			res.find("SR-IOV card %s occupies unit %d, inside the %d-%d NIC band.",
+			res.findf("SR-IOV card %s occupies unit %d, inside the %d-%d NIC band.",
 				d.Kind, *d.UnitNumber, nicUnitNumberFirst, nicUnitNumberLast)
 		} else {
-			res.find("SR-IOV card %s occupies unit %d, OUTSIDE the %d-%d NIC band — the spec's "+
+			res.findf("SR-IOV card %s occupies unit %d, OUTSIDE the %d-%d NIC band — the spec's "+
 				"claim that SR-IOV shares the NIC unit-number space is wrong.",
 				d.Kind, *d.UnitNumber, nicUnitNumberFirst, nicUnitNumberLast)
 		}
@@ -2569,7 +2569,7 @@ func (r *runner) runE15(ctx context.Context) *result {
 
 	offErr := r.powerState(ctx, vm, false)
 	if offErr != nil {
-		res.find("Failed to power the VM back off: %v", offErr)
+		res.findf("Failed to power the VM back off: %v", offErr)
 	}
 
 	res.judgeHonoured(s)
@@ -2646,12 +2646,12 @@ func (r *runner) runE16(ctx context.Context) *result {
 	resumedUnits := unitsOf(resumed.Observed)
 
 	if slices.Equal(beforeUnits, suspendedUnits) && slices.Equal(beforeUnits, resumedUnits) {
-		res.find("Unit numbers were unchanged across suspend/resume: %v.", beforeUnits)
+		res.findf("Unit numbers were unchanged across suspend/resume: %v.", beforeUnits)
 
 		return res
 	}
 
-	res.find("Unit numbers CHANGED across suspend/resume: before %v, suspended %v, resumed %v. "+
+	res.findf("Unit numbers CHANGED across suspend/resume: before %v, suspended %v, resumed %v. "+
 		"A unit number is not a stable identity across suspend/resume on this build and the "+
 		"matching design must account for it.", beforeUnits, suspendedUnits, resumedUnits)
 
@@ -2755,19 +2755,19 @@ func (r *runner) runE17(ctx context.Context) *result {
 	res.Status = statusRecorded
 
 	if newHost, hostErr := vm.HostSystem(ctx); hostErr == nil {
-		res.find("VM ran on host %q before, %q after.", currentName, r.hostName(ctx, newHost))
+		res.findf("VM ran on host %q before, %q after.", currentName, r.hostName(ctx, newHost))
 	}
 
 	beforeUnits := unitsOf(before.Observed)
 	afterUnits := unitsOf(after.Observed)
 
 	if slices.Equal(beforeUnits, afterUnits) {
-		res.find("Unit numbers were unchanged across vMotion: %v.", beforeUnits)
+		res.findf("Unit numbers were unchanged across vMotion: %v.", beforeUnits)
 
 		return res
 	}
 
-	res.find("Unit numbers CHANGED across vMotion: before %v, after %v. A unit number is not a "+
+	res.findf("Unit numbers CHANGED across vMotion: before %v, after %v. A unit number is not a "+
 		"stable identity across vMotion on this build and the matching design must account "+
 		"for it.", beforeUnits, afterUnits)
 
@@ -2897,7 +2897,7 @@ func (r *runner) runE18(ctx context.Context) *result {
 			// A later target in the list failed after at least one earlier
 			// upgrade in this same run already succeeded; keep the results
 			// already gathered instead of discarding them.
-			res.find("UpgradeVM_Task toward %s failed after %d earlier upgrade step(s) in this "+
+			res.findf("UpgradeVM_Task toward %s failed after %d earlier upgrade step(s) in this "+
 				"run succeeded: %v", displayVersion(target), i, err)
 
 			break
@@ -2916,11 +2916,11 @@ func (r *runner) runE18(ctx context.Context) *result {
 		r.observeInto(ctx, vm, &afterUpgrade)
 		res.Steps = append(res.Steps, afterUpgrade)
 
-		res.find("Hardware version was %q before this upgrade step, %q after.",
+		res.findf("Hardware version was %q before this upgrade step, %q after.",
 			priorVersion, afterUpgradeVersion)
 
 		if priorVersion == afterUpgradeVersion {
-			res.find("UpgradeVM_Task toward %s reported success but the version string did not "+
+			res.findf("UpgradeVM_Task toward %s reported success but the version string did not "+
 				"change; treat the unit-number result for this step cautiously since no real "+
 				"upgrade may have occurred.", displayVersion(target))
 		}
@@ -2928,10 +2928,10 @@ func (r *runner) runE18(ctx context.Context) *result {
 		upgradeUnits := unitsOf(afterUpgrade.Observed)
 
 		if slices.Equal(priorUnits, upgradeUnits) {
-			res.find("Unit numbers were unchanged by the upgrade from %s to %q (still powered "+
+			res.findf("Unit numbers were unchanged by the upgrade from %s to %q (still powered "+
 				"off): %v.", priorVersion, afterUpgradeVersion, upgradeUnits)
 		} else {
-			res.find("Unit numbers CHANGED by the upgrade from %s to %q, while still powered "+
+			res.findf("Unit numbers CHANGED by the upgrade from %s to %q, while still powered "+
 				"off: before %v, after %v. This upgrade step alone is not unit-number-safe on "+
 				"this build.", priorVersion, afterUpgradeVersion, priorUnits, upgradeUnits)
 		}
@@ -2949,10 +2949,10 @@ func (r *runner) runE18(ctx context.Context) *result {
 		poweredOnUnits := unitsOf(poweredOn.Observed)
 
 		if slices.Equal(upgradeUnits, poweredOnUnits) {
-			res.find("Unit numbers were unchanged by powering on at hardware version %q: %v.",
+			res.findf("Unit numbers were unchanged by powering on at hardware version %q: %v.",
 				afterUpgradeVersion, poweredOnUnits)
 		} else {
-			res.find("Unit numbers CHANGED when the VM was powered on after the upgrade to %q: "+
+			res.findf("Unit numbers CHANGED when the VM was powered on after the upgrade to %q: "+
 				"powered-off %v, powered-on %v. Powering on a freshly-upgraded VM is not "+
 				"unit-number-safe on this build.", afterUpgradeVersion, upgradeUnits, poweredOnUnits)
 		}
@@ -2980,13 +2980,13 @@ func (r *runner) runE18(ctx context.Context) *result {
 	res.Status = statusRecorded
 
 	if slices.Equal(baselineUnits, finalUnits) {
-		res.find("Unit numbers were unchanged end-to-end, from %s through every upgrade and "+
+		res.findf("Unit numbers were unchanged end-to-end, from %s through every upgrade and "+
 			"power-cycle step above: %v.", startVersion, baselineUnits)
 
 		return res
 	}
 
-	res.find("Unit numbers CHANGED end-to-end: started at %s with %v, ended with %v after all "+
+	res.findf("Unit numbers CHANGED end-to-end: started at %s with %v, ended with %v after all "+
 		"upgrade and power-cycle steps above. A unit number is not a stable identity across a "+
 		"VM Compatibility upgrade on this build and the matching/backfill design must account "+
 		"for it.", startVersion, baselineUnits, finalUnits)
@@ -3026,12 +3026,12 @@ func (r *runner) runE19(ctx context.Context) *result {
 	for _, s := range res.Steps {
 		if s.Err != "" {
 			for _, f := range s.Faults {
-				res.find("Step %q returned fault `%s`%s — vSphere rejects this out-of-range "+
+				res.findf("Step %q returned fault `%s`%s — vSphere rejects this out-of-range "+
 					"value outright.", s.Name, f.Type, deviceIndexSuffix(f))
 			}
 
 			if len(s.Faults) == 0 {
-				res.find("Step %q failed with a non-fault error: %s", s.Name, s.Err)
+				res.findf("Step %q failed with a non-fault error: %s", s.Name, s.Err)
 			}
 
 			continue
@@ -3039,7 +3039,7 @@ func (r *runner) runE19(ctx context.Context) *result {
 
 		ok, mismatches := honouredUnits(s.Requested, s.Observed)
 		if ok {
-			res.find("Step %q succeeded and the out-of-range unit number was honoured "+
+			res.findf("Step %q succeeded and the out-of-range unit number was honoured "+
 				"exactly as requested — vSphere does not reject or renumber it at this "+
 				"layer; only the webhook stands between this value and hardware.", s.Name)
 
@@ -3047,7 +3047,7 @@ func (r *runner) runE19(ctx context.Context) *result {
 		}
 
 		for _, m := range mismatches {
-			res.find("Step %q succeeded but was silently reassigned: %s", s.Name, m)
+			res.findf("Step %q succeeded but was silently reassigned: %s", s.Name, m)
 		}
 	}
 

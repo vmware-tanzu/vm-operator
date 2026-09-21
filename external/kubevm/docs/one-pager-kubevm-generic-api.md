@@ -3,7 +3,7 @@
 **Author:** Arunesh Pandey · **Status:** Proposal, open for discussion
 
 This is a design proposal, not an accepted API.
-The types it describes are implemented as a strawman in this repository so the shape can be reviewed concretely; see the repository README for what is and is not built.
+The types it describes, the generic core controller, and a working vSphere provider integration are implemented in this repository so the shape can be reviewed against something that actually reconciles a VM end to end, not only as a Go snippet in a document; see the repository README for what is and is not built, and *Demos* below for the vSphere provider in action, plus an EC2 prototype demonstrating that the contract generalizes.
 
 ## Summary
 
@@ -91,10 +91,10 @@ As a member of the CNCF community, I have a hypervisor-native, vendor-neutral VM
 
 The proposal introduces a new API group, `kube-vm.io`, whose central resource is a `VirtualMachine` supported by a small set of companion types for sizing, images, networking, and snapshots.
 The design deliberately places everything that is shared across backends in the generic API, so that a provider contributes only the settings that are unique to its platform.
-A machine is bound to its backend through a Cluster-API-style `spec.infrastructureRef`, and the generic layer observes the backend exclusively through a duck-typed status contract: a small, fixed set of well-known status fields (provider identifier, readiness, and network addresses) that the contract *requires* each provider to surface at agreed field paths.
+A machine is bound to its backend through a Cluster-API-style `spec.infrastructureRef`, and the generic layer observes the backend exclusively through a duck-typed status contract: a small, fixed set of well-known status fields — provider identifier, power state, network addresses, a free-form provider-metadata map, and readiness expressed as conditions — that the contract *requires* each provider to surface at agreed field paths.
 The generic core reads only those paths and imports no provider code, so it needs no per-provider translation and does not change when a provider is added.
 A provider whose native status already carries the same information under its own field names, as VM Operator does today, publishes the contract fields on its own object alongside them.
-Settling the exact contract, and the canonical `providerID` form in particular, is part of defining the API.
+This is no longer only a description: the contract is codified in code, and *The provider contract, concretely* below covers what that means and what else it settles.
 A generic controller reconciles the `VirtualMachine` against its provider object, and each provider contributes a controller that translates the resolved intent into calls against its platform.
 To keep the generic API from degenerating into the union of every vendor's feature set, a field is promoted into the portable core only once at least two providers converge on a common shape for it; until then it stays on the provider object where it originated.
 
@@ -197,7 +197,8 @@ spec:
   minHardwareVersion: 20
   bootOptions:
     efiSecureBoot: true
-# status (provider-written): providerID, ready, addresses, instanceState
+# status (provider-written): providerID, powerState, addresses, and readiness
+# via the InfrastructureReady condition — see "The provider contract, concretely".
 ```
 
 Retargeting the same workload to EC2 keeps the portable object's shape intact, with its sizing, image, networking, and bootstrap unchanged, and takes three edits: repoint `infrastructureRef` at the EC2 provider group and kind, repoint the network reference the same way, and supply the EC2 provider object, which carries what is irreducibly AWS-specific: the region, the firewall attachment, the named key pair, and the instance's IAM identity.
@@ -219,7 +220,7 @@ spec:
   # A named EC2 key pair.
   keyName: team-a-bastion
   iamInstanceProfile: arn:aws:iam::123456789012:instance-profile/inference
-# status (provider-written): providerID=aws:///us-west-2a/i-0…, ready, addresses
+# status (provider-written): providerID=aws:///us-west-2a/i-0…, powerState, addresses
 ```
 
 The portable specification keeps the same shape in both cases; the provider binding and the provider object differ, and a few backend-scoped values inside the portable object (zone, storage class, network and image names) resolve per platform.
@@ -372,7 +373,7 @@ Note that this leaves a real gap rather than a theoretical one: Windows guests o
 The generic controller reconciles the `VirtualMachine` against its provider object.
 It does not write the provider object's spec.
 Configuration reaches the platform because the provider reads the generic object it is linked to, which keeps platform-specific translation on the provider side where the platform knowledge already is.
-The generic controller resolves the reference, adopts the object, reads the backend's observed state through the duck-typed status contract, a fixed set of well-known fields each provider surfaces at agreed paths on its own object, and rolls the provider identifier, readiness, and network addresses up into the generic machine's status.
+The generic controller resolves the reference, adopts the object, reads the backend's observed state through the duck-typed status contract, a fixed set of well-known fields each provider surfaces at agreed paths on its own object, and rolls the provider identifier, power state, network addresses, and readiness up into the generic machine's status.
 It also owns the lifecycle concerns that belong to the portable object, including finalizers, status conditions, and backoff on transient failure.
 Because it interacts with the backend solely through the infrastructure reference and the status contract, the generic controller imports no provider code, and each provider evolves independently behind that contract.
 
@@ -384,6 +385,34 @@ A greenfield cloud provider can be a near-empty capability object plus a transla
 An established platform may instead reuse its existing rich CRD as the provider object, as the vSphere provider does with VM Operator's `VirtualMachine` (see [VM Operator, the vSphere provider](#vm-operator-the-vsphere-provider)), which is thicker but delivers immediate feature parity.
 Either way the generic API carries the common surface, so the provider adds only what is platform-specific.
 
+### The provider contract, concretely
+
+The contract sketched above is not only prose.
+It is codified in [`external/kubevm/controller/internal/contract/contract.go`](../controller/internal/contract/contract.go), a package that reads a fixed set of paths off a provider object's `status` — `providerID`, `powerState`, `addresses[]`, a free-form `providerMetadata` map, and two conditions, `InfrastructureReady` and `UpToDate` — entirely through `unstructured.Unstructured`, so it never imports a provider's typed API.
+The condition is named `InfrastructureReady`, not `Ready`, because a provider may already reserve the literal `Ready` for a narrower meaning of its own: VM Operator does, for its guest readiness-probe result.
+The generic `kube-vm.io/VirtualMachine` controller calls this package's `ReadStatus` against the adopted provider object and mirrors the result onto the generic object's own status; that reconciler is the executable form of the contract, not this document.
+Reading status is only half of what the contract requires of a provider: before the core will adopt a provider object at all, that object must carry a `kube-vm.io/virtual-machine` annotation naming the generic object back.
+Without it the core requeues indefinitely and reports the generic object as `NotAdopted`, rather than guessing at a link the provider never confirmed.
+Once adoption is mutual, the core sets a controller owner reference on the provider object and deletes it when the generic object is deleted — so a provider author's obligation is exactly two things: annotate back, and surface the status paths above.
+
+The second half of the contract is not a file but a principle, worth stating as plainly as it has been asked for: *any core lifecycle operation that is platform-dependent must not exist in the generic layer.*
+Put concretely, against what this proposal already commits to elsewhere:
+
+| Lifecycle concern | Owner | Where this is already said |
+|---|---|---|
+| Creating, reconfiguring, and deleting the backend instance | Provider | *Providers*: "maps the resolved generic specification onto its platform's native API" |
+| Power on/off and suspend/resume, and how each is actually achieved | Provider | The generic object only carries the desired `powerState`; how a provider gets there is its own |
+| Placement, scheduling, live migration, and high availability | Provider | *Non-Goals*: explicitly delegated to the platform that already implements them |
+| Image/AMI/content-library resolution | Provider | *Image specification*: the provider resolves the portable reference to its native artifact |
+| Delivering the bootstrap request (guest customization, cloud-init, EC2Launch) | Provider | *Bootstrap*: "the provider is responsible for injecting it into the guest" |
+| Surfacing observed state at the fixed contract paths | Provider | The one write the provider owes the core |
+| Reading that state and rolling it onto the generic object; finalizers, conditions, backoff on transient failure | Core | *Controllers*: "owns the lifecycle concerns that belong to the portable object" |
+| Resolving and rebinding `spec.infrastructureRef`, including retargeting across providers | Core | The generic controller's own reconcile loop |
+
+An operation several providers could plausibly implement the same way — a bootstrap request format, say — is not automatically core's to own outright.
+Cluster API's answer to the same problem is a second, narrower provider contract for bootstrap providers, and *Beyond a single machine* already lists that as a near-term step for KubeVM, once cloud-init stops being the only path that needs one.
+Until a shared shape like that exists and two providers have converged on it, an operation stays on the provider side of the line even if it looks generalizable in hindsight — the same two-provider convergence bar that governs field promotion (see *The KubeVM API and the field-promotion philosophy*) applies to behavior, not only to schema.
+
 ### VM Operator, the vSphere provider
 
 [VM Operator](https://github.com/vmware-tanzu/vm-operator) serves as both the reference provider and the maturity anchor for the proposal.
@@ -393,7 +422,7 @@ That gives KubeVM a credible, shipping first backend.
 
 One reconciliation to be explicit about, because it differs from the illustrative examples above.
 Those examples show a bespoke, capability-only `VSphereVirtualMachine` provider object for clarity.
-The vSphere realization is expected to differ: the provider object would be **VM Operator's own `vmoperator.vmware.com/VirtualMachine` CRD, reused directly**, a full-featured and therefore *thick* object, rather than a slim bespoke type.
+The vSphere realization differs from them: the provider object **is VM Operator's own `vmoperator.vmware.com/VirtualMachine` CRD, reused directly** — a full-featured, and therefore *thick*, object — rather than a slim bespoke type.
 Reusing the native CRD buys day-one parity with everything VM Operator already does, at the cost of a thick provider object.
 Fields the generic API owns are resolved by VM Operator from the generic object and persisted into its own spec: those that are immutable once set are resolved when the machine is created, and power state is kept in step on every reconcile.
 The generic object is authoritative for those fields, so a direct edit to them on the provider object is reverted on the next reconcile, in the same way an edit to a Pod owned by a Deployment is.
@@ -532,6 +561,8 @@ It is rejected as the goal here for the obvious reason that it produces no porta
 - [`api/v1alpha1/`](../api/v1alpha1/): the types this document describes.
 - [`config/crd/bases/`](../config/crd/bases/): the generated CRD.
 - [`config/samples/virtualmachine.yaml`](../config/samples/virtualmachine.yaml): a worked example.
+- [`controller/`](../controller/): the generic core controller that reconciles a `VirtualMachine` against a provider object.
+- [`controller/internal/contract/`](../controller/internal/contract/): the duck-typed status contract the core reads off a provider object.
 - [`README.md`](../README.md): what is implemented, and the known gaps and open API questions.
 
 ## Prior art and related work
@@ -539,13 +570,30 @@ It is rejected as the goal here for the obvious reason that it produces no porta
 The design draws on, and is meant to complement, the following:
 
 - [Cluster API](https://cluster-api.sigs.k8s.io/): the source of the `infrastructureRef` plus duck-typed status contract pattern this proposal applies to VMs rather than to Kubernetes nodes.
-- [KubeVirt](https://kubevirt.io/): the VM-as-Pod design point, complementary rather than competing. How the two differ is set out in [Risks and Mitigations](#risks-and-mitigations), and why this proposal does not extend KubeVirt's own type is in [Alternatives](#alternatives).
+- [KubeVirt](https://kubevirt.io/): the VM-as-Pod design point, complementary rather than competing. How the two differ is set out in [Risks and Mitigations](#risks-and-mitigations), and why this proposal does not extend KubeVirt's own type is in [Alternatives](#alternatives); this proposal has been presented directly to the KubeVirt community, see *Community outreach*.
 - [Kata Containers](https://katacontainers.io/): VM-strength isolation at container granularity, a different point in the same space.
 - [VM Operator](https://github.com/vmware-tanzu/vm-operator): the reference provider and maturity anchor.
 - [AWS Controllers for Kubernetes](https://github.com/aws-controllers-k8s/ec2-controller) and [Azure Service Operator](https://github.com/Azure/azure-service-operator): single-provider facades over a cloud VM API, studied as precedent for building an owned API surface rather than exposing a dependency's native one.
 - [virtrigaud](https://github.com/projectbeskar/virtrigaud) and [kubeswift](https://github.com/kubeswift/kubeswift): independent attempts at a multi-hypervisor VM API, sources of the GPU-request shape and the status-side provider-metadata escape hatch.
 
+## Demos
+
+The established provider is demonstrated end to end — creation, address reporting, and power lifecycle — against the contract described above, not only against the portable API in isolation. A second demo shows the same contract implemented against EC2, as a prototype confirming the contract generalizes beyond vSphere; that provider is not yet merged into this repository (see *ROADMAP.md*'s "second provider" milestone).
+
+- **vSphere provider (VM Operator)**: <https://youtu.be/a2LksDuZlwc>
+- **EC2 provider (prototype)**: <https://youtu.be/puJYxPvj2zU>
+
+## Community outreach
+
+This proposal has been taken beyond this repository, not only opened for comment on it:
+
+- Presented to the CNCF TAG Workloads Foundation in a community meeting, and discussed on their [Slack channel](https://cloud-native.slack.com/archives/C08K71W9HAS/p1788991641325829); the response there was to ask for a demo, which *Demos* above now provides.
+- Presented to the [KubeVirt community meeting](https://docs.google.com/document/d/1xkhG--2btgqTfvGBGu5BxnsesfgeCniaQg3yoZdzWyg/edit?tab=t.0#heading=h.la5p2q63th2g), and discussed on the [KubeVirt Slack channel](https://kubernetes.slack.com/archives/C8ED7RKFE/p1789116995367169) — KubeVirt is the project this proposal is most often compared against (see *Risks and Mitigations* and *Alternatives*), and so the one whose direct feedback matters most.
+- Raised on both the CNCF and Kubernetes Slack instances more broadly, and in early conversations with engineers at Google, with similar outreach to Microsoft and Amazon underway.
+- Tracked end to end, including the maturity and scope questions raised by CNCF TOC reviewers, in the [CNCF Sandbox application discussion](https://github.com/cncf/sandbox/issues/517).
+
 ## Feedback
 
-This proposal is open for discussion.
-Comments on the API shape, the provider contract, and the open questions listed in the repository README are all welcome, particularly from anyone who would implement a provider.
+This proposal is open for discussion, not only within this repository.
+Comments on the API shape, the provider contract, and the open questions listed in the repository README are all welcome, particularly from anyone who would implement a provider, and especially from the KubeVirt community given how often the two are compared.
+The [CNCF Sandbox application](https://github.com/cncf/sandbox/issues/517) is also open for review, and is where TOC-facing questions on maturity and scope are being tracked as they come up.

@@ -12,7 +12,7 @@ KubeVM is intended to complement KubeVirt, not to replace it: it addresses the h
 
 The `VirtualMachine` resource is the starting point rather than the whole proposal.
 Standardizing the virtual machine is what lets the ecosystem build a set, a service, a rolling deployment, quota, policy, health checking, capacity-aware placement across providers, and eventually a workload model spanning both VMs and Pods.
-Each of those is then written once for every provider rather than once per platform.
+Each of those is then written once against the standard API, rather than once per platform's native API — a provider is a thin conformance layer under that standard, not a new surface consumers have to target.
 That trajectory is described in [Beyond a single machine](#beyond-a-single-machine), and it is where most of the long-term value of a generic virtual machine API lies.
 
 ## Motivation
@@ -22,7 +22,7 @@ This gap is becoming urgent because a new class of workload is arriving faster t
 Agentic workloads (specifically, long-running processes that execute model-generated code and orchestrate tools) are increasingly deployed inside virtual machines, both for the strong isolation a VM provides around untrusted code and for direct access to the hardware accelerators, such as GPUs, SR-IOV network functions, and passthrough devices, that hypervisors already virtualize well.
 The community needs a credible way to run these workloads, and today it does not have one.
 
-The CNCF landscape today addresses adjacent needs but not this one.
+The fragmentation is not limited to the CNCF landscape: outside it, each cloud exposes its own vendor-specific Kubernetes controller for its VM service — AWS ACK manages EC2 instances, Google Config Connector manages Compute Engine instances — so the same "write it once per platform" problem shows up there too. The CNCF landscape today addresses adjacent needs but not this one.
 Kata Containers provides VM-strength isolation for individual workloads by wrapping a Pod in a lightweight micro-VM: well suited to isolating untrusted code at the granularity of a container.
 KubeVirt takes a different approach, converging the virtual machine into the container model by running a QEMU/KVM process inside a Pod, which is an excellent fit when Kubernetes is the sole infrastructure layer and rich, device-level VM modeling on Kubernetes nodes is the goal.
 Both are strong at their design point.

@@ -106,6 +106,7 @@ Each scenario is written as **Given / When / Then**, is implementation-agnostic,
 12. **Negative or absurd replica counts are rejected**
     Given an attempt to set `spec.replicas = -1`.
     Then the API server/webhook rejects the request (CRD/webhook validation), and no reconciliation is attempted against a negative count.
+    **Gap found and fixed**: neither existed. Added `validator.validateReplicas` in `webhooks/virtualmachinereplicaset/validation/virtualmachinereplicaset_validator.go` (rejects `spec.replicas < 0` at admission) plus a `+kubebuilder:validation:Minimum=0` marker on the v1alpha6 API type for CRD-schema-level defense-in-depth.
 
 ### 2.3 Selector / template consistency
 

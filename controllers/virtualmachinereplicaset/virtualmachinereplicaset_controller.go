@@ -646,11 +646,9 @@ func (r *Reconciler) updateStatus(
 			fullyLabeledReplicasCount++
 		}
 
-		// TODO: Figure out an equivalent of Ready condition on the VirtualMachine
-		// resource so we can populate the ready and available replicas in the Status.
-		// For now, we count all replicas as ready and available.
-		readyReplicasCount++
-
+		if conditions.IsTrue(vm, vmopv1.ReadyConditionType) {
+			readyReplicasCount++
+		}
 	}
 
 	newStatus.Replicas = int32(len(filteredVMs))                      //nolint:gosec // disable G115

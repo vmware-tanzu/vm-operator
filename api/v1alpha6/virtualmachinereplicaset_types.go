@@ -76,6 +76,7 @@ type VirtualMachineTemplateSpec struct {
 type VirtualMachineReplicaSetSpec struct {
 	// +optional
 	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=0
 	//
 	// Replicas is the number of desired replicas.
 	// This is a pointer to distinguish between explicit zero and unspecified.

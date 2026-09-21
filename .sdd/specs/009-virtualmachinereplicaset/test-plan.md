@@ -50,7 +50,7 @@ Scenarios not explicitly listed above (e.g. 3, 4 defaulting) are folded into the
 8. **Integration: readiness & finalizer draining** — scenarios 24 (expected to fail — write it against the intended contract, mark clearly, do not water it down to match the stub), 32, 38.
 9. **Mutation webhook baseline tests** — new `_unit_test.go` for the mutator, asserting current pass-through/no-op behavior (so future implementation of vmop-1827 has a regression baseline).
 10. **E2E smoke** — new `test/e2e/vmservice/virtualmachinereplicaset/` suite, run against a real vCenter/WCP cluster per `test/e2e/README.md` (no vcsim path exists here): create with N replicas, scale up, scale down, delete, confirm VMs actually reach `PoweredOn`.
-11. **Triage pass** — run the full suite, confirm the only failures are the three known, intentionally-red scenarios (§19's Condition assertion → vmop-4017, §24 readyReplicas stub, §12 negative-replicas), file follow-up tickets for §24 and §12 (vmop-4017 already filed for §19), and do not silently adjust any test to match broken behavior just to turn it green.
+11. **Triage pass** — run the full suite, confirm the only failures are the two known, intentionally-red scenarios (§19's Condition assertion → vmop-4017, §24 readyReplicas stub — §12 negative-replicas has since been fixed for real, see the SC12 note in `tds.md`), file a follow-up ticket for §24, and do not silently adjust any test to match broken behavior just to turn it green.
 
 ### Key reused patterns (don't reinvent)
 
@@ -61,11 +61,10 @@ Scenarios not explicitly listed above (e.g. 3, 4 defaulting) are folded into the
 
 ### Verification
 
-- Unit: `go test ./controllers/virtualmachinereplicaset/... -run TestVirtualMachine` (or the repo's `make test` / `ginkgo` target used elsewhere — confirm exact command from `Makefile`/README during batch 1).
-- Integration: same binary, but requires `envtest` binaries set up (`make test` should already handle this — verify).
-- Webhook: `go test ./webhooks/virtualmachinereplicaset/...`.
-- E2E: per `test/e2e/README.md`, run against a real vCenter/WCP cluster (`make test-e2e` / the `smoke`/`core-functional` Ginkgo-labeled targets — confirm exact target during batch 10; there is no vcsim-backed e2e target).
-- After each batch, run only that batch's package tests before moving on; run the full `make test` after batch 11 to catch cross-package regressions (e.g. the mapper function `VMToReplicaSets` touching other controllers' watch behavior is unlikely but worth a full run once).
+- Unit + integration: `go test ./controllers/virtualmachinereplicaset/... -run TestVirtualMachine`. Requires `envtest` binaries; either run via `make test` (downloads `etcd`/`kube-apiserver` via the `$(ETCD)`/`$(KUBE_APISERVER)` Makefile targets automatically) or set `KUBEBUILDER_ASSETS` directly at a cached `setup-envtest` install (e.g. `~/Library/Application Support/io.kubebuilder.envtest/k8s/<version>-<os>-<arch>`) and run the `go test` command directly.
+- Webhook: `go test ./webhooks/virtualmachinereplicaset/...` and `go test ./webhooks/virtualmachinereplicaset/mutation/...` (same `envtest` requirement as above).
+- E2E: per `test/e2e/README.md`, run against a real vCenter/WCP cluster (`make test-e2e` / the `smoke`/`core-functional` Ginkgo-labeled targets; there is no vcsim-backed e2e target). Not exercised by this test-plan's non-E2E batches (1–9, 11); tracked separately as its own effort (T013).
+- After each batch, run only that batch's package tests before moving on; run the full `make test` after batch 9/11 to catch cross-package regressions (e.g. the mapper function `VMToReplicaSets` touching other controllers' watch behavior is unlikely but worth a full run once).
 
 ### Deliverable shape
 

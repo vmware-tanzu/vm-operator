@@ -68,6 +68,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	var fieldErrs field.ErrorList
 
 	fieldErrs = append(fieldErrs, v.validateLabelSelectorLabelMatch(ctx, rs, nil)...)
+	fieldErrs = append(fieldErrs, v.validateReplicas(rs)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -89,6 +90,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	var fieldErrs field.ErrorList
 	fieldErrs = append(fieldErrs, v.validateLabelSelectorLabelMatch(ctx, rs, nil)...)
+	fieldErrs = append(fieldErrs, v.validateReplicas(rs)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -129,6 +131,27 @@ func (v validator) validateLabelSelectorLabelMatch(
 	}
 
 	allErrs = append(allErrs, rs.Spec.Template.ObjectMeta.Validate(specPath.Child("template", "metadata"))...)
+
+	return allErrs
+}
+
+// validateReplicas rejects a negative spec.replicas. TDS SC12
+// (.sdd/specs/009-virtualmachinereplicaset/tds.md): an absurd/negative
+// replica count must be caught at admission time, not silently accepted or
+// discovered later as a reconcile-time error.
+func (v validator) validateReplicas(rs *vmopv1.VirtualMachineReplicaSet) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if rs.Spec.Replicas != nil && *rs.Spec.Replicas < 0 {
+		allErrs = append(
+			allErrs,
+			field.Invalid(
+				field.NewPath("spec", "replicas"),
+				*rs.Spec.Replicas,
+				"must be greater than or equal to 0",
+			),
+		)
+	}
 
 	return allErrs
 }

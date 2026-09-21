@@ -26,6 +26,7 @@ const (
 
 	SupervisorAsyncUpgradeFSS = "WCP_Supervisor_Async_Upgrade"
 	SupervisorVMSnapshotFSS   = "WCP_VMService_VM_Snapshots"
+	K8sWorkloadMgmtAPIFSS     = "WCP_VMService_K8s_Workload_Mgmt_API"
 
 	APIServerToWebhookAuth = "supports_apiserver_to_webhook_authentication"
 

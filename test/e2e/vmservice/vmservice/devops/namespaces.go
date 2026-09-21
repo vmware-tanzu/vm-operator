@@ -5,9 +5,12 @@ package devops
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	capiutil "sigs.k8s.io/cluster-api/util"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/kubectl"
@@ -31,7 +34,7 @@ type DevOpsSpecInput struct {
 
 const (
 	devopsSpecName        = "devops-namespaces"
-	randomSSOUserName     = "devops-sso-user"
+	randomSSOUserNameBase = "devops-sso-user"
 	randomSSOUserPassword = "Password!23"
 )
 
@@ -64,6 +67,7 @@ func DevOpsSpec(ctx context.Context, inputGetter func() DevOpsSpecInput) {
 		kubeconfigPath = input.ClusterProxy.GetKubeconfigPath()
 		vCenterAdminCreds = dcli.VCenterUserCredentials{Username: testbed.AdminUsername, Password: testbed.AdminPassword}
 		// Create SSO user
+		randomSSOUserName := fmt.Sprintf("%s-%s", randomSSOUserNameBase, capiutil.RandomString(6))
 		sshCommandRunner, _, supervisorClusterIP = testutils.GetHelpersFromKubeconfig(ctx, kubeconfigPath)
 		user = vcenter.NewUser(randomSSOUserName, randomSSOUserPassword).WithAdminCreds(vCenterAdminCreds).WithSSHCommandRunner(sshCommandRunner)
 		kubectlPlugin := testutils.CreateUserAndLogin(user, supervisorClusterIP, "", "")

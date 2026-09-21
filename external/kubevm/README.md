@@ -29,11 +29,15 @@ The design rationale is in [`docs/one-pager-kubevm-generic-api.md`](docs/one-pag
 
 ## Status
 
-**Strawman.** These types implement the API proposed in
-[`docs/one-pager-kubevm-generic-api.md`](docs/one-pager-kubevm-generic-api.md)
-so that it can be generated, applied to a cluster, and reviewed as something
-concrete rather than as a Go snippet in a document. There is no controller here
-yet — this module is API types plus generation only.
+These types implement the API proposed in
+[`docs/one-pager-kubevm-generic-api.md`](docs/one-pager-kubevm-generic-api.md).
+The generic core controller now lives at [`controller/`](controller/) and
+reconciles a `VirtualMachine` end to end against a provider object — see
+[`controller/internal/contract/`](controller/internal/contract/) for the
+duck-typed status contract it reads. VM Operator is a working first provider,
+demonstrated managing real VM lifecycle (creation, address reporting,
+power on/off) on a vSphere Supervisor cluster; see the one-pager's *Demos*
+section.
 
 The CRD has been verified end to end against a live Kubernetes API server:
 it establishes, accepts a valid object, applies its defaults, renders its
@@ -52,6 +56,8 @@ api/v1alpha1/         The API types
   zz_generated.deepcopy.go  Generated — do not edit
 config/crd/bases/     Generated CRD manifests
 config/samples/       Example manifests
+controller/           The generic core controller
+  internal/contract/    The duck-typed status contract read off a provider object
 docs/                 Design docs for this API
 hack/boilerplate/     License header used by code generation
 hack/tools/bin/       Tooling installed by "make tools" (gitignored)
@@ -91,13 +97,14 @@ kubectl apply -f config/samples/virtualmachine.yaml
 ```
 
 The sample references an image, a network, and a provider object that will not
-exist in an empty cluster, so the object will be accepted but nothing will
-reconcile it. That is expected — there is no controller in this module.
+exist in an empty cluster. Without the corresponding provider object and a
+running instance of `controller/`, the generic object will be accepted but
+nothing will reconcile it.
 
 ## Known issues and open API questions
 
-These are properties of the strawman worth settling before the API is proposed
-more widely.
+These are open questions worth settling before the API is proposed more
+widely.
 
 - **No accelerator field.** Accelerators are requested through
   `instanceType.name` rather than a dedicated field, because on vSphere and EC2
@@ -108,18 +115,18 @@ more widely.
   advertises which contract version it satisfies via a well-known label, and the
   core resolves the served version at runtime. Whether a label is the right
   mechanism, and what the canonical `providerID` form is, are both still open.
-- **The provider contract is not expressed in code here.** A provider is
-  expected to surface a small set of well-known field paths — `providerID`,
-  `status.ready`, `status.addresses`, `status.instanceState`, and failure
-  reason/message — which the generic core reads without importing provider
-  types. Note the one-pager calls this a *status* contract while Cluster API
-  places `providerID` on the infrastructure object's **spec**; which of the two
-  applies here is unsettled, and it matters, because a controller writing its
-  own object's spec breaks server-side-apply field ownership and shows up as
-  permanent drift in Argo CD and Flux. `status.instanceState` is also named in
-  the contract but has no corresponding field in `VirtualMachineStatus` yet. Those paths are described in the one-pager but are not yet a
-  package in this module, and there is no conformance test to hold a provider
-  to them.
+- **The provider contract is now expressed in code, but only for one provider
+  so far.** [`controller/internal/contract/contract.go`](controller/internal/contract/contract.go)
+  reads a fixed set of paths off a provider object's `status` —
+  `providerID`, `powerState`, `addresses[]`, a free-form `providerMetadata`
+  map, and the `InfrastructureReady` / `UpToDate` conditions — through
+  `unstructured.Unstructured`, so the generic core never imports provider
+  types. This settles the spec-vs-status question Cluster API leaves open for
+  `providerID`: the contract reads it from **status**, precisely to avoid a
+  controller writing its own object's spec and showing up as permanent drift
+  in Argo CD and Flux. What is still open: there is only one provider
+  (VM Operator) exercising the contract, and no conformance test yet holds a
+  second provider to it.
 - **Companion catalog types are not defined.** `bootDisk.source.image` and
   `network.interfaces[].network` reference `VirtualMachineImage` and network
   objects that this module does not define. Whether those become KubeVM types or stay

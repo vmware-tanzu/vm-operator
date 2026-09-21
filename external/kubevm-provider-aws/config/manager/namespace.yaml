@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubevm-provider-aws-system
+  labels:
+    # The manager runs non-root, drops every capability and writes nothing,
+    # so it satisfies the strictest standard. Stated here so a cluster that
+    # enforces it does not have to be asked.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

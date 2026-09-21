@@ -1,0 +1,53 @@
+# A machine, in the two objects a user writes.
+#
+# The provider object's spec is EMPTY. Everything portable lives on the
+# VirtualMachine, and the controller fills in what it resolved -- so after the
+# first reconcile this object shows imageID, instanceType, subnet and
+# powerState, and `kubectl get -o yaml` tells the truth about what will run.
+#
+# The annotation on the AWSMachine is required, and it is yours to write. It
+# is this object's consent to be claimed by the VirtualMachine it names: a
+# VirtualMachine pointing at an AWSMachine is only half a link, and nothing is
+# adopted on half a link -- otherwise anyone who can create a VirtualMachine
+# could claim a machine that is not theirs. The vSphere provider works the
+# same way.
+apiVersion: kube-vm.io/v1alpha1
+kind: VirtualMachine
+metadata:
+  name: web-01
+  namespace: team-a
+spec:
+  powerState: PoweredOn
+  instanceType:
+    # An EC2 instance type, verbatim. The portable API documents this field as
+    # "a VirtualMachineClass on vSphere, a machine type on GCP, an instance
+    # type on EC2", so a per-platform name here is the intended use.
+    name: t3.micro
+  bootDisk:
+    source:
+      image:
+        # apiGroup and kind are required by the schema and resolve to NOTHING:
+        # no AWSImage resource exists. The provider reads `name` and uses it as
+        # the AMI id. The kind is reserved so that if such a resource is ever
+        # added, this manifest keeps working and simply starts resolving.
+        #
+        # Replace the placeholder with an AMI in your region, for example the
+        # current Amazon Linux 2023 image:
+        #   aws ssm get-parameter --query Parameter.Value --output text \
+        #     --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+        apiGroup: infrastructure.kube-vm.io
+        kind: AWSImage
+        name: ami-0123456789abcdef0
+  infrastructureRef:
+    apiGroup: infrastructure.kube-vm.io
+    kind: AWSMachine
+    name: web-01
+---
+apiVersion: infrastructure.kube-vm.io/v1alpha1
+kind: AWSMachine
+metadata:
+  name: web-01
+  namespace: team-a
+  annotations:
+    kube-vm.io/virtual-machine: web-01
+spec: {}

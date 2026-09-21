@@ -320,10 +320,12 @@ GO_MOD_DIRS_TO_LINT := $(filter-out ./api-docs%,$(GO_MOD_DIRS_TO_LINT))
 GO_MOD_DIRS_TO_LINT := $(filter-out ./packer-plugin-vsphere-src%,$(GO_MOD_DIRS_TO_LINT))
 
 # The rest of external/ holds copies of other projects' API types, which are
-# not ours to lint. external/kubevm is first-party code that happens to live
-# there, so it is added back explicitly.
+# not ours to lint. external/kubevm and external/kubevm-provider-aws are
+# first-party code that happens to live there, so they are added back
+# explicitly.
 GO_MOD_DIRS_TO_LINT += ./external/kubevm/
 GO_MOD_DIRS_TO_LINT += ./external/kubevm/controller/
+GO_MOD_DIRS_TO_LINT += ./external/kubevm-provider-aws/
 GO_LINT_DIR_TARGETS := $(addprefix lint-,$(GO_MOD_DIRS_TO_LINT))
 
 .PHONY: $(GO_LINT_DIR_TARGETS)

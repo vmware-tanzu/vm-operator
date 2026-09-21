@@ -1,0 +1,8 @@
+# Every generated CRD must be listed here. One that is not is silently not
+# installed, and the controller then runs against a kind the API server has
+# never heard of, with nothing failing loudly. internal/enforce fails if this
+# list drifts from the directory.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - infrastructure.kube-vm.io_awsmachines.yaml

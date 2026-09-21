@@ -1,0 +1,15 @@
+# Tooling binaries installed by "make tools", and envtest's API server.
+hack/tools/bin/
+
+# The manager binary built by "make manager".
+bin/
+
+# Test and coverage artifacts.
+*.test
+cover.out
+
+# Never commit credentials. The AWS SDK's own chain supplies them at runtime,
+# so nothing resembling a key belongs in this module.
+.env
+*.pem
+credentials

@@ -1,0 +1,49 @@
+# The same machine, with placement stated explicitly.
+#
+# Omitting spec.network lets EC2 choose from the account's default VPC. That is
+# its documented behaviour and it is deterministic, but the rule is undocumented
+# -- measured on one account, three launches all landed in us-east-1c, which was
+# neither the first zone alphabetically nor the lowest subnet id. Every default
+# subnet also carries MapPublicIpOnLaunch, so the machine gets a public address.
+#
+# publicIP OVERRIDES that, which is how a machine stays off the public internet
+# even in a default VPC.
+#
+# Replace the AMI and subnet placeholders with ones in your account; see
+# virtualmachine.yaml for how to find a current AMI.
+apiVersion: kube-vm.io/v1alpha1
+kind: VirtualMachine
+metadata:
+  name: web-02
+  namespace: team-a
+spec:
+  powerState: PoweredOn
+  instanceType:
+    name: t3.micro
+  bootDisk:
+    source:
+      image:
+        apiGroup: infrastructure.kube-vm.io
+        kind: AWSImage
+        name: ami-0123456789abcdef0
+  network:
+    interfaces:
+      - name: eth0
+        network:
+          apiGroup: infrastructure.kube-vm.io
+          kind: AWSSubnet
+          name: subnet-0123456789abcdef0
+        publicIP: false
+  infrastructureRef:
+    apiGroup: infrastructure.kube-vm.io
+    kind: AWSMachine
+    name: web-02
+---
+apiVersion: infrastructure.kube-vm.io/v1alpha1
+kind: AWSMachine
+metadata:
+  name: web-02
+  namespace: team-a
+  annotations:
+    kube-vm.io/virtual-machine: web-02
+spec: {}

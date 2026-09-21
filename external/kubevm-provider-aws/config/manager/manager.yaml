@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubevm-provider-aws-controller-manager
+  namespace: kubevm-provider-aws-system
+  labels:
+    control-plane: controller-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+    spec:
+      serviceAccountName: kubevm-provider-aws-manager
+      securityContext:
+        runAsNonRoot: true
+        # Required by the restricted Pod Security standard, which refuses a
+        # pod without it outright.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          # The localhost/ prefix is required for kind on podman: images load
+          # under that name, and containerd resolves a BARE tag to
+          # docker.io/library/... . A Deployment naming the bare tag fails
+          # ImagePullBackOff, and imagePullPolicy: IfNotPresent does not help
+          # because the NAME never matches.
+          image: localhost/kubevm-provider-aws:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+            # Off, rather than served unauthenticated. Nothing scrapes this
+            # manager yet; turning metrics on means securing them first.
+            - --metrics-bind-address=0
+          env:
+            # One deployment serves one account and one region.
+            - name: AWS_REGION
+              value: us-east-1
+            # Credentials arrive through the AWS SDK's own chain, which finds
+            # these at its first step. No API field names a credential, and
+            # the manager's code knows nothing about where they came from.
+            #
+            # On EKS: delete this envFrom, delete the Secret, and annotate the
+            # ServiceAccount with an IRSA role instead. The chain then finds a
+            # projected token at a later step. Nothing else changes.
+          envFrom:
+            - secretRef:
+                name: aws-credentials
+                optional: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+      # Longer than controller-runtime's 30s graceful shutdown, so a reconcile
+      # in the middle of an EC2 call finishes rather than being killed.
+      terminationGracePeriodSeconds: 60

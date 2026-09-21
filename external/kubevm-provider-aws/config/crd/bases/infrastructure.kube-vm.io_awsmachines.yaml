@@ -1,0 +1,290 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    kube-vm.io/v1alpha1: v1alpha1
+  name: awsmachines.infrastructure.kube-vm.io
+spec:
+  group: infrastructure.kube-vm.io
+  names:
+    categories:
+    - kubevm
+    kind: AWSMachine
+    listKind: AWSMachineList
+    plural: awsmachines
+    shortNames:
+    - awsm
+    singular: awsmachine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.powerState
+      name: State
+      type: string
+    - jsonPath: .spec.instanceType
+      name: Type
+      type: string
+    - jsonPath: .status.providerID
+      name: ProviderID
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AWSMachine is one EC2 instance, backing one portable VirtualMachine.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec is empty on submission and filled in by the controller.
+            properties:
+              imageID:
+                description: |-
+                  ImageID is the AMI this machine booted from, resolved from the portable
+                  object's boot disk image reference.
+
+                  Cannot change once status.launchRequested is set. Until then the
+                  controller keeps it in step with the portable object, so a value
+                  written here by hand is replaced on the next reconcile.
+                pattern: ^ami-[0-9a-f]{8,17}$
+                type: string
+              instanceType:
+                description: |-
+                  InstanceType is the EC2 instance type, resolved from the portable
+                  object's instance type name.
+
+                  Cannot change once status.launchRequested is set. EC2 can resize a
+                  stopped instance, but this provider does not implement that, so the
+                  type an instance launched with is the type it keeps. A later change on
+                  the portable object is reported through UpToDate rather than written
+                  here -- writing it would make the spec name a size the machine is not
+                  running.
+                type: string
+              powerState:
+                description: |-
+                  PowerState is the power state resolved from the portable object.
+
+                  Persisted rather than held in memory, so that reading this object shows
+                  what the machine will actually do, and mutable because power state is
+                  the one thing about a machine that is meant to change.
+
+                  Suspended is accepted here and can never be applied: EC2 has no
+                  suspended state, and hibernation must be enabled when an instance is
+                  launched. A request for it is reported through the UpToDate condition
+                  and the machine is left alone.
+                enum:
+                - PoweredOn
+                - PoweredOff
+                - Suspended
+                type: string
+              publicIP:
+                description: |-
+                  PublicIP records whether the instance should have an externally
+                  reachable address, copied from the portable object's first network
+                  interface on every reconcile.
+
+                  Nil means the portable object expressed no preference, which leaves the
+                  subnet's own MapPublicIpOnLaunch setting in charge -- and in a default
+                  VPC that means the instance gets one. So nil is not "no public address",
+                  it is "we did not say", and the two differ.
+
+                  Mutable, like power state: EC2 can add or remove the public address on
+                  a running instance's primary network interface, so a change on the
+                  portable object is applied, and a hand-edit here reverts. Whether a
+                  machine is reachable from the internet is the one fact here with a
+                  security consequence, so it is recorded on the object rather than left
+                  readable only on the parent.
+                type: boolean
+              subnet:
+                description: |-
+                  Subnet is where the instance was placed, resolved from the portable
+                  object's first network interface when it names one.
+
+                  Empty means the portable object named no network and EC2 selected from
+                  the account's default VPC. Cannot change once status.launchRequested
+                  is set: a subnet pins the availability zone, and moving a running
+                  instance between zones is not an edit.
+                pattern: ^subnet-[0-9a-f]{8,17}$
+                type: string
+            type: object
+          status:
+            description: Status is what the core reads back.
+            properties:
+              addresses:
+                description: Addresses are the machine's network addresses.
+                items:
+                  description: AWSMachineAddress is one network address of a machine.
+                  properties:
+                    address:
+                      description: |-
+                        Address is the address itself.
+
+                        Never empty: the portable object this is copied onto requires at least
+                        one character, and a value it refuses would stall the whole status
+                        mirror rather than just this entry.
+                      minLength: 1
+                      type: string
+                    type:
+                      description: |-
+                        Type distinguishes an address reachable only inside the network from
+                        one reachable outside it.
+                      enum:
+                      - InternalIP
+                      - ExternalIP
+                      - InternalDNS
+                      - ExternalDNS
+                      type: string
+                  required:
+                  - address
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
+              conditions:
+                description: |-
+                  Conditions carry InfrastructureReady and UpToDate.
+
+                  Not Ready: the core reads the literal string "InfrastructureReady",
+                  because a provider may already reserve "Ready" for its own,
+                  differently-scoped meaning.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              launchRequested:
+                description: |-
+                  LaunchRequested is when this provider first asked EC2 for the
+                  instance, recorded before the call so a launch whose reply is lost is
+                  still known to have been attempted.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the spec generation this status
+                  reflects.
+                format: int64
+                minimum: 0
+                type: integer
+              powerState:
+                description: |-
+                  PowerState is the machine's observed power state.
+
+                  ABSENT while the instance is between steady states. That is not an
+                  omission: an absent path is explicitly not an error under the contract,
+                  and reporting a guess produces a UI that flickers between values the
+                  machine was never in.
+                enum:
+                - PoweredOn
+                - PoweredOff
+                - Suspended
+                type: string
+              providerID:
+                description: |-
+                  ProviderID is a globally unique identifier for the machine, formatted
+                  aws:///<availabilityZone>/<instanceID> to match Cluster API.
+                type: string
+              providerMetadata:
+                additionalProperties:
+                  type: string
+                description: |-
+                  ProviderMetadata carries observed facts with no portable equivalent.
+
+                  The core copies it wholesale and never reads a value back into a
+                  decision, so keys can be added without negotiating a schema change.
+                type: object
+            type: object
+        type: object
+        x-kubernetes-validations:
+        - message: imageID, instanceType and subnet are fixed once the launch has
+            been requested
+          rule: '!has(oldSelf.status) || !has(oldSelf.status.launchRequested) || (((has(self.spec)
+            && has(self.spec.imageID)) ? self.spec.imageID : '''') == ((has(oldSelf.spec)
+            && has(oldSelf.spec.imageID)) ? oldSelf.spec.imageID : '''') && ((has(self.spec)
+            && has(self.spec.instanceType)) ? self.spec.instanceType : '''') == ((has(oldSelf.spec)
+            && has(oldSelf.spec.instanceType)) ? oldSelf.spec.instanceType : '''')
+            && ((has(self.spec) && has(self.spec.subnet)) ? self.spec.subnet : '''')
+            == ((has(oldSelf.spec) && has(oldSelf.spec.subnet)) ? oldSelf.spec.subnet
+            : ''''))'
+        - message: AWSMachine.spec is written by the controller from the portable
+            VirtualMachine; submit it empty
+          optionalOldSelf: true
+          rule: 'oldSelf.hasValue() ? true : (!has(self.spec) || (!has(self.spec.imageID)
+            && !has(self.spec.instanceType) && !has(self.spec.subnet) && !has(self.spec.publicIP)
+            && !has(self.spec.powerState)))'
+    served: true
+    storage: true
+    subresources:
+      status: {}

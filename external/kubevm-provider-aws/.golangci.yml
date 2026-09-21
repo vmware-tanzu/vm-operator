@@ -1,0 +1,68 @@
+# Modeled on the parent vm-operator repo's .golangci.yml, and identical in
+# rules to the KubeVM modules beside this one.
+#
+# This module carries its own config rather than inheriting the parent's,
+# because, like the KubeVM modules, it is expected to move to its own
+# repository.
+version: "2"
+
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+  - gofmt
+  - goimports
+  settings:
+    goimports:
+      # Put VMware imports after any third-party packages, matching the parent
+      # repo's convention.
+      local-prefixes:
+      - github.com/vmware
+      - github.com/vmware-tanzu
+
+linters:
+  enable:
+  - asciicheck
+  - bodyclose
+  - errcheck
+  - errorlint
+  - govet
+  - ineffassign
+  - misspell
+  - nakedret
+  - nolintlint
+  - prealloc
+  - revive
+  - staticcheck
+  - unconvert
+  - unparam
+  - unused
+  - whitespace
+
+  settings:
+    revive:
+      rules:
+      # API type and constant names are self-documenting in aggregate; the
+      # package-level doc comment carries the context. Individual exported
+      # constants in an enum block do not each need their own comment.
+      - name: exported
+        disabled: true
+
+    # A blank line after a function signature wrapped over several lines
+    # separates the parameters from the body. Allow it there, and only there.
+    # The parent repo disables this linter altogether.
+    whitespace:
+      multi-func: true
+
+  exclusions:
+    generated: lax
+    rules:
+    # Generated deepcopy code is not ours to lint.
+    - path: zz_generated\..*\.go
+      linters:
+      - all
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -1,0 +1,24 @@
+# Config for the https://github.com/crate-ci/typos spell checker, run via
+# "make typos". Trimmed from the parent vm-operator repo's _typos.toml to what
+# is relevant for this module.
+
+[files]
+extend-exclude = [
+    # Go module files contain pseudo-version hashes that trip the checker
+    # (for example "...c7abd" reads as "abd" -> "and").
+    "go.mod",
+    "go.sum",
+    # Tooling binaries installed by "make tools".
+    "hack/tools/bin/",
+]
+
+[default]
+extend-ignore-re = [
+    # -- Taken from https://github.com/crate-ci/typos/blob/master/docs/reference.md
+    # Next-line ignore. Use // spellchecker:ignore-next-line
+    "(#|//)\\s*spellchecker:ignore-next-line\\n.*",
+    # Line ignore with trailing // spellchecker:disable-line
+    "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+    # Line block with // spellchecker:<on|off>
+    "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on",
+]

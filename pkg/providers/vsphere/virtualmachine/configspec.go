@@ -43,6 +43,12 @@ func CreateConfigSpec(
 		Type:         vmopv1.ManagedByExtensionType,
 	}
 
+	if pkgcfg.FromContext(vmCtx).Features.ExtensionCompatConstraint {
+		configSpec.ExtensionCompatibilityConstraint = extensionCompatibilityConstraintSet()
+	} else {
+		configSpec.ExtensionCompatibilityConstraint = nil
+	}
+
 	// Ensure ExtraConfig contains the name/namespace of the VM's Kubernetes
 	// resource.
 	configSpec.ExtraConfig = util.OptionValues(configSpec.ExtraConfig).Merge(
@@ -387,6 +393,50 @@ func CalculateAffinityConstraints(
 	}
 
 	return constraints
+}
+
+// Descriptive labels for the INVARIANT extension compatibility
+// constraints VM Operator registers on every VM it creates.
+// ConstraintName plays no part in a constraint's identity or
+// evaluation. Identity is the (ConstraintType, ConstraintKind) pair.
+const (
+	extensionCompatConstraintNameService           = "svc-invariant"
+	extensionCompatConstraintNameFolder            = "folder-invariant"
+	extensionCompatConstraintNamePool              = "pool-invariant"
+	extensionCompatConstraintNameVMStoragePolicy   = "vm-policy-invariant"
+	extensionCompatConstraintNameDiskStoragePolicy = "disk-policy-invariant"
+	extensionCompatConstraintNameDevice            = "device-invariant"
+)
+
+// extensionCompatibilityConstraintSet returns the set of INVARIANT extension
+// compatibility constraints VM Operator registers on every VM it creates.
+// These constraints let vpxd reject admin-initiated relocate/reconfigure
+// operations that would break Supervisor's assumptions (e.g. moving a VM out
+// of its namespace's resource pool), while still allowing host and datastore
+// changes within the same cluster and StorageClass. See the Safety Rails
+// design spec for the full rationale.
+func extensionCompatibilityConstraintSet() *vimtypes.VirtualMachineExtensionCompatibilityConstraintSet {
+	newInvariant := func(
+		name string,
+		constraintType vimtypes.VirtualMachineExtensionCompatibilityConstraintType,
+	) vimtypes.VirtualMachineExtensionCompatibilityConstraint {
+		return vimtypes.VirtualMachineExtensionCompatibilityConstraint{
+			ConstraintName: name,
+			ConstraintType: string(constraintType),
+			ConstraintKind: string(vimtypes.VirtualMachineExtensionCompatibilityConstraintKindINVARIANT),
+		}
+	}
+
+	return &vimtypes.VirtualMachineExtensionCompatibilityConstraintSet{
+		Constraint: []vimtypes.VirtualMachineExtensionCompatibilityConstraint{
+			newInvariant(extensionCompatConstraintNameService, vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeSERVICE),
+			newInvariant(extensionCompatConstraintNameFolder, vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeFOLDER),
+			newInvariant(extensionCompatConstraintNamePool, vimtypes.VirtualMachineExtensionCompatibilityConstraintTypePOOL),
+			newInvariant(extensionCompatConstraintNameVMStoragePolicy, vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeVM_STORAGE_POLICY),
+			newInvariant(extensionCompatConstraintNameDiskStoragePolicy, vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeDISK_STORAGE_POLICY),
+			newInvariant(extensionCompatConstraintNameDevice, vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeDEVICE),
+		},
+	}
 }
 
 // cleanupConfigSpecForPlacement removes fields from the placement

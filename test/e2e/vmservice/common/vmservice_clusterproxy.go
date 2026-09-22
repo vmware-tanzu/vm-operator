@@ -1,8 +1,10 @@
 package common
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -13,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -40,12 +43,13 @@ func isRetryableKubectlError(stdout, stderr []byte, err error) bool {
 // previous attempt before its connection dropped, e.g. kubectl create sees
 // AlreadyExists, kubectl delete sees NotFound.
 //
-// These predicates assume a single-document manifest (no "---" separators),
-// which holds for every caller of CreateWithArgs/DeleteWithArgs today -- see
-// manifestbuilders. If a multi-document manifest is ever passed through
-// here, a benign AlreadyExists/NotFound for one document could mask a real
-// failure on another, since kubectl folds all documents' stderr together
-// and this only checks that ANY of it matches.
+// These predicates assume a single-document manifest (no "---" separators).
+// CreateWithArgs splits a multi-document manifest and calls
+// retryKubectlOnTransientError once per document for exactly this reason: a
+// benign AlreadyExists/NotFound for one document could otherwise mask a real
+// failure on another, since kubectl folds all documents' stderr together and
+// this only checks that ANY of it matches. DeleteWithArgs/ApplyWithArgs still
+// pass their manifest through whole -- see manifestbuilders for callers.
 type alreadySucceededFunc func(stdout, stderr []byte) bool
 
 func kubectlCreateAlreadySucceeded(_, stderr []byte) bool {
@@ -150,24 +154,60 @@ func (p *VMServiceClusterProxy) Create(ctx context.Context, resources []byte) er
 }
 
 // CreateWithArgs wraps `kubectl create ...` and prints the output so we can see what gets created to
-// the cluster. It retries on transient connectivity errors (e.g. the conversion webhook being briefly
-// unreachable); see retryKubectlOnTransientError for the retry and classification rules.
+// the cluster. resources may contain multiple "---"-separated YAML documents; each is split out and
+// created (and retried) independently, so a benign AlreadyExists on one document can't mask a real
+// failure on another -- see the comment on kubectlCreateAlreadySucceeded. It retries on transient
+// connectivity errors (e.g. the conversion webhook being briefly unreachable); see
+// retryKubectlOnTransientError for the retry and classification rules.
 func (p *VMServiceClusterProxy) CreateWithArgs(ctx context.Context, resources []byte, args ...string) error {
 	Expect(ctx).NotTo(BeNil(), "ctx is required for Create")
 	Expect(resources).NotTo(BeEmpty(), "resources is required for Create")
 
-	stdout, stderr, err := retryKubectlOnTransientError(ctx, "create", kubectlCreateAlreadySucceeded,
-		func() ([]byte, []byte, error) {
-			return framework.KubectlCreateRawWithArgs(ctx, p.GetKubeconfigPath(), resources, p.args(args)...)
-		})
+	docs, err := splitYAMLDocuments(resources)
 	if err != nil {
-		fmt.Println(string(stderr))
-		return fmt.Errorf("%w: %s", err, string(stderr))
+		return fmt.Errorf("failed to split resources into YAML documents: %w", err)
 	}
 
-	fmt.Println(string(stdout))
+	for _, doc := range docs {
+		stdout, stderr, err := retryKubectlOnTransientError(ctx, "create", kubectlCreateAlreadySucceeded,
+			func() ([]byte, []byte, error) {
+				return framework.KubectlCreateRawWithArgs(ctx, p.GetKubeconfigPath(), doc, p.args(args)...)
+			})
+		if err != nil {
+			fmt.Println(string(stderr))
+			return fmt.Errorf("%w: %s", err, string(stderr))
+		}
+
+		fmt.Println(string(stdout))
+	}
 
 	return nil
+}
+
+// splitYAMLDocuments splits resources into its individual "---"-separated YAML documents, dropping any
+// documents that are empty or contain only whitespace/comments.
+func splitYAMLDocuments(resources []byte) ([][]byte, error) {
+	reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(resources)))
+
+	var docs [][]byte
+
+	for {
+		doc, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		if len(bytes.TrimSpace(doc)) == 0 {
+			continue
+		}
+
+		docs = append(docs, doc)
+	}
+
+	return docs, nil
 }
 
 // CreateRawWithArgs is the non-retrying counterpart to CreateWithArgs: it returns stdout/stderr/err

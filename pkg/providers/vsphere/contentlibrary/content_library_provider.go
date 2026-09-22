@@ -6,8 +6,10 @@ package contentlibrary
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -46,13 +48,122 @@ type Provider interface {
 }
 
 type provider struct {
-	libMgr        *library.Manager
-	retryInterval time.Duration
+	libMgr *library.Manager
+
+	// downloadSessionGrowth is the first (growth) phase of
+	// pollWithGrowthThenPlateau: it grows the poll interval by
+	// downloadSessionBackoffFactor each attempt, for exactly enough steps
+	// to reach downloadSessionPlateauInterval, and no more -- see
+	// downloadSessionBackoffGrowthSteps.
+	downloadSessionGrowth wait.Backoff
+
+	// downloadSessionPlateauInterval is the fixed interval the second
+	// (plateau) phase polls at, forever, once growth is exhausted.
+	downloadSessionPlateauInterval time.Duration
 }
 
 const (
 	DefaultContentLibAPIWaitSecs = 5
+
+	// downloadSessionBackoffFactor and downloadSessionBackoffJitter shape how
+	// the poll interval for a library item download session grows between
+	// calls during the growth phase, and jitters the flat interval during
+	// the plateau phase.
+	downloadSessionBackoffFactor = 2.0
+	downloadSessionBackoffJitter = 0.1
+
+	// downloadSessionPlateauMultiplier is how many times the configured seed
+	// (ContentAPIWait/waitSeconds) the poll interval grows to before
+	// plateauing, so raising the base wait scales the plateau interval
+	// proportionally instead of leaving it pinned to an unrelated fixed
+	// value. 120x plateaus a default 1s seed at 2m.
+	downloadSessionPlateauMultiplier = 120
 )
+
+// downloadSessionBackoffGrowthSteps is the number of growth-phase polls
+// (Factor: downloadSessionBackoffFactor) it takes for the interval to first
+// reach or exceed downloadSessionPlateauMultiplier times the seed. Computed
+// once at package load so it always matches the two constants above.
+var downloadSessionBackoffGrowthSteps = growthStepsToReach(downloadSessionPlateauMultiplier)
+
+// growthStepsToReach returns the smallest number of steps n such that
+// downloadSessionBackoffFactor^(n-1) >= multiplier. Used to size the growth
+// phase's Backoff.Steps so it stops growing exactly when it would reach the
+// plateau interval, without ever relying on Backoff.Cap (see
+// pollWithGrowthThenPlateau).
+func growthStepsToReach(multiplier float64) int {
+	steps, cur := 1, 1.0
+	for cur < multiplier {
+		cur *= downloadSessionBackoffFactor
+		steps++
+	}
+	return steps
+}
+
+// pollWithGrowthThenPlateau polls condition, growing the retry interval per
+// growth (Factor, Jitter, Steps) until growth is exhausted, then continues
+// polling at a constant plateauInterval (jittered by growth.Jitter) forever,
+// bounded only by ctx.
+//
+// wait.ExponentialBackoffWithContext cannot express "grow, then retry
+// forever at a ceiling" using a single Backoff: Backoff.Cap's own doc
+// comment says that once a growth step would exceed the cap, "the duration
+// is set to the cap and the steps parameter is set to zero" -- but Steps is
+// also that function's own loop-termination counter, so hitting the cap
+// ends the *entire* retry loop with ErrWaitTimeout, not just the growth,
+// regardless of how large Steps started or how much time ctx has left.
+//
+// Splitting into two explicit phases avoids Cap entirely: growth is bounded
+// by its own Steps (sized by growthStepsToReach, not by Cap), and the
+// plateau phase uses Factor 0 to keep the base duration constant between
+// attempts (with jitter still applied), so it never exercises the
+// cap-crossing branch and Steps merely counts down from a very large
+// number, for all practical purposes never exhausting.
+func pollWithGrowthThenPlateau(
+	ctx context.Context,
+	growth wait.Backoff,
+	plateauInterval time.Duration,
+	condition wait.ConditionWithContextFunc) error {
+
+	// conditionErr records whatever the last call to condition itself
+	// returned, distinct from wait.ExponentialBackoffWithContext err below.
+	// So it is saved so it does not get swallowed
+	var conditionErr error
+	err := wait.ExponentialBackoffWithContext(ctx, growth, func(ctx context.Context) (bool, error) {
+		done, condErr := condition(ctx)
+		conditionErr = condErr
+		return done, condErr
+	})
+	if conditionErr != nil {
+		return conditionErr
+	}
+
+	//nolint:staticcheck // wait.Interrupted() also matches ctx cancellation/deadline,
+	// which must propagate immediately rather than fall through to the plateau phase;
+	// ErrWaitTimeout is the only way to detect steps-exhaustion specifically.
+	if !errors.Is(err, wait.ErrWaitTimeout) {
+		// ctx cancellation/deadline -- condition itself never errored.
+		return err
+	}
+
+	plateau := wait.Backoff{
+		Duration: plateauInterval,
+		Jitter:   growth.Jitter,
+		Steps:    math.MaxInt32,
+	}
+	// skip the first attempt of the plateau Exp Backoff
+	// so it is not called right after from the previous one
+	first := true
+	return wait.ExponentialBackoffWithContext(ctx, plateau, func(ctx context.Context) (bool, error) {
+		if first {
+			// Growth just checked the condition. Let the backoff perform
+			// its cancellable wait before the first plateau check.
+			first = false
+			return false, nil
+		}
+		return condition(ctx)
+	})
+}
 
 func IsSupportedDeployType(t string) bool {
 	switch t {
@@ -77,8 +188,14 @@ func NewProvider(ctx context.Context, restClient *rest.Client) Provider {
 
 func NewProviderWithWaitSec(restClient *rest.Client, waitSeconds int) Provider {
 	return &provider{
-		libMgr:        library.NewManager(restClient),
-		retryInterval: time.Duration(waitSeconds) * time.Second,
+		libMgr: library.NewManager(restClient),
+		downloadSessionGrowth: wait.Backoff{
+			Duration: time.Duration(waitSeconds) * time.Second,
+			Factor:   downloadSessionBackoffFactor,
+			Jitter:   downloadSessionBackoffJitter,
+			Steps:    downloadSessionBackoffGrowthSteps,
+		},
+		downloadSessionPlateauInterval: time.Duration(waitSeconds*downloadSessionPlateauMultiplier) * time.Second,
 	}
 }
 
@@ -359,38 +476,39 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 	// Content library api to prepare a file for download guarantees eventual end state of either
 	// ERROR or PREPARED in order to avoid posting too many requests to the api.
 	var fileURL string
-	err = wait.PollUntilContextCancel(ctx, cs.retryInterval, true, func(_ context.Context) (bool, error) {
-		downloadSessResp, err := cs.libMgr.GetLibraryItemDownloadSession(ctx, sessionID)
-		if err != nil {
-			return false, err
-		}
+	err = pollWithGrowthThenPlateau(ctx, cs.downloadSessionGrowth, cs.downloadSessionPlateauInterval,
+		func(_ context.Context) (bool, error) {
+			downloadSessResp, err := cs.libMgr.GetLibraryItemDownloadSession(ctx, sessionID)
+			if err != nil {
+				return false, err
+			}
 
-		if downloadSessResp.ErrorMessage != nil {
-			return false, downloadSessResp.ErrorMessage
-		}
+			if downloadSessResp.ErrorMessage != nil {
+				return false, downloadSessResp.ErrorMessage
+			}
 
-		info, err := cs.libMgr.GetLibraryItemDownloadSessionFile(ctx, sessionID, fileToDownload)
-		if err != nil {
-			return false, err
-		}
+			info, err := cs.libMgr.GetLibraryItemDownloadSessionFile(ctx, sessionID, fileToDownload)
+			if err != nil {
+				return false, err
+			}
 
-		if info.Status == "ERROR" {
-			// Log message used by VMC LINT. Refer to before making changes
-			return false, fmt.Errorf("error occurred preparing file for download %w", info.ErrorMessage)
-		}
+			if info.Status == "ERROR" {
+				// Log message used by VMC LINT. Refer to before making changes
+				return false, fmt.Errorf("error occurred preparing file for download %w", info.ErrorMessage)
+			}
 
-		if info.Status != "PREPARED" {
-			return false, nil
-		}
+			if info.Status != "PREPARED" {
+				return false, nil
+			}
 
-		if info.DownloadEndpoint == nil {
-			return false, fmt.Errorf("prepared file for download does not have endpoint")
-		}
+			if info.DownloadEndpoint == nil {
+				return false, fmt.Errorf("prepared file for download does not have endpoint")
+			}
 
-		fileURL = info.DownloadEndpoint.URI
-		logger.V(4).Info("Downloaded file", "fileURL", fileURL)
-		return true, nil
-	})
+			fileURL = info.DownloadEndpoint.URI
+			logger.V(4).Info("Downloaded file", "fileURL", fileURL)
+			return true, nil
+		})
 
 	if err != nil {
 		return nil, err

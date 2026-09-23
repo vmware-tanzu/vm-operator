@@ -1,0 +1,45 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - infrastructure.kube-vm.io
+  resources:
+  - containermachines
+  verbs:
+  - delete
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - infrastructure.kube-vm.io
+  resources:
+  - containermachines/status
+  verbs:
+  - get
+  - patch
+- apiGroups:
+  - kube-vm.io
+  resources:
+  - virtualmachines
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - kube-vm.io
+  resources:
+  - virtualmachines/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - kube-vm.io
+  resources:
+  - virtualmachines/status
+  verbs:
+  - get
+  - patch

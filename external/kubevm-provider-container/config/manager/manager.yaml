@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubevm-provider-container-manager
+  namespace: kubevm-provider-container-system
+  labels:
+    app: kubevm-provider-container
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubevm-provider-container
+  template:
+    metadata:
+      labels:
+        app: kubevm-provider-container
+    spec:
+      serviceAccountName: kubevm-provider-container-manager
+      containers:
+        - name: manager
+          image: kubevm-provider-container:latest
+          args:
+            - --health-probe-bind-address=:8081
+          ports:
+            - name: healthz
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: healthz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi

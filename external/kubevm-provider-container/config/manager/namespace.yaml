@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubevm-provider-container-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubevm-provider-container-manager
+  namespace: kubevm-provider-container-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubevm-provider-container-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: manager-role
+subjects:
+  - kind: ServiceAccount
+    name: kubevm-provider-container-manager
+    namespace: kubevm-provider-container-system

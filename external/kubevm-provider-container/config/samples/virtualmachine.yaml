@@ -1,0 +1,57 @@
+# A machine, in the two objects a user writes.
+#
+# The ContainerMachine's spec is EMPTY. Everything portable lives on the
+# VirtualMachine, and the controller fills in what it resolved -- so after the
+# first reconcile this object shows image and powerState, and
+# `kubectl get -o yaml` tells the truth about what is actually running.
+#
+# The annotation on the ContainerMachine is required, and it is yours to
+# write. It is this object's consent to be claimed by the VirtualMachine it
+# names: a VirtualMachine pointing at a ContainerMachine is only half a
+# link, and nothing is adopted on half a link -- otherwise anyone who can
+# create a VirtualMachine could claim a container that is not theirs. The AWS
+# and vSphere providers work the same way.
+apiVersion: kube-vm.io/v1alpha1
+kind: VirtualMachine
+metadata:
+  name: web-01
+  namespace: team-a
+spec:
+  powerState: PoweredOn
+  bootDisk:
+    source:
+      image:
+        # apiGroup and kind are required by the schema and resolve to
+        # NOTHING: no ContainerImage resource exists. This provider reads
+        # `name` verbatim and runs it as an OCI image reference.
+        #
+        # Bare image name only, no tag or registry path: the core's own CRD
+        # validates ObjectReference.Name as DNS-subdomain-safe (see
+        # constitution.md's "Resource names must be DNS-subdomain safe"),
+        # which rejects the colon in "nginx:latest" and any "/" in a
+        # registry path. An AMI id happens to fit that pattern; most OCI
+        # image references do not. See docs/findings.md.
+        apiGroup: infrastructure.kube-vm.io
+        kind: ContainerImage
+        name: nginx
+  infrastructureRef:
+    apiGroup: infrastructure.kube-vm.io
+    kind: ContainerMachine
+    name: web-01
+---
+apiVersion: infrastructure.kube-vm.io/v1alpha1
+kind: ContainerMachine
+metadata:
+  name: web-01
+  namespace: team-a
+  annotations:
+    kube-vm.io/virtual-machine: web-01
+spec:
+  # Runtime has no counterpart on VirtualMachineSpec, so it is the one field
+  # set here directly instead of resolved from the parent. Set to docker to
+  # use that engine instead -- podman is used here because on one test
+  # machine, docker's own implicit image pull hung indefinitely with no
+  # timeout and no error surfaced anywhere. That is one machine's Docker
+  # Desktop, not a property of docker in general -- see README.md and
+  # docs/findings.md for what was actually observed.
+  runtime: podman

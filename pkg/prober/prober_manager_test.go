@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	clientgorecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -77,7 +77,7 @@ var _ = Describe("VirtualMachine probes", func() {
 
 	JustBeforeEach(func() {
 		fakeClient = builder.NewFakeClient(initObjects...)
-		eventRecorder := clientgorecord.NewFakeRecorder(1024)
+		eventRecorder := events.NewFakeRecorder(1024)
 		fakeRecorder = record.New(eventRecorder)
 		fakeVMProvider = &fake.VMProvider{}
 		fakeCtrlManager = &fakeManager{client: fakeClient}
@@ -310,7 +310,7 @@ type fakeManager struct {
 	client client.Client
 }
 
-func (f fakeManager) GetEventRecorderFor(name string) clientgorecord.EventRecorder {
+func (f fakeManager) GetEventRecorder(name string) events.EventRecorder {
 	return nil
 }
 

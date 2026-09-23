@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	apirecord "k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
@@ -22,7 +22,7 @@ var _ = Describe("WithContext", func() {
 	)
 	BeforeEach(func() {
 		left = context.Background()
-		leftVal = record.New(apirecord.NewFakeRecorder(0))
+		leftVal = record.New(events.NewFakeRecorder(0))
 	})
 	When("parent is nil", func() {
 		BeforeEach(func() {

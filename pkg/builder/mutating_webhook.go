@@ -64,7 +64,6 @@ func NewMutatingWebhook(
 
 	webhookNameShort := generateMutateName(webhookName, mutator.For())
 	webhookPath := "/" + webhookNameShort
-	webhookNameLong := fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, webhookNameShort)
 
 	// Build the WebhookContext.
 	webhookContext := &pkgctx.WebhookContext{
@@ -72,7 +71,7 @@ func NewMutatingWebhook(
 		Name:                            webhookNameShort,
 		Namespace:                       ctx.Namespace,
 		ServiceAccountName:              ctx.ServiceAccountName,
-		Recorder:                        record.New(mgr.GetEventRecorderFor(webhookNameLong)), //nolint:staticcheck
+		Recorder:                        record.New(mgr.GetEventRecorder(webhookNameShort)),
 		Logger:                          ctx.Logger.WithName(webhookNameShort),
 		EnableWebhookClientVerification: ctx.EnableWebhookClientVerification,
 	}

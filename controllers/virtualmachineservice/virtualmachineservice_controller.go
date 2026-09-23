@@ -51,7 +51,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
-		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
 	lbProviderType := pkgcfg.FromContext(ctx).LoadBalancerProvider
@@ -70,7 +69,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
-		record.New(mgr.GetEventRecorderFor(controllerNameLong)), //nolint:staticcheck
+		record.New(mgr.GetEventRecorder(controllerNameShort)),
 		lbProvider,
 	)
 
@@ -451,7 +450,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *pkgctx.Virtu
 
 		if externalTrafficPolicy, ok := service.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; ok {
 			// Note that this annotation is only set (and makes sense) from the GC cloud provider.
-			trafficPolicy := corev1.ServiceExternalTrafficPolicyType(externalTrafficPolicy) // nolint:staticcheck
+			trafficPolicy := corev1.ServiceExternalTrafficPolicy(externalTrafficPolicy)
 			switch trafficPolicy {
 			case corev1.ServiceExternalTrafficPolicyTypeLocal, corev1.ServiceExternalTrafficPolicyTypeCluster:
 				service.Spec.ExternalTrafficPolicy = trafficPolicy

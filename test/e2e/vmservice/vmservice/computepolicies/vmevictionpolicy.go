@@ -716,6 +716,83 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				"VM should power back on on the same host it was pinned to")
 		})
 
+	// Same pin/policy shape as the preceding It (Mandatory AutomaticVMEvictionPolicy +
+	// mandatory DRS affinity + explicit Optional BestEffortRestartPolicy reference), but
+	// instead of exiting maintenance mode to recover the powered-off VM, this removes the
+	// affinity rule itself while the host is still in maintenance mode. The explicitly
+	// referenced BestEffortRestartPolicy is what drives the VM's restart here -- it takes
+	// precedence over the AutomaticVMEvictionPolicy's own restart-on-current-host action once
+	// the VM is no longer pinned -- so once the rule is removed VM Operator's restart retry
+	// finds a compatible host elsewhere and powers the VM back on there, without ever exiting
+	// maintenance mode on the original host.
+	It("Should power a VM back on, on another host, once the affinity rule pinning it to a host "+
+		"in maintenance mode is removed, without exiting maintenance mode",
+		Label("core-functional", "experimental"),
+		func() {
+			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
+			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-unpin-avep", suffix)
+			var infraPolicyNames []string
+			evacuationPolicy, infraPolicyNames = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+				fmt.Sprintf("vm-eviction-mm-unpin-avep-policy-%s", suffix),
+				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, nil)
+
+			By("Creating an Optional BestEffortRestartPolicy matching the VM's label")
+			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-unpin-ber", suffix)
+			restartPolicy, _ = createBestEffortRestartPolicy(ctx, adminClient, input,
+				fmt.Sprintf("vm-eviction-mm-unpin-ber-policy-%s", suffix),
+				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
+
+			By("Creating a VM matching the eviction policy's label, that also explicitly references the BestEffortRestartPolicy")
+			unpinVMName := fmt.Sprintf("%s-unpin-%s", specName, suffix)
+			createAndWaitForPoweredOnVM(ctx, input, svClusterClient, unpinVMName, matchLabel,
+				explicitPolicyRef(bestEffortRestartPolicyKind, restartPolicy.Name))
+
+			hostMoRef := getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, unpinVMName)
+			if len(listClusterHostMoRefs(ctx, vCenterClient, hostMoRef)) < 2 {
+				Skip("this spec requires more than one host in the cluster to distinguish VM relocation " +
+					"from a VM that cannot be evacuated")
+			}
+
+			vmMoRef := getVMMoRef(ctx, svClusterClient, input.WCPNamespaceName, unpinVMName)
+			cluster, ruleName, hostGroupName, vmGroupName := pinVMToHostViaDRSRule(ctx, vCenterClient, hostMoRef, suffix, vmMoRef)
+
+			By("Verifying the VM is still on its pinned host")
+			Eventually(func(g Gomega) {
+				g.Expect(getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, unpinVMName)).
+					To(Equal(hostMoRef), "VM should stay on the host it was pinned to")
+			}, input.Config.GetIntervals("default", "wait-policy-evaluation-compliant")...).Should(Succeed())
+
+			By(fmt.Sprintf("Putting the VM's host %s into maintenance mode", hostMoRef.Value))
+			enterErr := enterHostMaintenanceMode(ctx, input, vCenterClient, hostMoRef)
+			DeferCleanup(func(cleanupCtx context.Context) {
+				exitHostMaintenanceMode(cleanupCtx, input, vCenterClient, hostMoRef, nil)
+			})
+			if enterErr != nil {
+				Skip(fmt.Sprintf("%v; it may have other VMs (e.g. Supervisor control-plane VMs) that could "+
+					"not be evacuated in time", enterErr))
+			}
+
+			By("Verifying DRS powers off the VM (unable to evacuate it while pinned) and VirtualMachinePowerStateSynced " +
+				"surfaces False/NotSynced")
+			waitForPowerStateSyncedFalse(ctx, input, svClusterClient, unpinVMName, "NotSynced")
+			Expect(getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, unpinVMName)).To(Equal(hostMoRef),
+				"VM should remain on its pinned host while it is in maintenance mode")
+
+			By(fmt.Sprintf("Removing the DRS affinity rule %q while host %s is still in maintenance mode", ruleName, hostMoRef.Value))
+			removeVMHostAffinityRule(ctx, cluster, ruleName, hostGroupName, vmGroupName)
+
+			By("Verifying the VM is relocated off the host and powers back on, on another host, without exiting maintenance mode")
+			Eventually(func(g Gomega) {
+				g.Expect(getVMHostMoRef(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, unpinVMName)).
+					ToNot(Equal(hostMoRef), "VM should be relocated off the host once no longer pinned to it")
+			}, input.Config.GetIntervals("default", "wait-policy-evaluation-compliant")...).Should(Succeed())
+			vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, unpinVMName,
+				metav1.Condition{Type: vmopv1.VirtualMachinePowerStateSynced, Status: metav1.ConditionTrue})
+
+			By(fmt.Sprintf("Taking host %s out of maintenance mode", hostMoRef.Value))
+			exitHostMaintenanceMode(ctx, input, vCenterClient, hostMoRef, nil)
+		})
+
 	// Unlike the two pinned-VM Its above, this one pins *two* powered-on VMs to the host and
 	// enters maintenance mode via enterHostMaintenanceModeNoWait rather than
 	// enterHostMaintenanceMode: with two mandatorily-pinned VMs to evacuate instead of one, and
@@ -1141,7 +1218,7 @@ func pinVMToHostViaDRSRule(
 	vCenterClient *vim25.Client,
 	hostMoRef vimtypes.ManagedObjectReference,
 	suffix string,
-	vmMoRefs ...vimtypes.ManagedObjectReference) {
+	vmMoRefs ...vimtypes.ManagedObjectReference) (cluster *object.ClusterComputeResource, ruleName, hostGroupName, vmGroupName string) {
 
 	GinkgoHelper()
 
@@ -1150,11 +1227,11 @@ func pinVMToHostViaDRSRule(
 	Expect(propCollector.RetrieveOne(ctx, hostMoRef, []string{"parent"}, &hostMO)).To(Succeed())
 	Expect(hostMO.Parent).ToNot(BeNil(), "host %q has no parent compute resource", hostMoRef.Value)
 
-	cluster := object.NewClusterComputeResource(vCenterClient, *hostMO.Parent)
+	cluster = object.NewClusterComputeResource(vCenterClient, *hostMO.Parent)
 
-	hostGroupName := fmt.Sprintf("e2e-host-group-%s", suffix)
-	vmGroupName := fmt.Sprintf("e2e-vm-group-%s", suffix)
-	ruleName := fmt.Sprintf("e2e-affinity-rule-%s", suffix)
+	hostGroupName = fmt.Sprintf("e2e-host-group-%s", suffix)
+	vmGroupName = fmt.Sprintf("e2e-vm-group-%s", suffix)
+	ruleName = fmt.Sprintf("e2e-affinity-rule-%s", suffix)
 
 	By(fmt.Sprintf("Creating a mandatory DRS VM/Host affinity rule %q pinning the VM(s) to host %s", ruleName, hostMoRef.Value))
 	addSpec := &vimtypes.ClusterConfigSpecEx{
@@ -1234,6 +1311,60 @@ func pinVMToHostViaDRSRule(
 			_ = task.Wait(cleanupCtx)
 		}
 	})
+
+	return cluster, ruleName, hostGroupName, vmGroupName
+}
+
+// removeVMHostAffinityRule removes the mandatory DRS VM/Host affinity rule
+// (and its host/VM groups) created by pinVMToHostViaDRSRule, letting a spec
+// unpin a VM mid-test -- e.g. to observe DRS relocate it -- rather than
+// waiting for pinVMToHostViaDRSRule's own DeferCleanup, which runs at spec
+// teardown and treats a missing rule/groups as already-cleaned-up rather
+// than a failure. This is unforgiving by contrast: it Expects the rule to
+// still exist and the removal tasks to succeed, since a caller invoking it
+// mid-spec is asserting real removal, not doing best-effort cleanup. Calling
+// it does not need to be paired with skipping pinVMToHostViaDRSRule's
+// DeferCleanup -- that closure re-checks for the rule/groups by name and
+// no-ops once this has already removed them.
+func removeVMHostAffinityRule(
+	ctx context.Context,
+	cluster *object.ClusterComputeResource,
+	ruleName, hostGroupName, vmGroupName string) {
+
+	GinkgoHelper()
+
+	config, err := cluster.Configuration(ctx)
+	Expect(err).ToNot(HaveOccurred(), "failed to fetch cluster configuration")
+
+	var ruleKey int32
+	var ruleFound bool
+	for _, r := range config.Rule {
+		if info := r.GetClusterRuleInfo(); info != nil && info.Name == ruleName {
+			ruleKey = info.Key
+			ruleFound = true
+			break
+		}
+	}
+	Expect(ruleFound).To(BeTrue(), "DRS affinity rule %q should exist before removal", ruleName)
+
+	removeRuleSpec := &vimtypes.ClusterConfigSpecEx{
+		RulesSpec: []vimtypes.ClusterRuleSpec{
+			{ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{Operation: vimtypes.ArrayUpdateOperationRemove, RemoveKey: ruleKey}},
+		},
+	}
+	task, err := cluster.Reconfigure(ctx, removeRuleSpec, true)
+	Expect(err).ToNot(HaveOccurred(), "failed to start cluster reconfigure task removing VM/Host affinity rule %q", ruleName)
+	Expect(task.Wait(ctx)).To(Succeed(), "failed to remove VM/Host affinity rule %q", ruleName)
+
+	removeGroupsSpec := &vimtypes.ClusterConfigSpecEx{
+		GroupSpec: []vimtypes.ClusterGroupSpec{
+			{ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{Operation: vimtypes.ArrayUpdateOperationRemove, RemoveKey: hostGroupName}},
+			{ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{Operation: vimtypes.ArrayUpdateOperationRemove, RemoveKey: vmGroupName}},
+		},
+	}
+	task, err = cluster.Reconfigure(ctx, removeGroupsSpec, true)
+	Expect(err).ToNot(HaveOccurred(), "failed to start cluster reconfigure task removing VM/Host affinity groups for rule %q", ruleName)
+	Expect(task.Wait(ctx)).To(Succeed(), "failed to remove VM/Host affinity groups for rule %q", ruleName)
 }
 
 // enterHostMaintenanceMode puts the given host into maintenance mode,

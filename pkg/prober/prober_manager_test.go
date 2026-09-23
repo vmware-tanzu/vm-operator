@@ -186,14 +186,44 @@ var _ = Describe("VirtualMachine probes", func() {
 					Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
 				})
 
-				It("Should immediately add to the queue if DoProbe returns error", func() {
+				It("Should add to the queue after a backoff delay if DoProbe returns error", func() {
 					fakeWorker.DoProbeFn = func(ctx *proberctx.ProbeContext) error {
 						return fmt.Errorf("dummy error")
 					}
 					quit := testManager.processItemFromQueue(fakeWorker)
 					Expect(quit).To(BeFalse())
 
-					Expect(testManager.readinessQueue.Len()).To(Equal(1))
+					// The item is not requeued synchronously: it is delayed by the
+					// failure rate limiter's base backoff (probeFailureBaseDelay).
+					Expect(testManager.readinessQueue.Len()).To(Equal(0))
+					checkProbeQueueLenEventually(5, 1)
+				})
+
+				It("Should back off with increasing delay on repeated failures and reset after a success", func() {
+					fakeWorker.DoProbeFn = func(ctx *proberctx.ProbeContext) error {
+						return fmt.Errorf("dummy error")
+					}
+
+					Expect(testManager.processItemFromQueue(fakeWorker)).To(BeFalse())
+					Expect(testManager.failureRateLimiter.NumRequeues(vmKey)).To(Equal(1))
+
+					// Wait for the delayed requeue to land, then fail again.
+					// processItemFromQueue pulls the item off the queue itself, so it
+					// must not be drained manually beforehand.
+					checkProbeQueueLenEventually(5, 1)
+					Expect(testManager.processItemFromQueue(fakeWorker)).To(BeFalse())
+					Expect(testManager.failureRateLimiter.NumRequeues(vmKey)).To(Equal(2))
+
+					// Wait for the (larger) delayed requeue, then succeed.
+					checkProbeQueueLenEventually(5, 1)
+					fakeWorker.DoProbeFn = func(ctx *proberctx.ProbeContext) error {
+						return nil
+					}
+					Expect(testManager.processItemFromQueue(fakeWorker)).To(BeFalse())
+					checkProbeQueueLenEventually(2*periodSeconds, 1)
+
+					// A successful probe resets the backoff state for the VM.
+					Expect(testManager.failureRateLimiter.NumRequeues(vmKey)).To(Equal(0))
 				})
 
 				When("DoProbe succeeds", func() {

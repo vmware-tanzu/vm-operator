@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,6 +40,14 @@ const (
 	// the number of readiness workers.
 	// TODO: find a way to calibrate it.
 	numberOfReadinessWorkers = 5
+
+	// probeFailureBaseDelay is the initial requeue delay applied after a probe failure.
+	probeFailureBaseDelay = 1 * time.Second
+
+	// probeFailureMaxDelay caps the exponential backoff applied to repeated probe
+	// failures, so a persistently failing probe (e.g. due to a degraded guest or host)
+	// does not get retried faster and faster indefinitely.
+	probeFailureMaxDelay = 5 * time.Minute
 )
 
 // Manager represents a prober manager interface.
@@ -57,6 +66,11 @@ type manager struct {
 	log            logr.Logger
 	recorder       vmoprecord.Recorder
 
+	// failureRateLimiter tracks per-VM exponential backoff state for probe failures.
+	// It is consulted (When) to compute the next requeue delay after a failure, and
+	// reset (Forget) on a successful probe cycle or when the VM stops being probed.
+	failureRateLimiter workqueue.TypedRateLimiter[types.NamespacedName]
+
 	workersWG sync.WaitGroup
 
 	// We will use AddAfter to add an item to the queue, which will insert the item to a heap first
@@ -74,12 +88,14 @@ func NewManager(
 	vmProvider providers.VirtualMachineProviderInterface) Manager {
 
 	probeManager := &manager{
-		context:              ctx,
-		client:               client,
-		readinessQueue:       workqueue.NewNamedDelayingQueue(readinessProbeQueueName),
-		prober:               probe.NewProber(vmProvider),
-		log:                  ctrl.Log.WithName(proberManagerName),
-		recorder:             record,
+		context:        ctx,
+		client:         client,
+		readinessQueue: workqueue.NewNamedDelayingQueue(readinessProbeQueueName),
+		prober:         probe.NewProber(vmProvider),
+		log:            ctrl.Log.WithName(proberManagerName),
+		recorder:       record,
+		failureRateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[types.NamespacedName](
+			probeFailureBaseDelay, probeFailureMaxDelay),
 		vmReadinessProbeList: make(map[string]vmopv1.VirtualMachineReadinessProbeSpec),
 	}
 	return probeManager
@@ -186,10 +202,14 @@ func (m *manager) processItemFromQueue(w worker.Worker) bool {
 
 	vm := &vmopv1.VirtualMachine{}
 	if err := m.client.Get(context.Background(), item, vm); err != nil {
-		if !apierrors.IsNotFound(err) {
-			// Get VM error, immediately re-queue the VM.
-			queue.Add(item)
+		if apierrors.IsNotFound(err) {
+			// The VM no longer exists: forget any backoff state tracked for it so it
+			// doesn't linger in the rate limiter's internal state indefinitely.
+			m.failureRateLimiter.Forget(item)
+			return false
 		}
+		// Get VM error, re-queue the VM after an exponentially increasing backoff delay.
+		queue.AddAfter(item, m.failureRateLimiter.When(item))
 		return false
 	}
 
@@ -200,12 +220,12 @@ func (m *manager) processItemFromQueue(w worker.Worker) bool {
 
 	if !vm.ObjectMeta.DeletionTimestamp.IsZero() {
 		ctx.Logger.V(4).Info("the VirtualMachine is marked for deletion, skip running the probe")
+		m.failureRateLimiter.Forget(item)
 		return false
 	}
 
 	err = m.processVMProbe(w, ctx)
-	// Immediately re-queue the request if error occurs.
-	m.addItemToQueue(queue, ctx, item, err != nil)
+	m.addItemToQueue(queue, ctx, item, err)
 
 	return false
 }
@@ -221,16 +241,21 @@ func (m *manager) processVMProbe(w worker.Worker, ctx *proberctx.ProbeContext) e
 	return w.DoProbe(ctx)
 }
 
-// addItemToQueue adds the vm to the queue. If immediate is true, immediately add the item.
-// Otherwise, add to queue after a time period.
-func (m *manager) addItemToQueue(queue worker.DelayingInterface, ctx *proberctx.ProbeContext, item client.ObjectKey, immediate bool) {
-	if immediate {
-		queue.Add(item)
-	} else {
-		periodSeconds := ctx.PeriodSeconds
-		if periodSeconds <= 0 {
-			periodSeconds = defaultPeriodSeconds
-		}
-		queue.AddAfter(item, time.Duration(periodSeconds)*time.Second)
+// addItemToQueue re-queues the VM for its next probe cycle. On success (probeErr is nil),
+// the item is requeued after PeriodSeconds and any prior failure backoff is reset. On
+// failure, the item is requeued after an exponentially increasing delay, capped at
+// probeFailureMaxDelay, so a persistently failing probe is not retried faster and faster.
+func (m *manager) addItemToQueue(queue worker.DelayingInterface, ctx *proberctx.ProbeContext, item client.ObjectKey, probeErr error) {
+	if probeErr != nil {
+		queue.AddAfter(item, m.failureRateLimiter.When(item))
+		return
 	}
+
+	m.failureRateLimiter.Forget(item)
+
+	periodSeconds := ctx.PeriodSeconds
+	if periodSeconds <= 0 {
+		periodSeconds = defaultPeriodSeconds
+	}
+	queue.AddAfter(item, time.Duration(periodSeconds)*time.Second)
 }

@@ -858,6 +858,11 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Skip("WCP_VMService_Incremental_Restore FSS is not enabled")
 			}
 
+			asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
+			Expect(err).ToNot(HaveOccurred())
+			extensionCompatConstraintEnabled := utils.IsSupervisorCapabilityEnabled(
+				ctx, svClusterClient, consts.ExtensionCompatConstraintCapabilityName, asyncSupervisorFSSEnabled)
+
 			adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -1008,6 +1013,63 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				g.Expect(found).To(Equal(shouldExist))
 			}
 
+			// removeDisk mirrors object.VirtualMachine.RemoveDevice, but also
+			// sets SkipExtensionCompatibilityChecks, which govmomi's
+			// RemoveDevice does not expose.
+			removeDisk := func(disk *types.VirtualDisk) error {
+				spec := types.VirtualMachineConfigSpec{
+					DeviceChange: []types.BaseVirtualDeviceConfigSpec{
+						&types.VirtualDeviceConfigSpec{
+							Device:    disk,
+							Operation: types.VirtualDeviceConfigSpecOperationRemove,
+						},
+					},
+				}
+				if extensionCompatConstraintEnabled {
+					spec.SkipExtensionCompatibilityChecks = ptr.To(true)
+				}
+
+				task, err := vmObj.Reconfigure(ctx, spec)
+				if err != nil {
+					return err
+				}
+
+				return task.Wait(ctx)
+			}
+
+			// addDisk mirrors object.VirtualMachine.AddDeviceWithProfile, but
+			// also sets SkipExtensionCompatibilityChecks, which govmomi's
+			// AddDeviceWithProfile does not expose.
+			addDisk := func(disk *types.VirtualDisk, profile []types.BaseVirtualMachineProfileSpec) error {
+				fop := types.VirtualDeviceConfigSpecFileOperationCreate
+				if disk.CapacityInKB == 0 && disk.CapacityInBytes == 0 {
+					if b, ok := disk.Backing.(*types.VirtualDiskFlatVer2BackingInfo); !ok || b.Parent == nil {
+						fop = "" // existing disk
+					}
+				}
+
+				spec := types.VirtualMachineConfigSpec{
+					DeviceChange: []types.BaseVirtualDeviceConfigSpec{
+						&types.VirtualDeviceConfigSpec{
+							Device:        disk,
+							Operation:     types.VirtualDeviceConfigSpecOperationAdd,
+							FileOperation: fop,
+							Profile:       profile,
+						},
+					},
+				}
+				if extensionCompatConstraintEnabled {
+					spec.SkipExtensionCompatibilityChecks = ptr.To(true)
+				}
+
+				task, err := vmObj.Reconfigure(ctx, spec)
+				if err != nil {
+					return err
+				}
+
+				return task.Wait(ctx)
+			}
+
 			vmPath.FromString(vmMO.Config.Files.VmPathName)
 			vmHome := path.Dir(vmPath.Path)
 
@@ -1046,7 +1108,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			fileManager := ds.NewFileManager(dc, false)
 
 			// "Delete" existing disk
-			Expect(vmObj.RemoveDevice(ctx, true, disk)).To(Succeed())
+			Expect(removeDisk(disk)).To(Succeed())
 			findDisk(Default, pvcNameA, false)
 
 			// If a later assertion in this spec fails before RegisterVM successfully
@@ -1103,7 +1165,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Attach existing vmdk, rather than create a new backing
 			disk.CapacityInKB = 0
 			disk.CapacityInBytes = 0
-			Expect(vmObj.AddDeviceWithProfile(ctx, profile, disk)).To(Succeed())
+			Expect(addDisk(disk, profile)).To(Succeed())
 
 			// Since we deleted (moved) the disk backing, this causes the FCD and CNS Volume objects to be
 			// removed on the vSphere side.. emulating what Veeam's restore flow does.

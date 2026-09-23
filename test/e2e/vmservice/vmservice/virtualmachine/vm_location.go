@@ -24,11 +24,13 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
@@ -81,6 +83,8 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 
 		vmName       string
 		linuxVMIName string
+
+		extensionCompatConstraintEnabled bool
 	)
 
 	BeforeEach(func() {
@@ -127,6 +131,11 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+
+		asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
+		Expect(err).ToNot(HaveOccurred())
+		extensionCompatConstraintEnabled = utils.IsSupervisorCapabilityEnabled(
+			ctx, svClusterClient, consts.ExtensionCompatConstraintCapabilityName, asyncSupervisorFSSEnabled)
 
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 	})
@@ -210,7 +219,11 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			Type:  "VirtualMachine",
 			Value: vmMoID,
 		})
+
 		spec := vimtypes.VirtualMachineRelocateSpec{}
+		if extensionCompatConstraintEnabled {
+			spec.SkipExtensionCompatibilityChecks = ptr.To(true)
+		}
 		if poolMoID != "" {
 			ref := vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: poolMoID}
 			spec.Pool = &ref

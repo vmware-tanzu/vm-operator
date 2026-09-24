@@ -199,6 +199,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyControlledRebalancingPolicy: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyCSIBackupAPI: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -227,6 +230,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.WorkloadNetworkConfiguration = true
 							config.Features.VMEviction = true
 							config.Features.ControlledRebalancingPolicy = true
+							config.Features.CSIBackupAPI = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -297,6 +301,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyCSIBackupAPI, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.CSIBackupAPI).To(BeTrue())
 					})
 				})
 
@@ -369,6 +376,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyCSIBackupAPI, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.CSIBackupAPI).To(BeTrue())
 					})
 				})
 			})
@@ -450,6 +460,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyControlledRebalancingPolicy: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyCSIBackupAPI: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -522,6 +535,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyCSIBackupAPI, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.CSIBackupAPI).To(BeFalse())
 					})
 				})
 
@@ -609,6 +625,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyCSIBackupAPI, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.CSIBackupAPI).To(BeFalse())
 					})
 				})
 			})
@@ -1021,6 +1040,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyCSIBackupAPI, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.CSIBackupAPI).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyCSIBackupAPI] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("CSIBackupAPI=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.CSIBackupAPI).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -1106,6 +1138,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyControlledRebalancingPolicy: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyCSIBackupAPI: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -1142,6 +1177,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.ExtensionCompatConstraint = true
 					config.Features.VMEviction = true
 					config.Features.ControlledRebalancingPolicy = true
+					config.Features.CSIBackupAPI = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -1246,7 +1282,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())

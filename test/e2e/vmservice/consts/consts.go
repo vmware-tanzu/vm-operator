@@ -60,4 +60,9 @@ const (
 	// ControlledRebalancingPolicy CRD; must match
 	// pkg/config/capabilities.CapabilityKeyControlledRebalancingPolicy.
 	ControlledRebalancingPolicyCapabilityName = "supports_infrapolicy_controlled_rebalancing"
+
+	// ExtensionCompatConstraintCapabilityName gates VM Operator registering
+	// extension-compatibility INVARIANT constraints on VMs it manages; must
+	// match pkg/config/capabilities.CapabilityKeyExtensionCompatConstraint.
+	ExtensionCompatConstraintCapabilityName = "supports_extension_compat_constraint"
 )

@@ -314,6 +314,10 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 				true,
 				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot3Name)})
 
+			By("Set power off mode to hard so deletion doesn't wait on a graceful guest shutdown")
+			vmservice.UpdateVMPowerOffMode(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
+				vmName, vmSvcNamespace, vmopv1.VirtualMachinePowerOpModeHard)
+
 			By("Delete vm")
 			vmoperator.VerifyVMDeleted(ctx, vmSvcClusterProxy.GetClient(),
 				vmSvcE2EConfig, vmSvcNamespace, vmName)

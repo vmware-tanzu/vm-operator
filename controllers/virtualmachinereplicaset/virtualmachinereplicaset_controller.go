@@ -518,6 +518,12 @@ func (r *Reconciler) syncReplicas(
 			return aggErr
 		}
 
+		// Creation itself succeeded; clear ReplicaFailure now rather than
+		// leaving a stale True from an earlier reconcile if the confirmation
+		// poll below times out, since that poll failing is not a create/
+		// delete failure per this condition's definition.
+		conditions.Delete(rs, vmopv1.VirtualMachineReplicaSetReplicaFailure)
+
 		return r.waitForVMCreation(ctx, vmList)
 	case diff > 0:
 		ctx.Logger.Info("ReplicaSet is scaling down",
@@ -562,6 +568,12 @@ func (r *Reconciler) syncReplicas(
 			})
 			return aggErr
 		}
+
+		// Deletion itself succeeded; see the matching comment in the
+		// scale-up branch above for why this is cleared here rather than
+		// after the confirmation poll below.
+		conditions.Delete(rs, vmopv1.VirtualMachineReplicaSetReplicaFailure)
+
 		return r.waitForVMDeletion(ctx, vmsToDelete)
 	}
 
@@ -706,9 +718,8 @@ func (r *Reconciler) updateStatus(
 	}
 
 	switch {
-	// An empty desired set is trivially/vacuously ready.
-	case desiredReplicas == 0:
-		conditions.MarkTrue(rs, vmopv1.VirtualMachinesReadyCondition)
+	// ReadyReplicas is never negative, so desiredReplicas == 0 is trivially/
+	// vacuously satisfied here too.
 	case newStatus.ReadyReplicas >= desiredReplicas:
 		conditions.MarkTrue(rs, vmopv1.VirtualMachinesReadyCondition)
 	default:

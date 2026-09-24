@@ -381,6 +381,9 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineReplicaSetContext
 	// TODO: Handle in place propagation of fields to machines before syncing replicas.
 
 	syncErr := r.syncReplicas(ctx, ctx.ReplicaSet, filteredVMs)
+	if syncErr == nil {
+		conditions.Delete(ctx.ReplicaSet, vmopv1.VirtualMachineReplicaSetReplicaFailure)
+	}
 
 	// Update the status of the VirtualMachineReplicaSet even in case of error
 	// since syncing might have resulted in replicas being added or removed.
@@ -505,8 +508,21 @@ func (r *Reconciler) syncReplicas(
 		}
 
 		if len(errs) > 0 {
-			return apierrorsutil.NewAggregate(errs)
+			aggErr := apierrorsutil.NewAggregate(errs)
+			conditions.Set(rs, &metav1.Condition{
+				Type:    vmopv1.VirtualMachineReplicaSetReplicaFailure,
+				Status:  metav1.ConditionTrue,
+				Reason:  vmopv1.VirtualMachineCreationFailedReason,
+				Message: aggErr.Error(),
+			})
+			return aggErr
 		}
+
+		// Creation itself succeeded; clear ReplicaFailure now rather than
+		// leaving a stale True from an earlier reconcile if the confirmation
+		// poll below times out, since that poll failing is not a create/
+		// delete failure per this condition's definition.
+		conditions.Delete(rs, vmopv1.VirtualMachineReplicaSetReplicaFailure)
 
 		return r.waitForVMCreation(ctx, vmList)
 	case diff > 0:
@@ -543,8 +559,21 @@ func (r *Reconciler) syncReplicas(
 		}
 
 		if len(errs) > 0 {
-			return apierrorsutil.NewAggregate(errs)
+			aggErr := apierrorsutil.NewAggregate(errs)
+			conditions.Set(rs, &metav1.Condition{
+				Type:    vmopv1.VirtualMachineReplicaSetReplicaFailure,
+				Status:  metav1.ConditionTrue,
+				Reason:  vmopv1.VirtualMachineDeletionFailedReason,
+				Message: aggErr.Error(),
+			})
+			return aggErr
 		}
+
+		// Deletion itself succeeded; see the matching comment in the
+		// scale-up branch above for why this is cleared here rather than
+		// after the confirmation poll below.
+		conditions.Delete(rs, vmopv1.VirtualMachineReplicaSetReplicaFailure)
+
 		return r.waitForVMDeletion(ctx, vmsToDelete)
 	}
 
@@ -687,5 +716,19 @@ func (r *Reconciler) updateStatus(
 		// This means that we have sufficient number of VirtualMachine objects.
 		conditions.MarkTrue(rs, vmopv1.VirtualMachinesCreatedCondition)
 	}
-	// TODO: Set aggregate condition based on the condition of the individual Virtual Machines
+
+	switch {
+	// ReadyReplicas is never negative, so desiredReplicas == 0 is trivially/
+	// vacuously satisfied here too.
+	case newStatus.ReadyReplicas >= desiredReplicas:
+		conditions.MarkTrue(rs, vmopv1.VirtualMachinesReadyCondition)
+	default:
+		conditions.MarkFalse(
+			rs,
+			vmopv1.VirtualMachinesReadyCondition,
+			vmopv1.VirtualMachinesNotReadyReason,
+			"%d of %d replicas ready",
+			newStatus.ReadyReplicas,
+			desiredReplicas)
+	}
 }

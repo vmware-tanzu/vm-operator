@@ -29,7 +29,7 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 	})
 
 func TestVirtualMachine(t *testing.T) {
-	suite.Register(t, "VirtualMachineReplicaSet controller suite", intgTests, nil)
+	suite.Register(t, "VirtualMachineReplicaSet controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

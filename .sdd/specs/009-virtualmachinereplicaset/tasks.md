@@ -16,7 +16,7 @@ This task list decomposes `test-plan.md` into ordered, executable tasks. It is t
 
 ## Phase 1 — Setup
 
-- [ ] T001 Wire `unitTests` into the existing `suite.Register(t, "VirtualMachineReplicaSet controller suite", intgTests, nil)` call in `controllers/virtualmachinereplicaset/virtualmachinereplicaset_controller_suite_test.go` (currently `nil`) — blocks every unit-test task below.
+- [x] T001 Wire `unitTests` into the existing `suite.Register(t, "VirtualMachineReplicaSet controller suite", intgTests, nil)` call in `controllers/virtualmachinereplicaset/virtualmachinereplicaset_controller_suite_test.go` (currently `nil`) — blocks every unit-test task below.
 
 ## Phase 2 — Foundational
 
@@ -25,19 +25,19 @@ This task list decomposes `test-plan.md` into ordered, executable tasks. It is t
 
 ## Phase 3 — Controller unit tests: core reconciliation
 
-- [ ] T004 [SC1,SC2,SC3,SC4,SC5,SC9,SC10] Create `controllers/virtualmachinereplicaset/virtualmachinereplicaset_controller_test.go` (external `_test` package, `Label(testlabels.Controller, testlabels.API)`, `builder.UnitTestContextForController` + `providerfake.VMProvider`, structured after `virtualmachinesnapshot_controller_unit_test.go`). Cover: create-from-scratch produces N owned VMs (SC1); default `spec.replicas=1` (SC2); explicit `spec.replicas=0` creates/leaves none (SC3); idempotent no-op reconcile (SC4); scale-to-zero-then-back-up creates fresh VMs, never reuses names (SC9); rapid successive `spec.replicas` edits converge to the final value without leaking VMs (SC10). Depends on T001.
+- [x] T004 [SC1,SC2,SC3,SC4,SC5,SC9,SC10] Create `controllers/virtualmachinereplicaset/virtualmachinereplicaset_controller_test.go` (external `_test` package, `Label(testlabels.Controller, testlabels.API)`, `builder.UnitTestContextForController` + `providerfake.VMProvider`, structured after `virtualmachinesnapshot_controller_unit_test.go`). Cover: create-from-scratch produces N owned VMs (SC1); default `spec.replicas=1` (SC2); explicit `spec.replicas=0` creates/leaves none (SC3); idempotent no-op reconcile (SC4); scale-to-zero-then-back-up creates fresh VMs, never reuses names (SC9); rapid successive `spec.replicas` edits converge to the final value without leaking VMs (SC10). Depends on T001.
 
 ## Phase 4 — Controller unit tests: status & conditions
 
-- [ ] T005 [SC22,SC23,SC25,SC26,SC27,SC28,SC29] Extend `virtualmachinereplicaset_controller_test.go` (same file as T004, sequential — not `[P]` against T004/T006/T007): `status.replicas` always matches owned-VM count (SC22); `status.fullyLabeledReplicas` diverges from `status.replicas` on label drift (SC23); `VirtualMachinesCreated` reflects create-path failures via `providerfake` injected errors (SC25); `ReplicaFailure` condition on sustained failure to converge (SC26); `VirtualMachinesReady` aggregates readiness — resolve the `[NEEDS CLARIFICATION]` from the TDS by writing the test against the chosen condition state for the `spec.replicas=0` edge case and updating TDS §27 to remove the marker (SC27); `observedGeneration` only advances once the generation's spec is actually processed (SC28); `Resized` condition clears once converged (SC29). Depends on T004.
+- [x] T005 [SC22,SC23,SC25,SC26,SC27,SC28,SC29] Extend `virtualmachinereplicaset_controller_test.go` (same file as T004, sequential — not `[P]` against T004/T006/T007): `status.replicas` always matches owned-VM count (SC22); `status.fullyLabeledReplicas` diverges from `status.replicas` on label drift (SC23); `VirtualMachinesCreated` reflects create-path failures via `providerfake` injected errors (SC25); `ReplicaFailure` condition on sustained failure to converge (SC26); `VirtualMachinesReady` aggregates readiness — resolve the `[NEEDS CLARIFICATION]` from the TDS by writing the test against the chosen condition state for the `spec.replicas=0` edge case and updating TDS §27 to remove the marker (SC27); `observedGeneration` only advances once the generation's spec is actually processed (SC28); `Resized` condition clears once converged (SC29). Depends on T004.
 
 ## Phase 5 — Controller unit tests: template/selector/label semantics
 
-- [ ] T006 [SC14,SC15,SC16,SC30,SC31,SC34] Extend `virtualmachinereplicaset_controller_test.go` (same file, sequential after T005): selector edits don't retroactively relabel existing VMs (SC14); template spec edits don't mutate/recreate existing replicas (SC15); template metadata-label edits — resolve the `[NEEDS CLARIFICATION]` from the TDS by writing the test against the chosen behavior and updating TDS §16 to remove the marker (SC16); `vmoperator.vmware.com/replicaset-name` label correctness (SC30) and its ownership-vs-discoverability distinction (SC31); template `Spec` fields (e.g. `powerState`) pass through verbatim (SC34). Depends on T005.
+- [x] T006 [SC14,SC15,SC16,SC30,SC31,SC34] Extend `virtualmachinereplicaset_controller_test.go` (same file, sequential after T005): selector edits don't retroactively relabel existing VMs (SC14); template spec edits don't mutate/recreate existing replicas (SC15); template metadata-label edits — resolve the `[NEEDS CLARIFICATION]` from the TDS by writing the test against the chosen behavior and updating TDS §16 to remove the marker (SC16); `vmoperator.vmware.com/replicaset-name` label correctness (SC30) and its ownership-vs-discoverability distinction (SC31); template `Spec` fields (e.g. `powerState`) pass through verbatim (SC34). Depends on T005.
 
 ## Phase 6 — Controller unit tests: non-goal absence checks
 
-- [ ] T007 [SC35,SC36] Extend `virtualmachinereplicaset_controller_test.go` (same file, sequential after T006): assert no `ControllerRevision`-equivalent/rollout-status field exists on the type (SC35); assert `status.replicas` never changes except in response to an external `spec.replicas` edit, i.e. no built-in auto-scaling side effect (SC36). Depends on T006.
+- [x] T007 [SC35,SC36] Extend `virtualmachinereplicaset_controller_test.go` (same file, sequential after T006): assert no `ControllerRevision`-equivalent/rollout-status field exists on the type (SC35); assert `status.replicas` never changes except in response to an external `spec.replicas` edit, i.e. no built-in auto-scaling side effect (SC36). Depends on T006.
 
 ## Phase 7 — Validation webhook tests
 

@@ -72,7 +72,7 @@ func SprintfStateNotSynced(op string, msgs ...string) string {
 			strings.Join(msgs[:len(msgs)-1], ", "),
 			msgs[len(msgs)-1])
 	}
-	return fmt.Sprintf("Must %s when %s vm", msg, op)
+	return fmt.Sprintf("Must %s when %s the VM", msg, op)
 }
 
 // Reason is the type used by reasons given to the condition

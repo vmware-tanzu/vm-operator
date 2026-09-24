@@ -65,7 +65,7 @@ const (
 
 	readinessProbeOnlyOneAction                = "only one action can be specified"
 	tcpReadinessProbeNotAllowedVPC             = "VPC networking doesn't allow TCP readiness probe to be specified"
-	updatesNotAllowedWhenPowerOn               = "updates to this field is not allowed when VM power is on"
+	updatesNotAllowedWhenPowerOn               = "updates to this field are not allowed when VM power is on"
 	addingNewCdromNotAllowedWhenPowerOn        = "adding new CD-ROMs is not allowed when VM is powered on"
 	removingCdromNotAllowedWhenPowerOn         = "removing CD-ROMs is not allowed when VM is powered on"
 	storageClassNotFoundFmt                    = "Storage policy %s does not exist"

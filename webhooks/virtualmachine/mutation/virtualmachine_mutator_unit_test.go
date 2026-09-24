@@ -1170,7 +1170,7 @@ func unitTestsMutating() {
 						Expect(err.Error()).To(Equal(field.Invalid(
 							field.NewPath("spec", "nextRestartTime"),
 							"now",
-							"can only restart powered on vm").Error()))
+							"can only restart powered on VM").Error()))
 					})
 				})
 				Context("vm is suspended", func() {
@@ -1188,7 +1188,7 @@ func unitTestsMutating() {
 						Expect(err.Error()).To(Equal(field.Invalid(
 							field.NewPath("spec", "nextRestartTime"),
 							"now",
-							"can only restart powered on vm").Error()))
+							"can only restart powered on VM").Error()))
 					})
 				})
 			})

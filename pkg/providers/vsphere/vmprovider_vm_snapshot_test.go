@@ -330,6 +330,58 @@ func vmSnapshotTests() {
 			Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
 		})
 
+		It("should succeed without error when reverting to the already-current snapshot", func() {
+			// Create VM first.
+			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create snapshot in vCenter.
+			task, err := vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "first snapshot", false, false)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+
+			// Create snapshot CR.
+			conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
+			conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+			Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
+			// Snapshot should be owned by the VM resource.
+			o := vmopv1.VirtualMachine{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), &o)).To(Succeed())
+			Expect(controllerutil.SetOwnerReference(&o, vmSnapshot, ctx.Scheme)).To(Succeed())
+			Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
+
+			// Revert to the snapshot once so it becomes the VM's current snapshot.
+			vm.Spec.CurrentSnapshotName = vmSnapshot.Name
+			_, err = vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+			Expect(err).To(HaveOccurred())
+			Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue(), "Should return NoRequeueError")
+
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty())
+			Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
+			Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+
+			// Revert to the same, already-current snapshot again. vCenter
+			// rejects RevertToSnapshot_Task when the VM is already on the
+			// target snapshot, so this must be a no-op that still succeeds
+			// and clears spec.currentSnapshotName.
+			vm.Spec.CurrentSnapshotName = vmSnapshot.Name
+			_, err = vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+			Expect(err).To(HaveOccurred())
+			Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue(), "Should return NoRequeueError")
+
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty())
+			Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
+			Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+
+			// Verify the revert-in-progress annotation was cleared and did
+			// not leave the VM permanently wedged.
+			_, ok := vm.Annotations[pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey]
+			Expect(ok).To(BeFalse())
+		})
+
 		Context("and the snapshot was taken when VM was powered on and is now powered off", func() {
 			It("should successfully power on the VM after reverting to a Snapshot in PoweredOn state", func() {
 				// Create VM first

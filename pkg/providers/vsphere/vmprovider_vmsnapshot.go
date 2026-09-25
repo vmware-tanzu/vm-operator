@@ -393,14 +393,13 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	logger.V(4).Info("Found vSphere snapshot")
 
 	var currentRef vimtypes.ManagedObjectReference
-	var isCurrent bool
 	if s := vmCtx.MoVM.Snapshot; s != nil {
 		if c := s.CurrentSnapshot; c != nil {
 			currentRef = c.Reference()
 			logger = logger.WithValues("currentSnapshot", currentRef.Value)
-			isCurrent = currentRef == *ref
 		}
 	}
+	isCurrent := currentRef == *ref
 	logger = logger.WithValues("isCurrent", isCurrent)
 	vmCtx.Context = logr.NewContext(vmCtx.Context, logger)
 

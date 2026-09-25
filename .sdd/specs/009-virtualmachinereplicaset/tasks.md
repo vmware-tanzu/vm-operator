@@ -3,14 +3,10 @@
 - **TDS**: [`tds.md`](./tds.md) — the acceptance-criteria source for this task list (in place of a `spec.md`; each task cites the TDS scenario number(s) it implements as `[SCn]`)
 - **Test plan**: [`test-plan.md`](./test-plan.md)
 - **Epic**: vmop-1701
+- **Story**: vmop-4211 (all tests for `VirtualMachineReplicaSet`)
 
-<!--
-TODO: fill in per-task [vmop-NNN] story/sub-task tags once filed under the
-epic, following the same deferral used in 002-vm-extraconfig-reconcile/tasks.md.
-vmop-1701 already tracks "Implement VirtualMachineReplicaSet API"; the one
-ticket that already exists (vmop-4017, for the TDS §19 Condition-on-adoption
-gap) is tagged below on the tasks it blocks.
--->
+Every task below belongs to vmop-4211 unless it cites a more specific
+ticket (e.g. vmop-4017 for the TDS §19 Condition-on-adoption gap).
 
 This task list decomposes `test-plan.md` into ordered, executable tasks. It is test-only for TDS scenarios that already pass or can be written against a genuine gap; two tasks are expected to produce an initially-failing (red) test that documents a real product gap rather than a test bug — see Phase Final.
 
@@ -61,7 +57,7 @@ This task list decomposes `test-plan.md` into ordered, executable tasks. It is t
 
 ## Phase 12 — E2E smoke
 
-- [ ] T013 [P] [SC1,SC6,SC7,SC11,SC17 (thin slice)] Create `test/e2e/vmservice/virtualmachinereplicaset/` following the `test/e2e/vmservice/virtualmachine/` layout, registered from `test/e2e/vmservice/vmservice_test.go`; run against a **real vCenter/WCP cluster** per `test/e2e/README.md` (no vcsim path exists in this tier — see `test-plan.md`'s correction note): create with N replicas, scale up, scale down, delete, and confirm the VMs actually reach `PoweredOn`. Independent new package; may run in parallel with Phases 3–11.
+- [x] T013 [P] [SC1,SC3,SC6,SC7,SC9,SC11,SC17] Create `test/e2e/vmservice/virtualmachinereplicaset/` following the `test/e2e/vmservice/virtualmachine/` layout, registered from `test/e2e/vmservice/vmservice_test.go`; run against a **real vCenter/WCP cluster** per `test/e2e/README.md` (no vcsim path exists in this tier — see `test-plan.md`'s correction note): create with N replicas, scale up, scale down, delete, and confirm the VMs actually reach `PoweredOn`. Independent new package; may run in parallel with Phases 3–11. Landed at `test/e2e/vmservice/vmservice/virtualmachinereplicaset/replicaset.go` (one directory level deeper than originally planned, alongside sibling `vmservice/vmservice/<resource>/` specs). **Follow-up fix**: first real-cluster run 404'd on the mutating webhook (`failed calling webhook "default.mutating.virtualmachinereplicaset.v1alpha6.vmoperator.vmware.com": the server could not find the requested resource`) — root cause is `webhooks/webhooks.go` only registering the `VirtualMachineReplicaSet` webhook routes when `pkgcfg.FromContext(ctx).Features.K8sWorkloadMgmtAPI` is true, so a cluster with that FSS off still ships the `MutatingWebhookConfiguration` (unconditional) but the manager never mounts the path. Added `skipper.SkipUnlessK8sWorkloadMgmtAPIIsEnabled(ctx, clusterProxy)` (SSH-checks `WCP_VMService_K8s_Workload_Mgmt_API` on VC via `util.IsFSSEnabled`, new `utils.K8sWorkloadMgmtAPIFSS` constant) and wired it into the spec's `BeforeEach`, matching the existing `SkipUnlessSupervisorCapabilityEnabled`/`SupervisorVMSnapshotFSS` pattern for other rollout-gated features. **Follow-up widening (SC3/SC9)**: the original "thin slice" (SC1,SC6,SC7,SC11,SC17) left scale-to-zero-then-back-up covered only at the unit tier (fake client, T004) with no real-cluster verification of the delete-all-then-create-fresh path through actual admission/webhooks/GC. Added a "Should scale a VirtualMachineReplicaSet down to zero and back up with fresh replicas" `It` exercising SC3 (`spec.replicas=0` deletes all owned VMs, `status.replicas` reaches 0) and SC9 (scaling back up creates replicas with names never reused from before the scale-to-zero).
 
 ## Phase Final — Polish / triage
 

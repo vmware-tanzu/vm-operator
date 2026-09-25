@@ -45,6 +45,22 @@ func SkipUnlessStretchSupervisorIsEnabled() {
 	}
 }
 
+func SkipUnlessK8sWorkloadMgmtAPIIsEnabled(ctx context.Context, vmSvcClusterProxy *common.VMServiceClusterProxy) {
+	sshCommandRunner, _ := e2essh.NewSSHCommandRunner(
+		vcenter.GetVCPNIDFromKubeconfigFile(ctx, vmSvcClusterProxy.GetKubeconfigPath()),
+		vcenter.VCSSHPort,
+		testbed.RootUsername,
+		[]ssh.AuthMethod{
+			ssh.Password(testbed.RootPassword),
+		},
+	)
+
+	isK8sWorkloadMgmtAPIEnabled, _ := util.IsFSSEnabled(sshCommandRunner, utils.K8sWorkloadMgmtAPIFSS)
+	if !isK8sWorkloadMgmtAPIEnabled {
+		framework.SkipInternalf(1, "skip the test due to %s FSS is not enabled", utils.K8sWorkloadMgmtAPIFSS)
+	}
+}
+
 func SkipUnlessSupervisorCapabilityEnabled(ctx context.Context, vmSvcClusterProxy *common.VMServiceClusterProxy, capabilityName string) {
 	sshCommandRunner, _ := e2essh.NewSSHCommandRunner(
 		vcenter.GetVCPNIDFromKubeconfigFile(ctx, vmSvcClusterProxy.GetKubeconfigPath()),

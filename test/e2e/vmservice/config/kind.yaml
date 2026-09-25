@@ -53,6 +53,8 @@ intervals:
   default/consistent-virtual-machine-condition: ["30s", "5s"]
   default/wait-virtual-machine-annotation-update: ["30s", "5s"]
   default/wait-virtual-machine-compute-policy-status-update: ["5m", "10s"]
+  default/wait-virtual-machine-replicaset-status: ["5m", "3s"]
+  default/wait-virtual-machine-replicaset-deletion: ["5m", "3s"]
   default/wait-vmsetrp-clustermodules: ["3m", "5s"]
 
   default/wait-config-map-creation: ["2m", "5s"]

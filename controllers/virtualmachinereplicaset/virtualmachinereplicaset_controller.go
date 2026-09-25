@@ -623,6 +623,22 @@ func (r *Reconciler) waitForVMCreation(ctx *pkgctx.VirtualMachineReplicaSetConte
 	return nil
 }
 
+// isVMReady returns whether vm should be counted toward
+// status.readyReplicas. The Ready condition is only ever populated by the
+// readiness prober, and the prober only watches VMs with a configured
+// spec.readinessProbe (see prober_manager.go's AddToProberManager). A VM
+// without a readiness probe therefore never gets a Ready condition, so it is
+// treated as implicitly ready, matching the convention used by the
+// VirtualMachineService controller's endpoint-readiness logic.
+func isVMReady(vm *vmopv1.VirtualMachine) bool {
+	if c := conditions.Get(vm, vmopv1.ReadyConditionType); c != nil {
+		return c.Status == metav1.ConditionTrue
+	}
+
+	p := vm.Spec.ReadinessProbe
+	return p == nil || (p.TCPSocket == nil && p.GuestHeartbeat == nil && len(p.GuestInfo) == 0) //nolint:staticcheck // TCPSocket deprecation warning; same field VMService already checks
+}
+
 // updateStatus updates the Status field of the VirtualMachineReplicaSet.
 func (r *Reconciler) updateStatus(
 	ctx *pkgctx.VirtualMachineReplicaSetContext,
@@ -646,7 +662,7 @@ func (r *Reconciler) updateStatus(
 			fullyLabeledReplicasCount++
 		}
 
-		if conditions.IsTrue(vm, vmopv1.ReadyConditionType) {
+		if isVMReady(vm) {
 			readyReplicasCount++
 		}
 	}

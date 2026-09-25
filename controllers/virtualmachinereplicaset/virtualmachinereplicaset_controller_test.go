@@ -1239,12 +1239,9 @@ func intgTestsReconcile() {
 		})
 
 		It("marks status.readyReplicas from each owned VM's Ready condition, not a blanket count", func() {
-			// TDS SC24. Known gap (documented at T015): the controller's
-			// updateStatus counts every filteredVM as ready regardless of its
-			// actual Ready condition (see the "TODO: Figure out an equivalent
-			// of Ready condition" in virtualmachinereplicaset_controller.go).
-			// This test is written against the intended contract and is
-			// expected to fail until that gap is closed; do not water it down.
+			// TDS SC24. An explicitly set Ready condition (True or False) is
+			// always authoritative, regardless of whether the VM has a
+			// readiness probe configured.
 			rs.Spec.Replicas = ptr.To(int32(2))
 			Expect(ctx.Client.Create(ctx, rs)).To(Succeed())
 			waitForReplicaSetFinalizer(ctx, rsKey)
@@ -1270,6 +1267,38 @@ func intgTestsReconcile() {
 				return got.Status.ReadyReplicas
 			}, 10*time.Second, 1*time.Second).Should(Equal(int32(1)),
 				"status.readyReplicas should reflect only the VM whose Ready condition is actually true")
+		})
+
+		It("counts a VM without a configured readiness probe as ready, but not one with a probe and no Ready condition yet", func() {
+			// TDS SC24: the Ready condition is only ever populated by the
+			// readiness prober, and the prober only watches VMs with a
+			// configured spec.readinessProbe. A VM without one never gets a
+			// Ready condition, so it must be treated as implicitly ready;
+			// otherwise readyReplicas could never converge for any
+			// VirtualMachineReplicaSet whose template omits readinessProbe.
+			rs.Spec.Replicas = ptr.To(int32(2))
+			Expect(ctx.Client.Create(ctx, rs)).To(Succeed())
+			waitForReplicaSetFinalizer(ctx, rsKey)
+			ensureReplicas(ctx, rs.Spec.Selector.MatchLabels, 2)
+
+			var vmList vmopv1.VirtualMachineList
+			Expect(ctx.Client.List(ctx, &vmList, client.InNamespace(ctx.Namespace), client.MatchingLabels(rs.Spec.Selector.MatchLabels))).To(Succeed())
+			Expect(vmList.Items).To(HaveLen(2))
+
+			By("Giving one of the two VMs a readiness probe, and leaving the other without one", func() {
+				probed := &vmList.Items[0]
+				probed.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+					GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+				}
+				Expect(ctx.Client.Update(ctx, probed)).To(Succeed())
+			})
+
+			Eventually(func(g Gomega) int32 {
+				got := getVirtualMachineReplicaSet(ctx, rsKey)
+				g.Expect(got).ToNot(BeNil())
+				return got.Status.ReadyReplicas
+			}, 10*time.Second, 1*time.Second).Should(Equal(int32(1)),
+				"only the VM without a readiness probe should count as ready; the probed VM has no Ready condition yet")
 		})
 
 		It("does not overshoot spec.replicas while a scaled-down replica's finalizer drains", func() {

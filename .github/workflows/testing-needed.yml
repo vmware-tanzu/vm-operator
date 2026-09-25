@@ -39,7 +39,7 @@ jobs:
           echo "lines_of_change=$loc" >> $GITHUB_OUTPUT
       - name: Update label
         id: update-label
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # TODO: Add testing-needed-e2e-full label once the internal pipeline

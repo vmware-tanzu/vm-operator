@@ -7706,6 +7706,7 @@ spec:
                   This is a pointer to distinguish between explicit zero and unspecified.
                   Defaults to 1.
                 format: int32
+                minimum: 0
                 type: integer
               selector:
                 description: |-

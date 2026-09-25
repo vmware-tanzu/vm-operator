@@ -2159,6 +2159,73 @@ func (d *wcpDcliClient) CreateComputePolicy(spec ComputePolicySpec) (string, err
 	return strings.TrimSpace(string(resp)), nil
 }
 
+// CreateComputePolicyWithSpec creates a compute policy for capabilities whose "compute
+// policies create" verb is not supported server-side (e.g. automatic_vm_eviction), by going
+// through "compute policies createtagsandpolicies" instead. Unlike create, that verb takes
+// capability/name/description nested inside the JSON spec itself rather than as flags.
+func (d *wcpDcliClient) CreateComputePolicyWithSpec(name, description string, capability ComputePolicyCapability, specJSON map[string]any) (string, error) {
+	fullSpec := map[string]any{
+		"capability":  capability,
+		"name":        name,
+		"description": description,
+	}
+
+	for k, v := range specJSON {
+		fullSpec[k] = v
+	}
+
+	policiesBuffer, err := json.Marshal([]map[string]any{{"spec": fullSpec}})
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal compute policy spec: %w", err)
+	}
+
+	cmd := fmt.Sprintf("%s %s createtagsandpolicies --policies '%s' %s",
+		computePolicies,
+		showUnreleased,
+		string(policiesBuffer),
+		jsonFormatter,
+	)
+
+	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	if err != nil {
+		return "", DcliError{
+			rawResponse: string(resp),
+			baseErr:     err,
+		}
+	}
+
+	var result struct {
+		Policies map[string]struct {
+			Policy string `json:"policy"`
+		} `json:"policies"`
+	}
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return "", fmt.Errorf("failed to unmarshal createtagsandpolicies response: %w", err)
+	}
+
+	entry, ok := result.Policies[name]
+	if !ok {
+		return "", fmt.Errorf("createtagsandpolicies response did not contain policy %q", name)
+	}
+
+	return entry.Policy, nil
+}
+
+// DeleteComputePolicy deletes a compute policy by its ID.
+func (d *wcpDcliClient) DeleteComputePolicy(policyID string) error {
+	cmd := fmt.Sprintf("%s %s delete --policy %s", computePolicies, showUnreleased, policyID)
+
+	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	if err != nil {
+		return DcliError{
+			rawResponse: string(resp),
+			baseErr:     err,
+		}
+	}
+
+	return nil
+}
+
 // CreateInfraPolicy creates an infrastructure policy with the given spec.
 func (d *wcpDcliClient) CreateInfraPolicy(spec InfraPolicySpec) error {
 	var cmd strings.Builder
@@ -2192,6 +2259,21 @@ func (d *wcpDcliClient) CreateInfraPolicy(spec InfraPolicySpec) error {
 	}
 
 	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
+	if err != nil {
+		return DcliError{
+			rawResponse: string(resp),
+			baseErr:     err,
+		}
+	}
+
+	return nil
+}
+
+// DeleteInfraPolicy deletes an infrastructure policy by name.
+func (d *wcpDcliClient) DeleteInfraPolicy(name string) error {
+	cmd := fmt.Sprintf("%s %s infrastructurepolicies delete --policy %s", namespaceManagement, showUnreleased, name)
+
+	resp, err := d.dcliClient.RunDCLICommand(cmd)
 	if err != nil {
 		return DcliError{
 			rawResponse: string(resp),

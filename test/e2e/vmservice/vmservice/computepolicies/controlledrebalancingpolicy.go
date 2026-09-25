@@ -53,6 +53,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		adminClient     ctrlclient.Client
 		vCenterClient   *vim25.Client
 		tagManager      *tags.Manager
+		tagCategoryID   string
 
 		vmName     string
 		vm         *vmopv1.VirtualMachine
@@ -100,6 +101,16 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		Expect(err).ToNot(HaveOccurred(), "failed to create rest client")
 		tagManager = tags.NewManager(restClient)
 
+		// One shared, MULTIPLE-cardinality category per spec run: every tag this Spec
+		// creates lives in it, so there's no need for a fresh category per tag or per test.
+		tagCategoryID, err = input.WCPClient.CreateTagCategory(
+			fmt.Sprintf("%s-category-%s", specName, capiutil.RandomString(4)), "e2e controlled rebalancing policy test")
+		Expect(err).ToNot(HaveOccurred(), "failed to create tag category")
+		Expect(tagCategoryID).NotTo(BeEmpty(), "tag category ID should be returned")
+		DeferCleanup(func(cleanupCtx context.Context) {
+			_ = tagManager.DeleteCategory(cleanupCtx, &tags.Category{ID: tagCategoryID})
+		})
+
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		matchLabel = map[string]string{
 			"vmoperator.vmware.com/e2e-controlled-rebalancing-test": capiutil.RandomString(6),
@@ -120,11 +131,12 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 	It("Should tag a matching VM and surface the policy in status.policies",
 		Label("core-functional", "experimental"),
 		func() {
-			tagID := createVSphereTag(input.WCPClient, tagManager, "controlled-rebalancing")
+			suffix := capiutil.RandomString(4)
+			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing", suffix)
 
 			By("Creating a Mandatory ControlledRebalancingPolicy matching the test label")
 			rebalancingPolicy = createControlledRebalancingPolicy(ctx, adminClient, input,
-				fmt.Sprintf("controlled-rebalancing-policy-%s", capiutil.RandomString(4)),
+				fmt.Sprintf("controlled-rebalancing-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID)
 
 			policyNameToVMTagID = map[string]string{
@@ -153,14 +165,15 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 	It("Should re-evaluate an already-created VM when a policy's match is widened",
 		Label("core-functional", "experimental"),
 		func() {
-			tagID := createVSphereTag(input.WCPClient, tagManager, "controlled-rebalancing-widen")
+			suffix := capiutil.RandomString(4)
+			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-widen", suffix)
 
 			By("Creating a Mandatory ControlledRebalancingPolicy that does not yet match the VM's label")
 			nonMatchingLabel := map[string]string{
 				"vmoperator.vmware.com/e2e-controlled-rebalancing-test": capiutil.RandomString(6),
 			}
 			rebalancingPolicy = createControlledRebalancingPolicy(ctx, adminClient, input,
-				fmt.Sprintf("controlled-rebalancing-widen-policy-%s", capiutil.RandomString(4)),
+				fmt.Sprintf("controlled-rebalancing-widen-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, nonMatchingLabel, tagID)
 
 			By("Creating a VM that does not match the policy yet")
@@ -198,11 +211,12 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 	It("Should tag a VM that explicitly references a matching Optional ControlledRebalancingPolicy",
 		Label("core-functional", "experimental"),
 		func() {
-			tagID := createVSphereTag(input.WCPClient, tagManager, "controlled-rebalancing-optional")
+			suffix := capiutil.RandomString(4)
+			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-optional", suffix)
 
 			By("Creating an Optional ControlledRebalancingPolicy matching the test label")
 			rebalancingPolicy = createControlledRebalancingPolicy(ctx, adminClient, input,
-				fmt.Sprintf("controlled-rebalancing-optional-policy-%s", capiutil.RandomString(4)),
+				fmt.Sprintf("controlled-rebalancing-optional-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, tagID)
 
 			By("Creating a VM that explicitly references the policy and matches its label selector")
@@ -225,14 +239,15 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 	It("Should surface an error when a VM explicitly references a non-matching Optional ControlledRebalancingPolicy",
 		Label("core-functional", "experimental"),
 		func() {
-			tagID := createVSphereTag(input.WCPClient, tagManager, "controlled-rebalancing-no-match")
+			suffix := capiutil.RandomString(4)
+			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-no-match", suffix)
 
 			By("Creating an Optional ControlledRebalancingPolicy that does not match the VM's label")
 			nonMatchingLabel := map[string]string{
 				"vmoperator.vmware.com/e2e-controlled-rebalancing-test": capiutil.RandomString(6),
 			}
 			rebalancingPolicy = createControlledRebalancingPolicy(ctx, adminClient, input,
-				fmt.Sprintf("controlled-rebalancing-no-match-policy-%s", capiutil.RandomString(4)),
+				fmt.Sprintf("controlled-rebalancing-no-match-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, nonMatchingLabel, tagID)
 
 			By("Creating a VM that explicitly references the non-matching policy")
@@ -249,11 +264,12 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 	It("Should update the VM's vSphere tag when the policy's Tags are changed",
 		Label("core-functional", "experimental"),
 		func() {
-			tagID1 := createVSphereTag(input.WCPClient, tagManager, "controlled-rebalancing-update-1")
+			suffix := capiutil.RandomString(4)
+			tagID1 := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-update-1", suffix)
 
 			By("Creating a Mandatory ControlledRebalancingPolicy tagging the VM with the first real vSphere tag")
 			rebalancingPolicy = createControlledRebalancingPolicy(ctx, adminClient, input,
-				fmt.Sprintf("controlled-rebalancing-update-policy-%s", capiutil.RandomString(4)),
+				fmt.Sprintf("controlled-rebalancing-update-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID1)
 
 			By("Creating a VM matching the policy's label selector")
@@ -271,11 +287,11 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 				map[string]string{rebalancingPolicy.Name: tagID1},
 				[]string{rebalancingPolicy.Name})
 
-			tagID2 := createVSphereTag(input.WCPClient, tagManager, "controlled-rebalancing-update-2")
+			tagID2 := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-update-2", suffix)
 
 			By("Creating a second TagPolicy referencing a second real vSphere tag")
 			tagPolicy2 := createTagPolicy(ctx, adminClient, input.WCPNamespaceName,
-				fmt.Sprintf("controlled-rebalancing-update-tag-policy-2-%s", capiutil.RandomString(4)), []string{tagID2})
+				fmt.Sprintf("controlled-rebalancing-update-tag-policy-2-%s", suffix), []string{tagID2})
 			DeferCleanup(func() { _ = adminClient.Delete(ctx, tagPolicy2) })
 
 			By("Updating the policy's Tags to reference the second TagPolicy instead of the first")
@@ -300,11 +316,12 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 	It("Should remove the VM's vSphere tag and status.policies entry when the policy is deleted",
 		Label("core-functional", "experimental"),
 		func() {
-			tagID := createVSphereTag(input.WCPClient, tagManager, "controlled-rebalancing-delete")
+			suffix := capiutil.RandomString(4)
+			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-delete", suffix)
 
 			By("Creating a Mandatory ControlledRebalancingPolicy matching the test label")
 			rebalancingPolicy = createControlledRebalancingPolicy(ctx, adminClient, input,
-				fmt.Sprintf("controlled-rebalancing-delete-policy-%s", capiutil.RandomString(4)),
+				fmt.Sprintf("controlled-rebalancing-delete-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID)
 
 			By("Creating a VM matching the policy's label selector")
@@ -364,8 +381,17 @@ func createControlledRebalancingPolicy(
 
 	GinkgoHelper()
 
-	_ = createVSphereInfraPolicy(input.WCPClient, input.WCPNamespaceName, name,
-		wcp.ControlledRebalancingCapability, wcpEnforcementMode(enforcementMode), matchLabel, vmTagID, nil)
+	_ = createVSphereInfraPolicy(input, input.WCPClient, input.WCPNamespaceName, wcp.ComputePolicySpec{
+		Name:        fmt.Sprintf("%s-compute-policy", name),
+		Description: "e2e controlled rebalancing policy test",
+		VMTagID:     vmTagID,
+		Capability:  wcp.ControlledRebalancingCapability,
+	}, wcp.InfraPolicySpec{
+		Name:               name,
+		Description:        "e2e controlled rebalancing policy test",
+		EnforcementMode:    wcpEnforcementMode(enforcementMode),
+		MatchWorkloadLabel: matchLabel,
+	}, nil)
 
 	obj := &vspherepolv1.ControlledRebalancingPolicy{}
 	waitForVSpherePolicyCreated(ctx, input, adminClient, name, obj)

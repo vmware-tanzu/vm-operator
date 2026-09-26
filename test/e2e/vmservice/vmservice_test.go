@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/backuprestore"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/configpolicy"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
@@ -58,6 +59,20 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 				WCPClient:        wcpClient,
 				WCPNamespaceName: wcpNamespaceName,
 				LinuxVMName:      linuxVMName,
+			}
+		})
+	})
+
+	// Backup and restore with a real Veeam Backup & Replication server. These
+	// tests run only in the dedicated "backup-restore" suite; every other
+	// suite's label filter excludes this label.
+	Context("BACKUP-RESTORE", Label("backup-restore"), func() {
+		backuprestore.VeeamBackupRestoreSpec(context.TODO(), func() backuprestore.SpecInput {
+			return backuprestore.SpecInput{
+				ClusterProxy:     svClusterProxy,
+				Config:           config,
+				WCPClient:        wcpClient,
+				WCPNamespaceName: wcpNamespaceName,
 			}
 		})
 	})

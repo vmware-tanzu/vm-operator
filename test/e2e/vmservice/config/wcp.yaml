@@ -15,6 +15,16 @@ infraConfig:
       vmResourcePolicyName: ""
       contentLibrarySubscriptionURL: "${CONTENT_LIBRARY_SUBSCRIPTION_URL:-https://wp-content-pstg.broadcom.com/vmsvc/lib.json}"
 
+# Veeam Backup & Replication server used by the "backup-restore" suite. The
+# suite is skipped when VEEAM_SERVER is unset. Defaults deliberately live in
+# the CI suite definition, not in this public file.
+veeamConfig:
+  server: "${VEEAM_SERVER:-}"
+  username: "${VEEAM_USERNAME:-}"
+  password: "${VEEAM_PASSWORD:-}"
+  repository: "${VEEAM_REPOSITORY:-}"
+  runID: "${E2E_RUN_ID:-}"
+
 versionDiscovery:
   enabled: true
   systemSpecs:
@@ -105,6 +115,8 @@ intervals:
   default/wait-namespace-ready: ["5m", "10s"]
   default/wait-kms-cluster-ready: ["2m", "5s"]
   default/wait-backup-to-complete: ["10m", "5s"]
+  default/wait-veeam-session: ["20m", "10s"]
+  default/wait-veeam-session-start: ["5m", "10s"]
   default/wait-virtual-machine-compute-policy-status-update: ["5m", "10s"]
   default/wait-policy-evaluation-creation: ["3m", "10s"]
   default/wait-policy-evaluation-compliant: ["2m", "10s"]

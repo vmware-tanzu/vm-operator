@@ -20,6 +20,7 @@ source ./hack/e2e/setup-testbed-env.sh <testbedInfo.json|URL> --e2e
 | Smoke | `make e2e-smoke` |
 | Core | `make e2e-core` |
 | Extended | `make e2e-extended` |
+| Backup/restore (Veeam) | `make e2e-backup-restore` (needs `VEEAM_SERVER` etc., see README) |
 
 **Prebuilt vs compile:** `make test-e2e` auto-detects `./e2e-tests` vs `test-e2e-ginkgo`. Prebuilt binaries need `-e2e.*` and `--ginkgo.*` in **one** argv block (no `--` separator); splitting with `--` drops Ginkgo filters.
 The prebuild binary is really intended to be used by the E2E Docker container to make it slim. You should really use the ginkgo cli locally.

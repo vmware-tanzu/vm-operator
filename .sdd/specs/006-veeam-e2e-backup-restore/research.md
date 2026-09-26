@@ -42,9 +42,197 @@ All three restore workflows below are currently exercised in `test/e2e/vmservice
 - `skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)` gates the whole spec on running against WCP infra; a Veeam server dependency would plausibly gate on a new infra/testbed capability in the same style.
 - Admin-privileged operations use `clusterProxy.NewAdminClusterProxy(ctx)` / `adminProxy.GetAdminClient()` because the regular supervisor-admin kubeconfig lacks RBAC on some API groups (e.g. `cns.vmware.com`). Any new Veeam-driven helper that needs elevated K8s access should follow the same pattern rather than widening RBAC for the default test user.
 
+## Validated walkthrough: restore to new (manual run, 2026-09-25)
+
+**Status: validated end to end against a live appliance.** This section supersedes the doc/OSS-derived claims further down this file wherever they conflict (notably the VBR 12 assumption, the `vmware/` restore path, the `"Backup"` job type, and "no REST call to delete a backup").
+
+### Environment
+
+- Appliance: VBR **13.1.1.18** (not VBR 12 as assumed below), REST on `https://<vbr-host>:9419`.
+- Supported `x-api-version` values: `1.1-rev0`, `1.1-rev2`, `1.2-rev0`, `1.2-rev1`, `1.3-rev0`, `1.3-rev1`, `1.3-rev2`. The walkthrough used `1.3-rev2`.
+- Supervisor namespace VM (`v1alpha6`, Photon 5 image, `best-effort-small`) with one user PVC (1Gi) plus the backfilled boot-disk PVC (all-disks-are-PVCs), powered on, `VirtualMachineBackupUpToDate=True`.
+
+### Version detection (no auth needed)
+
+- `GET /swagger/v{ver}/swagger.json` is unauthenticated and returns `200` for a supported version and `404` otherwise — a cheap, deterministic probe. Walk a newest-first candidate list and take the first `200`.
+- Token endpoint with an unsupported version returns `400` with error code `NotImplemented`; bad credentials return `401` `AccessDenied`; any API call without a token returns `401`.
+- Request shapes differ by version and must be selected from the detected version:
+
+| Item | `1.1-rev0` | `1.2-rev0`+ |
+|------|------------|-------------|
+| Entire VM restore | `POST /api/v1/restore/vmRestore/vmware/` | `POST /api/v1/restore/vmRestore/vSphere` |
+| Backup job `type` | `Backup` | `VSphereBackup` |
+| `quickBackup/vSphere` | absent | present |
+
+### Auth
+
+- `POST /api/oauth2/token`, form-encoded `grant_type=password&username=..&password=..`, with the `x-api-version` header. `expires_in` is `900` seconds, so a client must refresh (or re-login) during long waits; the backup + restore + register sequence below alone takes ~5 minutes.
+- Every subsequent call carries `Authorization: Bearer <token>` and the same `x-api-version`.
+
+### One-time: make the vCenter known to Veeam
+
+Done once per vCenter (the appliance is shared; tests must never remove it). Idempotent check first: `GET /api/v1/backupInfrastructure/managedServers` and match on `name`.
+
+1. `POST /api/v1/credentials` — `{"type":"Standard","username":..,"password":..,"description":..}` → credential `id`.
+2. `POST /api/v1/connectionCertificate` — `{"serverName":"<vc-pnid>","type":"ViHost","credentialsId":..,"port":443}` → `certificate.thumbprint` (uppercase SHA-1, no colons). A hand-computed colon-separated SHA-1 or a SHA-256 thumbprint is rejected (`PartialChain`).
+3. `POST /api/v1/backupInfrastructure/managedServers` — `{"type":"ViHost","name":"<vc-pnid>","credentialsId":..,"port":443,"certificateThumbprint":..,"description":..}` → async session; poll it (see below). The VC **PNID** is required: registering by IP fails with "Remote certificate name mismatch".
+
+### Step 1 — create a backup job
+
+- Resolve the VM: `GET /api/v1/inventory/vmware/hosts/<vc-pnid>?nameFilter=<vm-name>` → `objectId` (the moref, e.g. `vm-126`) and `hostName`.
+- Resolve the repository: `GET /api/v1/backupInfrastructure/repositories` (the walkthrough used "Default Backup Repository").
+- `POST /api/v1/jobs` → `201` with the job `id`. Minimal body accepted by `1.3-rev2`:
+
+```json
+{
+  "type": "VSphereBackup",
+  "name": "vmop-e2e-<run-id>-<vm-name>",
+  "description": "vmop e2e",
+  "isHighPriority": false,
+  "virtualMachines": {"includes": [{
+    "type": "VirtualMachine", "name": "<vm-name>",
+    "objectId": "<moref>", "hostName": "<vc-pnid>",
+    "platform": "VSphere"}]},
+  "storage": {
+    "backupRepositoryId": "<repo-id>",
+    "backupProxies": {"autoSelectEnabled": true},
+    "retentionPolicy": {"type": "RestorePoints", "quantity": 7}},
+  "guestProcessing": {
+    "appAwareProcessing": {"isEnabled": false},
+    "guestFSIndexing": {"isEnabled": false}},
+  "schedule": {"runAutomatically": false}
+}
+```
+
+- The job is bound to the VM **moref**, not its name or UUID (see Step 5 for why that matters).
+
+### Step 2 — run the backup
+
+- `POST /api/v1/jobs/{id}/start` with `{"performActiveFull":false}` → `201` session.
+- Poll `GET /api/v1/sessions/{id}`: `state` goes `Starting` → `Working` → `Postprocessing` → `Stopped`; the outcome is `result.result`. Logs: `GET /api/v1/sessions/{id}/logs` → `records[].{status,title}`.
+- Took ~2.5 minutes for a 17 GB (859 MB used) VM. CBT was enabled automatically.
+- **Result was `Warning`, not `Success`**: "Your vCenter Server API version is higher than the version this product build has been tested against … KB2443". The client must treat `Success` and `Warning` as success and only `Failed` as failure, and should log the warning message.
+
+### Step 3 — find the restore point
+
+- `GET /api/v1/backups?jobIdFilter=<job-id>` → backup `id`.
+- `GET /api/v1/restorePoints?backupIdFilter=<backup-id>` → restore point(s) in one call (no need for the `backups → objects → restorePoints` chain). Pick the newest by `creationTime`.
+- Note: `GET /api/v1/backups/{id}/objects` reports a *different* (child) `backupId` than the parent backup — do not key lookups off it.
+- The restore point's `allowedOperations` were `StartEntireVmRestore`, `StartFCDInstantRecovery`, `StartViVMInstantRecovery`, `StartHvVMInstantRecovery`, `StartFlrRestore` — confirming there is **no virtual-disk restore** operation via REST on 13.1.
+- `GET /api/v1/restorePoints/{id}/disks` listed both disks: the boot VMDK and the PVC's FCD (named by its FCD file name).
+
+### Step 4 — lose the VM
+
+- `kubectl delete vm <name>` then `kubectl delete pvc <user-pvc>` (the boot-disk PVC is owned by the VM and is garbage-collected). This is a real disaster, not mimicry: the vSphere VM, its VM home directory, and the FCD were all gone from the datastore afterwards. No pause annotation, finalizer surgery, or `CnsUnregisterVolume` is needed for this scenario.
+
+### Step 5 — restore with Veeam
+
+- `POST /api/v1/restore/vmRestore/vSphere` with:
+
+```json
+{
+  "type": "OriginalLocation",
+  "restorePointId": "<rp-id>",
+  "powerUp": false,
+  "overwrite": false,
+  "reason": "vmop e2e restore to new"
+}
+```
+
+- → `201` session; ~2 minutes; result `Success`. Log: "Registering restored VM on host …, pool: <ns>, folder: <ns>, storage: <datastore>" — i.e. back in the namespace resource pool and namespace VM folder, which RegisterVM requires (guide §7).
+- Observed state of the restored VM:
+
+| Property | Result |
+|----------|--------|
+| moref | **New** (`vm-129` vs. original `vm-126`) |
+| BIOS UUID / instance UUID | Preserved |
+| `vmservice.*` ExtraConfig | Preserved (`backupVersion` = value at snapshot time) |
+| VM home path / datastore | Same as original |
+| Former FCD disk | Plain VMDK in the VM home directory, new disk UUID |
+| Power state | Powered off |
+
+- Consequences for the test design: (a) the moref must be looked up after restore (by name in the namespace folder), not reused from before; (b) the backup job still targets the old moref, so a later backup of the restored VM needs a new job (or a job edit) — per-test jobs keep this simple.
+
+### Step 6 — register and verify
+
+- RegisterVM on the new moref (the suite's `wcpClient.RegisterVM` → dcli `namespaces instances registervm --namespace <ns> --vm <moref>`; `govc namespace.registervm -vm <path> <ns>` is equivalent for manual runs) → task succeeded in ~20 seconds.
+- Result: `VirtualMachine` CR recreated with `status.uniqueID` = new moref, annotation `vmoperator.vmware.com/restored-vm`, two `restored-*` PVCs (boot disk + user disk), all conditions `True` (including `UnmanagedVolumesRegistered`/`Backfilled`), powered off. Powering on produced an IPv4 address.
+- So `vmservice.VerifyPostRegisterVM(..., expectedRestoredPVCCount = <number of disks>, ...)` applies as-is.
+
+### Cleanup (endpoints confirmed present in `1.3-rev2`)
+
+- `DELETE /api/v1/backups/{id}?fromDB=false&includeGFS=true` removes the backup and its files (`fromDB=true` would only forget it and keep the files); returns `201` with a session.
+- `DELETE /api/v1/jobs/{id}` → `204`.
+- Order: delete the backup first, then the job. Not yet exercised on the appliance — verify during implementation.
+
+## Validated walkthrough: restore to existing (manual run, 2026-09-25)
+
+**Status: validated end to end against a live appliance.** Same appliance, API version, auth, and Steps 1–3 (job, backup, restore point) as the restore-to-new walkthrough above; only the differences are recorded here.
+
+### Setup
+
+- Ubuntu image, `best-effort-small`, `v1alpha6`, powered on, with a 2Gi user PVC in addition to the backfilled boot-disk PVC.
+- A cloud-init `rawCloudConfig` Secret writes a seed script via `write_files` and runs it from `runcmd`. The script formats the non-root disk as ext4 (label `vmopdata`) only when it is blank, mounts it at `/mnt/data` via an fstab entry, writes an 8 MiB random file and a small text file to the boot disk and to `/mnt/data`, records their `sha256sum` in the guest, then `sync`s and touches a done marker.
+- A user annotation `e2e.vmoperator.vmware.com/restore-marker=before-backup` was set on the CR and allowed to propagate to `vmservice.virtualmachine.resource.yaml` (`VirtualMachineBackupUpToDate=True`) before the backup ran.
+- Guest access: vCenter guest operations (`guest.run`) are denied on Supervisor VMs even for `administrator@vsphere.local`, so seeding verification and file deletion used SSH through the testbed gateway — the same path as the suite's `VerifyLoginAndRunCmdsInVDSSetup`.
+
+### Step 4 — diverge from the backup
+
+- Delete the four seeded files (`rm` + `sync`) and change the annotation to `after-backup`. VM Operator bumps the `backup-version` annotation and ExtraConfig on every change, so the live ExtraConfig version is now newer than the one inside the restore point.
+- Power off (`spec.powerState: PoweredOff`), then add `vmoperator.vmware.com/paused=true` **before** starting the restore. The pause is load-bearing: while unpaused, VM Operator rewrites ExtraConfig from the CR, which would erase both the older backed-up `backupVersion` (the restore-to-existing trigger) and the backed-up annotations. The task list confirmed no VM Operator `ReconfigVM` ran after the pause.
+- Not needed: `Removable=true` on volumes, and `CnsUnregisterVolume`. The mimic test needs both only because its fake restore leaves the FCDs registered. Running `CnsUnregisterVolume` with `RetainFCD: false` here would be actively harmful, since the old FCD backing path is reused by the restored disk (see below).
+
+### Step 5 — restore with Veeam
+
+- Same call as restore to new, with `"overwrite": true`:
+
+```json
+{
+  "type": "OriginalLocation",
+  "restorePointId": "<rp-id>",
+  "powerUp": false,
+  "overwrite": true,
+  "reason": "vmop e2e restore to existing"
+}
+```
+
+- → `201` session; ~2 minutes; result `Success`. Veeam works on the **same VM object**: `Reload`, several `ReconfigVM`, `CreateSnapshot`, `RevertToSnapshot`, `RemoveSnapshot`, all initiated by the Veeam service account.
+- Observed state of the restored VM:
+
+| Property | Result |
+|----------|--------|
+| moref | **Preserved** (same `vm-NNN`) |
+| BIOS UUID / instance UUID / vmx path | Preserved |
+| `vmservice.*` ExtraConfig | Restored to backup time; `backupVersion` < current CR annotation |
+| FCD registrations (boot + user PVC) | **Destroyed**: both FCD IDs gone from the datastore catalog |
+| Disks | Plain VMDKs, new disk UUIDs, no `vDiskId`. User disk keeps its old `fcd/<id>.vmdk` path; boot disk moved to `fcd/<vm>_N.vmdk`. Device labels swap (unit 0 becomes "Hard disk 2") — match disks by unit number or capacity, never by label |
+| PVCs / `CnsNodeVmBatchAttachment` | Still `Bound` / `Ready`, pointing at the destroyed volumes (stale until RegisterVM) |
+| Power state | Powered off |
+
+- No RegisterVM task ran automatically, despite the wording of guide §9.2 step 4. The test must invoke RegisterVM itself.
+
+### Step 6 — register and verify
+
+- RegisterVM on the (unchanged) moref, with no additional preparation → task succeeded in ~11 seconds.
+- CR after registration:
+  - `restore-marker` back to `before-backup` (user annotations from the backup take precedence, guide §8.1.3).
+  - `vmoperator.vmware.com/restored-vm` added.
+  - The pause annotation was **removed by RegisterVM**.
+  - Both volumes now reference new `restored-*` PVCs backed by newly registered FCDs; volume names and `removable` values are kept from the backup.
+  - Powered off; all conditions `True` after power-on.
+- Old PVCs were marked for deletion but stayed `Terminating` with the `cns.vmware.com/pvc-protection` finalizer — the same PV/PVC cleanup gap noted by the TODO in `vmservice.UnregisterPVCVolumes`. The test should assert that they have a `deletionTimestamp` rather than wait for them to disappear, and cleanup must tolerate them.
+- Power on → same IPv4 address. After `mount -a`, the `sha256sum` of all four seeded files matched the pre-backup values exactly. File mtimes equal the original seed time, which confirms the data came from the restore and not from a cloud-init re-run.
+
+### Consequences for the test design
+
+- Order is: power off → pause → Veeam restore (`overwrite: true`) → RegisterVM → verify. Pause must precede the restore.
+- `VerifyPostRegisterVM(..., expectedRestoredPVCCount = <number of disks>, ...)` applies. The moref is stable, so the existing `status.uniqueID` can be reused for RegisterVM.
+- Data verification needs guest SSH through the gateway and a deterministic seed (hashes recorded in-guest before the backup and compared after the restore). A `restore-marker`-style user annotation is a cheap check that the backed-up CR was applied.
+- Because the moref is stable, the same Veeam job can back up the VM again after an in-place restore; this is unlike restore to new.
+
 ## Spike: enable and confirm the VBR REST API on the existing appliance
 
-**Status: open, blocking.** This must be resolved before `plan.md` can commit to a concrete client design — every other Veeam-specific investigation item in this document assumes the REST API is reachable, and right now it is not confirmed to be.
+**Status: resolved (2026-09-25).** The REST API is reachable on port `9419`; see "Validated walkthrough: restore to new" above. The notes below are kept for history.
 
 - Connectivity check performed 2026-08-10/11 against the existing VBR 12 appliance (internal test-infra host; address intentionally omitted from this repo — see the internal spike ticket `vmop-4030` for connection details):
   - ICMP ping succeeds — the host is reachable on the network.

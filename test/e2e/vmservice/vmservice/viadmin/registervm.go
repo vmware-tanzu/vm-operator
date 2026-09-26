@@ -263,6 +263,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		})
 	})
 
+	// Deprecated: This test simulates a restore (pause, CnsUnregisterVolume, and an ExtraConfig rewrite) instead of performing
+	// one. It is superseded by "Should restore an existing VM in place and register it" in the Veeam-backed
+	// backuprestore suite and will be removed once that suite leaves
+	// quarantine (spec 006-veeam-e2e-backup-restore).
 	Context("Incremental Restore - Register VM with pre-existing VM CR", func() {
 		It("Should register VM successfully", func() {
 			if !incrementalRestoreEnabled {
@@ -388,6 +392,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		})
 	})
 
+	// Deprecated: This test simulates a restore (removable volumes and CnsUnregisterVolume) instead of performing
+	// one. It is superseded by "Should restore an existing VM in place and register it" in the Veeam-backed
+	// backuprestore suite and will be removed once that suite leaves
+	// quarantine (spec 006-veeam-e2e-backup-restore).
 	Context("Incremental Restore - Register VM with pre-existing VM CR and PVCs", func() {
 		It("Should register VM successfully", func() {
 			if !incrementalRestoreEnabled {
@@ -576,6 +584,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		})
 	})
 
+	// Deprecated: This test simulates a restore (the vSphere VM is kept and only the CR is deleted) instead of performing
+	// one. It is superseded by "Should raise the RegisterVM alarm on failure and clear it on success" in the Veeam-backed
+	// backuprestore suite and will be removed once that suite leaves
+	// quarantine (spec 006-veeam-e2e-backup-restore).
 	Context("RegisterVM Alarm", func() {
 		// Predefined Alarm definition added in main/9.0 (CLN 13918662)
 		// If using a VC without the predefined alarm, create with:
@@ -826,6 +838,9 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		})
 	})
 
+	// This test stays simulated: the Veeam B&R REST API has no virtual disk
+	// restore operation, so the backuprestore suite cannot cover it (see
+	// research.md in spec 006-veeam-e2e-backup-restore).
 	Context("Restore disk only", func() {
 		It("Should register restored disk", func() {
 			if !vmServiceBackupRestoreEnabled {
@@ -1129,6 +1144,10 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		})
 	})
 
+	// Deprecated: This test simulates a restore (the vSphere VM is kept and only the CR is deleted) instead of performing
+	// one. It is superseded by "Should restore a lost VM as a new VM and register it" in the Veeam-backed
+	// backuprestore suite and will be removed once that suite leaves
+	// quarantine (spec 006-veeam-e2e-backup-restore).
 	Context("RegisterVM - Restore to new", func() {
 		It("Should register VM when no pre-existing VM CR exists", Label("experimental"), func() {
 			if !vmServiceBackupRestoreEnabled {

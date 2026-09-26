@@ -22,6 +22,26 @@ type E2EConfig struct {
 	framework.Config
 
 	InfraConfig *InfraConfig `json:"infraConfig,omitempty"`
+
+	// VeeamConfig points the backup/restore suite at a Veeam Backup &
+	// Replication server. The suite is skipped when Server is empty.
+	VeeamConfig *VeeamConfig `json:"veeamConfig,omitempty"`
+}
+
+// VeeamConfig holds the Veeam Backup & Replication connection settings.
+type VeeamConfig struct {
+	// Server is "host", "host:port", or "https://host:port" of the VBR REST
+	// API. The port defaults to 9419.
+	Server   string `json:"server,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	// Repository is the name of the backup repository jobs write to. The
+	// first repository is used when empty.
+	Repository string `json:"repository,omitempty"`
+	// RunID is folded into the names of the Veeam jobs the suite creates so
+	// that concurrent runs against a shared server do not collide and leaked
+	// jobs can be traced back to their run. A random ID is used when empty.
+	RunID string `json:"runID,omitempty"`
 }
 
 type InfraConfig struct {
@@ -53,6 +73,15 @@ type Resources struct {
 
 func (c *E2EConfig) GetInfraConfig() *InfraConfig {
 	return c.InfraConfig
+}
+
+// GetVeeamConfig returns the Veeam settings, never nil.
+func (c *E2EConfig) GetVeeamConfig() VeeamConfig {
+	if c.VeeamConfig == nil {
+		return VeeamConfig{}
+	}
+
+	return *c.VeeamConfig
 }
 
 // GetIntervals returns the value in the format: "default/key: ["10m", "5s"]".

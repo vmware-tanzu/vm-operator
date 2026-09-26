@@ -28,6 +28,62 @@ func GetSecretYamlCloudConfig(secret Secret) []byte {
 	})
 }
 
+// seedDataCloudConfig is the cloud-init user-data of
+// GetSecretYamlCloudConfigSeedData.
+const seedDataCloudConfig = `#cloud-config
+ssh_pwauth: true
+users:
+  - name: vmware
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    # Password set to Admin!23
+    passwd: '$1$salt$SOC33fVbA/ZxeIwD5yw1u1'
+    shell: /bin/bash
+write_files:
+  # Seeds random data on the boot disk and on the first non-boot disk
+  # and records its checksums in /root/seed.sha256, so a restore test
+  # can prove the data came back. The data disk is only formatted when
+  # it is blank, so a re-run never wipes restored data.
+  - path: /usr/local/bin/vmop-seed.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -eux
+      ROOTDISK=$(lsblk -no PKNAME "$(findmnt -no SOURCE /)")
+      DATA=$(lsblk -dn -o NAME,TYPE | awk -v r="$ROOTDISK" \
+        '$2=="disk" && $1!=r {print $1; exit}')
+      blkid "/dev/$DATA" || mkfs.ext4 -F -L vmopdata "/dev/$DATA"
+      mkdir -p /mnt/data
+      grep -q vmopdata /etc/fstab || \
+        echo "LABEL=vmopdata /mnt/data ext4 defaults,nofail 0 2" \
+        >> /etc/fstab
+      mountpoint -q /mnt/data || mount /mnt/data
+      mkdir -p /var/lib/vmop-seed
+      head -c 8M /dev/urandom > /var/lib/vmop-seed/boot.bin
+      echo "boot $(date +%s%N)" > /var/lib/vmop-seed/boot.txt
+      head -c 8M /dev/urandom > /mnt/data/data.bin
+      echo "data $(date +%s%N)" > /mnt/data/data.txt
+      sha256sum /var/lib/vmop-seed/boot.* /mnt/data/data.* \
+        > /root/seed.sha256
+      sync
+      touch /root/seed.done
+runcmd:
+  - [/usr/local/bin/vmop-seed.sh]
+`
+
+// GetSecretYamlCloudConfigSeedData returns a cloud-config Secret that, in
+// addition to the default user, seeds checksummed random data on the boot disk
+// and on the first data disk.
+func GetSecretYamlCloudConfigSeedData(secret Secret) []byte {
+	return ToYAML(&corev1.Secret{
+		TypeMeta:   typeMeta("v1", "Secret"),
+		ObjectMeta: secretObjectMeta(secret),
+		StringData: map[string]string{
+			"user-data": seedDataCloudConfig,
+		},
+	})
+}
+
 // GetSecretYamlInlineCloudInitData returns a Secret with inline data
 // referenced by cloud-init bootstrap secret key selectors.
 func GetSecretYamlInlineCloudInitData(secret Secret) []byte {

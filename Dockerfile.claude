@@ -1,0 +1,306 @@
+# syntax=docker/dockerfile:1
+
+# Builds a developer image, based on the official Go image
+# (https://hub.docker.com/_/golang), with the Claude Code CLI
+# (https://www.npmjs.com/package/@anthropic-ai/claude-code) installed.
+#
+# Run (mount your project at /work):
+#   make image-run-claude
+#
+# Build the image with:
+#   make image-build-claude
+
+ARG BASE_IMAGE=golang:1.26.5
+
+# Build su-exec and the Claude Code CLI in a temp image.
+FROM ${BASE_IMAGE} as builder
+
+WORKDIR /tmp
+
+# Install packages.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    autoconf cargo gcc gettext libc-dev tcl xz-utils zlib1g-dev && \
+    apt-get remove -y git git-man
+
+# Install git from source to take advantage of relative paths with work trees.
+ARG GIT_VERSION=2.55.0
+RUN curl -L https://www.kernel.org/pub/software/scm/git/git-${GIT_VERSION}.tar.gz | \
+    tar xzf - && \
+    cd git-${GIT_VERSION} && \
+    make configure && \
+    ./configure --prefix=/usr/local && \
+    make all && \
+    make install
+
+# Install latest su-exec.
+RUN set -ex && \
+    curl -Lo /usr/local/bin/su-exec.c \
+    https://raw.githubusercontent.com/ncopa/su-exec/master/su-exec.c && \
+    gcc -Wall /usr/local/bin/su-exec.c -o/usr/local/bin/su-exec && \
+    chown root:root /usr/local/bin/su-exec && \
+    chmod 0755 /usr/local/bin/su-exec
+
+# Install node.js from the official upstream tarball since the one from apt
+# is too old to support claude.
+ARG NODE_VERSION=24.18.0
+ARG NODE_SHA256_ARM64=58c9520501f6ae2b52d5b210444e24b9d0c029a58c5011b797bc1fe7105886f6
+ARG NODE_SHA256_AMD64=55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742
+ARG TARGETARCH
+RUN set -eux && \
+    case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+        arm64) node_arch=arm64; node_sha256="${NODE_SHA256_ARM64}" ;; \
+        amd64) node_arch=x64; node_sha256="${NODE_SHA256_AMD64}" ;; \
+        *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    node_tarball="node-v${NODE_VERSION}-linux-${node_arch}.tar.xz" && \
+    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${node_tarball}" && \
+    echo "${node_sha256}  ${node_tarball}" | sha256sum -c - && \
+    tar -xJf "${node_tarball}" -C /usr/local --strip-components=1
+
+# Install claude.
+ARG CLAUDE_CODE_VERSION=2.1.207
+RUN npm install --global --allow-scripts="@anthropic-ai/claude-code" \
+        "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && \
+    install -Dm0755 \
+        "$(npm root -g)/@anthropic-ai/claude-code/bin/claude.exe" \
+        /out/claude
+
+# Build the final image.
+FROM ${BASE_IMAGE}
+
+# Install some basic dependencies.
+RUN apt-get update && \
+    apt-get install --yes --no-install-recommends vim && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create /home/claude/.profile.d/prompt.sh to make the default shell prompt
+# slightly more useful. The prompt will resemble the following:
+#
+# [16:52:02][2.675s][0]claude@f1f39409086f:work $
+#
+# In the above example, the parts are:
+#
+#     16:52:02 -- the UTC timestamp
+#       2.675s -- the duration of the previous command
+#            0 -- the exit code of the previous command
+#       claude -- the user name
+# f1f39409086f -- the host name
+#         work -- the current directory
+RUN mkdir -p /home/claude/.profile.d
+COPY <<'EOF' /home/claude/.profile.d/prompt.sh
+#!/bin/bash
+
+function timer_now_us {
+    local current_time="${EPOCHREALTIME}"
+    local seconds="${current_time%.*}"
+    local nanos="${current_time#*.}"
+    # Some `date` implementations don't support %N and print it back
+    # literally (e.g. "1699999999.N") -- fall back to 0 sub-second precision
+    # rather than failing arithmetic on a non-numeric value.
+    case $nanos in
+        *[!0-9]*) nanos=000000000 ;;
+    esac
+    REPLY="${seconds}${nanos:0:6}"
+}
+
+function timer_stop {
+    if [[ ${timer_command_active:-0} -ne 1 ]] || \
+       [[ -z ${timer_started_at_us:-} ]]; then
+        timer_show=0us
+        return
+    fi
+
+    timer_now_us
+    local delta_us=$((REPLY - timer_started_at_us))
+    local us=$((delta_us % 1000))
+    local ms=$(((delta_us / 1000) % 1000))
+    local s=$(((delta_us / 1000000) % 60))
+    local m=$(((delta_us / 60000000) % 60))
+    local h=$((delta_us / 3600000000))
+    if ((h > 0)); then timer_show=${h}h${m}m
+    elif ((m > 0)); then timer_show=${m}m${s}s
+    elif ((s >= 10)); then timer_show=${s}.$((ms / 100))s
+    elif ((s > 0)); then timer_show=${s}.$(printf %03d $ms)s
+    elif ((ms >= 100)); then timer_show=${ms}ms
+    elif ((ms > 0)); then timer_show=${ms}.$((us / 100))ms
+    else timer_show=${us}us
+    fi
+
+    unset timer_started_at_us
+    timer_command_active=0
+}
+
+function set_prompt {
+    local last_command=$1
+    timer_stop
+
+    # Use raw ANSI escapes, wrapped in \[ \] so the line-wrap width
+    # calculation doesn't count them as visible characters.
+    local white='\[\e[37m\]'
+    local bright_white='\[\e[97m\]'
+    local green='\[\e[32m\]'
+    local red='\[\e[31m\]'
+    local bold_on='\[\e[1m\]'
+    local bold_off='\[\e[22m\]'
+    local reset='\[\e[0m\]'
+
+    local exit_color=$green
+    if ((last_command != 0)); then
+        exit_color=$red
+    fi
+
+    PS1=""
+    PS1+="${white}[${bright_white}\t${white}]"
+    PS1+="[${bright_white}${timer_show}${white}]"
+    PS1+="[${exit_color}${last_command}${white}]"
+    PS1+="${green}\u${white}@${green}\h${white}:\W "
+    PS1+="${bold_on}\$${bold_off}${reset} "
+}
+
+function preexec {
+    # bash's DEBUG trap fires before *every* simple command, so guard
+    # with timer_command_active to only arm the timer on the first
+    # command of a new line, and skip the trap firing for PROMPT_COMMAND
+    # itself.
+    [[ "$BASH_COMMAND" == "$PROMPT_COMMAND" ]] && return
+    [[ ${timer_command_active:-0} -eq 1 ]] && return
+
+    timer_now_us
+    timer_started_at_us=$REPLY
+    timer_command_active=1
+}
+
+function precmd {
+    local last_command=$?
+    set_prompt "$last_command"
+}
+
+trap 'preexec' DEBUG
+PROMPT_COMMAND=precmd
+EOF
+
+RUN chmod 0755 /home/claude/.profile.d/prompt.sh
+COPY <<'EOF' /home/claude/.bashrc
+#!/bin/sh
+source "${HOME}/.profile.d/prompt.sh"
+EOF
+
+WORKDIR /work
+
+# Copy the entrypoint program into the image.
+COPY <<'EOF' /entrypoint.sh
+#!/bin/sh
+
+#
+# Entrypoint script for Claude Code container
+# Handles dynamic UID/GID mapping to match host user
+#
+
+set -e
+
+# Default user and group names.
+DEFAULT_USER_NAME="claude"
+DEFAULT_GROUP_NAME="claude"
+
+# Default to user 1000:1000 if not specified
+USER_UID="${USER_UID:-1000}"
+USER_GID="${USER_GID:-1000}"
+
+# If running as root (UID 0), stay as root
+if [ "${USER_UID}" -eq 0 ]; then
+    exec "$@"
+fi
+
+# Create group if it doesn't exist
+# First check if GID is already in use
+if ! getent group "${USER_GID}" >/dev/null 2>&1; then
+    GROUP_NAME="${DEFAULT_GROUP_NAME}"
+    groupadd \
+      --gid "${USER_GID}" \
+      "${GROUP_NAME}" 2>/dev/null || true
+else
+    # If GID exists but not with name 'DEFAULT_GROUP_NAME', use existing
+    # group.
+    EXISTING_GROUP=$(getent group "${USER_GID}" | cut -d: -f1)
+    if [ -n "${EXISTING_GROUP}" ] && \
+       [ "${EXISTING_GROUP}" != "claude" ]; then
+
+        GROUP_NAME="${EXISTING_GROUP}"
+    else
+        GROUP_NAME="${DEFAULT_GROUP_NAME}"
+    fi
+fi
+
+# Create user if it doesn't exist
+# First check if UID is already in use
+if ! getent passwd "${USER_UID}" >/dev/null 2>&1; then
+    USER_NAME="${DEFAULT_USER_NAME}"
+    useradd \
+        --uid "${USER_UID}" \
+        --gid "${USER_GID}" \
+        --home-dir "/home/${USER_NAME}" \
+        --shell /bin/sh \
+        --password '$6$LnPuGmAVavP.hmrp$KwHApOfqXJoH37Bgr4.OHFWt0MCIDqt/3NJXglNqjJyZDsbcA3ncC0c9..POlFpUPjjXRQz18oQ62jTe/Zsrc/' \
+        "${USER_NAME}" 2>/dev/null || true
+    chown -R "${USER_NAME}":"${GROUP_NAME}" /home/"${USER_NAME}"
+else
+    # If UID exists, use existing user
+    USER_NAME="$(getent passwd "${USER_UID}" | cut -d: -f1)"
+fi
+
+# Ensure config directory is accessible without modifying existing credential
+# files Only fix ownership of the directory itself, not its contents.
+if [ -d /claude ]; then
+    # Change ownership of the directory itself
+    chown "${USER_UID}:${USER_GID}" /claude 2>/dev/null || true
+    # Ensure it's writable
+    chmod 0755 /claude 2>/dev/null || true
+fi
+
+# Don't recursively chown work - files created by the container will
+# automatically have the correct ownership since we're running as
+# USER_UID:USER_GID. Only ensure the directory itself is accessible.
+if [ -d /work ]; then
+    chmod 0755 /work 2>/dev/null || true
+fi
+
+# Switch to the user and execute the command.
+# Use the actual username to ensure proper environment setup.
+# Set SHELL environment variable for Claude Code.
+export SHELL=/bin/bash
+
+exec su-exec "${USER_NAME}" "${@}"
+EOF
+
+RUN chmod 0755 /entrypoint.sh
+
+# Install git.
+COPY --from=builder --chown=root:root /usr/local/bin/git* /usr/local/bin/
+COPY --from=builder --chown=root:root /usr/local/bin/scalar /usr/local/bin/
+COPY --from=builder --chown=root:root /usr/local/libexec/git-core /usr/local/libexec/
+COPY --from=builder --chown=root:root /usr/local/share/git* /usr/local/share/
+COPY --from=builder --chown=root:root /usr/local/share/bash-completion /usr/local/share/
+COPY --from=builder --chown=root:root /usr/local/share/locale /usr/local/share/
+COPY --from=builder --chown=root:root /usr/local/share/perl5 /usr/local/share/
+
+# Install latest su-exec.
+COPY --from=builder --chown=root:root /usr/local/bin/su-exec /usr/local/bin/su-exec
+
+# Install the Claude Code CLI -- a self-contained native binary built by
+# the builder stage's npm install; no Node.js/npm runtime is required here.
+COPY --from=builder --chown=root:root /out/claude /usr/local/bin/claude
+
+# Do not let claude capture the mouse.
+ENV CLAUDE_CODE_DISABLE_MOUSE=1
+
+# Create a short-cut for executing claude with elevated permissions.
+COPY <<'EOF' /usr/local/bin/clauded
+#!/bin/sh
+exec claude --dangerously-skip-permissions "${@}"
+EOF
+RUN chmod 0755 /usr/local/bin/clauded
+
+
+ENTRYPOINT [ "/entrypoint.sh" ]
+CMD [ "/usr/local/bin/clauded" ]

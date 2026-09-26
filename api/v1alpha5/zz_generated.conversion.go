@@ -1494,11 +1494,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha6.VirtualMachineVolumeSource)(nil), (*VirtualMachineVolumeSource)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(a.(*v1alpha6.VirtualMachineVolumeSource), b.(*VirtualMachineVolumeSource), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineVolumeStatus)(nil), (*v1alpha6.VirtualMachineVolumeStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha6_VirtualMachineVolumeStatus(a.(*VirtualMachineVolumeStatus), b.(*v1alpha6.VirtualMachineVolumeStatus), scope)
 	}); err != nil {
@@ -1606,6 +1601,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineStatus)(nil), (*VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(a.(*v1alpha6.VirtualMachineStatus), b.(*VirtualMachineStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineVolumeSource)(nil), (*VirtualMachineVolumeSource)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(a.(*v1alpha6.VirtualMachineVolumeSource), b.(*VirtualMachineVolumeSource), scope)
 	}); err != nil {
 		return err
 	}
@@ -4991,7 +4991,17 @@ func autoConvert_v1alpha5_VirtualMachineSpec_To_v1alpha6_VirtualMachineSpec(in *
 	out.SuspendMode = v1alpha6.VirtualMachinePowerOpMode(in.SuspendMode)
 	out.NextRestartTime = in.NextRestartTime
 	out.RestartMode = v1alpha6.VirtualMachinePowerOpMode(in.RestartMode)
-	out.Volumes = *(*[]v1alpha6.VirtualMachineVolume)(unsafe.Pointer(&in.Volumes))
+	if in.Volumes != nil {
+		in, out := &in.Volumes, &out.Volumes
+		*out = make([]v1alpha6.VirtualMachineVolume, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha5_VirtualMachineVolume_To_v1alpha6_VirtualMachineVolume(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Volumes = nil
+	}
 	out.ReadinessProbe = (*v1alpha6.VirtualMachineReadinessProbeSpec)(unsafe.Pointer(in.ReadinessProbe))
 	if in.Advanced != nil {
 		in, out := &in.Advanced, &out.Advanced
@@ -5053,7 +5063,17 @@ func autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha5_VirtualMachineSpec(in *
 	out.SuspendMode = VirtualMachinePowerOpMode(in.SuspendMode)
 	out.NextRestartTime = in.NextRestartTime
 	out.RestartMode = VirtualMachinePowerOpMode(in.RestartMode)
-	out.Volumes = *(*[]VirtualMachineVolume)(unsafe.Pointer(&in.Volumes))
+	if in.Volumes != nil {
+		in, out := &in.Volumes, &out.Volumes
+		*out = make([]VirtualMachineVolume, len(*in))
+		for i := range *in {
+			if err := Convert_v1alpha6_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Volumes = nil
+	}
 	out.ReadinessProbe = (*VirtualMachineReadinessProbeSpec)(unsafe.Pointer(in.ReadinessProbe))
 	if in.Advanced != nil {
 		in, out := &in.Advanced, &out.Advanced
@@ -5300,7 +5320,17 @@ func Convert_v1alpha6_VirtualMachineTemplateSpec_To_v1alpha5_VirtualMachineTempl
 }
 
 func autoConvert_v1alpha5_VirtualMachineVolume_To_v1alpha6_VirtualMachineVolume(in *VirtualMachineVolume, out *v1alpha6.VirtualMachineVolume, s conversion.Scope) error {
-	*out = *(*v1alpha6.VirtualMachineVolume)(unsafe.Pointer(in))
+	out.Name = in.Name
+	if err := Convert_v1alpha5_VirtualMachineVolumeSource_To_v1alpha6_VirtualMachineVolumeSource(&in.VirtualMachineVolumeSource, &out.VirtualMachineVolumeSource, s); err != nil {
+		return err
+	}
+	out.Removable = (*bool)(unsafe.Pointer(in.Removable))
+	out.ApplicationType = v1alpha6.VolumeApplicationType(in.ApplicationType)
+	out.ControllerBusNumber = (*int32)(unsafe.Pointer(in.ControllerBusNumber))
+	out.ControllerType = v1alpha6.VirtualControllerType(in.ControllerType)
+	out.DiskMode = v1alpha6.VolumeDiskMode(in.DiskMode)
+	out.SharingMode = v1alpha6.VolumeSharingMode(in.SharingMode)
+	out.UnitNumber = (*int32)(unsafe.Pointer(in.UnitNumber))
 	return nil
 }
 
@@ -5310,7 +5340,17 @@ func Convert_v1alpha5_VirtualMachineVolume_To_v1alpha6_VirtualMachineVolume(in *
 }
 
 func autoConvert_v1alpha6_VirtualMachineVolume_To_v1alpha5_VirtualMachineVolume(in *v1alpha6.VirtualMachineVolume, out *VirtualMachineVolume, s conversion.Scope) error {
-	*out = *(*VirtualMachineVolume)(unsafe.Pointer(in))
+	out.Name = in.Name
+	if err := Convert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(&in.VirtualMachineVolumeSource, &out.VirtualMachineVolumeSource, s); err != nil {
+		return err
+	}
+	out.Removable = (*bool)(unsafe.Pointer(in.Removable))
+	out.ApplicationType = VolumeApplicationType(in.ApplicationType)
+	out.ControllerBusNumber = (*int32)(unsafe.Pointer(in.ControllerBusNumber))
+	out.ControllerType = VirtualControllerType(in.ControllerType)
+	out.DiskMode = VolumeDiskMode(in.DiskMode)
+	out.SharingMode = VolumeSharingMode(in.SharingMode)
+	out.UnitNumber = (*int32)(unsafe.Pointer(in.UnitNumber))
 	return nil
 }
 
@@ -5340,7 +5380,7 @@ func Convert_v1alpha6_VirtualMachineVolumeCryptoStatus_To_v1alpha5_VirtualMachin
 }
 
 func autoConvert_v1alpha5_VirtualMachineVolumeSource_To_v1alpha6_VirtualMachineVolumeSource(in *VirtualMachineVolumeSource, out *v1alpha6.VirtualMachineVolumeSource, s conversion.Scope) error {
-	*out = *(*v1alpha6.VirtualMachineVolumeSource)(unsafe.Pointer(in))
+	out.PersistentVolumeClaim = (*v1alpha6.PersistentVolumeClaimVolumeSource)(unsafe.Pointer(in.PersistentVolumeClaim))
 	return nil
 }
 
@@ -5350,13 +5390,9 @@ func Convert_v1alpha5_VirtualMachineVolumeSource_To_v1alpha6_VirtualMachineVolum
 }
 
 func autoConvert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(in *v1alpha6.VirtualMachineVolumeSource, out *VirtualMachineVolumeSource, s conversion.Scope) error {
-	*out = *(*VirtualMachineVolumeSource)(unsafe.Pointer(in))
+	out.PersistentVolumeClaim = (*PersistentVolumeClaimVolumeSource)(unsafe.Pointer(in.PersistentVolumeClaim))
+	// WARNING: in.VirtualMachineSnapshotDisk requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource is an autogenerated conversion function.
-func Convert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(in *v1alpha6.VirtualMachineVolumeSource, out *VirtualMachineVolumeSource, s conversion.Scope) error {
-	return autoConvert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(in, out, s)
 }
 
 func autoConvert_v1alpha5_VirtualMachineVolumeStatus_To_v1alpha6_VirtualMachineVolumeStatus(in *VirtualMachineVolumeStatus, out *v1alpha6.VirtualMachineVolumeStatus, s conversion.Scope) error {

@@ -794,7 +794,7 @@ func Convert_v1alpha6_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 
 	out.Volumes = nil
 	for i := range in.Volumes {
-		if in.Volumes[i].Type != vmopv1.VolumeTypeClassic {
+		if in.Volumes[i].Type != vmopv1.VolumeTypeClassic && in.Volumes[i].Type != vmopv1.VolumeTypeVirtualMachineSnapshotDisk {
 
 			// Only down-convert volume statuses if the volume is managed.
 			var vol VirtualMachineVolumeStatus

@@ -5,6 +5,7 @@ package common
 
 import (
 	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	storageV1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -53,6 +54,11 @@ func addSchemes(sc *runtime.Scheme) {
 	err = storageV1.AddToScheme(sc)
 	if err != nil {
 		e2eframework.Failf("unable add storage v1 to scheme: %v", err)
+	}
+
+	err = coordinationv1.AddToScheme(sc)
+	if err != nil {
+		e2eframework.Failf("unable add coordination v1 to scheme: %v", err)
 	}
 
 	err = cnsv1alpha1.AddToScheme(sc)

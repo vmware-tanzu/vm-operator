@@ -25,6 +25,16 @@ func GetSecretYamlCloudConfig(secret Secret) []byte {
 	return secretYaml
 }
 
+// GetSecretYamlCloudConfigSeedData returns a cloud-config Secret that, in
+// addition to the default user, seeds checksummed random data on the boot disk
+// and on the first data disk. See secretCloudConfigSeedData.yaml.in.
+func GetSecretYamlCloudConfigSeedData(secret Secret) []byte {
+	secretYamlIn := fixtures.ReadFile(secretFilePath, "secretCloudConfigSeedData.yaml.in")
+	secretYaml := ReadSecretTemplate(secret, secretYamlIn)
+
+	return secretYaml
+}
+
 func GetSecretYamlInlineCloudInitData(secret Secret) []byte {
 	secretYamlIn := fixtures.ReadFile(secretFilePath, "secretInlineCloudInitData.yaml.in")
 	secretYaml := ReadSecretTemplate(secret, secretYamlIn)

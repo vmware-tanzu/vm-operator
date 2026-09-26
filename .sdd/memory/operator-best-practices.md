@@ -222,6 +222,29 @@ if !apiequality.Semantic.DeepEqual(base.Spec, obj.Spec) ||
   types already are — `test/builder/fake.go` `KnownObjectTypes`) so the fake
   client enforces the spec/status split and catches a missing status write.
 
+### Same pattern through `pkg/patch.Helper`: `StatusOptimisticLocker`
+
+The fan-in problem above also shows up when the shared list lives on an object that is itself a **primary reconciled object of more than one controller**, going through `patch.Helper` rather than a direct `client.Patch`/`client.Status().Patch` call. There is no single call site to hand-edit in that case — `NewReconciler`/`Reconcile` in every controller calls the same shared helper — so `pkg/patch` exposes a marker interface instead of requiring every caller to duplicate the base/diff/skip/lock block:
+
+```go
+// StatusOptimisticLocker is implemented by API types whose status may be
+// independently read-modify-written by more than one controller.
+type StatusOptimisticLocker interface {
+    OptimisticallyLockStatus() bool
+}
+```
+
+A type that implements this (returning `true`) gets its status subresource patched with `client.MergeFromWithOptimisticLock` automatically, on every `patch.Helper.Patch` call, from any controller. `VirtualMachine` implements it because `Status.Volumes` is independently written by the `virtualmachine`, `volumebatch`, and `volume` controllers.
+
+**Which mechanism to reach for:**
+
+| Situation | Mechanism |
+|---|---|
+| Fanning out from your own reconcile to a child/side object you create or upsert directly (one specific call site) | Ad hoc `client.MergeFromWithOptimisticLock` at that call site — see `controllers/configtarget`'s owner-reference upsert onto `VirtualMachineConfigOptions`, and `controllers/virtualmachineconfigoptions`'s `Status.HardwareVersions` upsert onto `VirtualMachineGuestOptions` |
+| More than one controller treats the object as its own primary reconciled object via `patch.Helper` | Implement `pkg/patch.StatusOptimisticLocker` on the type — see `VirtualMachine` / `Status.Volumes` |
+
+Do **not** make every type implement this by default: the precondition is on the whole object, not the at-risk field, so any concurrent writer to *any* part of the object (an unrelated annotation, a different status field) forces a conflict on a type that doesn't actually have a second status writer — that conflict surfaces as a genuine reconcile error (not a free requeue) and rate-limited backoff, since the deferred `patchHelper.Patch` error becomes a plain returned error, not one of the `pkg/errors` sentinel types. Only opt in types that have a genuinely shared status list.
+
 ## VM Update Reconcile Order
 
 The `updateVirtualMachine` method in the vSphere provider follows a strict, intentional ordering. Each step depends on the state established by prior steps. Do NOT reorder these without understanding the dependencies:

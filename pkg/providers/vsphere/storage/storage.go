@@ -9,10 +9,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
@@ -92,8 +94,9 @@ func getVMStorageClassNamesAndPVCs(
 			pvc := &corev1.PersistentVolumeClaim{}
 			pvcKey := ctrlclient.ObjectKey{Name: claim.ClaimName, Namespace: vm.Namespace}
 			if err := client.Get(ctx, pvcKey, pvc); err != nil {
-				// TODO: If later we won't actually do placement, IMO this shouldn't be fatal. Need
-				// to rework the code a bit so this isn't as clunky.
+				if apierrors.IsNotFound(err) {
+					err = pkgerr.NoRequeueErrorf("%s", err.Error())
+				}
 				return nil, nil, err
 			}
 

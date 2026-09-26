@@ -395,11 +395,12 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	var currentRef vimtypes.ManagedObjectReference
 	if s := vmCtx.MoVM.Snapshot; s != nil {
 		if c := s.CurrentSnapshot; c != nil {
-			currentRef = ref.Reference()
+			currentRef = c.Reference()
 			logger = logger.WithValues("currentSnapshot", currentRef.Value)
 		}
 	}
-	logger = logger.WithValues("isCurrent", currentRef == *ref)
+	isCurrent := currentRef == *ref
+	logger = logger.WithValues("isCurrent", isCurrent)
 	vmCtx.Context = logr.NewContext(vmCtx.Context, logger)
 
 	logger.Info("Starting snapshot revert operation")
@@ -419,13 +420,24 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 		"snapshot revert in progress",
 	)
 
-	// Perform the actual snapshot revert
-	logger.V(4).Info("Starting vSphere snapshot revert operation")
-	if err := vs.performSnapshotRevert(
-		vmCtx, vcVM, ref, desiredSnapshotName); err != nil {
+	if isCurrent {
+		// The VM is already running on the desired snapshot. vCenter
+		// rejects a RevertToSnapshot call targeting the VM's current
+		// snapshot with "The operation is not allowed in the current
+		// state", so skip the vSphere-side revert task and fall through
+		// to restoring the VM's spec/metadata below to converge
+		// spec.currentSnapshotName.
+		logger.V(4).Info(
+			"Skipping vSphere snapshot revert operation, VM is already on desired snapshot")
+	} else {
+		// Perform the actual snapshot revert
+		logger.V(4).Info("Starting vSphere snapshot revert operation")
+		if err := vs.performSnapshotRevert(
+			vmCtx, vcVM, ref, desiredSnapshotName); err != nil {
 
-		return fmt.Errorf("failed to revert vSphere snapshot %q: %w",
-			desiredSnapshotName, err)
+			return fmt.Errorf("failed to revert vSphere snapshot %q: %w",
+				desiredSnapshotName, err)
+		}
 	}
 
 	// TODO (AKP): We will modify the snapshot workflow to always skip the

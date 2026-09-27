@@ -4,8 +4,8 @@
 
 // Package veeam is a minimal, test-only client for the Veeam Backup &
 // Replication (VBR) REST API. It covers only what the backup/restore E2E suite
-// needs: create a job for one VM, run it, find the restore point, restore the
-// VM, and clean up. See .sdd/specs/010-veeam-e2e-backup-restore/research.md
+// needs: register the vCenter, create a job for one VM, run it, find the
+// restore point, restore the VM, and clean up. See .sdd/specs/010-veeam-e2e-backup-restore/research.md
 // for the validated request/response shapes.
 package veeam
 

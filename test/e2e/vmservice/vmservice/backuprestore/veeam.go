@@ -35,6 +35,7 @@ import (
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/veeam"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
@@ -85,144 +86,151 @@ type SpecInput struct {
 // registers the result with RegisterVM. It also checks that a failed
 // RegisterVM of a restored VM raises the vCenter alarm and that a later
 // successful one clears it.
+//
+// The specs share one Veeam connection and register the testbed vCenter with
+// Veeam once, before the first spec, if it is not registered yet. A vCenter
+// the suite registered is removed again after the last spec.
 func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
-	var (
-		input           SpecInput
-		config          *e2econfig.E2EConfig
-		svClusterClient ctrlclient.Client
-		clusterProxy    *common.VMServiceClusterProxy
-		t               *testEnv
-	)
+	Context("Veeam", Label("veeam"), Ordered, ContinueOnFailure, func() {
+		var (
+			input           SpecInput
+			config          *e2econfig.E2EConfig
+			svClusterClient ctrlclient.Client
+			clusterProxy    *common.VMServiceClusterProxy
+			t               *testEnv
+		)
 
-	BeforeEach(func() {
-		input = inputGetter()
-		Expect(input.Config).ToNot(BeNil(), "Invalid argument. input.Config can't be nil when calling %s spec", specName)
-		Expect(input.Config.InfraConfig).ToNot(BeNil(), "Invalid argument. input.Config.InfraConfig can't be nil when calling %s spec", specName)
-		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
+		BeforeAll(func() {
+			input = inputGetter()
+			Expect(input.Config).ToNot(BeNil(), "Invalid argument. input.Config can't be nil when calling %s spec", specName)
+			Expect(input.Config.InfraConfig).ToNot(BeNil(), "Invalid argument. input.Config.InfraConfig can't be nil when calling %s spec", specName)
+			skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 
-		Expect(input.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.ClusterProxy can't be nil when calling %s spec", specName)
-		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
+			Expect(input.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.ClusterProxy can't be nil when calling %s spec", specName)
+			Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 
-		config = input.Config
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
-		svClusterClient = clusterProxy.GetClient()
+			config = input.Config
+			clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+			svClusterClient = clusterProxy.GetClient()
 
-		for _, fss := range []string{"EnvFSSVMServiceBackupRestore", "EnvFSSIncrementalRestore"} {
-			if !utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable(fss)) {
-				Skip(fmt.Sprintf("%s FSS is not enabled", config.GetVariable(fss)))
-			}
-		}
-
-		t = newTestEnv(ctx, input, clusterProxy)
-	})
-
-	It("Should restore a lost VM as a new VM and register it", Label("experimental"), func() {
-		vmName := fmt.Sprintf("%s-new-%s", specName, capiutil.RandomString(4))
-
-		moID, diskCount := t.restoreLostVM(ctx, vmName)
-
-		t.registerVM(ctx, moID)
-
-		vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, diskCount, clusterProxy, config, svClusterClient, input.WCPClient)
-	})
-
-	It("Should raise the RegisterVM alarm on failure and clear it on success", Label("experimental"), func() {
-		vimClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-		defer vcenter.LogoutVimClient(vimClient)
-
-		// Check for the alarm first so a vCenter without it does not pay for
-		// a backup and restore.
-		wcpAlarm := findRegisterVMAlarm(ctx, vimClient)
-		if wcpAlarm == nil {
-			Skip(registerVMAlarmName + " is not defined in this vCenter")
-		}
-
-		vmName := fmt.Sprintf("%s-alarm-%s", specName, capiutil.RandomString(4))
-
-		moID, diskCount := t.restoreLostVM(ctx, vmName)
-
-		verifyRegisterVMAlarm(ctx, t, vimClient, wcpAlarm, vmName, moID, diskCount)
-	})
-
-	It("Should restore an existing VM in place and register it", Label("experimental"), func() {
-		ns := input.WCPNamespaceName
-		vmName := fmt.Sprintf("%s-existing-%s", specName, capiutil.RandomString(4))
-		secretName := vmName + "-cloud-config"
-		secretYaml := manifestbuilders.GetSecretYamlCloudConfigSeedData(manifestbuilders.Secret{Namespace: ns, Name: secretName})
-
-		vm := t.createVM(ctx, vmName, secretYaml, secretName)
-
-		By("Wait for the guest to seed data on the boot and data disks")
-		vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
-		runGuestCmd(ctx, config, clusterProxy, ns, vmName, cmdSeedDone, outSeedDone)
-
-		By("Mark the VM resource and wait for the mark to reach the backup data")
-		setMarker(ctx, svClusterClient, vm, markerBeforeBackup)
-		waitForMarkerInBackup(ctx, config, clusterProxy, vm, markerBeforeBackup)
-
-		vm = waitForBackupReady(ctx, config, clusterProxy, ns, vmName)
-		oldVolumes := pvcNames(vm)
-
-		rp := t.backupVM(ctx, vm)
-
-		By("Diverge from the backup: delete the seeded data and change the mark")
-		runGuestCmd(ctx, config, clusterProxy, ns, vmName, cmdSeedDiverge, outSeedDiverge)
-		setMarker(ctx, svClusterClient, vm, markerAfterBackup)
-
-		By("Power off and pause the VM so VM Operator does not overwrite the restored ExtraConfig")
-		vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-
-		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
-		Expect(err).ToNot(HaveOccurred())
-
-		base := vm.DeepCopy()
-		metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, "true")
-		Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
-
-		t.restoreVM(ctx, rp, true, "vmop e2e restore to existing")
-
-		By("Register the restored VM, which keeps its managed object ID")
-		t.registerVM(ctx, vm.Status.UniqueID)
-
-		By("Verify the backed-up VM resource was applied")
-		Eventually(func(g Gomega) {
-			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
-			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(vm.Annotations).To(HaveKey(vmopv1.RestoredVMAnnotation))
-			g.Expect(vm.Annotations).To(HaveKeyWithValue(restoreMarkerAnnotation, markerBeforeBackup))
-			g.Expect(vm.Annotations).ToNot(HaveKey(vmopv1.PauseAnnotation))
-		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
-
-		// The superseded PVCs point at volumes the restore destroyed. They
-		// are marked for deletion but are held by the CNS PVC protection
-		// finalizer, so only assert that the deletion was requested.
-		By("Verify the PVCs of the overwritten VM were marked for deletion")
-		for _, name := range oldVolumes {
-			Eventually(func(g Gomega) {
-				pvc := &corev1.PersistentVolumeClaim{}
-				err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: name}, pvc)
-				if apierrors.IsNotFound(err) {
-					return
+			for _, fss := range []string{"EnvFSSVMServiceBackupRestore", "EnvFSSIncrementalRestore"} {
+				if !utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable(fss)) {
+					Skip(fmt.Sprintf("%s FSS is not enabled", config.GetVariable(fss)))
 				}
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(pvc.DeletionTimestamp).ToNot(BeNil(), "PVC %s/%s is not marked for deletion", ns, name)
-			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
-		}
+			}
 
-		DeferCleanup(func(ctx SpecContext) {
-			removePVCProtectionFinalizers(ctx, svClusterClient, ns, oldVolumes)
+			t = newTestEnv(ctx, input, clusterProxy)
+			t.ensureVCenterRegistered(ctx)
 		})
 
-		vmservice.VerifyPostRegisterVM(ctx, vmName, ns, nil, len(oldVolumes), clusterProxy, config, svClusterClient, input.WCPClient)
+		It("Should restore a lost VM as a new VM and register it", Label("experimental"), func() {
+			vmName := fmt.Sprintf("%s-new-%s", specName, capiutil.RandomString(4))
 
-		By("Verify the seeded data on both disks matches the backup")
-		runGuestCmd(ctx, config, clusterProxy, ns, vmName, cmdSeedVerify, outSeedVerified)
+			moID, diskCount := t.restoreLostVM(ctx, vmName)
+
+			t.registerVM(ctx, moID)
+
+			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, diskCount, clusterProxy, config, svClusterClient, input.WCPClient)
+		})
+
+		It("Should raise the RegisterVM alarm on failure and clear it on success", Label("experimental"), func() {
+			vimClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			defer vcenter.LogoutVimClient(vimClient)
+
+			// Check for the alarm first so a vCenter without it does not pay for
+			// a backup and restore.
+			wcpAlarm := findRegisterVMAlarm(ctx, vimClient)
+			if wcpAlarm == nil {
+				Skip(registerVMAlarmName + " is not defined in this vCenter")
+			}
+
+			vmName := fmt.Sprintf("%s-alarm-%s", specName, capiutil.RandomString(4))
+
+			moID, diskCount := t.restoreLostVM(ctx, vmName)
+
+			verifyRegisterVMAlarm(ctx, t, vimClient, wcpAlarm, vmName, moID, diskCount)
+		})
+
+		It("Should restore an existing VM in place and register it", Label("experimental"), func() {
+			ns := input.WCPNamespaceName
+			vmName := fmt.Sprintf("%s-existing-%s", specName, capiutil.RandomString(4))
+			secretName := vmName + "-cloud-config"
+			secretYaml := manifestbuilders.GetSecretYamlCloudConfigSeedData(manifestbuilders.Secret{Namespace: ns, Name: secretName})
+
+			vm := t.createVM(ctx, vmName, secretYaml, secretName)
+
+			By("Wait for the guest to seed data on the boot and data disks")
+			vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
+			runGuestCmd(ctx, config, clusterProxy, ns, vmName, cmdSeedDone, outSeedDone)
+
+			By("Mark the VM resource and wait for the mark to reach the backup data")
+			setMarker(ctx, svClusterClient, vm, markerBeforeBackup)
+			waitForMarkerInBackup(ctx, config, clusterProxy, vm, markerBeforeBackup)
+
+			vm = waitForBackupReady(ctx, config, clusterProxy, ns, vmName)
+			oldVolumes := pvcNames(vm)
+
+			rp := t.backupVM(ctx, vm)
+
+			By("Diverge from the backup: delete the seeded data and change the mark")
+			runGuestCmd(ctx, config, clusterProxy, ns, vmName, cmdSeedDiverge, outSeedDiverge)
+			setMarker(ctx, svClusterClient, vm, markerAfterBackup)
+
+			By("Power off and pause the VM so VM Operator does not overwrite the restored ExtraConfig")
+			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
+			Expect(err).ToNot(HaveOccurred())
+
+			base := vm.DeepCopy()
+			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, "true")
+			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
+
+			t.restoreVM(ctx, rp, true, "vmop e2e restore to existing")
+
+			By("Register the restored VM, which keeps its managed object ID")
+			t.registerVM(ctx, vm.Status.UniqueID)
+
+			By("Verify the backed-up VM resource was applied")
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vm.Annotations).To(HaveKey(vmopv1.RestoredVMAnnotation))
+				g.Expect(vm.Annotations).To(HaveKeyWithValue(restoreMarkerAnnotation, markerBeforeBackup))
+				g.Expect(vm.Annotations).ToNot(HaveKey(vmopv1.PauseAnnotation))
+			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+
+			// The superseded PVCs point at volumes the restore destroyed. They
+			// are marked for deletion but are held by the CNS PVC protection
+			// finalizer, so only assert that the deletion was requested.
+			By("Verify the PVCs of the overwritten VM were marked for deletion")
+			for _, name := range oldVolumes {
+				Eventually(func(g Gomega) {
+					pvc := &corev1.PersistentVolumeClaim{}
+					err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: name}, pvc)
+					if apierrors.IsNotFound(err) {
+						return
+					}
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(pvc.DeletionTimestamp).ToNot(BeNil(), "PVC %s/%s is not marked for deletion", ns, name)
+				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+			}
+
+			DeferCleanup(func(ctx SpecContext) {
+				removePVCProtectionFinalizers(ctx, svClusterClient, ns, oldVolumes)
+			})
+
+			vmservice.VerifyPostRegisterVM(ctx, vmName, ns, nil, len(oldVolumes), clusterProxy, config, svClusterClient, input.WCPClient)
+
+			By("Verify the seeded data on both disks matches the backup")
+			runGuestCmd(ctx, config, clusterProxy, ns, vmName, cmdSeedVerify, outSeedVerified)
+		})
 	})
 }
 
-// testEnv holds the per-test connections and settings shared by the steps of
-// a backup/restore test.
+// testEnv holds the connections and settings shared by the backup/restore
+// specs and their steps.
 type testEnv struct {
 	input        SpecInput
 	config       *e2econfig.E2EConfig
@@ -264,6 +272,45 @@ func newTestEnv(ctx context.Context, input SpecInput, clusterProxy *common.VMSer
 	t.linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, t.client, input.WCPNamespaceName, linuxImageDisplayName)
 
 	return t
+}
+
+// ensureVCenterRegistered registers the testbed vCenter with Veeam by its
+// PNID unless Veeam already manages it, so Veeam can see the test VMs. It
+// removes the registration after the last spec only if it added it: the
+// appliance is shared, and other runs may rely on an existing registration.
+// A failed registration fails the specs rather than skipping them, because
+// it means the appliance cannot reach the testbed.
+func (t *testEnv) ensureVCenterRegistered(ctx context.Context) {
+	server, err := t.vbr.FindManagedServer(ctx, t.vcPNID)
+	Expect(err).ToNot(HaveOccurred())
+
+	if server != nil {
+		// A registration left behind by an earlier testbed with the same PNID
+		// would otherwise surface later as a confusing FindVM or backup error.
+		Expect(server.Status).To(Equal(veeam.ManagedServerStatusAvailable),
+			"vCenter %s is registered with Veeam as managed server %s (%q) but is not available",
+			t.vcPNID, server.ID, server.Description)
+		framework.Logf("vCenter %s is already registered with Veeam as managed server %s", t.vcPNID, server.ID)
+
+		return
+	}
+
+	By(fmt.Sprintf("Register vCenter %s with Veeam", t.vcPNID))
+
+	added, err := t.vbr.RegisterVCenter(ctx, veeam.VCenterSpec{
+		Name:        t.vcPNID,
+		Username:    testbed.AdminUsername,
+		Password:    testbed.AdminPassword,
+		Description: fmt.Sprintf("Registered by the VM Operator E2E suite for vCenter %s, run %s.", t.vcPNID, t.runID),
+	}, t.waitOpts)
+	Expect(err).ToNot(HaveOccurred(), "failed to register vCenter %s with Veeam; the appliance must reach it on port 443 and its ESXi hosts on port 902", t.vcPNID)
+	framework.Logf("Registered vCenter %s with Veeam as managed server %s", t.vcPNID, added.ID)
+
+	DeferCleanup(func(ctx SpecContext) {
+		if err := t.vbr.UnregisterVCenter(ctx, added, t.waitOpts); err != nil {
+			framework.Logf("Failed to remove vCenter %s (%s) from Veeam: %v", added.Name, added.ID, err)
+		}
+	})
 }
 
 // createVM creates a powered-on VM with one user PVC from the given

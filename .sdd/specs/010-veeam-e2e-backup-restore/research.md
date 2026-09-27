@@ -69,9 +69,9 @@ All three restore workflows below are currently exercised in `test/e2e/vmservice
 - `POST /api/oauth2/token`, form-encoded `grant_type=password&username=..&password=..`, with the `x-api-version` header. `expires_in` is `900` seconds, so a client must refresh (or re-login) during long waits; the backup + restore + register sequence below alone takes ~5 minutes.
 - Every subsequent call carries `Authorization: Bearer <token>` and the same `x-api-version`.
 
-### One-time: make the vCenter known to Veeam
+### Make the vCenter known to Veeam
 
-Done once per vCenter (the appliance is shared; tests must never remove it). Idempotent check first: `GET /api/v1/backupInfrastructure/managedServers` and match on `name`.
+Done once per vCenter; the suite does it in `BeforeAll` (`RegisterVCenter`). The appliance is shared, so the suite never removes a registration it did not add. Idempotent check first: `GET /api/v1/backupInfrastructure/managedServers?typeFilter=ViHost` and match on `name` client-side, case-insensitively (`nameFilter` is a pattern match). Removal is `DELETE /api/v1/backupInfrastructure/managedServers/{id}` (an async session), then `DELETE /api/v1/credentials/{id}`.
 
 1. `POST /api/v1/credentials` — `{"type":"Standard","username":..,"password":..,"description":..}` → credential `id`.
 2. `POST /api/v1/connectionCertificate` — `{"serverName":"<vc-pnid>","type":"ViHost","credentialsId":..,"port":443}` → `certificate.thumbprint` (uppercase SHA-1, no colons). A hand-computed colon-separated SHA-1 or a SHA-256 thumbprint is rejected (`PartialChain`).

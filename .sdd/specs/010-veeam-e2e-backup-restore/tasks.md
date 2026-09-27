@@ -52,7 +52,7 @@
 
 - [x] T022a [vmop-4145] Register the specs under `Context("BACKUP-RESTORE", Label("backup-restore"))` in `vmservice_test.go`. Add `make e2e-backup-restore`, and exclude `backup-restore` from `e2e-smoke`, `e2e-core`, and `e2e-extended`.
 - [x] T022 [vmop-4145] Internal CI: add a dedicated, quarantined backup/restore suite (`LABEL_FILTER: "backup-restore"`) that sets the `VEEAM_*` and `E2E_RUN_ID` env values, and add `&& !backup-restore` to the existing suites' filters, including `experimental`. The testbed teardown and support-bundle jobs wait for the new suite, and it is added to the pipeline policy. CI pods are assumed to reach the appliance; if they cannot, the suite fails as `Unreachable` (T007).
-- [ ] T022b Register the testbed vCenter on the appliance when it is not already registered. CI provisions a new vCenter for each run, and `FindVM` fails when the appliance does not know the vCenter. Add it as a managed server by PNID, and on cleanup remove only a managed server (and credentials) that the suite added itself. Never touch a registration the suite did not create. See `research.md` for the registration calls.
+- [x] T022b Register the testbed vCenter on the appliance when it is not already registered. CI provisions a new vCenter for each run, and `FindVM` fails when the appliance does not know the vCenter. Add it as a managed server by PNID, and on cleanup remove only a managed server (and credentials) that the suite added itself. Never touch a registration the suite did not create. See `research.md` for the registration calls.
 - [x] T023 [vmop-4146] Skip gate in the suite's `BeforeEach` (T007).
 
 ## Phase 7 — Rollout and deprecation

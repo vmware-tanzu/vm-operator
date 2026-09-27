@@ -34,6 +34,11 @@ type fakeVBR struct {
 	// the last entry repeats.
 	sessionStates []veeam.Session
 	sessionPolls  int
+
+	// managedServers is what GET /backupInfrastructure/managedServers lists.
+	managedServers []map[string]any
+	// failAddServer makes POST /backupInfrastructure/managedServers fail.
+	failAddServer bool
 }
 
 func newFakeVBR(t *testing.T, versions ...string) (*fakeVBR, *httptest.Server) {
@@ -46,6 +51,10 @@ func newFakeVBR(t *testing.T, versions ...string) (*fakeVBR, *httptest.Server) {
 		bodies:   map[string]map[string]any{},
 		sessionStates: []veeam.Session{
 			{ID: "s1", State: veeam.SessionStateStopped, Result: veeam.SessionResult{Result: veeam.SessionResultSuccess}},
+		},
+		managedServers: []map[string]any{
+			{"id": "srv-existing", "name": "existing.example.com", "type": "ViHost", "credentialsId": "cred-existing"},
+			{"id": "srv-win", "name": "vc.example.com", "type": "WindowsHost"},
 		},
 	}
 	for _, v := range versions {
@@ -157,6 +166,27 @@ func (f *fakeVBR) serve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{"id": "s1", "state": "Starting"})
 	case path == "/api/v1/jobs/job-1" && r.Method == http.MethodDelete:
 		w.WriteHeader(http.StatusNoContent)
+	case path == "/api/v1/backupInfrastructure/managedServers" && r.Method == http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"data": f.managedServers})
+	case path == "/api/v1/backupInfrastructure/managedServers" && r.Method == http.MethodPost:
+		if f.failAddServer {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"message": "Remote certificate name mismatch"})
+			return
+		}
+
+		body := f.bodies[r.Method+" "+path]
+		f.managedServers = append(f.managedServers, map[string]any{
+			"id": "srv-1", "name": body["name"], "type": body["type"], "credentialsId": body["credentialsId"],
+		})
+		writeJSON(w, http.StatusCreated, map[string]any{"id": "s1", "state": "Starting"})
+	case path == "/api/v1/backupInfrastructure/managedServers/srv-1" && r.Method == http.MethodDelete:
+		writeJSON(w, http.StatusCreated, map[string]any{"id": "s1", "state": "Starting"})
+	case path == "/api/v1/credentials" && r.Method == http.MethodPost:
+		writeJSON(w, http.StatusCreated, map[string]any{"id": "cred-1"})
+	case path == "/api/v1/credentials/cred-1" && r.Method == http.MethodDelete:
+		w.WriteHeader(http.StatusNoContent)
+	case path == "/api/v1/connectionCertificate":
+		writeJSON(w, http.StatusCreated, map[string]any{"certificate": map[string]any{"thumbprint": "1FFB549DC6C6CFF4DA8923F3E640F88925D11704"}})
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -446,5 +476,82 @@ func TestJobName(t *testing.T) {
 	name := veeam.JobName("abc123", "my-vm")
 	if name != "vmop-e2e-abc123-my-vm" {
 		t.Errorf("unexpected job name %q", name)
+	}
+}
+
+func TestFindManagedServer(t *testing.T) {
+	_, srv := newFakeVBR(t, "1.3-rev2")
+	c := mustConnect(t, srv)
+
+	s, err := c.FindManagedServer(t.Context(), "EXISTING.example.com")
+	if err != nil || s == nil || s.ID != "srv-existing" {
+		t.Fatalf("FindManagedServer = %v, %v; want srv-existing", s, err)
+	}
+
+	// Only vSphere servers count: vc.example.com is listed as a Windows host.
+	for _, name := range []string{"vc.example.com", "existing"} {
+		if s, err := c.FindManagedServer(t.Context(), name); err != nil || s != nil {
+			t.Errorf("FindManagedServer(%q) = %v, %v; want nil", name, s, err)
+		}
+	}
+}
+
+func TestRegisterAndUnregisterVCenter(t *testing.T) {
+	f, srv := newFakeVBR(t, "1.3-rev2")
+	c := mustConnect(t, srv)
+	ctx := t.Context()
+
+	server, err := c.RegisterVCenter(ctx, veeam.VCenterSpec{
+		Name: "vc.example.com", Username: "admin", Password: "secret", Description: "e2e",
+	}, fastWait)
+	if err != nil {
+		t.Fatalf("RegisterVCenter: %v", err)
+	}
+
+	if server.ID != "srv-1" || server.CredentialsID != "cred-1" {
+		t.Errorf("unexpected managed server %+v", server)
+	}
+
+	if body := f.bodies["POST /api/v1/credentials"]; body["username"] != "admin" || body["password"] != "secret" {
+		t.Errorf("unexpected credentials body %v", body)
+	}
+
+	body := f.bodies["POST /api/v1/backupInfrastructure/managedServers"]
+	if body["type"] != "ViHost" || body["name"] != "vc.example.com" || body["credentialsId"] != "cred-1" ||
+		body["certificateThumbprint"] != "1FFB549DC6C6CFF4DA8923F3E640F88925D11704" {
+		t.Errorf("unexpected managed server body %v", body)
+	}
+
+	if err := c.UnregisterVCenter(ctx, server, fastWait); err != nil {
+		t.Fatalf("UnregisterVCenter: %v", err)
+	}
+
+	for _, req := range []string{
+		"DELETE /api/v1/backupInfrastructure/managedServers/srv-1",
+		"DELETE /api/v1/credentials/cred-1",
+	} {
+		if !f.saw(req) {
+			t.Errorf("expected request %q", req)
+		}
+	}
+
+	// A managed server that is already gone is not an error.
+	if err := c.UnregisterVCenter(ctx, veeam.ManagedServer{ID: "gone", CredentialsID: "gone"}, fastWait); err != nil {
+		t.Errorf("UnregisterVCenter of a missing server: %v", err)
+	}
+}
+
+func TestRegisterVCenterFailureRemovesCredentials(t *testing.T) {
+	f, srv := newFakeVBR(t, "1.3-rev2")
+	f.failAddServer = true
+	c := mustConnect(t, srv)
+
+	_, err := c.RegisterVCenter(t.Context(), veeam.VCenterSpec{Name: "10.0.0.1", Username: "admin", Password: "secret"}, fastWait)
+	if err == nil || !strings.Contains(err.Error(), "certificate name mismatch") {
+		t.Fatalf("expected the add error, got %v", err)
+	}
+
+	if !f.saw("DELETE /api/v1/credentials/cred-1") {
+		t.Error("the credentials created for a failed registration were not removed")
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachinereplicaset"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachineservice"
 )
 
@@ -332,6 +333,20 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			})
+		})
+	})
+
+	Context("VIRTUAL-MACHINE-REPLICASET", func() {
+		virtualmachinereplicaset.Spec(context.TODO(), func() virtualmachinereplicaset.SpecInput {
+			return virtualmachinereplicaset.SpecInput{
+				ClusterProxy:     svClusterProxy,
+				Config:           config,
+				WCPClient:        wcpClient,
+				ArtifactFolder:   artifactFolder,
+				SkipCleanup:      skipCleanup,
+				WCPNamespaceName: wcpNamespaceName,
+				LinuxVMName:      linuxVMName,
+			}
 		})
 	})
 

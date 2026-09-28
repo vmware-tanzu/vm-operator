@@ -55,6 +55,58 @@ func DeleteVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, nam
 	return client.Delete(ctx, virtualMachine)
 }
 
+func GetVirtualMachineReplicaSet(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1.VirtualMachineReplicaSet, error) {
+	replicaSet := &vmopv1.VirtualMachineReplicaSet{}
+
+	key := types.NamespacedName{
+		Namespace: ns,
+		Name:      name,
+	}
+
+	err := client.Get(ctx, key, replicaSet)
+	if err != nil {
+		return nil, err
+	}
+
+	return replicaSet, nil
+}
+
+func DeleteVirtualMachineReplicaSet(ctx context.Context, client ctrlclient.Client, ns, name string) error {
+	replicaSet := &vmopv1.VirtualMachineReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ns,
+			Name:      name,
+		},
+	}
+
+	return client.Delete(ctx, replicaSet)
+}
+
+// ListVirtualMachinesOwnedByReplicaSet returns the VirtualMachine objects in
+// ns that are controlled (owner reference, not just label) by the named
+// VirtualMachineReplicaSet.
+func ListVirtualMachinesOwnedByReplicaSet(ctx context.Context, client ctrlclient.Client, ns, replicaSetName string) ([]vmopv1.VirtualMachine, error) {
+	vmList := &vmopv1.VirtualMachineList{}
+	if err := client.List(ctx, vmList, ctrlclient.InNamespace(ns), ctrlclient.MatchingLabels{
+		vmopv1.VirtualMachineReplicaSetNameLabel: replicaSetName,
+	}); err != nil {
+		return nil, err
+	}
+
+	owned := make([]vmopv1.VirtualMachine, 0, len(vmList.Items))
+	for _, vm := range vmList.Items {
+		for _, ref := range vm.OwnerReferences {
+			if ref.Kind == "VirtualMachineReplicaSet" && ref.Name == replicaSetName &&
+				ref.Controller != nil && *ref.Controller {
+				owned = append(owned, vm)
+				break
+			}
+		}
+	}
+
+	return owned, nil
+}
+
 func DeleteVirtualMachineSnapshot(ctx context.Context, client ctrlclient.Client, ns, name string) error {
 	virtualMachineSnapshot := &vmopv1.VirtualMachineSnapshot{
 		ObjectMeta: metav1.ObjectMeta{

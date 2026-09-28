@@ -65,11 +65,13 @@ const (
 	pvcProtectionFinalizer = "cns.vmware.com/pvc-protection"
 
 	// Guest commands for the data written by the seed-data cloud-config.
-	cmdSeedDone     = "sudo test -f /root/seed.done && echo SEED-DONE"
+	// They run as the vmware user without sudo, which some images do not
+	// ship. The data disk is mounted at boot from /etc/fstab.
+	cmdSeedDone     = "test -f /var/lib/vmop-seed.done && echo SEED-DONE"
 	outSeedDone     = "SEED-DONE"
-	cmdSeedDiverge  = "sudo rm -f /var/lib/vmop-seed/boot.* /mnt/data/data.* && sync && echo SEED-DIVERGED"
+	cmdSeedDiverge  = "rm -f /var/lib/vmop-seed/boot.* /mnt/data/data.* && sync && echo SEED-DIVERGED"
 	outSeedDiverge  = "SEED-DIVERGED"
-	cmdSeedVerify   = "sudo mount -a && sudo sha256sum --quiet -c /root/seed.sha256 && echo SEED-VERIFIED"
+	cmdSeedVerify   = "mountpoint -q /mnt/data && sha256sum --quiet -c /var/lib/vmop-seed.sha256 && echo SEED-VERIFIED"
 	outSeedVerified = "SEED-VERIFIED"
 )
 

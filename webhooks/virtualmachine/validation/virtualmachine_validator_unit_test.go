@@ -159,6 +159,7 @@ func setAdminAnnotations(vm *vmopv1.VirtualMachine, suffix string) {
 	vm.Annotations[vmopv1.FailedOverVMAnnotation] = dummyFailedOverAnnVal + suffix
 	vm.Annotations[anno2extraconfig.ManagementProxyAllowListAnnotation] = dummyVmiName + suffix
 	vm.Annotations[anno2extraconfig.ManagementProxyWatermarkAnnotation] = dummyVmiName + suffix
+	vm.Annotations[pkgconst.DNSDefaultsAnnotationKey] = pkgconst.DNSDefaultsLegacy + suffix
 }
 
 func bypassUpgradeCheck(ctx *context.Context, objects ...metav1.Object) {
@@ -1423,6 +1424,7 @@ func unitTestsValidateCreate() {
 						field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.DNSDefaultsAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),
@@ -5607,6 +5609,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.DNSDefaultsAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),
@@ -5627,6 +5630,7 @@ func unitTestsValidateUpdate() { //nolint:gocyclo
 						field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyAllowListAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 						field.Forbidden(annotationPath.Key(anno2extraconfig.ManagementProxyWatermarkAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+						field.Forbidden(annotationPath.Key(pkgconst.DNSDefaultsAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 					),
 				},
 			),

@@ -343,6 +343,50 @@ These global settings are handled differently by each bootstrap provider:
 - **LinuxPrep/Sysprep**: Applied globally via GOSC
 - **vAppConfig**: Passed as properties; handling depends on guest implementation
 
+### Supervisor Default DNS Settings
+
+The Supervisor defines default nameservers and search domains. VM Operator may use them when a VM does not specify its own DNS settings. How they are applied depends on whether the Supervisor has the scoped DNS defaults capability activated.
+
+Some terms used below:
+
+- An interface is **static** when it has at least one static IP address, does not use DHCP, and is not on a network without IP address management.
+- The VM's **primary interface** is its first interface, and only when that interface is static and has a gateway (IPv4 or IPv6, where accepting Router Advertisements counts as an IPv6 gateway). A first interface that uses DHCP, has no IP address management, or has no gateway (including `gateway4: None` / `gateway6: None`) is not a primary interface, and then the VM has none. This matches the vSphere guest customization primary adapter.
+- An interface's **IP families** are those of its static IP addresses. Accepting Router Advertisements counts as IPv6.
+- A **TKG VM** is a VKS cluster node.
+
+**Without the capability (legacy behavior):**
+
+- **Cloud-Init**: Every interface that does not use DHCP gets the default nameservers, unless the interface or the VM specifies its own. TKG VMs also get the default search domains on those interfaces.
+- **LinuxPrep/Sysprep**: The default nameservers are applied globally via GOSC unless `spec.network.nameservers` is set. On Linux, GOSC uses the global nameservers in place of the DNS servers provided by DHCP.
+
+**With the capability (scoped behavior):**
+
+- **DNS in the VM spec** always takes precedence over the defaults. DNS specified on an interface takes precedence over `spec.network.nameservers` and `spec.network.searchDomains`. Those are applied only to static interfaces, and the nameservers only to interfaces of their IP family:
+  - **Cloud-Init**: `spec.network.nameservers` and `spec.network.searchDomains` are applied to every static interface that does not specify its own, unless `useGlobalNameserversAsDefault` or `useGlobalSearchDomainsAsDefault` is `false`. Interfaces that use DHCP or have no IP address management do not get them; to configure DNS on them, set `nameservers` or `searchDomains` on the interface.
+  - **LinuxPrep**: `spec.network.nameservers` and `spec.network.searchDomains` are applied globally.
+  - **Sysprep**: Windows sets DNS servers per adapter, so `spec.network.nameservers` is applied to every static adapter that does not specify its own. A per-adapter list replaces the DNS servers provided by DHCP, so to override them, set `nameservers` on that interface instead. `spec.network.searchDomains` is applied globally.
+- **The defaults** are applied only to the primary interface, and only when it does not otherwise get DNS from the VM spec. Nameservers and search domains each fall back separately. Since the defaults are often resolvers on other networks, only the default nameservers of the IP families the primary interface has a gateway for are applied; search domains are not filtered. To keep the defaults of an IP family off the primary interface, set `gateway4: None` or `gateway6: None`.
+  - **Cloud-Init**: the primary interface gets the default nameservers only when `spec.network.nameservers` is empty and the interface specifies none of its own. TKG VMs also get the default search domains under the same rule with `spec.network.searchDomains`; other VMs do not, as without the capability.
+  - **LinuxPrep**: Nameservers are global on Linux. So the default nameservers are applied globally when the VM has a primary interface and `spec.network.nameservers` is empty. GOSC uses them in place of the DNS servers provided by DHCP on any other interface that uses DHCP. The default search domains are not applied.
+  - **Sysprep**: the primary adapter gets the default nameservers only when `spec.network.nameservers` is empty and the adapter specifies none of its own, and the global GOSC DNS server list is not set. The default search domains are not applied.
+- DHCP interfaces and interfaces without IP address management never receive the defaults.
+
+The nameservers available to bootstrap templates are the same under both behaviors: `spec.network.nameservers`, falling back to the defaults.
+
+Status reports DNS differently under the two behaviors:
+
+- **Legacy**: `status.network.config.dns` reports the VM-level DNS, falling back to the defaults.
+- **Scoped**: `status.network.config.dns` reports the DNS that the bootstrap provider applies globally: for Cloud-Init, none, since Cloud-Init configures DNS only per interface; for LinuxPrep, the VM-level DNS or the default nameservers; for Sysprep, only the search domains, since Windows does not use global DNS servers. Nameservers applied to an adapter by Sysprep, and the defaults applied to the primary interface, are reported only on that interface. The one exception is when no bootstrap provider configures the guest network (for example vAppConfig only): then it reports the VM-level DNS, falling back to the defaults, so the guest can be configured by hand.
+
+Under both behaviors, `status.network.config.interfaces` shows the DNS applied to each interface.
+
+When the capability is activated, VM Operator records the behavior used for each VM in the `vmoperator.vmware.com/dns-defaults` annotation:
+
+- VMs that may have already been bootstrapped or booted, including restored, imported and failed-over VMs, get the value `legacy`, so their DNS configuration does not change.
+- New VMs get the value `scoped`.
+
+An administrator may set the annotation to `legacy` to restore the legacy behavior for a VM. Only privileged users may change this annotation. If the capability is deactivated, every VM uses the legacy behavior regardless of the annotation; VMs created while the capability is not activated are not annotated.
+
 ## Network Configuration Precedence
 
 When multiple sources specify network configuration, the precedence order is:

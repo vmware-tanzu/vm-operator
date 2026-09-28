@@ -170,6 +170,14 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// true, if nameservers is not provided, the global nameservers will be used
 	// instead.
 	//
+	// When the Supervisor supports scoped DNS defaults, the global
+	// nameservers are only used for an interface that has a static IP address.
+	// To configure nameservers for an interface that uses DHCP or is on a
+	// network without IP address management, specify them here.
+	//
+	// When using Sysprep and the interface uses DHCP, these nameservers
+	// override the nameservers provided by DHCP.
+	//
 	// Please note that Linux allows only three nameservers
 	// (https://linux.die.net/man/5/resolv.conf).
 	Nameservers []string `json:"nameservers,omitempty"`
@@ -193,6 +201,11 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// When using CloudInit and UseGlobalSearchDomainsAsDefault is either unset
 	// or true, if search domains is not provided, the global search domains
 	// will be used instead.
+	//
+	// When the Supervisor supports scoped DNS defaults, the global search
+	// domains are only used for an interface that has a static IP address.
+	// To configure search domains for an interface that uses DHCP or is on a
+	// network without IP address management, specify them here.
 	SearchDomains []string `json:"searchDomains,omitempty"`
 
 	// +optional
@@ -366,6 +379,24 @@ type VirtualMachineNetworkSpec struct {
 	// nameservers will be used when the per-interface nameservers is not
 	// provided.
 	//
+	// When the Supervisor supports scoped DNS defaults, Cloud-Init and
+	// Sysprep apply these nameservers only to each interface that has a static
+	// IP address and does not specify its own nameservers, and only the
+	// nameservers of the IP families of the interface. Sysprep applies them
+	// per network adapter since Windows configures DNS servers per adapter. To
+	// configure nameservers for an interface that uses DHCP, or to override
+	// the nameservers provided by DHCP with Sysprep, specify them on the
+	// interface instead.
+	//
+	// When these are not provided, the Supervisor's default nameservers may be
+	// used instead. When the Supervisor supports scoped DNS defaults, they are
+	// only applied to the VM's first interface, and only when it has a static
+	// IP address and a gateway, and does not have nameservers of its own. Only
+	// the default nameservers of the IP families the interface has a gateway
+	// for are applied. With LinuxPrep, which only supports global nameservers,
+	// they are applied globally, and override the nameservers from DHCP for
+	// any interface that uses DHCP.
+	//
 	// Please note that Linux allows only three nameservers
 	// (https://linux.die.net/man/5/resolv.conf).
 	Nameservers []string `json:"nameservers,omitempty"`
@@ -380,6 +411,17 @@ type VirtualMachineNetworkSpec struct {
 	// provider supports per-interface search domains. However, when Cloud-Init
 	// is used and UseGlobalSearchDomainsAsDefault is true, the global search
 	// domains will be used when the per-interface search domains is not provided.
+	//
+	// When the Supervisor supports scoped DNS defaults, Cloud-Init applies
+	// these search domains only to each interface that has a static IP
+	// address and does not specify its own search domains.
+	//
+	// When these are not provided, the Supervisor's default search domains may
+	// be used instead. When the Supervisor supports scoped DNS defaults, they
+	// are only applied to VMs that are Kubernetes cluster nodes using
+	// Cloud-Init, and only to the VM's first interface when it has a static IP
+	// address and a gateway, and does not have search domains of its own. They
+	// are not applied with LinuxPrep or Sysprep.
 	SearchDomains []string `json:"searchDomains,omitempty"`
 
 	// +optional

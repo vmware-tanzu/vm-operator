@@ -264,4 +264,29 @@ const (
 	// at the time the VM is deleted. Presence of the key is sufficient; the
 	// value is never inspected.
 	KeepOwnerRefAnnotationKey = "vmoperator.vmware.com/keep-owner-ref"
+
+	// DNSDefaultsAnnotationKey is an internal annotation that selects how the
+	// Supervisor's default DNS configuration is applied when bootstrapping a
+	// VM's guest networking. It is only consulted when the ScopedDNSDefaults
+	// capability is activated; otherwise the legacy behavior is always used.
+	//
+	// When the annotation is absent, VM Operator sets it to
+	// DNSDefaultsLegacy for a VM that has already been bootstrapped and to
+	// DNSDefaultsScoped otherwise, so the DNS configuration of existing VMs
+	// does not change. A privileged user may set it to DNSDefaultsLegacy to
+	// restore the legacy behavior for a VM. Any value other than
+	// DNSDefaultsScoped selects the legacy behavior.
+	DNSDefaultsAnnotationKey = "vmoperator.vmware.com/dns-defaults"
+
+	// DNSDefaultsLegacy is the value of DNSDefaultsAnnotationKey that selects
+	// the legacy behavior, where the default DNS configuration is applied to
+	// every interface without DNS configuration and to the global GOSC
+	// settings.
+	DNSDefaultsLegacy = "legacy"
+
+	// DNSDefaultsScoped is the value of DNSDefaultsAnnotationKey that selects
+	// the scoped behavior, where the default DNS configuration is applied only
+	// when the guest would otherwise have none, and then only to the VM's
+	// primary interface.
+	DNSDefaultsScoped = "scoped"
 )

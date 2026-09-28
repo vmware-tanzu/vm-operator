@@ -32,6 +32,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/linuxprep"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/sysprep"
 )
 
@@ -66,9 +67,18 @@ type BootstrapArgs struct {
 	UpdatedEthCards  bool
 	DomainName       string
 	HostName         string
-	DNSServers       []string
-	SearchSuffixes   []string
 	VLANs            []vmopv1.VirtualMachineNetworkVLANSpec
+
+	// DNSServers and SearchSuffixes are the global DNS configuration. They
+	// are applied to the global IP settings of a LinuxPrep or Sysprep
+	// customization spec, and reported in the VM's status.
+	DNSServers     []string
+	SearchSuffixes []string
+
+	// TemplateDNSServers are the resolved nameservers available to bootstrap
+	// templates: the VM-level nameservers, falling back to the Supervisor's
+	// default nameservers.
+	TemplateDNSServers []string
 }
 
 var (
@@ -84,28 +94,10 @@ func DoBootstrap( //nolint:gocyclo
 
 	vmCtx.Logger.V(4).Info("Reconciling bootstrap state")
 
-	bootstrap := vmCtx.VM.Spec.Bootstrap
+	bootstrap := getEffectiveBootstrapSpec(vmCtx.VM, config)
 	if bootstrap == nil {
-		var cdRomSpecs []vmopv1.VirtualMachineCdromSpec
-		if hw := vmCtx.VM.Spec.Hardware; hw != nil {
-			cdRomSpecs = hw.Cdrom
-		}
-
-		// V1ALPHA1: We had always defaulted to LinuxPrep w/ HwClockUTC=true.
-		// Now, try to just do that on Linux VMs.
-		// Skip if the VM has a CD-ROM as the Linux ISO-type image may not have
-		// the necessary tools to do the default LinuxPrep bootstrap.
-		if len(cdRomSpecs) > 0 ||
-			vimtypes.GuestIDToFamily(config.GuestId) != vimtypes.VirtualMachineGuestOsFamilyLinuxGuest {
-			vmCtx.Logger.V(6).Info("no bootstrap provider specified")
-			return nil
-		}
-
-		bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-			LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
-				HardwareClockIsUTC: vimtypes.NewBool(true),
-			},
-		}
+		vmCtx.Logger.V(6).Info("no bootstrap provider specified")
+		return nil
 	}
 
 	if bootstrap.Disabled {
@@ -242,6 +234,37 @@ func DoBootstrap( //nolint:gocyclo
 	return retErr
 }
 
+// getEffectiveBootstrapSpec returns the bootstrap spec used to bootstrap the
+// VM, or nil if the VM is not bootstrapped.
+func getEffectiveBootstrapSpec(
+	vm *vmopv1.VirtualMachine,
+	config *vimtypes.VirtualMachineConfigInfo) *vmopv1.VirtualMachineBootstrapSpec {
+
+	if bootstrap := vm.Spec.Bootstrap; bootstrap != nil {
+		return bootstrap
+	}
+
+	var cdRomSpecs []vmopv1.VirtualMachineCdromSpec
+	if hw := vm.Spec.Hardware; hw != nil {
+		cdRomSpecs = hw.Cdrom
+	}
+
+	// V1ALPHA1: We had always defaulted to LinuxPrep w/ HwClockUTC=true.
+	// Now, try to just do that on Linux VMs.
+	// Skip if the VM has a CD-ROM as the Linux ISO-type image may not have
+	// the necessary tools to do the default LinuxPrep bootstrap.
+	if len(cdRomSpecs) > 0 || config == nil ||
+		vimtypes.GuestIDToFamily(config.GuestId) != vimtypes.VirtualMachineGuestOsFamilyLinuxGuest {
+		return nil
+	}
+
+	return &vmopv1.VirtualMachineBootstrapSpec{
+		LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
+			HardwareClockIsUTC: new(true),
+		},
+	}
+}
+
 // GetBootstrapArgs returns the information used to bootstrap the VM via
 // one of the many, possible bootstrap engines.
 func GetBootstrapArgs(
@@ -250,14 +273,6 @@ func GetBootstrapArgs(
 	bootstraps []network.Bootstrap,
 	updatedEthCards bool,
 	bootstrapData BootstrapData) (BootstrapArgs, error) {
-
-	var bootstrap vmopv1.VirtualMachineBootstrapSpec
-	if bs := ctx.VM.Spec.Bootstrap; bs != nil {
-		bootstrap = *bs
-	}
-
-	isCloudInit := bootstrap.CloudInit != nil
-	isGOSC := bootstrap.LinuxPrep != nil || bootstrap.Sysprep != nil
 
 	bsa := BootstrapArgs{
 		BootstrapData:   bootstrapData,
@@ -276,6 +291,265 @@ func GetBootstrapArgs(
 		bsa.DNSServers = networkSpec.Nameservers
 		bsa.SearchSuffixes = networkSpec.SearchDomains
 		bsa.VLANs = networkSpec.VLANs
+	}
+
+	var err error
+	if useScopedDNSDefaults(ctx) {
+		err = applyScopedDNSDefaults(ctx, k8sClient, &bsa)
+	} else {
+		err = applyLegacyDNSDefaults(ctx, k8sClient, &bsa)
+	}
+	if err != nil {
+		return BootstrapArgs{}, err
+	}
+
+	return bsa, nil
+}
+
+// existingGuestAnnotationKeys are the annotations that indicate the VM's guest
+// may have already been bootstrapped or booted.
+var existingGuestAnnotationKeys = []string{
+	pkgconst.BootstrapHashConfigSpecAnnotationKey,
+	pkgconst.BootstrapHashCustomSpecAnnotationKey,
+	vmopv1.FirstBootDoneAnnotation,
+	vmopv1.RestoredVMAnnotation,
+	vmopv1.ImportedVMAnnotation,
+	vmopv1.FailedOverVMAnnotation,
+}
+
+// useScopedDNSDefaults returns true if the Supervisor's default DNS
+// configuration should be applied to the VM with the scoped behavior. The
+// legacy behavior is always used when the ScopedDNSDefaults capability is not
+// activated. Otherwise, the mode is selected by the VM's
+// DNSDefaultsAnnotationKey annotation. When the VM does not have the
+// annotation, it is set so that a VM whose guest may have already been
+// bootstrapped keeps the legacy behavior.
+func useScopedDNSDefaults(ctx pkgctx.VirtualMachineContext) bool {
+	if !pkgcfg.FromContext(ctx).Features.ScopedDNSDefaults {
+		return false
+	}
+
+	vm := ctx.VM
+
+	mode := vm.Annotations[pkgconst.DNSDefaultsAnnotationKey]
+	if mode == "" {
+		mode = pkgconst.DNSDefaultsScoped
+		for _, k := range existingGuestAnnotationKeys {
+			if _, ok := vm.Annotations[k]; ok {
+				mode = pkgconst.DNSDefaultsLegacy
+				break
+			}
+		}
+
+		if vm.Annotations == nil {
+			vm.Annotations = map[string]string{}
+		}
+		vm.Annotations[pkgconst.DNSDefaultsAnnotationKey] = mode
+	}
+
+	return mode == pkgconst.DNSDefaultsScoped
+}
+
+// applyScopedDNSDefaults applies the VM-level DNS configuration only to the
+// VM's static interfaces, and the Supervisor's default DNS configuration only
+// to the VM's primary interface, as determined by network.PrimaryInterface,
+// and only when the VM's spec does not provide DNS configuration for it.
+// Nameservers are only applied to an interface when they are of its IP
+// families. The Supervisor's default nameservers, which are often resolvers
+// on other networks, are only applied for the IP families that the primary
+// interface has a gateway for.
+//
+//   - CloudInit: each interface's own DNS configuration is applied to it. The
+//     VM-level DNS configuration is applied to each static interface that
+//     does not have its own, when the matching UseGlobal*AsDefault is unset
+//     or true. The primary interface gets the Supervisor's default
+//     nameservers when there are no VM-level nameservers and it does not have
+//     its own. Search domains are handled the same, but only for TKG VMs.
+//   - LinuxPrep: DNS configuration is only global, and GOSC treats the global
+//     DNS servers as an override of the DNS servers from DHCP. The VM-level
+//     DNS configuration is applied globally. Otherwise, the Supervisor's
+//     default nameservers are applied globally when the VM has a primary
+//     interface. The Supervisor's default search domains are not applied.
+//   - Sysprep: Windows does not use the global DNS servers, so nameservers
+//     are applied per-adapter and the global DNS servers are not set. Each
+//     adapter's own nameservers are applied to it. The VM-level nameservers
+//     are applied to each static adapter that does not have its own, since
+//     the per-adapter list overrides the DNS servers from DHCP. The primary
+//     adapter gets the Supervisor's default nameservers when there are no
+//     VM-level nameservers and it does not have its own. Search suffixes are
+//     global: the VM-level search domains. The Supervisor's default search
+//     domains are not applied.
+//
+// The nameservers made available to templates are the VM-level nameservers,
+// or else the Supervisor's defaults. The global DNS configuration is
+// what the bootstrap engine applies globally, which is none for CloudInit, or
+// the resolved configuration when no bootstrap engine configures the guest's
+// network.
+func applyScopedDNSDefaults( //nolint:gocyclo
+	ctx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	bsa *BootstrapArgs) error {
+
+	var (
+		isCloudInit, isLinuxPrep, isSysprep bool
+		applyVMNS, applyVMSS                bool
+	)
+
+	// The validation webhook only allows one of CloudInit, LinuxPrep, or
+	// Sysprep.
+	if bs := getEffectiveBootstrapSpec(ctx.VM, ctx.MoVM.Config); bs != nil && !bs.Disabled {
+		isCloudInit = bs.CloudInit != nil
+		isLinuxPrep = bs.LinuxPrep != nil
+		isSysprep = bs.Sysprep != nil
+
+		switch {
+		case isCloudInit:
+			applyVMNS = ptr.DerefWithDefault(bs.CloudInit.UseGlobalNameserversAsDefault, true)
+			applyVMSS = ptr.DerefWithDefault(bs.CloudInit.UseGlobalSearchDomainsAsDefault, true)
+		case isSysprep:
+			// Windows configures DNS servers per adapter, while its search
+			// suffixes are global.
+			applyVMNS = true
+		}
+	}
+	configuresGuestNetwork := isCloudInit || isLinuxPrep || isSysprep
+
+	vmNS, vmSS := bsa.DNSServers, bsa.SearchSuffixes
+	bootstraps := bsa.NetBootstraps
+
+	// globalNS and globalSS are the VM-level DNS configuration.
+	globalNS, globalSS := vmNS, vmSS
+
+	// Apply the VM-level DNS configuration to each static interface that
+	// does not have its own. DNS configuration for a DHCP or NoIPAM
+	// interface must be specified on the interface.
+	for i := range bootstraps {
+		b := &bootstraps[i]
+		if !b.IsStatic() {
+			continue
+		}
+		if applyVMNS && len(vmNS) > 0 && len(b.Nameservers) == 0 {
+			ipv4, ipv6 := b.AddressFamilies()
+			b.Nameservers = network.FilterNameserversByFamily(vmNS, ipv4, ipv6)
+		}
+		if applyVMSS && len(b.SearchDomains) == 0 {
+			b.SearchDomains = vmSS
+		}
+	}
+
+	missingSearches := slices.ContainsFunc(bootstraps, func(b network.Bootstrap) bool {
+		return b.IsStatic() && len(b.SearchDomains) == 0
+	})
+
+	primary := network.PrimaryInterface(bootstraps)
+
+	// Determine where the Supervisor's defaults are applied. As before the
+	// ScopedDNSDefaults capability, the Supervisor's default search domains
+	// are only applied to TKG VMs, which use CloudInit, and never by GOSC.
+	var (
+		// Nameservers and search domains for the primary interface.
+		applyNS, applySD bool
+		// The global DNS servers.
+		applyGlobalNS bool
+	)
+	if primary != nil {
+		switch {
+		case isCloudInit:
+			applyNS = len(vmNS) == 0 && len(primary.Nameservers) == 0
+			applySD = kubeutil.HasCAPILabels(ctx.VM.Labels) &&
+				len(vmSS) == 0 && len(primary.SearchDomains) == 0
+		case isLinuxPrep:
+			// Only the primary interface is considered, even though the
+			// global DNS servers also override the DNS servers from DHCP for
+			// any other interface.
+			applyGlobalNS = len(globalNS) == 0
+		case isSysprep:
+			applyNS = len(vmNS) == 0 && len(primary.Nameservers) == 0
+		}
+	}
+
+	// Only read the ConfigMap when a default is applied, or to resolve the
+	// DNS configuration for templates and status. Templates always fall back
+	// to the Supervisor's default nameservers, even when every interface has
+	// its own, so that templates that index them keep rendering.
+	var cmNS, cmSS []string
+	if applyNS || applySD || applyGlobalNS ||
+		(!isCloudInit && len(globalNS) == 0) ||
+		(!configuresGuestNetwork && missingSearches && len(globalSS) == 0) {
+
+		var err error
+		cmNS, cmSS, err = config.GetDNSInformationFromConfigMap(ctx, k8sClient)
+		if err != nil && ctrlclient.IgnoreNotFound(err) != nil {
+			// This ConfigMap doesn't exist in certain test envs.
+			return err
+		}
+	}
+
+	resolvedNS, resolvedSS := globalNS, globalSS
+	if len(resolvedNS) == 0 {
+		resolvedNS = cmNS
+	}
+	if len(resolvedSS) == 0 {
+		resolvedSS = cmSS
+	}
+	bsa.TemplateDNSServers = resolvedNS
+
+	// Only apply the Supervisor's default nameservers of the IP families the
+	// primary interface has a gateway for.
+	var primaryCMNS []string
+	if primary != nil {
+		ipv4, ipv6 := primary.GatewayFamilies()
+		primaryCMNS = network.FilterNameserversByFamily(cmNS, ipv4, ipv6)
+
+		if applyNS {
+			primary.Nameservers = primaryCMNS
+		}
+		if applySD {
+			primary.SearchDomains = cmSS
+		}
+	}
+
+	// Set the global DNS configuration that the bootstrap engine applies. Any
+	// configuration applied to an interface is reported in the interface's
+	// status.
+	switch {
+	case isCloudInit:
+		// CloudInit does not have a global DNS configuration, so all of it is
+		// reported per-interface.
+		bsa.DNSServers, bsa.SearchSuffixes = nil, nil
+	case isLinuxPrep:
+		bsa.DNSServers, bsa.SearchSuffixes = globalNS, globalSS
+		if applyGlobalNS {
+			bsa.DNSServers = primaryCMNS
+		}
+	case isSysprep:
+		bsa.DNSServers, bsa.SearchSuffixes = nil, globalSS
+	default:
+		bsa.DNSServers, bsa.SearchSuffixes = resolvedNS, resolvedSS
+	}
+
+	return nil
+}
+
+// applyLegacyDNSDefaults applies the Supervisor's default DNS configuration
+// to the VM as it had always been done prior to the ScopedDNSDefaults
+// capability. This must not be changed.
+func applyLegacyDNSDefaults(
+	ctx pkgctx.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	bsa *BootstrapArgs) error {
+
+	var bootstrap vmopv1.VirtualMachineBootstrapSpec
+	if bs := ctx.VM.Spec.Bootstrap; bs != nil {
+		bootstrap = *bs
+	}
+
+	isCloudInit := bootstrap.CloudInit != nil
+	isGOSC := bootstrap.LinuxPrep != nil || bootstrap.Sysprep != nil
+	bootstraps := bsa.NetBootstraps
+
+	if ci := bootstrap.CloudInit; ci != nil {
+		applyLegacyVMDNSToInterfaces(ci, bsa)
 	}
 
 	// If the VM is missing DNS info - that is, it did not specify DNS for the
@@ -309,7 +583,7 @@ func GetBootstrapArgs(
 		ns, ss, err := config.GetDNSInformationFromConfigMap(ctx, k8sClient)
 		if err != nil && ctrlclient.IgnoreNotFound(err) != nil {
 			// This ConfigMap doesn't exist in certain test envs.
-			return BootstrapArgs{}, err
+			return err
 		}
 
 		if len(bsa.DNSServers) == 0 {
@@ -345,7 +619,30 @@ func GetBootstrapArgs(
 		}
 	}
 
-	return bsa, nil
+	bsa.TemplateDNSServers = bsa.DNSServers
+
+	return nil
+}
+
+// applyLegacyVMDNSToInterfaces applies the VM-level DNS configuration to
+// every interface that does not specify its own, unless disabled by the
+// CloudInit spec, as it had always been done prior to the ScopedDNSDefaults
+// capability.
+func applyLegacyVMDNSToInterfaces(
+	ci *vmopv1.VirtualMachineBootstrapCloudInitSpec,
+	bsa *BootstrapArgs) {
+
+	applyVMNS := ptr.DerefWithDefault(ci.UseGlobalNameserversAsDefault, true)
+	applyVMSS := ptr.DerefWithDefault(ci.UseGlobalSearchDomainsAsDefault, true)
+	for i := range bsa.NetBootstraps {
+		b := &bsa.NetBootstraps[i]
+		if applyVMNS && len(b.Nameservers) == 0 {
+			b.Nameservers = bsa.DNSServers
+		}
+		if applyVMSS && len(b.SearchDomains) == 0 {
+			b.SearchDomains = bsa.SearchSuffixes
+		}
+	}
 }
 
 func doReconfigure(

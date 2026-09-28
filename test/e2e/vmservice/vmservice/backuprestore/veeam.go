@@ -455,6 +455,12 @@ func clearExtensionCompatConstraints(ctx context.Context, clusterProxy *common.V
 	vimClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 	defer vcenter.LogoutVimClient(vimClient)
 
+	// Speak the newest API version vCenter serves, as VM Operator does. A
+	// development vCenter may only expose the constraints in an internal
+	// version newer than the release version govmomi defaults to, and answers
+	// InvalidProperty otherwise.
+	Expect(vimClient.UseServiceVersion()).To(Succeed())
+
 	vmRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: moID}
 
 	var vmMO mo.VirtualMachine

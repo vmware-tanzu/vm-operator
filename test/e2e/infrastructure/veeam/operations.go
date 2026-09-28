@@ -385,11 +385,43 @@ func (c *Client) DeleteJob(ctx context.Context, jobID string, opts WaitOptions) 
 		}
 	}
 
-	if err := c.do(ctx, "DELETE", "/api/v1/jobs/"+jobID, nil, nil); err != nil && !IsNotFound(err) {
+	switch err := c.do(ctx, "DELETE", "/api/v1/jobs/"+jobID, nil, nil); {
+	case IsNotFound(err):
+	case err != nil:
 		errs = append(errs, fmt.Errorf("failed to delete veeam job %s: %w", jobID, err))
+	default:
+		if err := c.waitForJobGone(ctx, jobID, opts); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	return errors.Join(errs...)
+}
+
+// waitForJobGone polls a deleted job until VBR no longer lists it. VBR accepts
+// the DELETE before it has removed the job, and until then it refuses to
+// remove the vCenter the job backs up.
+func (c *Client) waitForJobGone(ctx context.Context, jobID string, opts WaitOptions) error {
+	deadline := time.Now().Add(opts.Timeout)
+
+	for {
+		err := c.do(ctx, "GET", "/api/v1/jobs/"+jobID, nil, nil)
+
+		switch {
+		case IsNotFound(err):
+			return nil
+		case err != nil:
+			return fmt.Errorf("failed to wait for veeam job %s to be deleted: %w", jobID, err)
+		case time.Now().After(deadline):
+			return fmt.Errorf("veeam job %s still exists %s after it was deleted", jobID, opts.Timeout)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(opts.Interval):
+		}
+	}
 }
 
 // JobName returns the name of the backup job the E2E suite creates for a VM.

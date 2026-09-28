@@ -39,6 +39,11 @@ type fakeVBR struct {
 	managedServers []map[string]any
 	// failAddServer makes POST /backupInfrastructure/managedServers fail.
 	failAddServer bool
+
+	// jobDeleted is set by DELETE /jobs/job-1. GET /jobs/job-1 still returns
+	// the job jobGetsAfterDelete times after that, as VBR removes it lazily.
+	jobDeleted         bool
+	jobGetsAfterDelete int
 }
 
 func newFakeVBR(t *testing.T, versions ...string) (*fakeVBR, *httptest.Server) {
@@ -165,7 +170,19 @@ func (f *fakeVBR) serve(w http.ResponseWriter, r *http.Request) {
 	case path == "/api/v1/backups/b1" && r.Method == http.MethodDelete:
 		writeJSON(w, http.StatusCreated, map[string]any{"id": "s1", "state": "Starting"})
 	case path == "/api/v1/jobs/job-1" && r.Method == http.MethodDelete:
+		f.jobDeleted = true
 		w.WriteHeader(http.StatusNoContent)
+	case path == "/api/v1/jobs/job-1" && r.Method == http.MethodGet:
+		if f.jobDeleted && f.jobGetsAfterDelete == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		if f.jobDeleted {
+			f.jobGetsAfterDelete--
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"id": "job-1", "name": "n"})
 	case path == "/api/v1/backupInfrastructure/managedServers" && r.Method == http.MethodGet:
 		writeJSON(w, http.StatusOK, map[string]any{"data": f.managedServers})
 	case path == "/api/v1/backupInfrastructure/managedServers" && r.Method == http.MethodPost:
@@ -447,6 +464,7 @@ func TestWaitForSession(t *testing.T) {
 
 func TestDeleteJob(t *testing.T) {
 	f, srv := newFakeVBR(t, "1.3-rev2")
+	f.jobGetsAfterDelete = 2
 	c := mustConnect(t, srv)
 
 	if err := c.DeleteJob(t.Context(), "job-1", fastWait); err != nil {
@@ -462,6 +480,11 @@ func TestDeleteJob(t *testing.T) {
 		}
 	}
 
+	// DeleteJob returns only once VBR no longer lists the job.
+	if f.jobGetsAfterDelete != 0 {
+		t.Errorf("DeleteJob returned while VBR still listed the job")
+	}
+
 	if f.saw("DELETE /api/v1/backups/b-other?fromDB=false&includeGFS=true") {
 		t.Error("deleted a backup that belongs to another job")
 	}
@@ -469,6 +492,19 @@ func TestDeleteJob(t *testing.T) {
 	// A job that is already gone is not an error.
 	if err := c.DeleteJob(t.Context(), "gone", fastWait); err != nil {
 		t.Errorf("DeleteJob of a missing job: %v", err)
+	}
+}
+
+func TestDeleteJobTimesOutWhileJobRemains(t *testing.T) {
+	f, srv := newFakeVBR(t, "1.3-rev2")
+	f.jobGetsAfterDelete = 1 << 30
+	c := mustConnect(t, srv)
+
+	opts := veeam.WaitOptions{Timeout: 20 * time.Millisecond, Interval: time.Millisecond}
+
+	err := c.DeleteJob(t.Context(), "job-1", opts)
+	if err == nil || !strings.Contains(err.Error(), "still exists") {
+		t.Fatalf("expected a timeout error, got %v", err)
 	}
 }
 

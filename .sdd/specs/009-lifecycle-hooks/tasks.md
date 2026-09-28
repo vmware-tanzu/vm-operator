@@ -17,7 +17,7 @@ implementation starts").
 - [ ] T002 [P] Add `LifecycleState` types (`api/v1alpha1/lifecyclestate_types.go`) per `model.md`'s field table, plus generated deepcopy
 - [ ] T003 [P] Add `pkgcfg.Features.LifecycleHooks` in `pkg/config/config.go`
 - [ ] T004 Wire the `supports_vm_service_lifecycle_hooks` capability to `pkgcfg.Features.LifecycleHooks` in `pkg/config/capabilities/capabilities.go`, mirroring the existing `BringYourOwnEncryptionKey` capability-driven wiring
-- [ ] T005 [P] Add the four new condition type constants (per `model.md`'s condition-type table) to `api/v1alphaN/condition_consts.go`
+- [ ] T005 [P] Add the `VirtualMachineConditionLifecycleHooksBlocked` condition type constant to `api/v1alphaN/condition_consts.go`
 - [ ] T006 Register `lifecyclev1.AddToScheme` in `pkg/manager/manager.go` and `test/builder/fake.go`
 - [ ] T007 Generate the external CRD manifest (`make generate-external-manifests`) into `config/crd/external-crds/lifecycle.vcfa.vmware.com_lifecyclestates.yaml`
 

@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25"
@@ -34,6 +35,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/veeam"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -188,6 +190,8 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 			base := vm.DeepCopy()
 			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, "true")
 			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
+
+			clearExtensionCompatConstraints(ctx, clusterProxy, vm.Status.UniqueID)
 
 			t.restoreVM(ctx, rp, true, "vmop e2e restore to existing")
 
@@ -440,6 +444,38 @@ func (t *testEnv) restoreVM(ctx context.Context, rp veeam.RestorePoint, overwrit
 	session, err := t.vbr.RestoreVM(ctx, rp.ID, overwrite, reason, t.waitOpts)
 	Expect(err).ToNot(HaveOccurred())
 	logSessionResult(session)
+}
+
+// clearExtensionCompatConstraints removes the extension compatibility
+// constraints VM Operator registered on the VM, if any. The DEVICE invariant
+// makes vCenter reject Veeam's in-place restore, and Veeam cannot skip the
+// check, so a VI admin has to clear the constraints first. RegisterVM makes
+// VM Operator manage the restored VM again.
+func clearExtensionCompatConstraints(ctx context.Context, clusterProxy *common.VMServiceClusterProxy, moID string) {
+	vimClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+	defer vcenter.LogoutVimClient(vimClient)
+
+	vmRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: moID}
+
+	var vmMO mo.VirtualMachine
+	Expect(property.DefaultCollector(vimClient).RetrieveOne(ctx, vmRef, []string{"config.extensionCompatibilityConstraint"}, &vmMO)).To(Succeed())
+
+	if vmMO.Config == nil || vmMO.Config.ExtensionCompatibilityConstraint == nil ||
+		len(vmMO.Config.ExtensionCompatibilityConstraint.Constraint) == 0 {
+		return
+	}
+
+	By("Clear the VM's extension compatibility constraints so Veeam can restore it in place")
+
+	// A reconfigure's constraint set replaces the whole set, so an empty set
+	// clears it. Changing the constraints needs the check skipped, as they
+	// protect themselves.
+	task, err := object.NewVirtualMachine(vimClient, vmRef).Reconfigure(ctx, types.VirtualMachineConfigSpec{
+		ExtensionCompatibilityConstraint: &types.VirtualMachineExtensionCompatibilityConstraintSet{},
+		SkipExtensionCompatibilityChecks: ptr.To(true),
+	})
+	Expect(err).ToNot(HaveOccurred())
+	Expect(task.Wait(ctx)).To(Succeed(), "failed to clear the extension compatibility constraints of VM %s", moID)
 }
 
 func (t *testEnv) registerVM(ctx context.Context, vmMoID string) {

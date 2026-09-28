@@ -29,7 +29,6 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
-	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -103,7 +102,6 @@ func NewReconciler(
 		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
-		Metrics:    metrics.NewContentLibraryItemMetrics(),
 		Kind:       kind,
 	}
 }
@@ -116,7 +114,6 @@ type Reconciler struct {
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
-	Metrics    *metrics.ContentLibraryItemMetrics
 	Kind       string
 }
 
@@ -198,7 +195,6 @@ func (r *Reconciler) ReconcileDelete(
 		return nil
 	}
 
-	r.Metrics.DeleteMetrics(logger, vmiName, obj.GetNamespace())
 	controllerutil.RemoveFinalizer(obj, finalizer)
 	controllerutil.RemoveFinalizer(obj, depFinalizer)
 
@@ -265,7 +261,6 @@ func (r *Reconciler) ReconcileNormal(
 	logger = logger.WithValues("vmiKind", vmiKind)
 
 	var (
-		didSync     bool
 		syncErr     error
 		savedStatus *vmopv1.VirtualMachineImageStatus
 	)
@@ -334,28 +329,12 @@ func (r *Reconciler) ReconcileNormal(
 				pkgcond.MarkTrue(vmiStatus, vmopv1.ReadyConditionType)
 			}
 
-			didSync = true
-
 			// Do not return syncErr here as we still want to patch the updated
 			// fields we get above.
 			return nil
 		})
 
 	logger = logger.WithValues("operationResult", opRes)
-
-	// Registry metrics based on the corresponding error captured.
-	defer func() {
-		r.Metrics.RegisterVMIResourceResolve(
-			logger,
-			vmiObj.GetName(),
-			vmiObj.GetNamespace(),
-			copErr == nil)
-		r.Metrics.RegisterVMIContentSync(
-			logger,
-			vmiObj.GetName(),
-			vmiObj.GetNamespace(),
-			didSync && syncErr == nil)
-	}()
 
 	if copErr != nil {
 		logger.Error(copErr, "failed to create or patch image")

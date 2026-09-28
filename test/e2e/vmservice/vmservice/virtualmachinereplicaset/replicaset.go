@@ -171,6 +171,23 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		vmoperator.WaitForOwnedVirtualMachinesPoweredOn(ctx, config, svClusterClient, input.WCPNamespaceName, rsName)
 	})
 
+	It("Should converge status.readyReplicas for VirtualMachines without a configured readiness probe", Label("core-functional", "experimental"), func() {
+		// TDS SC24 (as corrected): the readiness prober only ever populates a
+		// VM's Ready condition when spec.readinessProbe is configured, so a
+		// replica template omitting readinessProbe -- the common case, as
+		// used by every other spec in this suite -- must still count toward
+		// status.readyReplicas once the VM is up.
+		const replicas = int32(2)
+
+		replicaSet = newReplicaSet(replicas, vmopv1.VirtualMachinePowerStateOn)
+		Expect(svClusterClient.Create(ctx, replicaSet)).To(Succeed(), "failed to create VirtualMachineReplicaSet %s", rsName)
+		vmoperator.WaitForVirtualMachineReplicaSetReplicas(ctx, config, svClusterClient, input.WCPNamespaceName, rsName, replicas)
+		vmoperator.WaitForOwnedVirtualMachinesPoweredOn(ctx, config, svClusterClient, input.WCPNamespaceName, rsName)
+
+		By("Verifying status.readyReplicas converges to spec.replicas even though the template has no readinessProbe")
+		vmoperator.WaitForVirtualMachineReplicaSetReadyReplicas(ctx, config, svClusterClient, input.WCPNamespaceName, rsName, replicas)
+	})
+
 	It("Should scale up an existing VirtualMachineReplicaSet", Label("core-functional", "experimental"), func() {
 		replicaSet = newReplicaSet(2, vmopv1.VirtualMachinePowerStateOff)
 		Expect(svClusterClient.Create(ctx, replicaSet)).To(Succeed(), "failed to create VirtualMachineReplicaSet %s", rsName)

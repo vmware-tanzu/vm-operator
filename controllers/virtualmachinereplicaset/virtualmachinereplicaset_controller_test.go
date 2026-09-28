@@ -1048,6 +1048,18 @@ func intgTestsReconcile() {
 				Expect(ctx.Client.List(ctx, &vmList, client.InNamespace(ctx.Namespace), client.MatchingLabels(rs.Spec.Selector.MatchLabels))).To(Succeed())
 				Expect(vmList.Items).To(HaveLen(1), "the adopted VM alone should satisfy spec.replicas=1, no redundant VM created")
 			})
+
+			By("The adopted VM, which has no readinessProbe of its own, still counts toward status.readyReplicas", func() {
+				// TDS SC24: readiness is evaluated from the adopted VM's own
+				// spec, not the ReplicaSet template it was never conformed to
+				// (adoption is a pure ownership claim, per SC19) -- so a
+				// probe-less standalone VM must be implicitly ready here too.
+				Eventually(func(g Gomega) int32 {
+					got := getVirtualMachineReplicaSet(ctx, rsKey)
+					g.Expect(got).ToNot(BeNil())
+					return got.Status.ReadyReplicas
+				}, 10*time.Second, 1*time.Second).Should(Equal(int32(1)))
+			})
 		})
 
 		It("creates exactly one replacement, with a fresh identity, when an owned VM is deleted directly", func() {

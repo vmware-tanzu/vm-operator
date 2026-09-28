@@ -38,6 +38,22 @@ func WaitForVirtualMachineReplicaSetReplicas(
 		"Timed out waiting for VirtualMachineReplicaSet %s/%s to reach %d replicas", ns, name, expectedReplicas)
 }
 
+// WaitForVirtualMachineReplicaSetReadyReplicas waits for status.readyReplicas
+// to reach expectedReadyReplicas.
+func WaitForVirtualMachineReplicaSetReadyReplicas(
+	ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client,
+	ns, name string,
+	expectedReadyReplicas int32) {
+	Eventually(func(g Gomega) {
+		rs, err := utils.GetVirtualMachineReplicaSet(ctx, client, ns, name)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(rs.Status.ReadyReplicas).To(Equal(expectedReadyReplicas))
+	}, config.GetIntervals("default", "wait-virtual-machine-replicaset-status")...).Should(Succeed(),
+		"Timed out waiting for VirtualMachineReplicaSet %s/%s to reach %d ready replicas", ns, name, expectedReadyReplicas)
+}
+
 // WaitForVirtualMachineReplicaSetToBeDeleted waits for the
 // VirtualMachineReplicaSet itself, and every VirtualMachine it owned, to be
 // gone -- i.e. that owner-reference-driven cascading deletion completed.

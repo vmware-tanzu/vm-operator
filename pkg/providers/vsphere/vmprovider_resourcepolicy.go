@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -86,16 +85,16 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 	if len(errs) == 0 {
 		// In the case of a zone being removed (decommissioned) remove the cluster
 		// modules for that CCR. Our status is the only source of the CMs that were
-		// created for this CCR so treat the delete as just best effort.
+		// created for this CCR.
 		resourcePolicy.Status.ClusterModules = slices.DeleteFunc(resourcePolicy.Status.ClusterModules,
 			func(cm vmopv1.VSphereClusterModuleStatus) bool {
 				if cm.ClusterMoID == "" || clusterMoIDs.Has(cm.ClusterMoID) {
 					return false
 				}
+
 				if err := clusterModuleProvider.DeleteModule(ctx, cm.ModuleUuid); err != nil {
-					pkglog.FromContextOrDefault(ctx).Error(err,
-						"Error deleting cluster module for removed cluster",
-						"clusterMoID", cm.ClusterMoID, "moduleUUID", cm.ModuleUuid)
+					errs = append(errs, err)
+					return false
 				}
 				return true
 			})

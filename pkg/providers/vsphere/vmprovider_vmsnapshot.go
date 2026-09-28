@@ -421,32 +421,18 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 	)
 
 	if isCurrent {
-		// The VM is already running on the desired snapshot. vCenter
-		// rejects a RevertToSnapshot call targeting the VM's current
-		// snapshot with "The operation is not allowed in the current
-		// state", so skip the vSphere-side revert task and fall through
-		// to restoring the VM's spec/metadata below to converge
-		// spec.currentSnapshotName.
+		// Already on the desired snapshot; nothing to revert on vSphere.
 		logger.V(4).Info(
 			"Skipping vSphere snapshot revert operation, VM is already on desired snapshot")
 	} else {
-		// Perform the actual snapshot revert
 		logger.V(4).Info("Starting vSphere snapshot revert operation")
 		if err := vs.performSnapshotRevert(
 			vmCtx, vcVM, ref, desiredSnapshotName); err != nil {
 
-			// Clear the in-progress annotation since the vSphere-side
-			// revert never started/completed. Real vCenter can transiently
-			// reject a revert issued shortly after a prior revert task
-			// completes (observed as "The operation is not allowed in the
-			// current state"), so leaving the annotation in place would
-			// permanently short-circuit reconcileSnapshotRevertCheckTask on
-			// every retry and prevent the automatic error-backoff requeue
-			// from ever trying again. Note this is intentionally scoped to
-			// this failure only: if restoreVMSpecFromSnapshot fails below
-			// (after a successful vSphere-side revert), the annotation is
-			// deliberately left set so the next reconcile can detect that
-			// case and resume from spec restoration.
+			// The revert itself failed, so clear the annotation to let
+			// the next retry attempt it again. If restoreVMSpecFromSnapshot
+			// fails below, the revert already succeeded, so leave the
+			// annotation set instead.
 			delete(vmCtx.VM.Annotations,
 				pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey)
 

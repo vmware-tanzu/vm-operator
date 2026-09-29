@@ -21,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -206,11 +207,8 @@ var _ = Describe(
 		})
 
 		Context("Group placement with VMs specifying a preferred zone", func() {
-			It("should constrain placement to the shared zone when all members agree", func() {
-				Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
-				zoneName := ctx.ZoneNames[0]
-				vm1.Labels[corev1.LabelTopologyZone] = zoneName
-				vm2.Labels[corev1.LabelTopologyZone] = zoneName
+			placeGroup := func() error {
+				GinkgoHelper()
 
 				groupPlacements := []providers.VMGroupPlacement{
 					{
@@ -222,59 +220,127 @@ var _ = Describe(
 					},
 				}
 
-				err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(vmGroup.Status.Members).To(HaveLen(2))
-				assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
-				assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
+				return vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
+			}
 
-				Expect(vmGroup.Status.Members[0].Placement.Zone).To(Equal(zoneName))
-				Expect(vmGroup.Status.Members[1].Placement.Zone).To(Equal(zoneName))
+			When("VMHardAffinityDuringExecution is disabled", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMHardAffinityDuringExecution = false
+					})
+				})
+
+				It("should constrain placement to the shared zone when all members agree", func() {
+					Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+					zoneName := ctx.ZoneNames[0]
+					vm1.Labels[corev1.LabelTopologyZone] = zoneName
+					vm2.Labels[corev1.LabelTopologyZone] = zoneName
+
+					Expect(placeGroup()).To(Succeed())
+					Expect(vmGroup.Status.Members).To(HaveLen(2))
+					assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
+					assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
+
+					Expect(vmGroup.Status.Members[0].Placement.Zone).To(Equal(zoneName))
+					Expect(vmGroup.Status.Members[1].Placement.Zone).To(Equal(zoneName))
+				})
+
+				It("should not constrain placement to a single zone when members disagree", func() {
+					Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+					vm1.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[0]
+					vm2.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[1]
+
+					Expect(placeGroup()).To(Succeed())
+					Expect(vmGroup.Status.Members).To(HaveLen(2))
+					assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
+					assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
+				})
+
+				It("should not constrain placement to a single zone when one member has no zone label", func() {
+					Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+					vm1.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[0]
+
+					Expect(placeGroup()).To(Succeed())
+					Expect(vmGroup.Status.Members).To(HaveLen(2))
+					assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
+					assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
+				})
 			})
 
-			It("should not constrain placement to a single zone when members disagree", func() {
-				Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
-				vm1.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[0]
-				vm2.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[1]
+			When("VMHardAffinityDuringExecution is enabled", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMHardAffinityDuringExecution = true
+					})
+				})
 
-				groupPlacements := []providers.VMGroupPlacement{
-					{
-						VMGroup: vmGroup,
-						VMMembers: []*vmopv1.VirtualMachine{
-							vm1,
-							vm2,
-						},
-					},
+				// vcsim ignores CandidateVsphereZone, so when members do not share a
+				// zone the recommended zone is not deterministic. Placement must
+				// either honor each pinned member's zone or fail with a mismatch.
+				assertPerVMZonePlacement := func(err error, pinnedZones ...string) {
+					GinkgoHelper()
+
+					if err != nil {
+						Expect(err).To(MatchError(placement.ErrGroupPlacementZoneMismatch))
+						return
+					}
+					Expect(vmGroup.Status.Members).To(HaveLen(2))
+					for i, vm := range []*vmopv1.VirtualMachine{vm1, vm2} {
+						assertMemberStatusForVM(vm, vmGroup.Status.Members[i])
+						if pinnedZones[i] != "" {
+							Expect(vmGroup.Status.Members[i].Placement.Zone).To(Equal(pinnedZones[i]))
+						}
+					}
 				}
 
-				err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(vmGroup.Status.Members).To(HaveLen(2))
-				assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
-				assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
-			})
+				It("should constrain placement to the shared zone when all members agree", func() {
+					Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+					zoneName := ctx.ZoneNames[0]
+					vm1.Labels[corev1.LabelTopologyZone] = zoneName
+					vm2.Labels[corev1.LabelTopologyZone] = zoneName
 
-			It("should not constrain placement to a single zone when one member has no zone label", func() {
-				Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
-				// vm1 has a zone label, vm2 has none: not every member agrees
-				// on a zone, so placement must remain unconstrained.
-				vm1.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[0]
+					Expect(placeGroup()).To(Succeed())
+					Expect(vmGroup.Status.Members).To(HaveLen(2))
+					assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
+					assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
 
-				groupPlacements := []providers.VMGroupPlacement{
-					{
-						VMGroup: vmGroup,
-						VMMembers: []*vmopv1.VirtualMachine{
-							vm1,
-							vm2,
-						},
-					},
-				}
+					Expect(vmGroup.Status.Members[0].Placement.Zone).To(Equal(zoneName))
+					Expect(vmGroup.Status.Members[1].Placement.Zone).To(Equal(zoneName))
+				})
 
-				err := vmProvider.PlaceVirtualMachineGroup(ctx, vmGroup, groupPlacements)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(vmGroup.Status.Members).To(HaveLen(2))
-				assertMemberStatusForVM(vm1, vmGroup.Status.Members[0])
-				assertMemberStatusForVM(vm2, vmGroup.Status.Members[1])
+				It("should place each member in its own zone when members are in different zones", func() {
+					Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+					vm1.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[0]
+					vm2.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[1]
+
+					assertPerVMZonePlacement(placeGroup(), ctx.ZoneNames[0], ctx.ZoneNames[1])
+				})
+
+				It("should place the pinned member in its zone when one member has no zone label", func() {
+					Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+					vm1.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[0]
+
+					assertPerVMZonePlacement(placeGroup(), ctx.ZoneNames[0], "")
+				})
+
+				It("should fail when a member's zone is not a placement candidate", func() {
+					Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+					vm1.Labels[corev1.LabelTopologyZone] = "zone-does-not-exist"
+					vm2.Labels[corev1.LabelTopologyZone] = ctx.ZoneNames[0]
+
+					err := placeGroup()
+					Expect(err).To(MatchError(placement.ErrNoPlacementCandidates))
+					Expect(err).To(MatchError(ContainSubstring("zone-does-not-exist")))
+
+					Expect(vmGroup.Status.Members).To(HaveLen(2))
+					for i := range vmGroup.Status.Members {
+						c := pkgcond.Get(&vmGroup.Status.Members[i], vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionFalse))
+						Expect(c.Reason).To(Equal("PendingPlacement"))
+						Expect(c.Message).To(ContainSubstring("zone-does-not-exist"))
+					}
+				})
 			})
 		})
 

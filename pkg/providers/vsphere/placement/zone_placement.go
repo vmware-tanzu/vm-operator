@@ -71,6 +71,7 @@ type DatastoreResult struct {
 var (
 	ErrNoPlacementCandidates      = errors.New("no placement candidates")
 	ErrNoPlacementRecommendations = errors.New("no placement recommendations")
+	ErrGroupPlacementZoneMismatch = errors.New("group placement recommended zone different than preassigned zone")
 )
 
 func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
@@ -350,7 +351,11 @@ func getPlacementRecommendation(
 			vcClient,
 			finder,
 			candidateRPMoRefs,
-			[]vimtypes.VirtualMachineConfigSpec{configSpec},
+			[]VMZonePlacementMapping{{
+				ConfigSpec: configSpec,
+				// We do not set ZoneName here as the candidateRPMorefs limited to
+				// the required zone.
+			}},
 			false,
 			needDatastorePlacement)
 		if err != nil {

@@ -70,7 +70,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/vsphere-policy v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api v0.0.0-00010101000000-000000000000
-	github.com/vmware/govmomi v0.57.0-alpha.0.0.20260908193317-e23a942e8f55
+	github.com/vmware/govmomi v0.57.0-alpha.0.0.20260930024634-9b65cf3964d3
 	golang.org/x/crypto v0.56.0
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.37.0

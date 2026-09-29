@@ -27,13 +27,11 @@ import (
 )
 
 type vmGroupPlacementArgs struct {
-	configSpecs           []vimtypes.VirtualMachineConfigSpec
+	// vmToZoneMappings holds each VM's ConfigSpec and its
+	// topology.kubernetes.io/zone label. The zone is empty if the VM has no
+	// zone label.
+	vmToZoneMappings      []placement.VMZonePlacementMapping
 	childResourcePoolName string
-	// preferredZoneName is set only when every VM being placed in this
-	// batch already has the same, non-empty topology.kubernetes.io/zone
-	// label. It is empty if any VM lacks the label or members disagree on
-	// zone, so that placement candidates span all zones as before.
-	preferredZoneName string
 }
 
 const (
@@ -64,12 +62,13 @@ func (vs *vSphereVMProvider) PlaceVirtualMachineGroup(
 		return err
 	}
 
-	if len(placementArgs.configSpecs) == 0 {
+	if len(placementArgs.vmToZoneMappings) == 0 {
 		return nil
 	}
 
 	results, err := vs.vmGroupDoPlacement(ctx, vcClient, group.Namespace, placementArgs)
 	if err != nil {
+		setVMGroupPendingPlacementErr(groupPlacements, err)
 		return err
 	}
 
@@ -89,21 +88,12 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 	firstVM := true
 	var errs []error
 
-	// preferredZones collects every distinct zone label seen across all VMs
-	// in groupPlacements, including "" for VMs with no zone label. If
-	// exactly one distinct value is found and it's non-empty, every VM
-	// agrees on that zone, so it's used to constrain placement candidates
-	// below; otherwise candidates span all zones, as today.
-	preferredZones := map[string]struct{}{}
-
 	for _, grpPlacement := range groupPlacements {
 		for _, vm := range grpPlacement.VMMembers {
 			logger := pkglog.FromContextOrDefault(ctx).WithValues(
 				"childGroupName", grpPlacement.VMGroup.Name,
 				"vm", vm.Name,
 			)
-
-			preferredZones[vm.Labels[corev1.LabelTopologyZone]] = struct{}{}
 
 			vmCtx := pkgctx.VirtualMachineContext{
 				Context: ctx,
@@ -146,7 +136,14 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 				"PendingPlacement",
 				"")
 
-			placementArgs.configSpecs = append(placementArgs.configSpecs, *configSpec)
+			vmZonePlacementMapping := placement.VMZonePlacementMapping{
+				configSpec: *configSpec
+			}
+			if pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution {
+				vmZonePlacementMapping.ZoneName = vm.labels[corev1.LabelTopologyZone]
+			}
+			placementArgs.vmToZoneMappings = append(placementArgs.vmToZoneMappings,
+				vmZonePlacementMapping)
 		}
 	}
 
@@ -154,18 +151,24 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 		return nil, fmt.Errorf("%w: %w", ErrVMGroupPlacementConfigSpec, errors.Join(errs...))
 	}
 
-	// set placementArgs.preferredZoneName only if every VM agreed on the
-	// same single, non-empty zone.
-	if len(preferredZones) == 1 {
-		for zoneName := range preferredZones {
-			if zoneName != "" {
-				placementArgs.preferredZoneName = zoneName
-			}
-			break
+	return placementArgs, nil
+}
+
+// setVMGroupPendingPlacementErr records the group placement error as the
+// message of every member's pending PlacementReady condition.
+func setVMGroupPendingPlacementErr(
+	groupPlacements []providers.VMGroupPlacement,
+	err error) {
+
+	for _, grpPlacement := range groupPlacements {
+		for _, vm := range grpPlacement.VMMembers {
+			pkgcond.MarkFalse(
+				getOrAddVMMemberStatus(grpPlacement.VMGroup, vm),
+				vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+				"PendingPlacement",
+				"%v", err)
 		}
 	}
-
-	return placementArgs, nil
 }
 
 func setVMPlacementReadyCondErr(
@@ -267,8 +270,7 @@ func (vs *vSphereVMProvider) vmGroupDoPlacement(
 		vcClient.Finder(),
 		namespace,
 		placementArgs.childResourcePoolName,
-		placementArgs.preferredZoneName,
-		placementArgs.configSpecs,
+		placementArgs.vmToZoneMappings,
 	)
 }
 

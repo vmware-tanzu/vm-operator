@@ -51,7 +51,7 @@ require (
 	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250813160346-0f6259af5cbb
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20260619161849-aeb1b9769d4b
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c
-	github.com/vmware/govmomi v0.57.0-alpha.0.0.20260908193317-e23a942e8f55
+	github.com/vmware/govmomi v0.57.0-alpha.0.0.20260930024634-9b65cf3964d3
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 	golang.org/x/net v0.58.0 // indirect
 	// https://pkg.go.dev/vuln/GO-2026-5970

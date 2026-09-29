@@ -1017,14 +1017,16 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 		Context(capabilities.CapabilityKeyVMHardAffinityDuringExecution, func() {
 			BeforeEach(func() {
 				Expect(pkgcfg.FromContext(ctx).Features.TaggingAPI).To(BeFalse())
+				Expect(pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution).To(BeFalse())
 				obj.Status.Supervisor[capabilities.CapabilityKeyVMHardAffinityDuringExecution] = capv1.CapabilityStatus{
 					Activated: true,
 				}
 			})
 			Specify("Enabled", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("TaggingAPI=true"))
+				Expect(diff).To(Equal("TaggingAPI=true,VMHardAffinityDuringExecution=true"))
 				Expect(pkgcfg.FromContext(ctx).Features.TaggingAPI).To(BeTrue())
+				Expect(pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution).To(BeTrue())
 			})
 		})
 		Context(capabilities.CapabilityKeyVMEviction, func() {
@@ -1211,6 +1213,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.ControlledRebalancingPolicy = true
 					config.Features.VMNetworkUnitNumbers = true
 					config.Features.TaggingAPI = true
+					config.Features.VMHardAffinityDuringExecution = true
 					config.Features.CSIBackupAPI = true
 				})
 			})
@@ -1292,6 +1295,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyVMHardAffinityDuringExecution, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.TaggingAPI).To(BeTrue())
+				Expect(pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution).To(BeTrue())
 			})
 			Specify(capabilities.CapabilityKeyCSIBackupAPI, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.CSIBackupAPI).To(BeTrue())
@@ -1323,12 +1327,13 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMEviction = false
 					config.Features.VMNetworkUnitNumbers = false
 					config.Features.TaggingAPI = false
+					config.Features.VMHardAffinityDuringExecution = false
 					config.Features.CSIBackupAPI = false
 				})
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMHardAffinityDuringExecution=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -1404,6 +1409,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyVMHardAffinityDuringExecution, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.TaggingAPI).To(BeFalse())
+				Expect(pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution).To(BeFalse())
 			})
 			Specify(capabilities.CapabilityKeyCSIBackupAPI, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.CSIBackupAPI).To(BeFalse())

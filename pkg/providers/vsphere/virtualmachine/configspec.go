@@ -345,8 +345,9 @@ func CreateConfigSpecForPlacement(
 //     we want to omit zonal policies from the ConfigSpec
 //   - It is disabled for a VKS node VM (CAPI labels) with a zone label set,
 //     i.e. an explicit zone is already specified by the VM.
-//   - It is disabled when VMAffinityDuringExecution is enabled and the VM has a zone
-//     label set, i.e. an explicit zone is already specified by the VM.
+//   - It is disabled when VMAffinityDuringExecution is enabled, VMHardAffinityDuringExecution
+//     is not, and the VM has a zone label set, i.e. an explicit zone is already specified by
+//     the VM.
 //
 // ConfigureHostRules is true when the VMAffinityDuringExecution capability
 // is enabled, except for a VKS node VM (CAPI labels), since its host
@@ -387,8 +388,11 @@ func CalculateAffinityConstraints(
 	}
 
 	// for vms with preferred zones, & VMAffinityDuringExecution capability, do not configure zonal rules.
-	// zones are assigned from the zone label.
-	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution && kubeutil.HasZoneLabel(vmCtx.VM.Labels) {
+	// zones are assigned from the zone label. This does not apply when VMHardAffinityDuringExecution is
+	// enabled, since zonal rules are still evaluated alongside the candidate zone.
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution &&
+		!pkgcfg.FromContext(vmCtx).Features.VMHardAffinityDuringExecution &&
+		kubeutil.HasZoneLabel(vmCtx.VM.Labels) {
 		constraints.ConfigureZoneRules = false
 	}
 

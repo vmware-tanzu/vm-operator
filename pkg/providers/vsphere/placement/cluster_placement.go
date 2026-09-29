@@ -217,29 +217,42 @@ func PlaceVMForCreate(
 	return nil, nil
 }
 
-// getClusterPlacementRecommendations calls DRS PlaceVmsXCluster to get the placement
-// recommendations for the given VMs.
+// VMZonePlacementMapping maps a VM's ConfigSpec to the zone it is to be placed in.
+// An empty ZoneName means the VM does not have pinned zone.
+type VMZonePlacementMapping struct {
+	ConfigSpec vimtypes.VirtualMachineConfigSpec
+	ZoneName   string
+}
+
+// getClusterPlacementRecommendations calls PlaceVmsXCluster to get the placement
+// recommendations for the given VMs. Each entry's ZoneName is sent as the
+// VM's CandidateVsphereZone in the PlaceVmsXCluster call.
 func getClusterPlacementRecommendations(
 	ctx context.Context,
 	vcClient *vim25.Client,
 	finder *find.Finder,
 	resourcePoolsMoRefs []vimtypes.ManagedObjectReference,
-	configSpecs []vimtypes.VirtualMachineConfigSpec,
+	vmToZoneMappings []VMZonePlacementMapping,
 	needHostPlacement, needDatastorePlacement bool) (map[string]Recommendation, error) {
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	placementSpec := vimtypes.PlaceVmsXClusterSpec{
 		PlacementType:           string(vimtypes.PlaceVmsXClusterSpecPlacementTypeCreateAndPowerOn),
 		ResourcePools:           resourcePoolsMoRefs,
-		VmPlacementSpecs:        make([]vimtypes.PlaceVmsXClusterSpecVmPlacementSpec, len(configSpecs)),
+		VmPlacementSpecs:        make([]vimtypes.PlaceVmsXClusterSpecVmPlacementSpec, len(vmToZoneMappings)),
 		HostRecommRequired:      &needHostPlacement,
 		DatastoreRecommRequired: &needDatastorePlacement,
 	}
 
-	for i, cs := range configSpecs {
+	for i, m := range vmToZoneMappings {
+		cs := m.ConfigSpec
 		// Work around PlaceVmsXCluster bug that crashes vpxd when ConfigSpec.Files is nil (still needed?)
 		cs.Files = new(vimtypes.VirtualMachineFileInfo)
+
 		placementSpec.VmPlacementSpecs[i].ConfigSpec = cs
+		if pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution {
+			placementSpec.VmPlacementSpecs[i].CandidateVsphereZone = m.ZoneName
+		}
 	}
 
 	logger.V(4).Info("PlaceVmsXCluster request", "spec", vimtypes.ToString(placementSpec))
@@ -258,7 +271,8 @@ func getClusterPlacementRecommendations(
 			leafMessages := faultutil.LocalizedMessagesFromFaults(pf.Faults)
 			if len(leafMessages) > 0 {
 				faultMsgs = append(faultMsgs,
-					fmt.Sprintf("Resource pool (%s) has faults: %s", pf.ResourcePool.Value, strings.Join(leafMessages, " ")))
+					fmt.Sprintf("VM %s, resource pool (%s) has faults: %s",
+						pf.VmName, pf.ResourcePool.Value, strings.Join(leafMessages, " ")))
 			}
 
 		}

@@ -10,10 +10,3 @@ func GetStorageQuotaYAML() ([]byte, error) {
 
 	return yaml, nil
 }
-
-func GetStorageClassYAML() ([]byte, error) {
-	dir := "test/e2e/fixtures/yaml/vmoperator/storageclass"
-	yaml := fixtures.ReadFileBytes(dir, "gc-storage-profile.yaml")
-
-	return yaml, nil
-}

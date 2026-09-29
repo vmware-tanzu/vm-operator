@@ -41,6 +41,27 @@ var InitializeProvidersNoopFn InitializeProvidersFunc = func(_ *pkgctx.Controlle
 
 // Options describes the options used to create a new GCM manager.
 type Options struct {
+	// LeaseDuration is the duration that non-leader candidates will wait
+	// after observing a leadership renewal until attempting to acquire
+	// leadership of an unrenewed leader slot. This is effectively the
+	// maximum duration a leader can be stopped before another candidate
+	// takes over.
+	//
+	// Defaults to the eponymous constant in this package.
+	LeaseDuration time.Duration
+
+	// RenewDeadline is the duration that the acting leader will retry
+	// refreshing leadership before giving it up.
+	//
+	// Defaults to the eponymous constant in this package.
+	RenewDeadline time.Duration
+
+	// RetryPeriod is the duration leader election clients wait between
+	// tries of actions.
+	//
+	// Defaults to the eponymous constant in this package.
+	RetryPeriod time.Duration
+
 	// LeaderElectionEnabled is a flag that enables leader election.
 	LeaderElectionEnabled bool
 
@@ -254,5 +275,15 @@ func (o *Options) defaults() {
 
 	if o.AddToManager == nil {
 		o.AddToManager = AddToManagerNoopFn
+	}
+
+	if o.LeaseDuration == 0 {
+		o.LeaseDuration = DefaultLeaseDuration
+	}
+	if o.RenewDeadline == 0 {
+		o.RenewDeadline = DefaultRenewDeadline
+	}
+	if o.RetryPeriod == 0 {
+		o.RetryPeriod = DefaultRetryPeriod
 	}
 }

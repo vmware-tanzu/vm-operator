@@ -350,6 +350,27 @@ func initFlags() {
 		true,
 		"Enable the priority queue feature.",
 	)
+	flag.DurationVar(
+		&managerOpts.LeaseDuration,
+		"lease-duration",
+		pkgmgr.DefaultLeaseDuration,
+		"The duration non-leader candidates wait after observing a "+
+			"leadership renewal before attempting to acquire leadership "+
+			"of an unrenewed leader slot.",
+	)
+	flag.DurationVar(
+		&managerOpts.RenewDeadline,
+		"renew-deadline",
+		pkgmgr.DefaultRenewDeadline,
+		"The duration the acting leader retries refreshing leadership "+
+			"before giving it up.",
+	)
+	flag.DurationVar(
+		&managerOpts.RetryPeriod,
+		"retry-period",
+		pkgmgr.DefaultRetryPeriod,
+		"The duration leader election clients wait between tries of actions.",
+	)
 
 	logsv1.AddGoFlags(logOptions, flag.CommandLine)
 

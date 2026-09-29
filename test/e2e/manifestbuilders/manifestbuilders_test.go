@@ -128,6 +128,12 @@ var _ = Describe("Manifest builders", func() {
 		Entry("VirtualMachineClass",
 			func() []byte { return mb.GetVirtualMachineClassYaml("my-ns", "c") },
 			"vmoperator.vmware.com/v1alpha2", "VirtualMachineClass"),
+		Entry("ConfigMap",
+			func() []byte { return mb.GetConfigMapYamlGOSC(mb.ConfigMap{Name: "c", Namespace: "my-ns"}) },
+			"v1", "ConfigMap"),
+		Entry("Secret",
+			func() []byte { return mb.GetSecretYamlCloudConfig(mb.Secret{Name: "s", Namespace: "my-ns"}) },
+			"v1", "Secret"),
 	)
 
 	DescribeTable("render the VirtualMachine followed by its PersistentVolumeClaims",
@@ -160,6 +166,61 @@ var _ = Describe("Manifest builders", func() {
 		vms, _, err := unstructured.NestedStringSlice(docs[0].Object, "spec", "virtualMachines")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(vms).To(Equal([]string{"vm-1", "vm-2"}))
+	})
+
+	DescribeTable("render ConfigMap and Secret data",
+		func(manifest func() []byte, key, value string) {
+			docs := parseDocs(manifest())
+			Expect(docs).To(HaveLen(1))
+			for _, field := range []string{"data", "stringData"} {
+				if v, found, _ := unstructured.NestedString(docs[0].Object, field, key); found {
+					Expect(v).To(Equal(value))
+					return
+				}
+			}
+			Fail("key " + key + " not found in data or stringData")
+		},
+		Entry("ConfigMap GOSC user-data", func() []byte {
+			return mb.GetConfigMapYamlGOSC(mb.ConfigMap{Name: "c", Namespace: "my-ns"})
+		}, "user-data", "#cloud-config\nssh_pwauth: true\nusers:\n  - name: vmware\n"+
+			"    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n"+
+			"    # Password set to Admin!23\n    passwd: '$1$salt$SOC33fVbA/ZxeIwD5yw1u1'\n"+
+			"    shell: /bin/bash\nwrite_files:\n  - content: |\n      VMSVC Says Hello World\n"+
+			"    path: /helloworld\n"),
+		Entry("ConfigMap OvfEnv user-data", func() []byte {
+			return mb.GetConfigMapYamlOvfEnv(mb.ConfigMap{Name: "c", Namespace: "my-ns"})
+		}, "user-data", "I2Nsb3VkLWNvbmZpZwpzc2hfcHdhdXRoOiB0cnVlCnVzZXJzOgogIC0gbmFtZTogdm13YXJlCiAgICBzdWRvOiBBTEw9KEFMTCkgTk9QQVNTV0Q6QUxMCiAgICBsb2NrX3Bhc3N3ZDogZmFsc2UKICAgICMgUGFzc3dvcmQgc2V0IHRvIEFkbWluITIzCiAgICBwYXNzd2Q6ICckMSRzYWx0JFNPQzMzZlZiQS9aeGVJd0Q1eXcxdTEnCiAgICBzaGVsbDogL2Jpbi9iYXNoCndyaXRlX2ZpbGVzOgogIC0gY29udGVudDogfAogICAgICBWTVNWQyBTYXlzIEhlbGxvIFdvcmxkCiAgICBwYXRoOiAvaGVsbG93b3JsZAo="),
+		Entry("ConfigMap vApp hostname template", func() []byte {
+			return mb.GetConfigMapYamlVAppConfig(mb.ConfigMap{Name: "c", Namespace: "my-ns"})
+		}, "hostname", "{{ .V1alpha1.VM.Name }}"),
+		Entry("Secret CloudConfig user-data", func() []byte {
+			return mb.GetSecretYamlCloudConfig(mb.Secret{Name: "s", Namespace: "my-ns"})
+		}, "user-data", "#cloud-config\nssh_pwauth: true\nusers:\n  - name: vmware\n"+
+			"    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n"+
+			"    # Password set to Admin!23\n    passwd: '$1$salt$SOC33fVbA/ZxeIwD5yw1u1'\n"+
+			"    shell: /bin/bash\nwrite_files:\n  - content: |\n      VMSVC Says Hello World\n"+
+			"    path: /helloworld\n"),
+		Entry("Secret InlineCloudInitData vmsvc-pwd", func() []byte {
+			return mb.GetSecretYamlInlineCloudInitData(mb.Secret{Name: "s", Namespace: "my-ns"})
+		}, "vmsvc-pwd", `$1$salt$SOC33fVbA/ZxeIwD5yw1u1`),
+		Entry("Secret InlineCloudInitData hello", func() []byte {
+			return mb.GetSecretYamlInlineCloudInitData(mb.Secret{Name: "s", Namespace: "my-ns"})
+		}, "hello", "Hello World!"),
+		Entry("Secret InlineSysprepData vmsvc-pwd", func() []byte {
+			return mb.GetSecretYamlInlineSysprepData(mb.Secret{Name: "s", Namespace: "my-ns"})
+		}, "vmsvc-pwd", "vmware"),
+		Entry("Secret VAppConfig hostname template", func() []byte {
+			return mb.GetSecretYamlVAppConfig(mb.Secret{Name: "s", Namespace: "my-ns"})
+		}, "hostname", "{{ .V1alpha1.VM.Name }} "),
+	)
+
+	It("renders the Secret sysprep unattend with the guest-customization template markers", func() {
+		docs := parseDocs(mb.GetSecretYamlSysprepConfig(mb.Secret{Name: "s", Namespace: "my-ns"}))
+		unattend, _, _ := unstructured.NestedString(docs[0].Object, "stringData", "unattend")
+		Expect(unattend).To(ContainSubstring("{{ V1alpha1_FirstNicMacAddr }}"))
+		Expect(unattend).To(ContainSubstring("{{ V1alpha1_FirstIP }}"))
+		Expect(unattend).To(ContainSubstring("{{ V1alpha1_SubnetMask V1alpha1_FirstIP }}"))
+		Expect(unattend).To(ContainSubstring("{{ range .V1alpha1.Net.Nameservers }}"))
 	})
 
 	DescribeTable("render a Subnet or SubnetSet with only the fields that are set",

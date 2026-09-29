@@ -157,6 +157,11 @@ const (
 	// defined in the Supervisor capabilities CRD for the VM Service's support
 	// for VM network interface unit numbers.
 	CapabilityKeyVMNetworkUnitNumbers = "supports_VM_service_network_unit_numbers"
+
+	// CapabilityKeyK8sWorkloadMgmtAPI is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the VirtualMachineReplicaSet
+	// controller, webhooks, and CRD.
+	CapabilityKeyK8sWorkloadMgmtAPI = "supports_k8s_workload_mgmt_api"
 )
 
 var (
@@ -341,6 +346,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.ControlledRebalancingPolicy = capStatus.Activated
 		case CapabilityKeyVMNetworkUnitNumbers:
 			fs.VMNetworkUnitNumbers = capStatus.Activated
+		case CapabilityKeyK8sWorkloadMgmtAPI:
+			fs.K8sWorkloadMgmtAPI = capStatus.Activated
 		}
 
 	}

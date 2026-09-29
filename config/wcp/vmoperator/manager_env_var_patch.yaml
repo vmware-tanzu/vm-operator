@@ -73,12 +73,6 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API
-    value: "<FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API_VALUE>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
     name: FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
     value: "<FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY_VALUE>"
 

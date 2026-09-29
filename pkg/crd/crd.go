@@ -252,7 +252,17 @@ func Install( //nolint:gocyclo
 			}
 		// case "VirtualMachineImage":
 		// case "VirtualMachinePublishRequest":
-		// case "VirtualMachineReplicaSet":
+		case "VirtualMachineReplicaSet":
+			if err := updateOrDeleteUnstructured(
+				ctx,
+				k8sClient,
+				features.K8sWorkloadMgmtAPI,
+				c,
+				k,
+				nil); err != nil {
+
+				return err
+			}
 		case "VirtualMachine":
 			if err := updateOrDeleteUnstructured(
 				ctx,

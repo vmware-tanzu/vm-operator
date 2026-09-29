@@ -95,7 +95,6 @@ var _ = Describe(
 					Expect(os.Setenv("WEBHOOK_SECRET_NAMESPACE", "124")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_INSTANCE_STORAGE", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_NAMESPACED_VM_CLASS", "false")).To(Succeed())
-					Expect(os.Setenv("FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", "true")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_WORKLOAD_DOMAIN_ISOLATION", "true")).To(Succeed())
@@ -151,7 +150,6 @@ var _ = Describe(
 						CRDCleanupEnabled:            true,
 						Features: pkgcfg.FeatureStates{
 							InstanceStorage:           false,
-							K8sWorkloadMgmtAPI:        true,
 							VMResizeCPUMemory:         true,
 							VMImportNewNet:            true,
 							VMIncrementalRestore:      true,

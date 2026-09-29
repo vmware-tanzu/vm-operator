@@ -403,17 +403,6 @@ func (s *SimulatedWCPClusterProxy) CreateWCPNamespace(ctx context.Context, confi
 		}
 	}
 
-	for _, contentSource := range vmsvcSpecs.ContentLibraries {
-		e2eframework.Logf("Create content source binding: %s", contentSource)
-		contentSourceBindingYAML := manifestbuilders.GetContentSourceBindingYaml(namespace.Name, contentSource)
-		e2eframework.Logf("%v", string(contentSourceBindingYAML))
-
-		err := s.applyWithArgs(ctx, contentSourceBindingYAML, "-n", namespace.Name)
-		if err != nil {
-			return NamespaceContext{}, fmt.Errorf("apply content source binding to namespace %q failed", namespace.Name)
-		}
-	}
-
 	return NamespaceContext{
 		namespace:       namespace,
 		cancelNsWatches: cancelWatches,

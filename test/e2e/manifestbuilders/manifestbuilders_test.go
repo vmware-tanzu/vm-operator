@@ -128,9 +128,6 @@ var _ = Describe("Manifest builders", func() {
 		Entry("VirtualMachineClass",
 			func() []byte { return mb.GetVirtualMachineClassYaml("my-ns", "c") },
 			"vmoperator.vmware.com/v1alpha2", "VirtualMachineClass"),
-		Entry("ContentSourceBinding",
-			func() []byte { return mb.GetContentSourceBindingYaml("my-ns", "c") },
-			"vmoperator.vmware.com/v1alpha1", "ContentSourceBinding"),
 	)
 
 	DescribeTable("render the VirtualMachine followed by its PersistentVolumeClaims",

@@ -1,10 +1,13 @@
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package manifestbuilders
 
 import (
-	"bytes"
-	"text/template"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
+	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 )
 
 type EncryptionClass struct {
@@ -14,25 +17,17 @@ type EncryptionClass struct {
 	KeyID       string `json:"keyID,omitempty"`
 }
 
+// GetEncryptionClassYaml returns the EncryptionClass described by class.
 func GetEncryptionClassYaml(class EncryptionClass) []byte {
-	input := `
-apiVersion: encryption.vmware.com/v1alpha1
-kind: EncryptionClass
-metadata:
-  namespace: {{.Namespace}}
-  name: {{.Name}}
-spec:
-  keyProvider: {{.KeyProvider}}
-  keyID: "{{.KeyID}}"
-`
-
-	tmpl := template.Must(template.New("EncryptionClass").Parse(input))
-	parsed := new(bytes.Buffer)
-
-	err := tmpl.Execute(parsed, class)
-	if err != nil {
-		e2eframework.Failf("Failed executing EncryptionClass template: %v", err)
-	}
-
-	return parsed.Bytes()
+	return ToYAML(&byokv1.EncryptionClass{
+		TypeMeta: typeMeta(byokv1.GroupVersion.String(), "EncryptionClass"),
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      class.Name,
+			Namespace: class.Namespace,
+		},
+		Spec: byokv1.EncryptionClassSpec{
+			KeyProvider: class.KeyProvider,
+			KeyID:       class.KeyID,
+		},
+	})
 }

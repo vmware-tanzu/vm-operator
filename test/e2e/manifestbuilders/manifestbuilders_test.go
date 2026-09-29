@@ -134,7 +134,24 @@ var _ = Describe("Manifest builders", func() {
 		Entry("Secret",
 			func() []byte { return mb.GetSecretYamlCloudConfig(mb.Secret{Name: "s", Namespace: "my-ns"}) },
 			"v1", "Secret"),
+		Entry("EncryptionClass",
+			func() []byte {
+				return mb.GetEncryptionClassYaml(mb.EncryptionClass{Name: "e", Namespace: "my-ns", KeyProvider: "kp"})
+			},
+			"encryption.vmware.com/v1alpha1", "EncryptionClass"),
 	)
+
+	It("renders EncryptionClass spec fields", func() {
+		docs := parseDocs(mb.GetEncryptionClassYaml(mb.EncryptionClass{
+			Name:        "e",
+			Namespace:   "my-ns",
+			KeyProvider: "kp",
+			KeyID:       "key-1",
+		}))
+		Expect(docs).To(HaveLen(1))
+		spec, _, _ := unstructured.NestedMap(docs[0].Object, "spec")
+		Expect(spec).To(Equal(map[string]any{"keyProvider": "kp", "keyID": "key-1"}))
+	})
 
 	DescribeTable("render the VirtualMachine followed by its PersistentVolumeClaims",
 		func(manifest func(mb.VirtualMachineYaml) []byte, apiVersion string) {

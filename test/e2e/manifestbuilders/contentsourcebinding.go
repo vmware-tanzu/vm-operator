@@ -1,40 +1,34 @@
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package manifestbuilders
 
 import (
-	"bytes"
-	"text/template"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
-
-	"github.com/vmware-tanzu/vm-operator/test/e2e/fixtures"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
-// Util function to return a ContentSourceBinding yaml from a templatized fixture.
+// GetContentSourceBindingYaml returns a v1alpha1 ContentSourceBinding YAML
+// manifest.
 func GetContentSourceBindingYaml(namespace, contentSourceName string) []byte {
-	test := "test/e2e/fixtures/yaml/vmoperator/contentsources"
-	classBindingYamlIn := fixtures.ReadFile(test, "contentsourcebindings.yaml.in")
-	contentSourceBindingYaml, _ := ReadContentSourceBinding(namespace, contentSourceName, classBindingYamlIn)
-
-	return contentSourceBindingYaml
+	return ToYAML(ContentSourceBindingA1(namespace, contentSourceName))
 }
 
-func ReadContentSourceBinding(ns, contentSourceName, input string) ([]byte, error) {
-	tmpl := template.Must(template.New("contentsourcebinding").Parse(input))
-
-	config := struct {
-		Namespace string
-		Name      string
-	}{
-		ns,
-		contentSourceName,
+// ContentSourceBindingA1 returns a v1alpha1 ContentSourceBinding for the
+// ContentSource contentSourceName.
+func ContentSourceBindingA1(namespace, contentSourceName string) *vmopv1a1.ContentSourceBinding {
+	return &vmopv1a1.ContentSourceBinding{
+		TypeMeta: typeMeta(vmopv1a1.GroupVersion.String(), "ContentSourceBinding"),
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      contentSourceName,
+			Namespace: namespace,
+		},
+		ContentSourceRef: vmopv1a1.ContentSourceReference{
+			APIVersion: vmopv1a1.GroupVersion.String(),
+			Kind:       "ContentSource",
+			Name:       contentSourceName,
+		},
 	}
-
-	parsed := new(bytes.Buffer)
-
-	err := tmpl.Execute(parsed, config)
-	if err != nil {
-		e2eframework.Failf("Failed executing template: %v", err)
-	}
-
-	return parsed.Bytes(), nil
 }

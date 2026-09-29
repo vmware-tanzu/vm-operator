@@ -1,21 +1,19 @@
-// Copyright (c) 2020-2024 Broadcom. All Rights Reserved.
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: Apache-2.0
 
 package manifestbuilders
 
 import (
-	"bytes"
-	"text/template"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/fixtures"
-)
-
-const (
-	vmYamlDir = "test/e2e/fixtures/yaml/vmoperator/virtualmachines"
 )
 
 type Network struct {
@@ -136,78 +134,92 @@ type VirtualMachineYaml struct {
 	Policies            []vmopv1.PolicySpec                `json:"policies,omitempty"`
 }
 
-// GetVirtualMachineYaml returns a v1alpha1 VirtualMachine yaml from a templatized fixture.
+// GetVirtualMachineYaml returns a v1alpha1 VirtualMachine YAML manifest.
 func GetVirtualMachineYaml(vmYaml VirtualMachineYaml) []byte {
-	vmYamlIn := fixtures.ReadFile(vmYamlDir, "singlevm.yaml.in")
-	vmYamlBytes, _ := ReadVirtualMachineTemplate(vmYaml, vmYamlIn)
-
-	return vmYamlBytes
+	return ToYAML(VirtualMachineA1(vmYaml))
 }
 
-// GetVirtualMachineYamlA2 returns a v1alpha2 VirtualMachine yaml from a templatized fixture.
+// GetVirtualMachineYamlA2 returns a v1alpha2 VirtualMachine YAML manifest.
 func GetVirtualMachineYamlA2(vmYaml VirtualMachineYaml) []byte {
-	vmYamlIn := fixtures.ReadFile(vmYamlDir, "v1a2singlevm.yaml.in")
-	vmYamlBytes, _ := ReadVirtualMachineTemplate(vmYaml, vmYamlIn)
-
-	return vmYamlBytes
+	return ToYAML(must(VirtualMachineA2(vmYaml)))
 }
 
-// GetVirtualMachineWithMultiNetworkYamlA2 returns a v1alpha2 VirtualMachine with multiple network yaml
-// from a templatized fixture.
+// GetVirtualMachineWithMultiNetworkYamlA2 returns a v1alpha2 VirtualMachine
+// YAML manifest with one network interface per vmYaml.NetworkA2.Interfaces
+// entry.
 func GetVirtualMachineWithMultiNetworkYamlA2(vmYaml VirtualMachineYaml) []byte {
-	vmYamlIn := fixtures.ReadFile(vmYamlDir, "v1a2vm-multi-network.yaml.in")
-	vmYamlBytes, _ := ReadVirtualMachineTemplate(vmYaml, vmYamlIn)
-
-	return vmYamlBytes
+	return GetVirtualMachineYamlA2(vmYaml)
 }
 
-// GetVirtualMachineYamlA3 returns a v1alpha3 VirtualMachine YAML from a templated fixture.
+// GetVirtualMachineYamlA3 returns a v1alpha3 VirtualMachine YAML manifest.
 func GetVirtualMachineYamlA3(vmYaml VirtualMachineYaml) []byte {
-	vmYamlIn := fixtures.ReadFile(vmYamlDir, "v1a3singlevm.yaml.in")
-	vmYamlBytes, _ := ReadVirtualMachineTemplate(vmYaml, vmYamlIn)
-
-	return vmYamlBytes
+	return ToYAML(VirtualMachineA3(vmYaml))
 }
 
-// GetVirtualMachineYamlA5 returns a v1alpha5 VirtualMachine YAML from a templated fixture.
+// GetVirtualMachineYamlA5 returns a multi-document manifest containing a
+// v1alpha5 VirtualMachine followed by a PersistentVolumeClaim for each entry
+// in vmYaml.PVCs.
 func GetVirtualMachineYamlA5(vmYaml VirtualMachineYaml) []byte {
-	vmYamlIn := fixtures.ReadFile(vmYamlDir, "v1a5singlevm.yaml.in")
-	vmYamlBytes, _ := ReadVirtualMachineTemplate(vmYaml, vmYamlIn)
-
-	return vmYamlBytes
+	return ToYAML(append(
+		[]ctrlclient.Object{must(VirtualMachineA5(vmYaml))},
+		must(persistentVolumeClaimObjects(vmYaml.PVCs))...)...)
 }
 
-// GetVirtualMachineYamlA6 returns a v1alpha6 VirtualMachine YAML from a templated fixture.
+// GetVirtualMachineYamlA6 returns a multi-document manifest containing a
+// v1alpha6 VirtualMachine followed by a PersistentVolumeClaim for each entry
+// in vmYaml.PVCs.
 func GetVirtualMachineYamlA6(vmYaml VirtualMachineYaml) []byte {
-	vmYamlIn := fixtures.ReadFile(vmYamlDir, "v1a6singlevm.yaml.in")
-	vmYamlBytes, _ := ReadVirtualMachineTemplate(vmYaml, vmYamlIn)
-
-	return vmYamlBytes
+	return ToYAML(append(
+		[]ctrlclient.Object{must(VirtualMachineA6(vmYaml))},
+		must(persistentVolumeClaimObjects(vmYaml.PVCs))...)...)
 }
 
-// GetPersistentVolumeClaimYaml renders a single PersistentVolumeClaim manifest from
-// the same PVC fields used by GetVirtualMachineYamlA5 (see createPvcsFromSpec).
+// GetPersistentVolumeClaimYaml returns a PersistentVolumeClaim YAML manifest
+// from the same PVC fields used by GetVirtualMachineYamlA5.
 func GetPersistentVolumeClaimYaml(pvc PVC) []byte {
-	pvcYamlIn := fixtures.ReadFile(vmYamlDir, "pvc.yaml.in")
-	tmpl := template.Must(template.New("pvc").Parse(pvcYamlIn))
-	parsed := new(bytes.Buffer)
-
-	err := tmpl.Execute(parsed, pvc)
-	if err != nil {
-		e2eframework.Failf("Failed executing pvc template: %v", err)
-	}
-
-	return parsed.Bytes()
+	return ToYAML(must(PersistentVolumeClaim(pvc)))
 }
 
-func ReadVirtualMachineTemplate(vmYaml VirtualMachineYaml, input string) ([]byte, error) {
-	tmpl := template.Must(template.New("vm").Parse(input))
-	parsed := new(bytes.Buffer)
+// objectMeta returns the ObjectMeta shared by all the VirtualMachine builders.
+func objectMeta(vmYaml VirtualMachineYaml) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:        vmYaml.Name,
+		Namespace:   vmYaml.Namespace,
+		Labels:      vmYaml.Labels,
+		Annotations: vmYaml.Annotations,
+	}
+}
 
-	err := tmpl.Execute(parsed, vmYaml)
-	if err != nil {
-		e2eframework.Failf("Failed executing vm template: %v", err)
+// hasBootstrap returns true if any of the bootstrap providers are specified.
+func (b Bootstrap) hasBootstrap() bool {
+	return b.CloudInit != nil || b.Sysprep != nil || b.VAppConfig != nil || b.LinuxPrep != nil
+}
+
+// unmarshalInline decodes an inline YAML snippet, such as an inline cloud
+// config or sysprep, into its typed API representation. A nil input returns
+// nil.
+func unmarshalInline[T any](s *string) (*T, error) {
+	if s == nil {
+		return nil, nil
 	}
 
-	return parsed.Bytes(), nil
+	var out T
+	if err := yaml.UnmarshalStrict([]byte(*s), &out); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal inline %T: %w", out, err)
+	}
+
+	return &out, nil
+}
+
+// must returns obj, failing the current test if err is not nil.
+func must[T any](obj T, err error) T {
+	if err != nil {
+		e2eframework.Failf("Failed to build manifest: %v", err)
+	}
+	return obj
+}
+
+// typeMeta returns the TypeMeta for the given kind in the given API version.
+func typeMeta(apiVersion, kind string) metav1.TypeMeta {
+	return metav1.TypeMeta{APIVersion: apiVersion, Kind: kind}
 }

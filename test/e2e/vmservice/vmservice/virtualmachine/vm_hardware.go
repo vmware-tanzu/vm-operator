@@ -17,7 +17,6 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,6 +26,7 @@ import (
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
@@ -462,7 +462,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				By("Logging Virtual Machines and Batch Attachments after failure")
 
 				for _, vmYaml := range vmYamls {
-					var virtualMachine manifestbuilders.VirtualMachineYaml
+					// The VirtualMachine is the first document in the
+					// manifest, which is the one yaml.Unmarshal decodes.
+					var virtualMachine metav1.PartialObjectMetadata
 					if err := yaml.Unmarshal(vmYaml, &virtualMachine); err != nil {
 						e2eframework.Logf("Failed to parse VM yaml: %s", err)
 						continue

@@ -16,7 +16,7 @@ jobs:
     # * GitHub labeler LoC support:
     #   https://github.com/actions/labeler/issues/486
     #
-    - uses: srvaroa/labeler@v1.10.1
+    - uses: srvaroa/labeler@v1.14.0
       with:
         config_path: .github/configs/labeler.yml
       env:

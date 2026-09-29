@@ -142,7 +142,27 @@ var _ = Describe("Manifest builders", func() {
 		Entry("SecurityPolicy",
 			func() []byte { return mb.GetSecurityPolicyYaml(mb.SecurityPolicy{Name: "sp", Namespace: "my-ns"}) },
 			"crd.nsx.vmware.com/v1alpha1", "SecurityPolicy"),
+		Entry("ResourceQuota",
+			func() []byte {
+				b, err := mb.GetStorageQuotaYAML()
+				Expect(err).ToNot(HaveOccurred())
+				return b
+			},
+			"v1", "ResourceQuota"),
 	)
+
+	It("renders the storage quota spec", func() {
+		b, err := mb.GetStorageQuotaYAML()
+		Expect(err).ToNot(HaveOccurred())
+		docs := parseDocs(b)
+		Expect(docs).To(HaveLen(1))
+		Expect(docs[0].GetName()).To(Equal("gc-storage-quota"))
+		Expect(docs[0].GetNamespace()).To(BeEmpty())
+		hard, _, _ := unstructured.NestedStringMap(docs[0].Object, "spec", "hard")
+		Expect(hard).To(Equal(map[string]string{
+			"gc-storage-profile.storageclass.storage.k8s.io/requests.storage": "1Gi",
+		}))
+	})
 
 	It("renders SecurityPolicy spec fields", func() {
 		docs := parseDocs(mb.GetSecurityPolicyYaml(mb.SecurityPolicy{Name: "sp", Namespace: "my-ns"}))

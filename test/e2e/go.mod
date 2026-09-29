@@ -72,7 +72,6 @@ require (
 	github.com/vmware/govmomi v0.57.0-alpha.0.0.20260908193317-e23a942e8f55
 	golang.org/x/crypto v0.56.0
 	gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.0
 	k8s.io/apiextensions-apiserver v0.37.0
 	k8s.io/apimachinery v0.37.0

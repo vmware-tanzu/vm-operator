@@ -1,6 +1,0 @@
-apiVersion: vmoperator.vmware.com/v1alpha2
-kind: VirtualMachineClass
-metadata:
-  name: {{.Name}}
-  namespace: {{.Namespace}}
-

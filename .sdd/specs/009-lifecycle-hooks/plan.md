@@ -11,9 +11,11 @@
 
 Add a consumer-side integration with the externally-owned `lifecycle.vcfa.vmware.com` CRDs so VM Operator can pause and resume four `VirtualMachine` reconcile checkpoints — Create, PowerStateChange, Delete, ResourceDelete — based on a per-VM `LifecycleState` resource, without owning or reconciling any of the Lifecycle Operator's CRDs itself. A single shared routine, `pkg/lifecycle.ReconcileStage`, implements the pause/resume decision table once (see "Shared helper" below) — including creating the `LifecycleState` on first read, since that creation is itself part of the same decision the rest of the routine makes — and is called identically from all four checkpoints — two in the VM controller (`ReconcileNormal`'s Create gate, `ReconcileDelete`'s ResourceDelete gate) and two in the vSphere provider (`DeleteVirtualMachine`'s Delete gate, `session_vm_update.go`'s PowerStateChange gate). `LifecycleState` is owned **1:1** by the `VirtualMachine` it tracks — every fan-out and query in this plan is shaped by that fact: no field index, no custom mapper, just the controller-runtime built-in `handler.EnqueueRequestForOwner`.
 
-`ReconcileStage` answers "does this stage have a hook" with a single cached read of `AggregatedLifecycleHooks` (one per namespace, Lifecycle-Operator-owned), consulted only once per VM — the moment `LifecycleState` exists (for any stage, any reason), it is never consulted again for that VM. See "Zero-hook pre-check."
+`ReconcileStage` answers "does this stage have a hook" with a single cached read of `AggregatedLifecycleHooks` (one per namespace, Lifecycle-Operator-owned, cached by the controller-runtime client but never watched/fanned-out on), consulted only once per VM — the moment `LifecycleState` exists (for any stage, any reason), it is never consulted again for that VM. When VM Operator does create `LifecycleState` for the first time, it copies in *every* stage `AggregatedLifecycleHooks` currently lists for `VirtualMachine` — not just the one stage whose checkpoint triggered the creation. See "Zero-hook pre-check" and "`LifecycleState` creation and day-2 hook additions."
 
-Kubernetes' namespace controller deletes every namespaced object directly and concurrently on namespace deletion, independent of owner-reference cascades, which can make a real `Delete`/`ResourceDelete` hook indistinguishable from no hook at all if checked only lazily at the moment of deletion. A VM-Operator-owned finalizer on `LifecycleState`, plus proactively declaring `Delete`/`ResourceDelete` hook existence during ordinary `ReconcileNormal` passes (`pkg/lifecycle.EnsureTerminalStagesDeclared`), closes this for the two stages where a missed hook is irreversible. See "`EnsureTerminalStagesDeclared` — the namespace-deletion race fix."
+`Delete`/`ResourceDelete` hooks registered *after* a VM's initial reconcile (day 2) are the Lifecycle Operator's responsibility to propagate, not VM Operator's: if the VM already has a `LifecycleState` (for any reason), the Lifecycle Operator patches the new stage directly into it; if it doesn't yet have one, the Lifecycle Operator creates it. This — combined with the full-stage-copy above — is what makes a dedicated VM-Operator-side proactive mechanism unnecessary: `LifecycleState` ends up existing well before any deletion is ever in play, driven by whichever side first learns a hook exists, not by VM Operator's own reconcile cadence.
+
+VM Operator's watch on `LifecycleState` reacts only to `status` changes — not `Create` events (frequently its own) or spec-only updates — since those are the only events carrying information VM Operator doesn't already know. Writes to `spec.stages[].workflowPaused`/`workflowResumed` use optimistic locking, because `LifecycleState` now has two writers on that object (VM Operator and, for day-2 additions, the Lifecycle Operator), not one.
 
 ## Technical context
 
@@ -61,7 +63,7 @@ external/lifecycle/                              # NEW module — vendored clien
 
 pkg/lifecycle/                                     # NEW — stage-gate helper, reusable from controller + provider
   stage.go                                          # ReconcileStage(ctx, k8sClient, obj, stageName) (Result, error),
-                                                     #   EnsureTerminalStagesDeclared, ReleaseLifecycleState
+                                                     #   ReleaseLifecycleState, ensureFinalizer, hookedStagesFor
   stage_test.go
 
 config/crd/external-crds/
@@ -162,7 +164,7 @@ Its two parameters worth calling out explicitly:
 
 `ReconcileStage` no longer takes a `conditionType` parameter — the feature now has a single condition (`VirtualMachineConditionLifecycleHooksBlocked`), so every call site marks the same one, with the stage name folded into the message rather than into a distinct condition type per stage.
 
-**The core fix, relative to the very first drafts of this sketch**: `LifecycleState` existing is *not* the same thing as "this stage has a hook." A different stage's hook may be the reason the object exists at all (e.g. `Create` was hooked, `Delete` was not). So the zero-hook check (`stageHasHook`, against `AggregatedLifecycleHooks`) must run any time this stage has no entry of its own yet — whether the whole object is missing or just this one stage — never inferred from "the object happens to exist."
+`LifecycleState` existing is *not* the same thing as "this stage has a hook." A different stage's hook may be the reason the object exists at all (e.g. `Create` was hooked, `Delete` was not). So the zero-hook check (`hookedStagesFor`, against `AggregatedLifecycleHooks`) must run any time this stage has no entry of its own yet — whether the whole object is missing or just this one stage — never inferred from "the object happens to exist."
 
 Rough sketch, not applied to the real source file:
 
@@ -183,6 +185,16 @@ func ReconcileStage(
         return Result{}, fmt.Errorf("failed to get LifecycleState for %s: %w", obj.Name, err)
     }
 
+    // The object may have been created by either side -- VM Operator's own
+    // getOrCreateLifecycleState below, or the Lifecycle Operator (a day-2
+    // hook on a VM that had none yet, see "LifecycleState creation and
+    // day-2 hook additions"). Only VM Operator can add VM Operator's own
+    // finalizer, so do it opportunistically here rather than assuming it's
+    // only ever needed at our own creation time.
+    if err := ensureFinalizer(ctx, k8sClient, &ls); err != nil {
+        return Result{}, fmt.Errorf("failed to ensure finalizer on LifecycleState for %s: %w", obj.Name, err)
+    }
+
     // CORE FIX: don't treat "LifecycleState exists" as "this stage has a
     // hook" -- a different stage's hook may be why the object exists at all.
     if stage := findStage(&ls, stageName); stage == nil {
@@ -195,7 +207,8 @@ func ReconcileStage(
 // reconcileMissingStage handles a stage with no entry yet, sourcing the
 // answer from a fresh AggregatedLifecycleHooks read rather than from
 // whatever LifecycleState happens to contain. ls may be nil (object doesn't
-// exist at all) or non-nil (object exists, but not for this stage).
+// exist at all) or non-nil (object exists, but not for this stage --
+// ensureFinalizer has already run on it by the time we get here).
 func reconcileMissingStage(
     ctx context.Context,
     k8sClient ctrlclient.Client,
@@ -203,18 +216,24 @@ func reconcileMissingStage(
     ls *lifecyclev1.LifecycleState,
     stageName string) (Result, error) {
 
-    hooked, err := stageHasHook(ctx, k8sClient, obj, stageName)
+    hookedStages, err := hookedStagesFor(ctx, k8sClient, obj)
     if err != nil {
         return Result{}, err
     }
-    if !hooked {
+    if !slices.Contains(hookedStages, stageName) {
         // G5: zero-hook no-op for this stage.
         conditions.MarkTrue(obj, vmopv1.VirtualMachineConditionLifecycleHooksBlocked)
         return Result{Proceed: true}, nil
     }
 
     if ls == nil {
-        created, err := getOrCreateLifecycleState(ctx, k8sClient, obj)
+        // First hook ever discovered for this VM: create LifecycleState and
+        // seed it with EVERY stage AggregatedLifecycleHooks currently lists
+        // -- not just stageName. This is what captures a Delete/
+        // ResourceDelete hook that already existed at this moment for
+        // free, with no dedicated proactive mechanism (see "LifecycleState
+        // creation and day-2 hook additions").
+        created, err := getOrCreateLifecycleState(ctx, k8sClient, obj, hookedStages)
         if err != nil {
             return Result{}, err
         }
@@ -261,88 +280,45 @@ func evaluateStage(
 }
 ```
 
-Every write to `LifecycleState.spec.stages[]` (`patchStageEntry`/`patchWorkflowResumed` above) is a plain `client.MergeFrom` patch with **no optimistic lock**. This is deliberate, not an oversight: `operator-best-practices.md`'s "Fan-out to Child Objects" rule requires an optimistic lock only when a *shared* list-typed field can be written concurrently by multiple owners — e.g. a list several VMs write into at once. `LifecycleState.spec.stages[]` has exactly one writer — the single VM that owns it — so there is no concurrent-writer race for the optimistic lock to guard against. A skip-if-unchanged guard is still worth keeping (patching `workflowPaused=true` when it is already `true` would be a no-op write that needlessly bumps `resourceVersion` and could re-trigger the watch below), but that is the ordinary "don't write what didn't change" discipline, not the fan-in rule.
+Every write to `LifecycleState.spec.stages[]` (`patchStageEntry`/`patchWorkflowResumed` above) uses `client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})` — the Lifecycle Operator also writes into `spec.stages[]` directly, for day-2 stage additions to a `LifecycleState` it didn't create in the same call VM Operator is patching in (see "LifecycleState creation and day-2 hook additions"). This is precisely the *shared list, multiple writers* scenario `operator-best-practices.md`'s "Fan-out to Child Objects" rule requires an optimistic lock for — without one, a merge patch computed from a stale local read can silently drop whichever side wrote most recently, since a JSON merge patch on a plain (non-map-keyed) list field replaces the whole array rather than merging per-element. The pattern throughout `pkg/lifecycle` is: read, mutate the in-memory copy, patch with that read's `resourceVersion` as a precondition; a `409 Conflict` just propagates as an error, and the caller's normal reconcile retry re-reads fresh state — no dedicated conflict-handling logic needed beyond that. 
 
-### 1a. `EnsureTerminalStagesDeclared` — the namespace-deletion race fix
+### 1a. `LifecycleState` creation and day-2 hook additions
 
-Kubernetes' namespace controller deletes **every namespaced object directly and concurrently** when a `Namespace` is deleted — `LifecycleHook`, `AggregatedLifecycleHooks`, and `LifecycleState` alike — independent of any owner-reference cascade, and none of the first two carry finalizers today. Without protection, this makes a real `Delete`/`ResourceDelete` hook indistinguishable from no hook at all: if `LifecycleState` didn't already exist for a VM, and `AggregatedLifecycleHooks` is swept away in the same instant `ReconcileStage` tries to consult it, the check incorrectly concludes "no hook," and the VM (and its external cleanup obligation) proceeds to delete — defeating spec US3's entire premise that a missed deletion hook is irreversible.
+Two mechanisms, one on each side, together ensure `LifecycleState` exists before any deletion is ever in play — without a dedicated VM-Operator-side proactive check.
 
-Two pieces close this, scoped specifically to `Delete`/`ResourceDelete`:
+**Full-stage snapshot at creation.** When `reconcileMissingStage` decides to create `LifecycleState` because `AggregatedLifecycleHooks` shows a hook for the stage currently being checked, it seeds the new object with *every* stage `AggregatedLifecycleHooks` currently lists for `VirtualMachine` in that namespace — not just the one that triggered creation. A VM whose first-ever hooked checkpoint happens to be `Create`, in a namespace that already has a `Delete` hook registered too, gets both stages seeded into `LifecycleState` in that same call. `Delete`'s entry exists long before the VM is ever deleted, with no separate mechanism required.
 
-**A VM-Operator-owned finalizer on `LifecycleState`**, added at creation and removed only after `ResourceDelete` resolves. This protects an *already-existing* `LifecycleState` from being removed mid-check, regardless of whether the delete call came from Kubernetes' garbage collector (a normal, single-VM delete — the owner reference on `LifecycleState` means GC issues a `Delete` on it the moment the VM's own `DeletionTimestamp` is set, and this can race ahead of VM Operator's own `ReconcileDelete` even without a namespace in the picture) or the namespace controller's direct sweep (namespace delete). VM Operator never issues an explicit `Delete` call on `LifecycleState` anywhere — either of those two paths does it automatically; VM Operator's finalizer only controls when that already-issued delete is allowed to complete. `ReleaseLifecycleState` removes the finalizer once `ResourceDelete` resolves with `Proceed=true`, called from `ReconcileDelete` right before the VM's own finalizers come off.
+**Day-2 propagation is the Lifecycle Operator's responsibility, not VM Operator's.** When a new `LifecycleHook` is registered against a VM's kind *after* that VM's initial reconcile:
+- If the VM already has a `LifecycleState` (for any reason), the Lifecycle Operator patches the new stage directly into it.
+- If it doesn't yet have one — a VM that had zero hooks at its own initial reconcile — the Lifecycle Operator creates the `LifecycleState`.
 
-**`EnsureTerminalStagesDeclared`**, called from the top of every `ReconcileNormal` pass (before the `Create` gate), proactively commits `Delete`/`ResourceDelete` hook existence into a finalizer-protected `LifecycleState` *while the VM is alive and `AggregatedLifecycleHooks` is still guaranteed reachable* — long before any deletion, namespace-triggered or otherwise, is in play:
+This propagation runs on the Lifecycle Operator's own reconcile cadence, reacting to the new `LifecycleHook` directly — not on VM Operator's `ReconcileNormal` cadence (bounded by the 30-minute default manager `SyncPeriod` in the worst case, per `pkg/manager/constants.go`). Whichever side learns about a hook first is the side that ensures `LifecycleState` reflects it, and the Lifecycle Operator's own reaction to a new `LifecycleHook` is materially faster than waiting for a given VM to happen to reconcile again — this is what makes a dedicated proactive mechanism on VM Operator's side unnecessary.
+
+**Why `Create`/`PowerStateChange` need none of this**: `Create` being interrupted by a namespace delete is a conflict of intention (the namespace deletion is the user's later, more explicit action), not a gap to protect against — see spec.md US3. `PowerStateChange` self-heals by re-evaluating on every future transition regardless.
+
+**Consequence for `LifecycleState`'s finalizer**: since the object can now be created by either side, VM Operator cannot assume its own finalizer is only ever added at its own creation time. `ReconcileStage` checks for and adds it opportunistically (`ensureFinalizer`, shown above) on any `LifecycleState` it finds already existing, regardless of who created it:
 
 ```go
-func EnsureTerminalStagesDeclared(
-    ctx context.Context,
-    k8sClient ctrlclient.Client,
-    obj *vmopv1.VirtualMachine) error {
-
-    var ls lifecyclev1.LifecycleState
-    err := k8sClient.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &ls)
-    if err == nil {
-        // LifecycleState already exists, for any reason. Lifecycle Operator
-        // now patches new Delete/ResourceDelete hook entries into it
-        // directly as they're registered -- nothing left for VM Operator to
-        // proactively check.
+// ensureFinalizer adds VM Operator's finalizer to ls if not already present.
+// LifecycleState may have been created by the Lifecycle Operator (a day-2
+// hook on a VM with none yet) rather than by getOrCreateLifecycleState
+// below, so this cannot be assumed to have happened at creation time.
+func ensureFinalizer(ctx context.Context, k8sClient ctrlclient.Client, ls *lifecyclev1.LifecycleState) error {
+    if controllerutil.ContainsFinalizer(ls, lifecycleStateFinalizer) {
         return nil
     }
-    if !apierrors.IsNotFound(err) {
-        return err
-    }
-
-    var pending []string
-    for _, stageName := range []string{lifecyclestages.Delete, lifecyclestages.ResourceDelete} {
-        hooked, err := stageHasHook(ctx, k8sClient, obj, stageName)
-        if err != nil {
-            return fmt.Errorf("failed to check %q stage hooks for %s: %w", stageName, obj.Name, err)
-        }
-        if hooked {
-            pending = append(pending, stageName)
-        }
-    }
-    if len(pending) == 0 {
-        // G5: a VM with no terminal-stage hook anywhere causes zero
-        // LifecycleState traffic from this call, every reconcile, forever.
-        return nil
-    }
-
-    ls2, err := getOrCreateLifecycleState(ctx, k8sClient, obj)
-    if err != nil {
-        return err
-    }
-    for _, stageName := range pending {
-        // workflowPaused=false: declaring the stage exists, NOT pausing yet
-        // -- the real checkpoint hasn't been reached, so nothing should
-        // block or flip the VM's condition here.
-        if err := patchStageEntry(ctx, k8sClient, ls2, stageName, false); err != nil {
-            return fmt.Errorf("failed to declare %q stage for %s: %w", stageName, obj.Name, err)
-        }
-    }
-    return nil
+    base := ls.DeepCopy()
+    controllerutil.AddFinalizer(ls, lifecycleStateFinalizer)
+    return k8sClient.Patch(ctx, ls, ctrlclient.MergeFrom(base))
 }
 ```
 
-By the time the real `Delete`/`ResourceDelete` checkpoint runs (inside `ReconcileDelete`), it finds the entry already declared — `evaluateStage` handles it exactly as it would a lazily-discovered entry, patching `workflowPaused=true` for real at that point. No live `AggregatedLifecycleHooks` read happens at the moment a namespace could be tearing it down.
-
-**Why not `Create`/`PowerStateChange` too** — this was deliberately considered and rejected, not merely deferred:
-
-- **`Create`**: this stage is `Single`, gated by `Status.UniqueID == ""`. For any VM whose `UniqueID` is already set, the actual `Create` checkpoint will *never fire again* — that guard is permanent, not a timing accident. Eagerly declaring `Create` on such a VM would create a permanently-dangling `spec.stages[Create]` entry that misrepresents the VM's state to anyone reading `LifecycleState` directly, and — if the mere presence of a stage entry is what triggers the Lifecycle Operator's eventing to notify hook owners (worth confirming with them explicitly) — could fire a spurious "prepare for `Create`" notification for a VM that was created long ago. This is a genuine correctness hazard, not just wasted work, so `Create` stays lazy-only.
-- **`PowerStateChange`**: `Reentrant`, so it will genuinely be evaluated again on the next transition regardless. Eagerly declaring it produces an identical end result to the lazy path once that transition happens — no incorrect behavior — but it also doesn't close any race, since nothing sweeps `AggregatedLifecycleHooks` away except namespace deletion, and a VM mid-power-transition during a namespace teardown resolves the same way either way (the transition either already happened or gets abandoned along with the rest of `ReconcileNormal` once `DeletionTimestamp` is set). Extending eager declaration here is machinery with nothing to show for it, so `PowerStateChange` also stays lazy-only.
+**Residual, accepted gap**: a hook registered for `Delete`/`ResourceDelete` against a VM with no existing `LifecycleState`, in the same instant its namespace begins terminating — before the Lifecycle Operator's own reconcile has a chance to react and before `Namespace.status.phase` flips to `Terminating` (at which point the `NamespaceLifecycle` admission controller starts rejecting new `Create` calls into that namespace, `LifecycleState` included). This window is now bounded by however fast the Lifecycle Operator's own controller reacts to a new `LifecycleHook`, not by VM Operator's reconcile cadence — materially narrower than what an `EnsureTerminalStagesDeclared`-style mechanism on VM Operator's side would have offered, but not literally zero. Documented, not solved further — the same category of unwinnable race as a hook registered in the exact instant teardown begins.
 
 ### 2. VM path — the four call sites and their ordering
 
-Each of the four checkpoints wraps its `ReconcileStage` call in `pkgcfg.FromContext(ctx).Features.LifecycleHooks`, so a disabled capability makes every one a true no-op — no `Get`, no `Create`, nothing (spec G6). `EnsureTerminalStagesDeclared` and `ReleaseLifecycleState` (below) are gated the same way.
+Each of the four checkpoints wraps its `ReconcileStage` call in `pkgcfg.FromContext(ctx).Features.LifecycleHooks`, so a disabled capability makes every one a true no-op — no `Get`, no `Create`, nothing (spec G6). `ReleaseLifecycleState` (below) is gated the same way.
 
-- **`EnsureTerminalStagesDeclared`**, `ReconcileNormal`, at the very top — before the `Create` gate and before anything else in the function. See "`EnsureTerminalStagesDeclared`" above for why this runs unconditionally on every pass rather than only near deletion:
-  ```go
-  if pkgcfg.FromContext(ctx).Features.LifecycleHooks {
-      if err := lifecycle.EnsureTerminalStagesDeclared(ctx, r.Client, ctx.VM); err != nil {
-          return err
-      }
-  }
-  ```
 - **Create**, `ReconcileNormal`, immediately before the existing `r.VMProvider.CreateOrUpdateVirtualMachine`/`Async` dispatch (`virtualmachine_controller.go:657-668`), guarded additionally on `ctx.VM.Status.UniqueID == ""` so the gate is only consulted before the *first* create, matching the stage's `Single` type (model.md):
   ```go
   if pkgcfg.FromContext(ctx).Features.LifecycleHooks && ctx.VM.Status.UniqueID == "" {
@@ -404,50 +380,57 @@ Each of the four checkpoints wraps its `ReconcileStage` call in `pkgcfg.FromCont
 
 ### 3. Zero-hook pre-check (spec G5, `research.md` "Zero-hook cost")
 
-This plan follows `research.md`'s **Candidate 2**: the Lifecycle Operator owns `AggregatedLifecycleHooks`, **one instance per namespace** (not per `(namespace, group, kind)` — a single instance covers every consumer kind registered for hooks in that namespace, disambiguated internally by a `(group, kind)` field inside its `status`). VM Operator reads it as a pure consumer, the same relationship it already has with `LifecycleState` itself, and — this is the key simplification over earlier drafts — **consults it at most once per VM**: the moment `LifecycleState` exists for any reason, `stageHasHook` is never called again for that VM.
+This plan follows `research.md`'s **Candidate 2**: the Lifecycle Operator owns `AggregatedLifecycleHooks`, **one instance per namespace** (not per `(namespace, group, kind)` — a single instance covers every consumer kind registered for hooks in that namespace, disambiguated internally by a `(group, kind)` field inside its `status`). VM Operator reads it as a pure consumer, the same relationship it already has with `LifecycleState` itself, and — this is the key simplification over earlier drafts — **consults it at most once per VM**: the moment `LifecycleState` exists for any reason, `hookedStagesFor` is never called again for that VM.
 
 ```go
 const aggregatedHooksName = "vmoperator-hooks"
 
-// stageHasHook answers, from the informer cache, whether any LifecycleHook
-// currently exists for (obj.Namespace, vmoperator.vmware.com, VirtualMachine,
-// stageName). AggregatedLifecycleHooks is one object per namespace, so this
-// is always a single cached Get, filtered locally to VM Operator's own
-// (group, kind) entry -- never a List or Watch against LifecycleHook itself.
-func stageHasHook(
+// hookedStagesFor answers, from the informer cache, which stages currently
+// have at least one LifecycleHook for (obj.Namespace, vmoperator.vmware.com,
+// VirtualMachine). AggregatedLifecycleHooks is one object per namespace and
+// is finalizer-protected by the Lifecycle Operator (confirmed directly with
+// them), so this Get is always safe -- it never races a namespace-teardown
+// sweep the way an unprotected resource would. It is a single cached Get,
+// filtered locally to VM Operator's own (group, kind) entry -- never a List
+// or Watch against LifecycleHook itself.
+func hookedStagesFor(
     ctx context.Context,
     k8sClient ctrlclient.Client,
-    obj *vmopv1.VirtualMachine,
-    stageName string) (bool, error) {
+    obj *vmopv1.VirtualMachine) ([]string, error) {
 
     var agg lifecyclev1.AggregatedLifecycleHooks
     key := ctrlclient.ObjectKey{Namespace: obj.Namespace, Name: aggregatedHooksName}
     if err := k8sClient.Get(ctx, key, &agg); err != nil {
         if apierrors.IsNotFound(err) {
-            return false, nil
+            return nil, nil
         }
-        return false, fmt.Errorf("failed to get AggregatedLifecycleHooks in %s: %w", obj.Namespace, err)
+        return nil, fmt.Errorf("failed to get AggregatedLifecycleHooks in %s: %w", obj.Namespace, err)
     }
 
     for _, target := range agg.Status.Objects {
-        if target.Group != vmopv1.GroupVersion.Group || target.Kind != "VirtualMachine" {
-            continue
-        }
-        for _, s := range target.Stages {
-            if s == stageName {
-                return true, nil
-            }
+        if target.Group == vmopv1.GroupVersion.Group && target.Kind == "VirtualMachine" {
+            return target.Stages, nil
         }
     }
-    return false, nil
+    return nil, nil
 }
 
 // getOrCreateLifecycleState creates a finalizer-protected LifecycleState
-// owned by obj, or returns the existing one on a create/get race.
+// owned by obj, seeded with a declared (workflowPaused=false) entry for
+// every stage in hookedStages -- a snapshot of AggregatedLifecycleHooks at
+// the moment of creation, not just the one stage that triggered it (see
+// "LifecycleState creation and day-2 hook additions") -- or returns the
+// existing one on a create/get race.
 func getOrCreateLifecycleState(
     ctx context.Context,
     k8sClient ctrlclient.Client,
-    obj *vmopv1.VirtualMachine) (*lifecyclev1.LifecycleState, error) {
+    obj *vmopv1.VirtualMachine,
+    hookedStages []string) (*lifecyclev1.LifecycleState, error) {
+
+    stages := make([]lifecyclev1.Stage, 0, len(hookedStages))
+    for _, s := range hookedStages {
+        stages = append(stages, lifecyclev1.Stage{Name: s})
+    }
 
     ls := &lifecyclev1.LifecycleState{
         ObjectMeta: metav1.ObjectMeta{
@@ -463,6 +446,7 @@ func getOrCreateLifecycleState(
                 Namespace:  obj.Namespace,
                 UID:        obj.UID,
             },
+            Stages: stages,
         },
     }
     if err := controllerutil.SetControllerReference(obj, ls, k8sClient.Scheme()); err != nil {
@@ -507,7 +491,7 @@ func ReleaseLifecycleState(
 }
 ```
 
-`lifecycleStateFinalizer` is a single constant (`"lifecycle.vcfa.vmware.com/vm-operator-state"`), used by both `getOrCreateLifecycleState` (add) and `ReleaseLifecycleState` (remove) — see "`EnsureTerminalStagesDeclared`" above for why it exists.
+`lifecycleStateFinalizer` is a single constant (`"lifecycle.vcfa.vmware.com/vm-operator-state"`), added by both `getOrCreateLifecycleState` and the opportunistic `ensureFinalizer`, and removed by `ReleaseLifecycleState` — see "`LifecycleState` creation and day-2 hook additions" above for why it exists and why it can't be assumed to only ever be added at VM Operator's own creation time.
 
 This design point is fully resolved and requires only one thing from the Lifecycle Operator team: that `AggregatedLifecycleHooks` is exactly as described above (one per namespace, `status.objects[].{group,kind,stages[]}`). It does not require them to build anything new beyond what `research.md`'s Candidate 2 already proposed.
 
@@ -523,15 +507,35 @@ if pkgcfg.FromContext(ctx).Features.LifecycleHooks {
             mgr.GetScheme(),
             mgr.GetRESTMapper(),
             &vmopv1.VirtualMachine{}),
+        builder.WithPredicates(statusChangedPredicate{}),
     )
 }
 ```
 
-This is the exact shape of the existing `PolicyEvaluation` watch (`virtualmachine_controller.go:197-205`, gated on `Features.VSpherePolicies`) — both types are owned 1:1 by a `VirtualMachine` via `ownerReferences`, so both use the built-in `handler.EnqueueRequestForOwner` rather than a hand-written mapper. This is a deliberately simple fan-out, and worth spelling out why it's sufficient: a custom mapper plus a dedicated field index is only needed when a child object must reach *multiple* interested parents with no static path back to them — a many-to-many relationship. `LifecycleState` has no such relationship: `EnqueueRequestForOwner` reads the owning VM's identity straight out of the `LifecycleState` object's own `ownerReferences` field and issues a single `Get`, no `List` and no field index at all. `HooksReady` flipping on any stage therefore re-triggers exactly the one VM it belongs to, promptly, with none of the workqueue-deduplication or predicate-filtering reasoning a many-to-many fan-out would need to justify staying cheap.
+This is the exact shape of the existing `PolicyEvaluation` watch (`virtualmachine_controller.go:197-205`, gated on `Features.VSpherePolicies`) — both types are owned 1:1 by a `VirtualMachine` via `ownerReferences`, so both use the built-in `handler.EnqueueRequestForOwner` rather than a hand-written mapper. This is a deliberately simple fan-out, and worth spelling out why it's sufficient: a custom mapper plus a dedicated field index is only needed when a child object must reach *multiple* interested parents with no static path back to them — a many-to-many relationship. `LifecycleState` has no such relationship: `EnqueueRequestForOwner` reads the owning VM's identity straight out of the `LifecycleState` object's own `ownerReferences` field and issues a single `Get`, no `List` and no field index at all. `HooksReady` flipping on any stage therefore re-triggers exactly the one VM it belongs to, promptly, with none of the workqueue-deduplication reasoning a many-to-many fan-out would need to justify staying cheap.
 
-No predicate is added on this watch, because there is no analogous "controller writes to the object on every reconcile" noise source here: `LifecycleState.status` is written exclusively by the Lifecycle Operator, and VM Operator's own `spec.stages[].workflowPaused`/`workflowResumed` writes happen only on the pause/resume transitions `ReconcileStage` itself is trying to observe — there is no third party generating filler events on this object. This includes a day-2 hook addition: when the Lifecycle Operator patches a new entry into `status.stages[]` on an already-existing `LifecycleState` (see model.md "`LifecycleState`"), that write rides this exact same watch with no extra wiring — it is simply another update to an object VM Operator is already watching via its owner reference.
+`LifecycleState` can be created by either side (VM Operator itself, or the Lifecycle Operator for a day-2 hook), so its `Create` event is frequently VM Operator's own write reflected back at it — reconciling on that is pure waste. Likewise, VM Operator's own `spec.stages[]` patches (`workflowPaused`/`workflowResumed`) would otherwise re-trigger a reconcile of the exact VM that just made that patch, for no new information. The only events actually worth reacting to are `status` changes — `HooksReady` flipping, or a new day-2 entry appearing in `status.stages[]`. A custom predicate filters to exactly that:
 
-**`AggregatedLifecycleHooks` is never watched, deliberately.** It is one instance per namespace and covers every consumer kind registered for hooks in that namespace — watching it and fanning out to "every VM in the namespace" on each change would be the many-to-many problem this section's `EnqueueRequestForOwner` approach exists to avoid, and would fire on hook activity for kinds that have nothing to do with `VirtualMachine`. Instead, `stageHasHook` (see "Zero-hook pre-check" above) reads it via a plain, informer-cache-backed `Get` — the RBAC below grants `list`/`watch` on it purely so that cache stays populated, not to register any event handler.
+```go
+type statusChangedPredicate struct{}
+
+func (statusChangedPredicate) Create(event.CreateEvent) bool { return false }
+func (statusChangedPredicate) Delete(event.DeleteEvent) bool { return true }
+func (statusChangedPredicate) Generic(event.GenericEvent) bool { return false }
+
+func (statusChangedPredicate) Update(e event.UpdateEvent) bool {
+    oldLS, ok1 := e.ObjectOld.(*lifecyclev1.LifecycleState)
+    newLS, ok2 := e.ObjectNew.(*lifecyclev1.LifecycleState)
+    if !ok1 || !ok2 {
+        return false
+    }
+    return !apiequality.Semantic.DeepEqual(oldLS.Status, newLS.Status)
+}
+```
+
+This does **not** reduce memory usage — the informer backing this watch still fully caches every `LifecycleState` that exists, regardless of the predicate; the predicate only decides whether an already-cached event gets enqueued as a reconcile request. It saves reconciles/API traffic, not cache footprint.
+
+**`AggregatedLifecycleHooks` is never watched, deliberately.** It is one instance per namespace and covers every consumer kind registered for hooks in that namespace — watching it and fanning out to "every VM in the namespace" on each change would be the many-to-many problem this section's `EnqueueRequestForOwner` approach exists to avoid, and would fire on hook activity for kinds that have nothing to do with `VirtualMachine`. Instead, `hookedStagesFor` (see "Zero-hook pre-check" above) reads it via a plain, informer-cache-backed `Get` — the RBAC below grants `list`/`watch` on it purely so that cache stays populated, not to register any event handler.
 
 **The CRD must exist when the manager starts**, since a watch on an unserved kind fails to start. Per "Getting the CRD onto a Supervisor" above, `main.go`'s `initCRDs()` runs `pkgcrd.Install` — which creates the `LifecycleState` CRD whenever `Features.LifecycleHooks` is on — before `controllers.AddToManager` registers this watch, so there is no configuration where the watch starts without its CRD. `AggregatedLifecycleHooks`'s CRD is installed by the Lifecycle Operator's own chart (see "Getting the CRD onto a Supervisor" below), so it must be present before VM Operator's manager starts issuing `Get`s against it — the same install-ordering dependency `LifecycleStages`' static instance write already has.
 
@@ -544,7 +548,7 @@ None. Stage gating is a reconcile-time concern; there is no admission-time decis
 New markers on the `VirtualMachine` controller for `lifecycle.vcfa.vmware.com`:
 
 - `lifecyclestates` (get, list, watch, create, patch) and `lifecyclestates/status` (get, patch) — no `update` (every write is a `Patch`, per `operator-best-practices.md`'s reconcile-loop convention).
-- `aggregatedlifecyclehooks` (get, list, watch) — `list`/`watch` are needed even though there is no dedicated `Watches()` fan-out registered against this kind (see "Fan-out" above), because the informer cache backing every `stageHasHook` `Get` needs them to stay populated.
+- `aggregatedlifecyclehooks` (get, list, watch) — `list`/`watch` are needed even though there is no dedicated `Watches()` fan-out registered against this kind (see "Fan-out" above), because the informer cache backing every `hookedStagesFor` `Get` needs them to stay populated.
 
 No verbs at all for `lifecyclehooks` or `lifecyclestages`, since VM Operator never reads either kind directly (model.md).
 
@@ -553,10 +557,7 @@ No verbs at all for `lifecyclehooks` or `lifecyclestages`, since VM Operator nev
 ```mermaid
 flowchart TD
     subgraph Normal["ReconcileNormal"]
-        Z{Features.LifecycleHooks?}
-        Z -- yes --> Z1[EnsureTerminalStagesDeclared<br/>#40;Delete/ResourceDelete only#41;]
-        Z -- no --> A
-        Z1 --> A{Status.UniqueID empty?}
+        A{Features.LifecycleHooks &&<br/>Status.UniqueID empty?}
         A -- no --> A1[Skip straight to<br/>CreateOrUpdateVirtualMachine#40;Async#41;]
         A -- yes --> B[ReconcileStage#40;Create#41;]
         B --> C{Proceed?}
@@ -579,7 +580,7 @@ flowchart TD
 
     subgraph Delete["ReconcileDelete"]
         J{Features.LifecycleHooks?} -- no --> K1[DeleteVirtualMachine call]
-        J -- yes --> K[ReconcileStage#40;Delete#41;<br/>in DeleteVirtualMachine —<br/>entry usually already declared<br/>by EnsureTerminalStagesDeclared]
+        J -- yes --> K[ReconcileStage#40;Delete#41;<br/>in DeleteVirtualMachine]
         K --> L{Proceed?}
         L -- no --> L1([NoRequeueNoErr — finalizer kept,<br/>condition=False/HooksBlocked])
         L -- yes --> K1
@@ -594,37 +595,50 @@ flowchart TD
     end
 
     subgraph ReconcileStageBox["pkg/lifecycle.ReconcileStage — shared by all four call sites"]
-        P{entry for this<br/>stage exists in<br/>LifecycleState?<br/>#40;CORE FIX: checked per-stage,<br/>not per-object#41;}
-        P -- no --> Q{stageHasHook<br/>#40;AggregatedLifecycleHooks#41;?}
+        P0{LifecycleState<br/>exists at all?}
+        P0 -- yes --> FIN[ensureFinalizer<br/>— may have been created<br/>by either side]
+        FIN --> P
+        P0 -- no --> P
+        P{entry for this<br/>stage exists?<br/>#40;CORE FIX: checked per-stage,<br/>not per-object#41;}
+        P -- no --> Q{hookedStagesFor<br/>#40;AggregatedLifecycleHooks#41;<br/>— finalizer-protected, always safe}
         Q -- no --> QA[MarkTrue#40;LifecycleHooksBlocked#41;<br/>Proceed=true — zero LS traffic]
-        Q -- yes --> R[Create LifecycleState if absent<br/>#40;+ finalizer + owner ref#41;;<br/>add entry, workflowPaused=true]
+        Q -- yes --> R[Create LifecycleState if absent —<br/>seed ALL currently-hooked stages<br/>at once, not just this one]
         R --> T1
         P -- yes --> S{spec.stages#91;stage#93;<br/>.workflowPaused?}
-        S -- false --> T[Patch workflowPaused=true<br/>MarkFalse#40;HooksBlocked#41;]
+        S -- false --> T[Patch workflowPaused=true<br/>MarkFalse#40;HooksBlocked#41;<br/>#40;optimistic lock#41;]
         T --> T1[Proceed=false]
         S -- true --> U{status.stages#91;stage#93;<br/>.conditions#91;HooksReady#93;<br/>== True?}
         U -- no --> U1[MarkFalse#40;HooksBlocked#41;<br/>Proceed=false]
-        U -- yes --> V[Patch workflowResumed=true<br/>MarkTrue#40;LifecycleHooksBlocked#41;<br/>Proceed=true]
+        U -- yes --> V[Patch workflowResumed=true<br/>MarkTrue#40;LifecycleHooksBlocked#41;<br/>Proceed=true<br/>#40;optimistic lock#41;]
     end
 
-    B -.-> P
-    H -.-> P
-    K -.-> P
-    N -.-> P
-    Z1 -.->|same stageHasHook check, run<br/>proactively — only ever declares<br/>#40;workflowPaused=false#41;, never pauses| Q
+    B -.-> P0
+    H -.-> P0
+    K -.-> P0
+    N -.-> P0
 
-    subgraph Watch["Fan-out — VM controller's Watches#40;&LifecycleState{}#41;"]
-        W1[LifecycleState updated<br/>by Lifecycle Operator<br/>#40;HooksReady flips, or a new<br/>status.stages#91;#93; entry from<br/>a day-2 hook#41;] --> W2[handler.EnqueueRequestForOwner<br/>— reads ownerReferences directly,<br/>no List, no index]
+    subgraph LCOp["Lifecycle Operator #40;external#41;"]
+        DAY2{New LifecycleHook<br/>registered day-2?}
+        DAY2 -- LS exists --> PATCH[Patch new stage into<br/>existing LifecycleState]
+        DAY2 -- LS absent --> CREATE[Create LifecycleState,<br/>patch the new stage]
+    end
+
+    PATCH -.->|status.stages#91;#93; entry appears| W1
+    CREATE -.->|new object, VM Operator adds<br/>its finalizer on next reconcile| FIN
+
+    subgraph Watch["Fan-out — VM controller's Watches#40;&LifecycleState{}, statusChangedPredicate#41;"]
+        W1[status changed:<br/>HooksReady flip, or a new<br/>day-2 status.stages#91;#93; entry] --> W2[handler.EnqueueRequestForOwner<br/>— reads ownerReferences directly,<br/>no List, no index]
         W2 --> W3[owning VM re-reconciles<br/>immediately]
+        WX[Create event, or<br/>spec-only update] -.->|filtered out,<br/>no reconcile| W2
     end
 
     V -.->|writes status.stages HooksReady, observed by| W1
-    W3 -.->|re-enters| Z
+    W3 -.->|re-enters| A
     W3 -.->|re-enters| F
     W3 -.->|re-enters| J
 ```
 
-`AggregatedLifecycleHooks` and `LifecycleHook` are not shown as reachable from a `Namespace`-deletion actor in this diagram because they carry no finalizers today and can vanish from either path at any point without further interaction from VM Operator — the diagram's `Q` node's `AggregatedLifecycleHooks` read is only safe against that disappearance because `Z1` (`EnsureTerminalStagesDeclared`) runs it during ordinary operation, well before any deletion; see model.md "Namespace-deletion protection" for the mechanics this diagram doesn't attempt to depict directly.
+There is deliberately no path into `hookedStagesFor`'s `AggregatedLifecycleHooks` `Get` from a `Namespace`-deletion actor in this diagram — that read is always safe, since `AggregatedLifecycleHooks` is itself finalizer-protected by the Lifecycle Operator and cannot be swept away mid-check. What this diagram *cannot* depict is timing: the `LCOp` subgraph's reaction to a new `LifecycleHook` runs on the Lifecycle Operator's own reconcile cadence, independent of anything VM Operator does — see "`LifecycleState` creation and day-2 hook additions" for why that timing, not a VM-Operator-side proactive check, is what closes the namespace-deletion race for `Delete`/`ResourceDelete`.
 
 ## Test strategy
 
@@ -635,27 +649,30 @@ Per `testing-standards.md`: one `_test.go` and one `_suite_test.go` per package,
 - `pkg/lifecycle/stage_test.go` — the full `ReconcileStage` decision table against a fake client with `lifecyclev1.AddToScheme` registered:
   - No hook anywhere → `Proceed=true`, no `LifecycleState` `Get`/`Create` beyond the initial lookup (G5).
   - Hook registered, no `LifecycleState` yet → created (with finalizer + owner reference) + `workflowPaused=true` + `Proceed=false`.
-  - `LifecycleState` already exists (created for a *different* stage's hook) but has no entry for *this* stage → `stageHasHook` is re-consulted fresh for this stage rather than assuming the object's existence means it's hooked; asserted both ways — hooked (entry gets added, pauses) and not hooked (proceeds, no entry ever added for this stage).
+  - **Full-stage snapshot at creation**: `AggregatedLifecycleHooks` lists multiple stages (e.g. `Create` and `Delete`) when the *first* one (`Create`) is checked and `LifecycleState` doesn't exist yet → assert the created object's `spec.stages[]` contains entries for **both** stages, `Delete`'s at `workflowPaused=false` (declared, not paused) and `Create`'s at `workflowPaused=true` (the one actually being checked).
+  - `LifecycleState` already exists (created for a *different* stage's hook) but has no entry for *this* stage → `hookedStagesFor` is re-consulted fresh for this stage rather than assuming the object's existence means it's hooked; asserted both ways — hooked (entry gets added, pauses) and not hooked (proceeds, no entry ever added for this stage).
+  - **`ensureFinalizer` runs opportunistically**: a `LifecycleState` fixture created *without* VM Operator's finalizer (simulating one the Lifecycle Operator created for a day-2 hook) → `ReconcileStage` patches the finalizer in before evaluating the stage, regardless of which branch (missing-stage or already-present) it takes next; a fixture that already has the finalizer → no patch call issued.
   - `workflowPaused=true` + `HooksReady` absent/`False`/any non-`True` reason → `Proceed=false`, condition stays `HooksBlocked` regardless of the underlying `HooksReady` reason (model.md "Hooks-not-ready handling" — VM Operator does not branch on it).
   - `workflowPaused=true` + `HooksReady=True` → `workflowResumed=true` patched, `Proceed=true`, condition flips `True`.
+  - **Optimistic-lock conflict**: a patch attempt where the fake client's object was concurrently modified (simulating a Lifecycle Operator day-2 write) between read and patch → the patch fails with a conflict, propagated as a plain error rather than silently retried inside `ReconcileStage` itself (retry is the caller's normal reconcile-requeue behavior, not new logic here).
   - A `LifecycleState` deleted out-of-band while paused → re-created and re-enters the paused state on the next call (spec "Resolved decisions"), not treated as an implicit resume.
-- `pkg/lifecycle/stage_test.go` (continued) — `EnsureTerminalStagesDeclared`: no `Delete`/`ResourceDelete` hook anywhere → zero calls into the fake client beyond the initial `Get` (G5); `LifecycleState` already exists (any reason) → returns immediately, makes no further calls at all — asserting this is what lets VM Operator stop consulting `AggregatedLifecycleHooks` once a VM has any `LifecycleState`; hook present, no `LifecycleState` yet → creates it (finalizer + owner reference) with the declared stage's entry at `workflowPaused=false` — assert the condition is **not** touched and no `MarkFalse`/`MarkTrue` call happens, since declaring is not reaching the checkpoint.
 - `pkg/lifecycle/stage_test.go` (continued) — `ReleaseLifecycleState`: finalizer present → removed via a bare `MergeFrom` patch; finalizer already absent, or object already gone (`NotFound`) → no-op, no patch call issued.
-- `controllers/virtualmachine/virtualmachine/*_test.go` — Create-stage gate: hook absent (no-op, proceeds to create); hook present and blocking (no vSphere create call reaches the fake provider, condition blocked); `Status.UniqueID` already set skips the gate entirely (post-create reconciles never re-consult `Create`). `EnsureTerminalStagesDeclared` call: asserted to run before the `Create` gate on every pass, including ones where `Create` itself skips. ResourceDelete-stage gate: finalizer retained while paused; `Delete`-stage completion is a precondition the test constructs explicitly (fake provider's delete call already returned) so the "never in parallel" ordering is exercised, not merely assumed; `ReleaseLifecycleState` is asserted to run exactly once, only after `ResourceDelete` resolves with `Proceed=true`, and before `RemoveFinalizer` on the VM.
-- `pkg/providers/vsphere/vmprovider_vm.go`/`vmprovider_vm_test.go` — Delete-stage gate: paused → `pkgerr.NoRequeueNoErr` returned, `virtualmachine.DeleteVirtualMachine` (the vCenter call) never invoked; resumed or no hook → vCenter delete proceeds unchanged from today's behavior (spec SC-004 baseline); the entry having already been declared by a prior `EnsureTerminalStagesDeclared` call (fixture pre-seeds `LifecycleState` with an unpaused `Delete` entry) is asserted to produce the identical pause behavior as the entry being discovered lazily for the first time here.
+- `controllers/virtualmachine/virtualmachine/*_test.go` — Create-stage gate: hook absent (no-op, proceeds to create); hook present and blocking (no vSphere create call reaches the fake provider, condition blocked); `Status.UniqueID` already set skips the gate entirely (post-create reconciles never re-consult `Create`). ResourceDelete-stage gate: finalizer retained while paused; `Delete`-stage completion is a precondition the test constructs explicitly (fake provider's delete call already returned) so the "never in parallel" ordering is exercised, not merely assumed; `ReleaseLifecycleState` is asserted to run exactly once, only after `ResourceDelete` resolves with `Proceed=true`, and before `RemoveFinalizer` on the VM.
+- `pkg/providers/vsphere/vmprovider_vm.go`/`vmprovider_vm_test.go` — Delete-stage gate: paused → `pkgerr.NoRequeueNoErr` returned, `virtualmachine.DeleteVirtualMachine` (the vCenter call) never invoked; resumed or no hook → vCenter delete proceeds unchanged from today's behavior (spec SC-004 baseline); a fixture where `LifecycleState` already carries an unpaused `Delete` entry (simulating one seeded by the full-stage-snapshot behavior at an earlier `Create` checkpoint, or patched in by the Lifecycle Operator) is asserted to produce the identical pause behavior as the entry being discovered lazily for the first time here.
 - `pkg/providers/vsphere/session/session_vm_update_test.go` — PowerStateChange-stage gate: paused power-on does not issue the power task, but volume/network/guest-customization reconcile in the same call still runs (spec SC-002, asserted via the fake's other reconcile side effects still firing); the same for power-off; the two directions pause independently within one test given the `Reentrant` stage type (spec US2 scenario 3).
-- Capability wiring — with `Features.LifecycleHooks=false`, every one of the above call sites (including `EnsureTerminalStagesDeclared` and `ReleaseLifecycleState`) makes zero calls into the fake client for `LifecycleState`/`AggregatedLifecycleHooks` — asserted with a call-counting fake, not just "no error," since the no-op requirement (G5/G6) is specifically about absence of API traffic, not just absence of pausing.
+- Capability wiring — with `Features.LifecycleHooks=false`, every one of the above call sites (including `ReleaseLifecycleState`) makes zero calls into the fake client for `LifecycleState`/`AggregatedLifecycleHooks` — asserted with a call-counting fake, not just "no error," since the no-op requirement (G5/G6) is specifically about absence of API traffic, not just absence of pausing.
+- `pkg/lifecycle` watch predicate unit test (no envtest needed — `statusChangedPredicate` is a plain function): `Create` events always filtered out; `Update` events with only `spec` changed filtered out; `Update` events with `status.stages[]`/`conditions` changed pass through; `Delete` events pass through.
 
 ### Integration (`testlabels.EnvTest`)
 
 vcsim gives VM Operator a fake vSphere; it does not give VM Operator a fake Lifecycle Operator. The Lifecycle Operator's own business logic (hook fan-out, timeout, matching) is out of scope per spec's non-goals, and a real Lifecycle Operator binary is unnecessary weight for envtest — VM Operator's contract is fully defined by what it reads/writes on `LifecycleState`/`AggregatedLifecycleHooks`, not by how the Lifecycle Operator arrives at those values. Two tiers, in increasing realism:
 
 1. **Direct test-code manipulation (primary, for most scenarios)** — envtest + real API server, `LifecycleState`/`AggregatedLifecycleHooks` objects created/patched directly by test code standing in for the Lifecycle Operator (already the existing plan's approach for the watch-wiring test below). Sufficient for anything that only needs "the Lifecycle Operator eventually writes X" — no sequencing between multiple Lifecycle-Operator-side writes is needed.
-2. **A minimal fake Lifecycle Operator reconciler (new, for compound/day-2 sequencing scenarios)** — a small test-only controller, `test/builder/fakelifecycle` (mirroring the shape of `test/builder/fake.go`'s `VMProvider` fake), registered only in envtest suites that need it. It watches `LifecycleHook` create/delete and mechanically mirrors the minimum needed for these tests: adding/removing the corresponding entry in `AggregatedLifecycleHooks.status.objects[].stages[]`, and — for hooks targeting a VM that already has a `LifecycleState` — patching a matching entry into `status.stages[]`. It does **not** implement timeout, eventing, or multi-hook aggregation (`status.stages[].hooks[]`) — those stay entirely out of scope, per spec's non-goals; it exists purely to remove the hand-choreographed, multi-step test setup that scenarios like "day-2 hook added while `LifecycleState` already exists" would otherwise require (create the `LifecycleHook`, then manually patch `AggregatedLifecycleHooks`, then manually patch `LifecycleState.status`, in the right order, in every such test). Flipping `HooksReady` itself stays a manual test-code patch in both tiers — that boundary (readiness computation) is never faked, only existence propagation is.
-- `controllers/virtualmachine/virtualmachine/*_test.go` (envtest, tier 1) — the watch wiring itself: with `Features.LifecycleHooks` on, patching `LifecycleState.status.stages[Create].conditions[HooksReady]=True` on a real object causes the owning VM to reconcile promptly (`Eventually`), exercising `handler.EnqueueRequestForOwner` through a real manager rather than a unit-level assertion that the builder call was made. Also: a `LifecycleState` update that does **not** touch `HooksReady` (e.g. a new `status.stages[]` entry from a simulated day-2 hook) still re-triggers the VM, since no predicate filters this fan-out; confirm this is an accepted, non-mutating reconcile rather than a bug.
+2. **A minimal fake Lifecycle Operator reconciler (new, for compound/day-2 sequencing scenarios)** — a small test-only controller, `test/builder/fakelifecycle` (mirroring the shape of `test/builder/fake.go`'s `VMProvider` fake), registered only in envtest suites that need it. It watches `LifecycleHook` create/delete and mechanically mirrors the minimum needed for these tests: adding/removing the corresponding entry in `AggregatedLifecycleHooks.status.objects[].stages[]`, and — this now includes the day-2 responsibility described in "`LifecycleState` creation and day-2 hook additions" — patching a matching entry into `status.stages[]` on an existing `LifecycleState`, or **creating** `LifecycleState` (with an owner reference to the target VM) and patching it if none exists yet. It does **not** implement timeout, eventing, or multi-hook aggregation (`status.stages[].hooks[]`) — those stay entirely out of scope, per spec's non-goals; it exists purely to remove the hand-choreographed, multi-step test setup these sequencing scenarios would otherwise require. Flipping `HooksReady` itself stays a manual test-code patch in both tiers — that boundary (readiness computation) is never faked, only existence/propagation is.
+- `controllers/virtualmachine/virtualmachine/*_test.go` (envtest, tier 1) — the watch wiring itself: with `Features.LifecycleHooks` on, patching `LifecycleState.status.stages[Create].conditions[HooksReady]=True` on a real object causes the owning VM to reconcile promptly (`Eventually`), exercising `handler.EnqueueRequestForOwner` and `statusChangedPredicate` together through a real manager. Also assert the predicate's actual filtering behavior end-to-end: a spec-only patch to `LifecycleState` (e.g. VM Operator's own `workflowPaused` write) does **not** cause a second, redundant reconcile of the same VM; a `status.stages[]` addition with no `HooksReady` change (a day-2 hook just registered, not yet resolved) **does** trigger one.
 - `controllers/virtualmachine/virtualmachine/*_test.go` (envtest, tier 1) — full stage sequencing across a real object lifecycle: create a VM with hooks on all four stages, drive each `HooksReady` flip in order, and assert the VM only ever proceeds past `Delete` after that stage's `HooksReady` flip, never before, and that `ResourceDelete` is not evaluated (no `LifecycleState.spec.stages[ResourceDelete]` entry appears) until `Delete` has resolved. Also assert `ReleaseLifecycleState` actually results in the `LifecycleState` object disappearing from the API server once both the VM's and `LifecycleState`'s finalizers clear.
-- `controllers/virtualmachine/virtualmachine/*_test.go` (envtest, tier 1) — `EnsureTerminalStagesDeclared`'s proactive-declaration behavior: a VM created with no hooks, then a `Delete`-stage `AggregatedLifecycleHooks` entry patched in directly (simulating a day-2 registration) while `LifecycleState` still doesn't exist, followed by a normal `ReconcileNormal` trigger (e.g. an unrelated spec touch) — assert `LifecycleState` gets created with the declared, unpaused entry, and that the VM's condition is **not** flipped to blocked by this declaration alone.
-- `controllers/virtualmachine/virtualmachine/*_test.go` (envtest, tier 2, using `fakelifecycle`) — the day-2 sequencing case end-to-end: VM created and reconciled with a `Create`-stage hook only (so `LifecycleState` exists early); register a *new* `LifecycleHook` targeting `Delete` afterward; assert `fakelifecycle` propagates it into the already-existing `LifecycleState.status.stages[]` without any `EnsureTerminalStagesDeclared` involvement (since the object already existed, that function returns immediately per its own contract); then delete the VM and assert the `Delete` stage blocks correctly.
+- `controllers/virtualmachine/virtualmachine/*_test.go` (envtest, tier 1) — full-stage-snapshot behavior against a real object: patch `AggregatedLifecycleHooks` to list both `Create` and `Delete` before a fresh VM's first reconcile; assert the `LifecycleState` created at the `Create` checkpoint already carries a declared (`workflowPaused=false`) `Delete` entry, with no separate write needed later.
+- `controllers/virtualmachine/virtualmachine/*_test.go` (envtest, tier 2, using `fakelifecycle`) — the day-2, no-prior-`LifecycleState` case end-to-end: VM created and reconciled with zero hooks anywhere (no `LifecycleState` created); register a *new* `LifecycleHook` targeting `Delete` against the running VM; assert `fakelifecycle` creates `LifecycleState` (with `ensureFinalizer` picking up VM Operator's finalizer on the VM's next reconcile) and patches in the `Delete` entry; then delete the VM and assert the `Delete` stage blocks correctly. This is the scenario that most directly stands in for the residual-gap window discussed in "`LifecycleState` creation and day-2 hook additions."
 
 ### E2E (mandatory, `e2e-sync-with-changes.md`)
 
@@ -680,9 +697,10 @@ New suite `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`, r
 | Deviation | Why needed | Simpler alternative rejected because |
 |---|---|---|
 | `ReconcileStage` lives in a brand-new leaf package (`pkg/lifecycle`) rather than beside either caller's existing helpers | It is called from both `controllers/virtualmachine/virtualmachine` and `pkg/providers/vsphere`, and those two packages do not import each other | Placing it in either caller's package (the repository default for a single-consumer helper) would force the other caller to import a controller package or vice versa, which either doesn't compile or violates "controllers are thin" |
-| `LifecycleState.spec.stages[]` writes use a plain `client.MergeFrom` patch with no optimistic lock, unlike the constitution's fan-in guidance | `LifecycleState` has exactly one writer — the VM that owns it — so there is no concurrent-writer race for an optimistic lock to guard against | Applying the optimistic-lock pattern here anyway would be defensive complexity with no corresponding hazard, since that guidance targets a genuinely shared list several owners write concurrently, a hazard that does not exist for a 1:1-owned resource |
-| `stageHasHook` depends on a Lifecycle-Operator-owned resource (`AggregatedLifecycleHooks`, `research.md` Candidate 2) rather than a locally-computed cache | Satisfying G5 without it requires either a per-stage-reach round trip forever (unacceptable per `research.md`'s measurement) or VM Operator re-implementing the framework's own hook-matching logic locally (Candidate 1), which risks silent drift from the authoritative matching logic if it ever grows richer | Candidate 1 was rejected on ownership grounds in `research.md`, not correctness — building it locally would duplicate matching logic the Lifecycle Operator already owns and risk drift the moment that logic grows richer (e.g. label selectors) |
-| `LifecycleState` carries a VM-Operator-owned finalizer, and `EnsureTerminalStagesDeclared` runs on every `ReconcileNormal` pass, rather than checking `Delete`/`ResourceDelete` hooks lazily only at the moment of deletion like `Create`/`PowerStateChange` do | Kubernetes' namespace controller deletes every namespaced object directly and concurrently on namespace deletion — `LifecycleHook`, `AggregatedLifecycleHooks`, and (without a finalizer) `LifecycleState` alike — independent of any owner-reference cascade. Checking lazily at delete time can race against `AggregatedLifecycleHooks` being swept away in the same instant, making a real `Delete`/`ResourceDelete` hook indistinguishable from no hook at all — the one irreversible case (spec US3) this plan cannot afford to get wrong | A dedicated `Watches(&AggregatedLifecycleHooks{}, ...)` fanning out to every VM in the namespace on each hook change would close the same gap without the extra proactive-check machinery, but reopens exactly the many-to-many fan-out problem `operator-best-practices.md`'s indexed-mapper guidance exists to avoid, and fires on hook activity for kinds that have nothing to do with `VirtualMachine` — rejected as strictly worse than a per-VM cached read on the VM's own natural reconcile cadence |
+| `hookedStagesFor` depends on a Lifecycle-Operator-owned resource (`AggregatedLifecycleHooks`, `research.md` Candidate 2) rather than a locally-computed cache | Satisfying G5 without it requires either a per-stage-reach round trip forever (unacceptable per `research.md`'s measurement) or VM Operator re-implementing the framework's own hook-matching logic locally (Candidate 1), which risks silent drift from the authoritative matching logic if it ever grows richer | Candidate 1 was rejected on ownership grounds in `research.md`, not correctness — building it locally would duplicate matching logic the Lifecycle Operator already owns and risk drift the moment that logic grows richer (e.g. label selectors) |
+| `LifecycleState` carries a VM-Operator-owned finalizer, added opportunistically (`ensureFinalizer`) on any existing object rather than only at VM Operator's own creation time | The object can now be created by either side — VM Operator's own `getOrCreateLifecycleState`, or the Lifecycle Operator for a day-2 hook on a VM that had none yet (see "`LifecycleState` creation and day-2 hook additions"). Only VM Operator can add its own finalizer, so it cannot assume creation-time is the only opportunity | Requiring the Lifecycle Operator to add VM Operator's finalizer on its behalf would couple the two controllers' write paths in a way neither team's RBAC model anticipates; checking and adding it opportunistically on every read is a small, local cost that avoids that coupling entirely |
+| `spec.stages[]` writes use `client.MergeFromWithOptimisticLock`, reversing this plan's earlier assumption that the field had exactly one writer | The Lifecycle Operator now also writes into `spec.stages[]` for day-2 stage additions to an object it didn't just create, making this a genuinely shared list with two writers — exactly the case `operator-best-practices.md`'s "Fan-out to Child Objects" rule requires a lock for | Keeping the unlocked patch (this plan's original position) risks a silent lost update: a JSON merge patch on a plain list field replaces the whole array, so a stale local read from either side can drop the other's concurrent addition with no error to signal it |
+| `LifecycleState`'s watch carries a custom `statusChangedPredicate` rather than no predicate at all | `LifecycleState` can now be created by either side, so its `Create` event is frequently VM Operator's own write reflected back — and VM Operator's own `spec.stages[]` patches would otherwise re-trigger a reconcile of the VM that just made them, for no new information | No predicate (this plan's original position) was correct only while VM Operator was the sole writer of everything except `status`; once the Lifecycle Operator's day-2 writes and VM Operator's own `Create`/spec writes both flow through the same watched object, filtering to `status`-only changes is what keeps the fan-out from generating self-inflicted reconcile noise |
 
 ## Blocking items before implementation starts
 

@@ -139,7 +139,20 @@ var _ = Describe("Manifest builders", func() {
 				return mb.GetEncryptionClassYaml(mb.EncryptionClass{Name: "e", Namespace: "my-ns", KeyProvider: "kp"})
 			},
 			"encryption.vmware.com/v1alpha1", "EncryptionClass"),
+		Entry("SecurityPolicy",
+			func() []byte { return mb.GetSecurityPolicyYaml(mb.SecurityPolicy{Name: "sp", Namespace: "my-ns"}) },
+			"crd.nsx.vmware.com/v1alpha1", "SecurityPolicy"),
 	)
+
+	It("renders SecurityPolicy spec fields", func() {
+		docs := parseDocs(mb.GetSecurityPolicyYaml(mb.SecurityPolicy{Name: "sp", Namespace: "my-ns"}))
+		Expect(docs).To(HaveLen(1))
+		Expect(toJSON(docs[0].Object["spec"])).To(MatchJSON(`{
+			"priority": 10,
+			"appliedTo": [{"vmSelector": {"matchLabels": {"role": "allow-ingress"}}}],
+			"rules": [{"direction": "in", "action": "allow"}]
+		}`))
+	})
 
 	It("renders EncryptionClass spec fields", func() {
 		docs := parseDocs(mb.GetEncryptionClassYaml(mb.EncryptionClass{

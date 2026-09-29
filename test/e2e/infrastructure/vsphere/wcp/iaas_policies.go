@@ -20,9 +20,12 @@ const (
 type ComputePolicySpec struct {
 	Name        string
 	Description string
-	HostTagID   string
-	VMTagID     string
-	Capability  ComputePolicyCapability
+	// HostTagID is optional: capabilities that don't act on a specific host
+	// (e.g. AutomaticVMEvictionCapability, BestEffortRestartCapability) can
+	// omit it.
+	HostTagID  string
+	VMTagID    string
+	Capability ComputePolicyCapability
 }
 
 type InfraPolicyEnforcementMode string

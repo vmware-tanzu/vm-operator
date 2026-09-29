@@ -162,6 +162,32 @@ var _ = Describe("Manifest builders", func() {
 		Expect(vms).To(Equal([]string{"vm-1", "vm-2"}))
 	})
 
+	DescribeTable("render a Subnet or SubnetSet with only the fields that are set",
+		func(manifest func(mb.SubnetOrSubnetSet, bool) []byte, kind string, private bool, expectedSpec string) {
+			docs := parseDocs(manifest(mb.SubnetOrSubnetSet{Kind: kind, Namespace: "my-ns", Name: "s"}, private))
+			Expect(docs).To(HaveLen(1))
+			Expect(docs[0].GetAPIVersion()).To(Equal("crd.nsx.vmware.com/v1alpha1"))
+			Expect(docs[0].GetKind()).To(Equal(kind))
+			Expect(docs[0].GetNamespace()).To(Equal("my-ns"))
+			Expect(docs[0].GetName()).To(Equal("s"))
+			Expect(docs[0].Object).ToNot(HaveKey("status"))
+			Expect(toJSON(docs[0].Object["spec"])).To(MatchJSON(expectedSpec))
+		},
+		Entry("DHCP private Subnet", mb.GetDHCPSubnetOrSubnetSetYaml, "Subnet", true,
+			`{"accessMode": "Private", "subnetDHCPConfig": {"mode": "DHCPServer"}}`),
+		Entry("DHCP public SubnetSet", mb.GetDHCPSubnetOrSubnetSetYaml, "SubnetSet", false,
+			`{"accessMode": "Public", "subnetDHCPConfig": {"mode": "DHCPServer"}}`),
+		Entry("CIDR private Subnet", mb.GetCIDRSubnetOrSubnetSetYaml, "Subnet", true,
+			`{"accessMode": "Private", "ipv4SubnetSize": 16}`),
+		Entry("CIDR public SubnetSet", mb.GetCIDRSubnetOrSubnetSetYaml, "SubnetSet", false,
+			`{"accessMode": "Public", "ipv4SubnetSize": 16}`),
+	)
+
+	It("returns an error for a Subnet kind that is neither Subnet nor SubnetSet", func() {
+		_, err := mb.DHCPSubnetOrSubnetSet(mb.SubnetOrSubnetSet{Kind: "Network", Name: "s"}, true)
+		Expect(err).To(MatchError(ContainSubstring(`invalid kind "Network"`)))
+	})
+
 	It("renders VirtualMachineClass without a spec", func() {
 		docs := parseDocs(mb.GetVirtualMachineClassYaml("my-ns", "c"))
 		Expect(docs).To(HaveLen(1))

@@ -1,5 +1,0 @@
-apiVersion: crd.nsx.vmware.com/v1alpha1
-kind: {{.Kind}}
-metadata:
-    name: {{.Name}}
-    namespace: {{.Namespace}}

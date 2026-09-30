@@ -443,13 +443,13 @@ var _ = Describe("SelectDevicesByTypes", func() {
 			}
 		})
 		It("will not return any devices", func() {
-			Expect(devOut).To(HaveLen(0))
+			Expect(devOut).To(BeEmpty())
 		})
 	})
 
 	Context("selecting no device types", func() {
 		It("will not return any devices", func() {
-			Expect(devOut).To(HaveLen(0))
+			Expect(devOut).To(BeEmpty())
 		})
 	})
 })

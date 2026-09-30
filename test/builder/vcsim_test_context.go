@@ -498,8 +498,13 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 			FolderMoId: nsFolder.Reference().Value,
 		}
 
-		var nsRPs []*object.ResourcePool
+		nsRPs := make([]*object.ResourcePool, 0, len(c.azCCRs[azName]))
 		var clusterMoIDs []string
+		if n := len(c.azCCRs[azName]); n > 0 {
+			// Only allocate when non-empty so the Zone's ClusterMoIDs stays nil
+			// when there are no clusters.
+			clusterMoIDs = make([]string, 0, n)
+		}
 		for _, ccr := range c.azCCRs[azName] {
 			rp, err := ccr.ResourcePool(c)
 			Expect(err).ToNot(HaveOccurred())
@@ -771,6 +776,8 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 				c.VCClient.Client, network.Backing.Reference()).Reconfigure(c, dvpgSpec)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(task.Wait(c)).To(Succeed())
+		case pkgcfg.NetworkProviderTypeNamed:
+			// Nothing more needed for named networks.
 		}
 
 		c.networks = append(c.networks, network)
@@ -810,7 +817,6 @@ func (c *TestContextForVCSim) createStandardPortGroup(name string) object.Networ
 	return networkRef
 }
 
-//nolint:gocyclo
 func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	if !config.WithContentLibrary {
 		return
@@ -1485,7 +1491,7 @@ func (c *TestContextForVCSim) setupAZs() {
 	Expect(ccrs).To(HaveLen(c.ZoneCount * c.ClustersPerZone))
 	c.azCCRs = map[string][]*object.ClusterComputeResource{}
 
-	for i := 0; i < c.ZoneCount; i++ {
+	for i := range c.ZoneCount {
 		idx := i * c.ClustersPerZone
 		clusters := ccrs[idx : idx+c.ClustersPerZone]
 
@@ -1531,7 +1537,7 @@ func (c *TestContextForVCSim) GroupPlacementDatastores() []vmopv1.VirtualMachine
 }
 
 func (c *TestContextForVCSim) GetFirstZoneName() string {
-	Expect(len(c.azCCRs)).To(BeNumerically(">", 0))
+	Expect(c.azCCRs).ToNot(BeEmpty())
 	azNames := make([]string, len(c.azCCRs))
 	i := 0
 	for k := range c.azCCRs {
@@ -1544,7 +1550,7 @@ func (c *TestContextForVCSim) GetFirstZoneName() string {
 
 func (c *TestContextForVCSim) GetFirstClusterFromFirstZone() *object.ClusterComputeResource {
 	ccrs := c.GetAZClusterComputes(c.GetFirstZoneName())
-	Expect(len(ccrs)).To(BeNumerically(">", 0))
+	Expect(ccrs).ToNot(BeEmpty())
 	return ccrs[0]
 }
 

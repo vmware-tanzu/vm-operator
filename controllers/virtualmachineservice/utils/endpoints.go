@@ -87,7 +87,7 @@ func RepackSubsets(subsets []corev1.EndpointSubset) []corev1.EndpointSubset {
 	}
 
 	// Next, build the N-to-M association the API wants.
-	final := []corev1.EndpointSubset{}
+	final := make([]corev1.EndpointSubset, 0, len(addrReadyMapKeyToPorts))
 	for key, ports := range addrReadyMapKeyToPorts {
 		var readyAddrs, notReadyAddrs []corev1.EndpointAddress
 		for addr, ready := range keyToAddrReadyMap[key] {

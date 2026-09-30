@@ -120,7 +120,7 @@ func extraConfigTests() {
 					Expect(newV).To(BeEmpty())
 				}
 			} else {
-				Expect(len(after.Diff(before...))).To(Equal(len(toBeRemoved)))
+				Expect(after.Diff(before...)).To(HaveLen(len(toBeRemoved)))
 			}
 		}
 

@@ -96,6 +96,8 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		if ok := vmopv1util.RemoveStaleGroupOwnerRef(modified, oldVMGroup); ok {
 			wasMutated = true
 		}
+	case admissionv1.Delete, admissionv1.Connect:
+		// No mutation is performed for these operations.
 	}
 
 	if !wasMutated {

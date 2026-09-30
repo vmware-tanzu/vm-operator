@@ -299,7 +299,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		// verify nic type
 		virtualDevices := object.VirtualDeviceList(hw.Device)
 		currentEthCards := virtualDevices.SelectByType((*types.VirtualE1000)(nil))
-		Expect(len(currentEthCards)).To(Equal(1))
+		Expect(currentEthCards).To(HaveLen(1))
 
 		extraConfig := vmMO.Config.ExtraConfig
 		ecMap := make(map[string]string)
@@ -740,7 +740,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(cdrom.Backing).NotTo(BeNil())
 
 		By("Verifying VM's CD-ROM has expected backing file from the specified ISO-type image's content library item")
-		//nolint:staticcheck // VirtualMachineYaml (v1alpha3) still exposes deprecated Cdrom for this spec path.
 		clItemName := strings.Replace(vmParameters.Cdrom[0].ImageName, "vmi", "clitem", 1)
 		clItem := imgregv1a1.ContentLibraryItem{}
 		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: clItemName, Namespace: input.WCPNamespaceName}, &clItem)).To(Succeed())
@@ -771,7 +770,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, poweredOffState)
 
 		By("Verifying CD-ROM can be disconnected from the VM while powered off")
-		//nolint:staticcheck // VirtualMachineYaml (v1alpha3) still exposes deprecated Cdrom for this spec path.
 		vmParameters.Cdrom[0].Connected = false
 		vmParameters.Cdrom[0].AllowGuestControl = false
 		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
@@ -788,9 +786,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		verifyCdromConnectionState(ctx, vmMoRef, propCollector, false, false)
 
 		By("Verifying CD-ROM can be reconnected to the VM with allowGuestControl disabled")
-		//nolint:staticcheck // VirtualMachineYaml (v1alpha3) still exposes deprecated Cdrom for this spec path.
 		vmParameters.Cdrom[0].Connected = true
-		//nolint:staticcheck
 		vmParameters.Cdrom[0].AllowGuestControl = false
 		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML with CD-ROM reconnected %s", string(vmYaml))
@@ -1386,7 +1382,7 @@ func verifyCdromConnectionState(
 		g.Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.hardware.device"}, &moVM)).To(Succeed())
 		virtualDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 		curCdroms := virtualDevices.SelectByType((*types.VirtualCdrom)(nil))
-		g.Expect(len(curCdroms)).To(Equal(1))
+		g.Expect(curCdroms).To(HaveLen(1))
 		cdrom = curCdroms[0].GetVirtualDevice()
 		g.Expect(cdrom.Connectable.Connected).To(Equal(connected))
 		g.Expect(cdrom.Connectable.AllowGuestControl).To(Equal(allowGuestControl))

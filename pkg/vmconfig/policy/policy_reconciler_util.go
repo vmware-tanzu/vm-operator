@@ -236,6 +236,8 @@ func getPolicyEvaluationResults(
 		}
 
 		return obj.Status.Policies, nil
+	default:
+		// Other results fall through to the error below.
 	}
 
 	return nil, fmt.Errorf(

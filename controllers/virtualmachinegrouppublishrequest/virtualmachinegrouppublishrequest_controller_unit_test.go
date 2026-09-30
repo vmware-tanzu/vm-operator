@@ -202,7 +202,7 @@ func unitTestsReconcile() {
 					vmopv1.VirtualMachineGroupPublishRequestConditionComplete).LastTransitionTime
 			})
 			It("should return nil when ttl is nil", func() {
-				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(BeNil())
+				Expect(reconciler.ReconcileNormal(vmpGroupPubReqCtx)).To(Succeed())
 				// The reconcileSpecTTL short-circuit was taken, so no vm publish
 				// requests should have been created.
 				getVMPublishRequests(vmGroupPubReq, reconciler, 0)

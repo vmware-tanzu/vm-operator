@@ -96,7 +96,7 @@ func GetCnsNodeVMAttachmentsForVM(
 }
 
 // GetCnsDiskModeFromDiskMode maps a volume disk mode to CNS disk mode.
-// Returns the converted disk mode or an an error if not supported.
+// Returns the converted disk mode or an error if not supported.
 func GetCnsDiskModeFromDiskMode(diskMode vmopv1.VolumeDiskMode) (cnsv1alpha1.DiskMode, error) {
 	switch diskMode {
 	case vmopv1.VolumeDiskModePersistent:
@@ -113,7 +113,7 @@ func GetCnsDiskModeFromDiskMode(diskMode vmopv1.VolumeDiskMode) (cnsv1alpha1.Dis
 }
 
 // GetCnsSharingModeFromSharingMode maps a volume sharing mode to CNS sharing mode.
-// Returns the converted sharing mode or an an error if not supported.
+// Returns the converted sharing mode or an error if not supported.
 func GetCnsSharingModeFromSharingMode(sharingMode vmopv1.VolumeSharingMode) (cnsv1alpha1.SharingMode, error) {
 	switch sharingMode {
 	case vmopv1.VolumeSharingModeNone:

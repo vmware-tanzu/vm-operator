@@ -261,7 +261,7 @@ func unitTestsReconcile() {
 			It("returns success", func() {
 				err := reconciler.ReconcileNormal(volCtx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(vm.Spec.Volumes).To(HaveLen(0))
+				Expect(vm.Spec.Volumes).To(BeEmpty())
 				Expect(vm.Status.Volumes).To(BeEmpty())
 			})
 		})
@@ -686,10 +686,10 @@ func unitTestsReconcile() {
 
 					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(batchAttachment).ToNot(BeNil())
-					Expect(batchAttachment.Spec.Volumes).To(HaveLen(0))
+					Expect(batchAttachment.Spec.Volumes).To(BeEmpty())
 
 					By("VM Status.Volumes should not contain legacy volume", func() {
-						Expect(vm.Status.Volumes).To(HaveLen(0))
+						Expect(vm.Status.Volumes).To(BeEmpty())
 					})
 				})
 			})
@@ -723,7 +723,7 @@ func unitTestsReconcile() {
 					// Batch attachment should be created still
 					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(batchAttachment).ToNot(BeNil())
-					Expect(batchAttachment.Spec.Volumes).To(HaveLen(0))
+					Expect(batchAttachment.Spec.Volumes).To(BeEmpty())
 
 					By("VM Status.Volumes should contain legacy volume that is tracked by legacy attachment", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(1))
@@ -746,7 +746,7 @@ func unitTestsReconcile() {
 					// No batch attachment should be created since all volumes are legacy-tracked
 					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
-					Expect(attachment.Spec.Volumes).To(HaveLen(0))
+					Expect(attachment.Spec.Volumes).To(BeEmpty())
 
 					attachment1 := &cnsv1alpha1.CnsNodeVmAttachment{}
 					attachment2 := &cnsv1alpha1.CnsNodeVmAttachment{}
@@ -953,7 +953,7 @@ func unitTestsReconcile() {
 					Expect(batchAttachment).To(BeNil())
 
 					By("VM Status.Volumes should not be updated either", func() {
-						Expect(vm.Status.Volumes).To(HaveLen(0))
+						Expect(vm.Status.Volumes).To(BeEmpty())
 					})
 				})
 			})
@@ -996,7 +996,7 @@ func unitTestsReconcile() {
 					// Batch processing should continue normally (no volumes to process in this case)
 					batchAttachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(batchAttachment).ToNot(BeNil())
-					Expect(batchAttachment.Spec.Volumes).To(HaveLen(0))
+					Expect(batchAttachment.Spec.Volumes).To(BeEmpty())
 
 					By("VM Status.Volumes should still contain the volume in the status, but with detaching suffix", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(1))
@@ -1455,7 +1455,7 @@ func unitTestsReconcile() {
 					Expect(err).ToNot(HaveOccurred())
 					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
-					Expect(attachment.Spec.Volumes).To(HaveLen(0))
+					Expect(attachment.Spec.Volumes).To(BeEmpty())
 
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
@@ -1600,7 +1600,7 @@ func unitTestsReconcile() {
 
 					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
-					Expect(attachment.Spec.Volumes).To(HaveLen(0))
+					Expect(attachment.Spec.Volumes).To(BeEmpty())
 
 					By("VM Status.Volumes should contain the volume with detaching suffix", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(1))
@@ -1652,7 +1652,7 @@ func unitTestsReconcile() {
 
 					attachment := getCNSBatchAttachmentForVolumeName(ctx, vm)
 					Expect(attachment).ToNot(BeNil())
-					Expect(attachment.Spec.Volumes).To(HaveLen(0))
+					Expect(attachment.Spec.Volumes).To(BeEmpty())
 
 					By("VM Status.Volumes should contain the volume with detaching suffix", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(2))

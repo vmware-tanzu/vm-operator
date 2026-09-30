@@ -2316,7 +2316,7 @@ func (v validator) validatePowerStateOnUpdate(
 	case vmopv1.VirtualMachinePowerStateOn:
 		// The VM's previous, desired power state is "on."
 
-		switch newDesPS { //nolint:gocritic
+		switch newDesPS {
 
 		case vmopv1.VirtualMachinePowerStateOn:
 			// The VM's new, desired power state is "on."
@@ -2337,12 +2337,14 @@ func (v validator) validatePowerStateOnUpdate(
 					v.validateUpdatesWhenPoweredOn(ctx, vm, oldVM)...)
 			}
 
+		default:
+			// Other new power states require no validation here.
 		}
 
 	case vmopv1.VirtualMachinePowerStateOff:
 		// The VM's previous, desired power state is "off."
 
-		switch newDesPS { //nolint:gocritic
+		switch newDesPS {
 
 		case vmopv1.VirtualMachinePowerStateSuspended:
 			// The VM's new, desired power state is "suspended."
@@ -2356,7 +2358,11 @@ func (v validator) validatePowerStateOnUpdate(
 						invalidPowerStateOnUpdateFmt,
 						"suspend",
 						"powered off")))
+		default:
+			// Other new power states require no validation here.
 		}
+	case vmopv1.VirtualMachinePowerStateSuspended:
+		// No additional validation applies when the previous power state is suspended.
 	}
 
 	return allErrs

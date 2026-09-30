@@ -771,6 +771,8 @@ func vmNetworkTests() {
 						case builder.NetworkEnvVPC:
 							providerType = pkgcfg.NetworkProviderTypeVPC
 							np = vpcNetworkProvider{}
+						default:
+							// The named network environment is not tested here.
 						}
 
 						if standardPortGroup {
@@ -954,6 +956,8 @@ func vmNetworkTests() {
 						case builder.NetworkEnvVPC:
 							providerType = pkgcfg.NetworkProviderTypeVPC
 							np = vpcNetworkProvider{}
+						default:
+							// The named network environment is not tested here.
 						}
 
 						if standardPortGroup {

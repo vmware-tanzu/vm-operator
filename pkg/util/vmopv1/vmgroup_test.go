@@ -84,7 +84,7 @@ var _ = Describe("Validating RetrieveVMGroupMembers",
 				vmGroupSet, err := vmopv1util.RetrieveVMGroupMembers(ctx, ctx.Client,
 					ctrlclient.ObjectKeyFromObject(vmGroup), visitedGroups)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(vmGroupSet).To(HaveLen(0))
+				Expect(vmGroupSet).To(BeEmpty())
 			})
 		})
 
@@ -102,7 +102,7 @@ var _ = Describe("Validating RetrieveVMGroupMembers",
 				vmGroupSet, err := vmopv1util.RetrieveVMGroupMembers(ctx, ctx.Client,
 					ctrlclient.ObjectKeyFromObject(vmGroup), visitedGroups)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(vmGroupSet).To(HaveLen(0))
+				Expect(vmGroupSet).To(BeEmpty())
 			})
 		})
 

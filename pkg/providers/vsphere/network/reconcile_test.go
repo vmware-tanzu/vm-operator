@@ -87,6 +87,8 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 							PortgroupKey: "pg-1",
 						},
 					}
+				default:
+					// The named network environment requires no setup.
 				}
 
 				switch networkEnv {
@@ -132,6 +134,8 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 							},
 						},
 					}
+				default:
+					// The named network environment requires no setup.
 				}
 			})
 
@@ -161,7 +165,7 @@ var _ = Describe("ReconcileNetworkInterfaces", func() {
 					Expect(deviceChanges).To(HaveLen(1))
 					dc0 := deviceChanges[0].GetVirtualDeviceConfigSpec()
 					Expect(dc0.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationAdd))
-					Expect(dc0.Device).To(Equal(ethCard))
+					Expect(dc0.Device).To(Equal(ethCard.(vimtypes.BaseVirtualDevice)))
 				})
 			})
 

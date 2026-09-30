@@ -162,6 +162,8 @@ func (v validator) validateSpec(ctx *pkgctx.WebhookRequestContext, vmService *vm
 		} else {
 			allErrs = append(allErrs, field.Required(specPath.Child("externalName"), ""))
 		}
+	case vmopv1.VirtualMachineServiceTypeClusterIP:
+		// No additional validation applies to ClusterIP services.
 	}
 
 	allErrs = append(allErrs, validatePorts(vmService, specPath)...)

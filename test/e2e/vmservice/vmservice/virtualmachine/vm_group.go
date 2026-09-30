@@ -1170,7 +1170,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				var vms []zonePinnedVM
 				for zi, zone := range pinnedZones {
 					appLabels := map[string]string{"app": fmt.Sprintf("%s-zone%d", vmgRootName, zi+1)}
-					for i := 0; i < vmCountPerZone; i++ {
+					for i := range vmCountPerZone {
 						vms = append(vms, zonePinnedVM{
 							Name:     fmt.Sprintf("%s-z%d-vm%d", vmgRootName, zi+1, i+1),
 							Zone:     zone,

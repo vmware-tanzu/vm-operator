@@ -93,12 +93,12 @@ var _ = Describe("Validating ConvertFieldErrorsToStrings",
 	func() {
 		When("Error List is Nil", func() {
 			It("should return empty string slice", func() {
-				Expect(common.ConvertFieldErrorsToStrings(nil)).To(HaveLen(0))
+				Expect(common.ConvertFieldErrorsToStrings(nil)).To(BeEmpty())
 			})
 		})
 		When("Error List is empty", func() {
 			It("should return empty string slice", func() {
-				Expect(common.ConvertFieldErrorsToStrings(field.ErrorList{})).To(HaveLen(0))
+				Expect(common.ConvertFieldErrorsToStrings(field.ErrorList{})).To(BeEmpty())
 			})
 		})
 		When("Error List is not Nil", func() {

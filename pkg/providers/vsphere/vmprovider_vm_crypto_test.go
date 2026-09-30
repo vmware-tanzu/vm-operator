@@ -221,7 +221,7 @@ func vmCryptoTests() {
 
 							// Set up five goroutines that race to
 							// create the VM first.
-							for i := 0; i < 5; i++ {
+							for range 5 {
 								done.Add(1)
 								go func(copyOfVM *vmopv1.VirtualMachine) {
 									defer done.Done()

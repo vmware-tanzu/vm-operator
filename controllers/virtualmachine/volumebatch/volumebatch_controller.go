@@ -637,6 +637,8 @@ func (r *Reconciler) createOrUpdateBatchAttachment(
 	case controllerutil.OperationResultUpdated:
 		ctx.Logger.Info("Updated CnsNodeVMBatchAttachment",
 			"attachment", attachmentName)
+	default:
+		// Other results require no logging.
 	}
 
 	return nil

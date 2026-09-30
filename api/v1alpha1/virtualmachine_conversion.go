@@ -714,6 +714,8 @@ func translate_v1alpha6_Conditions_To_v1alpha1_Conditions(conditions []Condition
 			vmSetResourcePolicyCond = c
 		case vmopv1.VirtualMachineConditionBootstrapReady:
 			vmBootstrapCond = c
+		default:
+			// Other conditions are not converted here.
 		}
 	}
 

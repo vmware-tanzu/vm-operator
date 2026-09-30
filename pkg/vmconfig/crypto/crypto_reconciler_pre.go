@@ -1317,6 +1317,8 @@ func isAddEditDeviceSpecEncryptedSansPolicy(
 					return true, nil
 				}
 			}
+		case vimtypes.VirtualDeviceConfigSpecOperationRemove:
+			// Removed devices do not affect encryption.
 		}
 	}
 	return false, nil

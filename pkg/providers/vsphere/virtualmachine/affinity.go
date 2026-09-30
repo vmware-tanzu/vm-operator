@@ -146,7 +146,7 @@ func genConfigSpecAffinityPolicies(
 		return
 	}
 
-	var placementPols []vimtypes.BaseVmPlacementPolicy //nolint:prealloc
+	var placementPols []vimtypes.BaseVmPlacementPolicy
 
 	if affinity.VMAffinity != nil {
 		placementPols = append(placementPols, processVMAffinity(vmCtx, affinity.VMAffinity, constraints)...)
@@ -170,7 +170,7 @@ func processVMAffinity(
 	affinity *vmopv1.VMAffinitySpec,
 	constraints AffinityRuleConstraints) []vimtypes.BaseVmPlacementPolicy {
 
-	var placementPols []vimtypes.BaseVmPlacementPolicy //nolint:prealloc
+	var placementPols []vimtypes.BaseVmPlacementPolicy
 
 	if constraints.ConfigureZoneRules {
 		// Process required affinity terms associated with zone topology.
@@ -245,7 +245,7 @@ func processVMAntiAffinity(
 	antiAffinity *vmopv1.VMAntiAffinitySpec,
 	constraints AffinityRuleConstraints) []vimtypes.BaseVmPlacementPolicy {
 
-	var placementPols []vimtypes.BaseVmPlacementPolicy //nolint:prealloc
+	var placementPols []vimtypes.BaseVmPlacementPolicy
 
 	if constraints.ConfigureZoneRules {
 		// Process required anti-affinity terms associated with zone topology.

@@ -323,7 +323,7 @@ func WithArgs(args ...string) Option {
 // deadlocks if the command writes enough to the pipe we haven't started reading yet to fill its
 // OS buffer (64KB on Linux) before closing the one we're blocked on.
 func (c *Command) Run(ctx context.Context) ([]byte, []byte, error) {
-	cmd := exec.CommandContext(ctx, c.Cmd, c.Args...) //nolint:gosec
+	cmd := exec.CommandContext(ctx, c.Cmd, c.Args...)
 	if c.Stdin != nil {
 		cmd.Stdin = c.Stdin
 	}

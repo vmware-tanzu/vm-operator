@@ -144,7 +144,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	config = e2eConfig.LoadE2EConfig(configFilePath)
 	Expect(config).ToNot(BeNil(), "e2eConfig can't be nil when calling %s test suite", testSuiteName)
 
-	By("Setting up supervisor cluster cluster proxy")
+	By("Setting up supervisor cluster proxy")
 
 	kubeconfigPath := config.InfraConfig.KubeconfigPath
 	svClusterProxy = setupSupervisorClusterProxy(kubeconfigPath, scheme, config)

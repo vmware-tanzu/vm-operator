@@ -25,6 +25,8 @@ func IsNil(arg any) bool {
 		reflect.Chan,
 		reflect.Func:
 		return v.IsNil()
+	default:
+		// Other kinds cannot be nil.
 	}
 	return false
 }

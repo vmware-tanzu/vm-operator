@@ -83,8 +83,6 @@ func All() []VarName {
 }
 
 // String returns the stringified version of the environment variable name.
-//
-//nolint:gocyclo
 func (n VarName) String() string {
 	switch n {
 
@@ -189,6 +187,8 @@ func (n VarName) String() string {
 		return "FSS_WCP_SUPERVISOR_ASYNC_UPGRADE"
 	case FSSFastDeploy:
 		return "FSS_WCP_VMSERVICE_FAST_DEPLOY"
+	default:
+		// Sentinel values fall through to the panic below.
 	}
 	panic("unknown environment variable")
 }

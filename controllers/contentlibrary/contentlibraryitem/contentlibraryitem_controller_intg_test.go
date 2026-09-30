@@ -133,7 +133,7 @@ func intgTestsReconcile() {
 					Eventually(func(g Gomega) {
 						image := &vmopv1.VirtualMachineImage{}
 						g.Expect(ctx.Client.Get(ctx, vmiKey, image)).To(Succeed())
-						g.Expect(len(image.Annotations)).To(BeNumerically(">=", 1))
+						g.Expect(image.Annotations).ToNot(BeEmpty())
 						g.Expect(image.Annotations).To(HaveKey(vmopv1.VMIContentLibRefAnnotation))
 					}).Should(Succeed())
 				})

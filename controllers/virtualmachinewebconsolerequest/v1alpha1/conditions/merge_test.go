@@ -150,7 +150,7 @@ func TestMergeRespectPriority(t *testing.T) {
 func conditionsWithSource(obj Setter, conditions ...*vmopv1a1.Condition) []localizedCondition {
 	obj.SetConditions(conditionList(conditions...))
 
-	ret := []localizedCondition{}
+	ret := make([]localizedCondition, 0, len(conditions))
 	for i := range conditions {
 		ret = append(ret, localizedCondition{
 			Condition: conditions[i],

@@ -548,9 +548,9 @@ func reconcileStatusStorage(
 	vmCtx pkgctx.VirtualMachineContext,
 	_ ctrlclient.Client,
 	_ *object.VirtualMachine,
-	_ ReconcileStatusData) []error { //nolint:unparam
+	_ ReconcileStatusData) []error {
 
-	var errs []error
+	var errs []error //nolint:prealloc // variadic append of unknown size; nil result preserved
 
 	updateChangeBlockTracking(vmCtx.VM, vmCtx.MoVM)
 	updateVolumeStatus(vmCtx)
@@ -1038,8 +1038,6 @@ var (
 // field with information from the provided bootstrap arguments. This is useful
 // for folks booting VMs without bootstrap engines who may wish to manually
 // configure the VM's networking with the valid IP configuration for this VM.
-//
-//nolint:gocyclo
 func UpdateNetworkStatusConfig(vm *vmopv1.VirtualMachine, args BootstrapArgs) {
 
 	if vm == nil {
@@ -1182,8 +1180,6 @@ func UpdateNetworkStatusConfig(vm *vmopv1.VirtualMachine, args BootstrapArgs) {
 
 // updateGuestNetworkStatus updates the provided VM's status.network
 // field with information from the guestInfo.
-//
-//nolint:gocyclo
 func updateGuestNetworkStatus(
 	vm *vmopv1.VirtualMachine,
 	gi *vimtypes.GuestInfo,
@@ -2050,7 +2046,7 @@ func updateRootSnapshots(
 	}
 
 	// Refresh the root snapshots from the VM mo
-	var newRootSnapshots []vmopv1.VirtualMachineSnapshotReference //nolint:prealloc
+	var newRootSnapshots []vmopv1.VirtualMachineSnapshotReference
 	for _, rootSnapshot := range vmCtx.MoVM.Snapshot.RootSnapshotList {
 		rootSnapshotCR, err := getSnapshotCR(vmCtx, k8sClient, rootSnapshot.Name)
 		if err != nil {

@@ -284,13 +284,13 @@ var _ = Describe("BackfillNICConfigFromMoVM", func() {
 				"ethernet0.udpRSS", "2",
 				func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
 					Expect(s.UDPRSSEnabled).ToNot(BeNil())
-					Expect(*s.UDPRSSEnabled).To(Equal(vmopv1.UDPRSSModeDisabled))
+					Expect(bool(*s.UDPRSSEnabled)).To(BeFalse())
 				}),
 			Entry("UDPRSSEnabled 1 (enabled)",
 				"ethernet0.udpRSS", "1",
 				func(s *vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec) {
 					Expect(s.UDPRSSEnabled).ToNot(BeNil())
-					Expect(*s.UDPRSSEnabled).To(Equal(vmopv1.UDPRSSModeEnabled))
+					Expect(bool(*s.UDPRSSEnabled)).To(BeTrue())
 				}),
 			Entry("CoalescingScheme Disabled",
 				"ethernet0.coalescingScheme", "Disabled",

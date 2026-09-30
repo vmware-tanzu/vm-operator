@@ -27,7 +27,7 @@ const (
 	// StorageClassResource is the API resource for a StorageClass.
 	StorageClassResource = "storageclasses"
 
-	// StorageClassGroupVersion is the API group and version version for a
+	// StorageClassGroupVersion is the API group and version for a
 	// StorageClass resource.
 	StorageClassGroupVersion = StorageClassGroup + "/v1"
 

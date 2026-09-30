@@ -170,6 +170,8 @@ func (r reconciler) Reconcile(
 					vm,
 					vmopv1.VirtualMachineDiskPromotionSynced)
 				return nil
+			default:
+				// Other task states require no handling here.
 			}
 		}
 	}
@@ -329,6 +331,8 @@ func (r reconciler) Reconcile(
 				logger.V(4).Info(
 					"Skipping online disk promotion for guest customization")
 				return nil
+			default:
+				// Other customization states do not block promotion.
 			}
 		}
 
@@ -344,6 +348,8 @@ func (r reconciler) Reconcile(
 				"Skipping offline disk promotion until VM is powered off")
 			return nil
 		}
+	case vmopv1.VirtualMachinePromoteDisksModeDisabled:
+		// Disabled mode is handled above.
 	}
 
 	logger.Info("Promoting disks")

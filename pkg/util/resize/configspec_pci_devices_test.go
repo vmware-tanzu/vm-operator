@@ -127,7 +127,7 @@ var _ = Describe("ComparePCIDevices", func() {
 
 		It("Should return add device changes", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(deviceChanges)).To(Equal(len(expectedList)))
+			Expect(deviceChanges).To(HaveLen(len(expectedList)))
 
 			for idx, dev := range deviceChanges {
 				configSpec := dev.GetVirtualDeviceConfigSpec()
@@ -154,7 +154,7 @@ var _ = Describe("ComparePCIDevices", func() {
 
 		It("Should return add device changes", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(deviceChanges)).To(Equal(len(expectedList)))
+			Expect(deviceChanges).To(HaveLen(len(expectedList)))
 
 			for idx, dev := range deviceChanges {
 				configSpec := dev.GetVirtualDeviceConfigSpec()
@@ -178,7 +178,7 @@ var _ = Describe("ComparePCIDevices", func() {
 
 		It("should return add and remove device changes", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(deviceChanges)).To(Equal(2))
+			Expect(deviceChanges).To(HaveLen(2))
 
 			configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 			Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[0].GetVirtualDevice().Key))
@@ -212,7 +212,7 @@ var _ = Describe("ComparePCIDevices", func() {
 
 		It("should return add and remove device changes", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(deviceChanges)).To(Equal(2))
+			Expect(deviceChanges).To(HaveLen(2))
 
 			configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 			Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[0].GetVirtualDevice().Key))
@@ -242,7 +242,7 @@ var _ = Describe("ComparePCIDevices", func() {
 
 		It("should return add and remove device changes", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(deviceChanges)).To(Equal(2))
+			Expect(deviceChanges).To(HaveLen(2))
 
 			configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
 			Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[0].GetVirtualDevice().Key))
@@ -266,9 +266,9 @@ var _ = Describe("ComparePCIDevices", func() {
 
 		It("Should return add and remove device changes", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(deviceChanges)).To(Equal(6))
+			Expect(deviceChanges).To(HaveLen(6))
 
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				configSpec := deviceChanges[i].GetVirtualDeviceConfigSpec()
 				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[i].GetVirtualDevice().Key))
 				Expect(configSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationRemove))

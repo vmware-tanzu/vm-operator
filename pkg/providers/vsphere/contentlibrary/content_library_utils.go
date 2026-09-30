@@ -166,8 +166,6 @@ func UpdateVmiWithOvfEnvelope(
 
 // UpdateVmiWithVirtualMachine updates the given VMI object from a
 // mo.VirtualMachine data structure.
-//
-//nolint:gocyclo
 func UpdateVmiWithVirtualMachine(
 	ctx context.Context,
 	obj client.Object,

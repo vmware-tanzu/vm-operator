@@ -1753,22 +1753,11 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 
 	defer func() {
 		if retErr != nil {
-			// processPlacementResult may already have set a more specific
-			// reason (e.g. ZoneMismatch); only fall back to the generic
-			// NotReady reason when the condition is not already False.
-			// Update message (which may contain updated details) only
-			// when its the same "NotReady" reason.
-			if !pkgcond.IsFalse(
+			pkgcond.MarkError(
 				vmCtx.VM,
-				vmopv1.VirtualMachineConditionPlacementReady) ||
-				pkgcond.GetReason(vmCtx.VM,
-					vmopv1.VirtualMachineConditionPlacementReady) == "NotReady" {
-				pkgcond.MarkError(
-					vmCtx.VM,
-					vmopv1.VirtualMachineConditionPlacementReady,
-					"NotReady",
-					retErr)
-			}
+				vmopv1.VirtualMachineConditionPlacementReady,
+				"NotReady",
+				retErr)
 		} else {
 			pkgcond.MarkTrue(
 				vmCtx.VM,
@@ -1822,8 +1811,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		if useGroupPlacement {
 			vmCtx.Logger.Info(
 				"Getting VM placement result from its group",
-				"groupName", vmCtx.VM.Spec.GroupName,
-			)
+				"groupName", vmCtx.VM.Spec.GroupName)
 
 			return vs.vmCreateDoPlacementByGroup(vmCtx, vcClient, createArgs)
 		}
@@ -1971,29 +1959,20 @@ func processPlacementResult(
 	createArgs *VMCreateArgs,
 	result placement.Result) error {
 
-	isVksNodeVM := kubeutil.HasCAPILabels(vmCtx.VM.Labels)
 	// When VMAffinityDuringExecution is enabled, a zone-labeled non-VKS VM took
 	// part in group/DRS placement; the chosen zone must still match its pinned
-	// zone label. A mismatch means the VM would be relocated to a different
-	// zone, so block placement and surface a ZoneMismatch condition for the
-	// user to reconcile the label with the desired placement. VKS nodes and VMs
-	// without a zone label are unaffected.
-	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
+	// zone label. A mismatch means the VM would be relocated to a different zone,
+	// so block placement and surface a condition for the user to reconcile the
+	// label with the desired placement. VKS nodes and VMs without a zone label
+	// are unaffected.
+	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution &&
+		!kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
+
 		if zoneLabel := vmCtx.VM.Labels[corev1.LabelTopologyZone]; zoneLabel != "" &&
-			!isVksNodeVM &&
-			result.ZoneName != "" &&
-			result.ZoneName != zoneLabel {
-
-			pkgcond.MarkFalse(
-				vmCtx.VM,
-				vmopv1.VirtualMachineConditionPlacementReady,
-				"ZoneMismatch",
-				"placement selected zone %q which differs from the VM zone label %q",
-				result.ZoneName, zoneLabel)
-
+			result.ZoneName != "" && result.ZoneName != zoneLabel {
 			return pkgerr.NoRequeueError{
 				Message: fmt.Sprintf(
-					"placement zone %q does not match VM zone label %q",
+					"placement selected zone %q which differs from the VM zone label %q",
 					result.ZoneName, zoneLabel),
 			}
 		}

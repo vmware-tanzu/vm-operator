@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/cluster"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -249,6 +250,41 @@ func resourcePolicyTests() {
 
 				// Only the stale entry should be gone.
 				Expect(resourcePolicy.Status.ClusterModules).To(HaveExactElements(status.ClusterModules))
+			})
+
+			It("returns an error and keeps the entry when deleting a stale cluster module fails", func() {
+				assertSetResourcePolicy(resourcePolicy, true)
+
+				status := resourcePolicy.Status.DeepCopy()
+				Expect(status.ClusterModules).ToNot(BeEmpty())
+
+				staleModule := vmopv1.VSphereClusterModuleStatus{
+					GroupName:   "stale-group",
+					ModuleUuid:  "bogus-module-uuid",
+					ClusterMoID: "bogus-cluster-moid",
+				}
+				resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules, staleModule)
+
+				// Clear the ClusterModuleGroups so createClusterModules() - which also
+				// talks REST - is skipped, isolating the induced failure below to the
+				// DeleteModule() call made while pruning the stale entry.
+				resourcePolicy.Spec.ClusterModuleGroups = nil
+
+				// Log out the provider's REST client so the DeleteModule() call it makes
+				// fails with something other than a NotFound error, which is otherwise
+				// swallowed. Log back in afterward so the outer JustAfterEach()'s
+				// DeleteVirtualMachineSetResourcePolicy() call still succeeds.
+				vcClient, err := vmProvider.VSphereClient(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vcClient.RestClient().Logout(ctx)).To(Succeed())
+				defer func() {
+					Expect(vcClient.RestClient().Login(ctx, simulator.DefaultLogin)).To(Succeed())
+				}()
+
+				Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(HaveOccurred())
+
+				// The stale entry must not be pruned since the delete failed.
+				Expect(resourcePolicy.Status.ClusterModules).To(HaveExactElements(append(status.ClusterModules, staleModule)))
 			})
 		})
 

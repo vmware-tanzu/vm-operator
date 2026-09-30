@@ -89,7 +89,6 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		tagCategoryID   string
 
 		vmName     string
-		vm         *vmopv1.VirtualMachine
 		matchLabel map[string]string
 		suffix     string
 
@@ -153,15 +152,8 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		matchLabel = map[string]string{
 			"vmoperator.vmware.com/e2e-vm-eviction-test": suffix,
 		}
-		vm = nil
 		evacuationPolicy = nil
 		restartPolicy = nil
-	})
-
-	AfterEach(func() {
-		if vm != nil {
-			vmoperator.DeleteVirtualMachineAndWait(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
-		}
 	})
 
 	It("Should tag a matching VM and surface the policy in status.policies",
@@ -179,7 +171,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			}
 
 			By("Creating a VM matching the policy's label selector")
-			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM's status.policies and the real vSphere tag assignment")
@@ -208,7 +200,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				vspherepolv1.PolicyEnforcementModeMandatory, nonMatchingLabel, tagID, nil)
 
 			By("Creating a VM that does not match the policy yet")
-			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM does not have the policy applied yet")
@@ -250,7 +242,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, tagID, nil)
 
 			By("Creating a VM that explicitly references the policy and matches its label selector")
-			vm = createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
+			createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
 				explicitPolicyRef(bestEffortRestartPolicyKind, restartPolicy.Name))
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
@@ -280,7 +272,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				vspherepolv1.PolicyEnforcementModeOptional, nonMatchingLabel, tagID, nil)
 
 			By("Creating a VM that explicitly references the non-matching policy")
-			vm = createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
+			createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
 				explicitPolicyRef(bestEffortRestartPolicyKind, restartPolicy.Name))
 
 			By("Verifying the VM's PolicyEvaluation reports a not-ready error naming the non-matching policy")
@@ -308,7 +300,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
 
 			By("Creating a VM that matches the mandatory policy and explicitly references the optional one")
-			vm = createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
+			createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
 				explicitPolicyRef(bestEffortRestartPolicyKind, restartPolicy.Name))
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
@@ -343,7 +335,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, restartTagID, infraPolicyNames)
 
 			By("Creating a VM matching both policies' label selector, with no explicit references")
-			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM's status.policies and vSphere tags include both policies")
@@ -377,7 +369,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
 
 			By("Creating a VM that explicitly references both Optional policies")
-			vm = createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
+			createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
 				explicitPolicyRef(automaticVMEvictionPolicyKind, evacuationPolicy.Name),
 				explicitPolicyRef(bestEffortRestartPolicyKind, restartPolicy.Name))
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -408,7 +400,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID1, nil)
 
 			By("Creating a VM matching the policy's label selector")
-			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM has the first tag assigned")
@@ -459,7 +451,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID, nil)
 
 			By("Creating a VM matching the policy's label selector")
-			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM has the tag and policy assigned before deletion")
@@ -943,30 +935,29 @@ func buildVM(
 }
 
 // createMatchingVM creates a VM in the given namespace with the given
-// labels, returning the created object so the caller can register it for
-// AfterEach cleanup.
+// labels and registers its deletion on cleanup.
 func createMatchingVM(
 	ctx context.Context,
 	input SpecInput,
 	svClusterClient ctrlclient.Client,
 	vmName string,
-	labels map[string]string) *vmopv1.VirtualMachine {
+	labels map[string]string) {
 
 	GinkgoHelper()
 
-	return createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, labels)
+	createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, labels)
 }
 
 // createVMWithExplicitPolicyRefs creates a VM in the given namespace with
-// the given labels and explicit spec.policies references, returning the
-// created object so the caller can register it for AfterEach cleanup.
+// the given labels and explicit spec.policies references, and registers its
+// deletion on cleanup.
 func createVMWithExplicitPolicyRefs(
 	ctx context.Context,
 	input SpecInput,
 	svClusterClient ctrlclient.Client,
 	vmName string,
 	labels map[string]string,
-	policies ...vmopv1.PolicySpec) *vmopv1.VirtualMachine {
+	policies ...vmopv1.PolicySpec) {
 
 	GinkgoHelper()
 
@@ -977,8 +968,8 @@ func createVMWithExplicitPolicyRefs(
 
 	vm := buildVM(input, imageName, vmName, labels, policies)
 	Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create virtualmachine %q", vmName)
-
-	return vm
+	vmoperator.DeferCleanupVirtualMachine(input.Config, svClusterClient, input.ClusterProxy.GetKubeconfigPath(),
+		vm.Namespace, vm.Name, false)
 }
 
 // verifyPolicyEvaluationNotReady asserts that the VM's PolicyEvaluation
@@ -1524,9 +1515,7 @@ func createAndWaitForPoweredOnVM(
 
 	GinkgoHelper()
 
-	vm := createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, labels, policies...)
-	vmoperator.DeferCleanupVirtualMachine(input.Config, svClusterClient, input.ClusterProxy.GetKubeconfigPath(),
-		vm.Namespace, vm.Name, false)
+	createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, labels, policies...)
 
 	vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 	vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName,

@@ -52,7 +52,6 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		svClusterClient       ctrlclient.Client
 		vmSvcClusterResources *e2eConfig.Resources
 		vmSvcNamespace        string
-		skipCleanup           bool
 
 		randomString    string
 		vmName          string
@@ -78,8 +77,6 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 	skipChecks := func() {
 		skipper.SkipUnlessInfraIs(vmSnapshotInput.Config.InfraConfig.InfraName, consts.WCP)
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.VirtualMachineSnapshotCapabilityName)
-
-		skipCleanup = false
 	}
 
 	BeforeEach(func() {
@@ -96,7 +93,6 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		vmSvcClusterResources = vmSvcE2EConfig.InfraConfig.ManagementClusterConfig.Resources
 		vmSvcNamespace = vmSnapshotInput.WCPNamespaceName
 		svClusterClient = vmSvcClusterProxy.GetClient()
-		skipCleanup = true
 
 		skipChecks()
 
@@ -112,29 +108,28 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		vmSnapshot1Name = "sn-1-" + randomString
 		vmSnapshot2Name = "sn-2-" + randomString
 		vmSnapshot3Name = "sn-3-" + randomString
-	})
 
-	AfterEach(func() {
-		if skipCleanup {
-			return
+		snapshotNames := []string{vmSnapshot1Name, vmSnapshot2Name, vmSnapshot3Name}
+		kubeconfigPath := vmSvcClusterProxy.GetKubeconfigPath()
+
+		dumps := []vmoperator.DumpFunc{
+			vmoperator.DescribeResource(kubeconfigPath, "vm", vmSvcNamespace, vmName),
+		}
+		for _, name := range snapshotNames {
+			dumps = append(dumps,
+				vmoperator.DescribeResource(kubeconfigPath, "virtualmachinesnapshot", vmSvcNamespace, name))
 		}
 
-		vmoperator.VerifyVMDeleted(ctx, svClusterClient, vmSvcE2EConfig, vmSvcNamespace, vmName)
-		vmoperator.EnsureVMSnapshotDeleted(ctx, vmSvcClusterProxy.GetClient(),
-			vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
-				Namespace: vmSvcNamespace,
-				Name:      vmSnapshot1Name,
-			})
-		vmoperator.EnsureVMSnapshotDeleted(ctx, vmSvcClusterProxy.GetClient(),
-			vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
-				Namespace: vmSvcNamespace,
-				Name:      vmSnapshot2Name,
-			})
-		vmoperator.EnsureVMSnapshotDeleted(ctx, vmSvcClusterProxy.GetClient(),
-			vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
-				Namespace: vmSvcNamespace,
-				Name:      vmSnapshot3Name,
-			})
+		vmoperator.DeferCleanupWithDumpOnFailure(func(ctx context.Context) {
+			vmoperator.VerifyVMDeleted(ctx, svClusterClient, vmSvcE2EConfig, vmSvcNamespace, vmName)
+			for _, name := range snapshotNames {
+				vmoperator.EnsureVMSnapshotDeleted(ctx, svClusterClient,
+					vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
+						Namespace: vmSvcNamespace,
+						Name:      name,
+					})
+			}
+		}, dumps...)
 	})
 
 	When("VM doesn't have PVC", func() {

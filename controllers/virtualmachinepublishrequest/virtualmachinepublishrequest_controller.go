@@ -41,7 +41,6 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
-	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -154,7 +153,6 @@ func NewReconciler(
 		apiReader:  apiReader,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
-		Metrics:    metrics.NewVMPublishMetrics(),
 	}
 }
 
@@ -165,7 +163,6 @@ type Reconciler struct {
 	apiReader  client.Reader
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
-	Metrics    *metrics.VMPublishMetrics
 }
 
 func requeueResult(ctx *pkgctx.VirtualMachinePublishRequestContext) ctrl.Result {
@@ -353,33 +350,32 @@ func (r *Reconciler) publishVirtualMachine(ctx *pkgctx.VirtualMachinePublishRequ
 	return nil
 }
 
-func (r *Reconciler) removeVMPubResourceFromCluster(ctx *pkgctx.VirtualMachinePublishRequestContext) (requeueAfter time.Duration,
-	deleted bool, err error) {
+func (r *Reconciler) removeVMPubResourceFromCluster(
+	ctx *pkgctx.VirtualMachinePublishRequestContext) (time.Duration, error) {
 
 	vmPublishReq := ctx.VMPublishRequest
 	ttlSecondsAfterFinished := vmPublishReq.Spec.TTLSecondsAfterFinished
 	if ttlSecondsAfterFinished == nil {
 		// Skip auto clean up
-		return
+		return time.Duration(0), nil
 	}
 
 	if *ttlSecondsAfterFinished > 0 {
 		completeTime := vmPublishReq.Status.CompletionTime.Time
 		if time.Since(completeTime) < time.Duration(*ttlSecondsAfterFinished)*time.Second {
 			targetTime := completeTime.Add(time.Duration(*ttlSecondsAfterFinished) * time.Second)
-			return time.Until(targetTime), false, nil
+			return time.Until(targetTime), nil
 		}
 	}
 
 	// TTLSecondsAfterFinished elapsed, delete the resource
 	ctx.Logger.Info("deleting VM Publish Request")
-	deleted = true
-	if err = r.Delete(ctx, vmPublishReq); err != nil {
-		deleted = false
+	if err := r.Delete(ctx, vmPublishReq); err != nil {
 		ctx.Logger.Error(err, "failed to delete vm publish requests")
+		return time.Duration(0), err
 	}
 
-	return
+	return time.Duration(0), nil
 }
 
 // checkIsSourceValid function checks if the source VM is valid. It is invalid if the VM k8s resource
@@ -1126,40 +1122,16 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 		return ctrl.Result{}, reterr
 	}
 
-	// Register VM publish request metrics based on the reconcile result.
-	var isComplete, isDeleted, isFatal bool
-	defer func() {
-		if isDeleted {
-			// If the vmPub is deleted, return immediately.
-			// We don't need to call DeleteMetrics here, we will run this in ReconcileDelete().
-			return
-		}
-
-		var res metrics.PublishResult
-		switch {
-		case isComplete:
-			res = metrics.PublishSucceeded
-		case reterr != nil || isFatal:
-			res = metrics.PublishFailed
-		default:
-			res = metrics.PublishInProgress
-		}
-
-		r.Metrics.RegisterVMPublishRequest(ctx, vmPublishReq.Name, vmPublishReq.Namespace, res)
-	}()
-
 	if completeCond := conditions.Get(vmPublishReq, vmopv1.VirtualMachinePublishRequestConditionComplete); completeCond != nil {
 		// If this request has a complete condition with fatal reason, then we do not process it any further. We
 		// return early with no need to do any reconcile.
-		if isFatal = completeCond.Reason == vmopv1.FatalReason; isFatal {
+		if completeCond.Reason == vmopv1.FatalReason {
 			return ctrl.Result{}, reterr
 		}
 
 		// In case the .spec.ttlSecondsAfterFinished is not set, we can return early and no need to do any reconcile.
 		if vmPublishReq.Status.Ready && completeCond.Status == metav1.ConditionTrue {
-			isComplete = true
-			requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
-			isDeleted = deleted
+			requeueAfter, err := r.removeVMPubResourceFromCluster(ctx)
 			return ctrl.Result{RequeueAfter: requeueAfter}, err
 		}
 	}
@@ -1206,10 +1178,9 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 		}
 	}
 
-	if isComplete = r.checkIsComplete(ctx); isComplete {
+	if r.checkIsComplete(ctx) {
 		// remove VirtualMachinePublishRequest from the cluster if ttlSecondsAfterFinished is set.
-		requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
-		isDeleted = deleted
+		requeueAfter, err := r.removeVMPubResourceFromCluster(ctx)
 		return ctrl.Result{RequeueAfter: requeueAfter}, err
 	}
 
@@ -1219,7 +1190,6 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachinePublishRequestCon
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachinePublishRequestContext) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(ctx.VMPublishRequest, finalizerName) ||
 		controllerutil.ContainsFinalizer(ctx.VMPublishRequest, deprecatedFinalizerName) {
-		r.Metrics.DeleteMetrics(ctx, ctx.VMPublishRequest.Name, ctx.VMPublishRequest.Namespace)
 		controllerutil.RemoveFinalizer(ctx.VMPublishRequest, finalizerName)
 		controllerutil.RemoveFinalizer(ctx.VMPublishRequest, deprecatedFinalizerName)
 	}

@@ -207,18 +207,13 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, "true")
 			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
-			// VM Operator labels the VM once a reconcile has seen the pause, so
-			// no reconcile in flight can put the constraints back after they are
-			// cleared.
-			By("Wait for VM Operator to pause the VM")
-			Eventually(func(g Gomega) {
-				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(vm.Labels).To(HaveKey(vmopv1.PausedVMLabelKey))
-			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(),
-				"VM %s/%s was not paused", ns, vmName)
-
+			// VM Operator skips reconciling a VM with the pause annotation
+			// before it reaches the provider, so it records the pause in
+			// neither a label nor a condition. Only a reconcile that started
+			// before the patch can still put the constraints back, so check
+			// that they stay cleared.
 			constraints := clearExtensionCompatConstraints(ctx, clusterProxy, vm.Status.UniqueID)
+			expectConstraintsStayCleared(ctx, config, clusterProxy, vm.Status.UniqueID)
 
 			// A failed or timed-out restore may already have overwritten the
 			// disks, so the cleanup releases the old PVCs from here on.
@@ -551,6 +546,24 @@ func extensionCompatConstraintCount(ctx context.Context, clusterProxy *common.VM
 	Expect(err).ToNot(HaveOccurred())
 
 	return count
+}
+
+// expectConstraintsStayCleared checks that no VM Operator reconcile sets the
+// VM's extension compatibility constraints again after they were cleared.
+func expectConstraintsStayCleared(ctx context.Context, config *e2econfig.E2EConfig, clusterProxy *common.VMServiceClusterProxy, moID string) {
+	By("Verify the extension compatibility constraints stay cleared while the VM is paused")
+
+	vimClient := newServiceVersionVimClient(ctx, clusterProxy)
+	defer vcenter.LogoutVimClient(vimClient)
+
+	vmRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: moID}
+
+	Consistently(func(g Gomega) {
+		count, err := getExtensionCompatConstraintCount(ctx, vimClient, vmRef)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(count).To(BeZero())
+	}, config.GetIntervals("default", "wait-paused-vm-settle")...).Should(Succeed(),
+		"VM Operator set the extension compatibility constraints of VM %s again after the pause", moID)
 }
 
 func getExtensionCompatConstraintCount(ctx context.Context, c *vim25.Client, vmRef types.ManagedObjectReference) (int, error) {

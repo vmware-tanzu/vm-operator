@@ -98,6 +98,7 @@ intervals:
   default/wait-veeam-session: ["20m", "10s"]
   default/wait-veeam-session-start: ["5m", "10s"]
   default/wait-registervm-event: ["3m", "10s"]
+  default/wait-paused-vm-settle: ["30s", "5s"]
   default/wait-virtual-machine-compute-policy-status-update: ["5m", "10s"]
   default/wait-policy-evaluation-creation: ["3m", "10s"]
   default/wait-policy-evaluation-compliant: ["2m", "10s"]

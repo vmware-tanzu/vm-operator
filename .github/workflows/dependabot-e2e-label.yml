@@ -1,0 +1,81 @@
+name: dependabot-e2e-label
+
+# Runs after the "ci" workflow finishes on a pull_request. Labels the PR
+# e2e_tests_requested when all of these hold:
+#   - branch name starts with "dependabot/"
+#   - the PR was opened by dependabot[bot]
+#   - the ci run concluded successfully
+#   - the PR title contains "group with" (Dependabot's title for a
+#     single-directory grouped update, e.g. "Bump the eslint group with 3
+#     updates")
+#   - the PR does not already have e2e_tests_inprogress,
+#     e2e_tests_successful, or e2e_tests_unsuccessful - one of those means
+#     an e2e run was already requested or has already finished for it
+#
+# The title check is a dedup filter: a Dependabot group opens as one PR
+# for several dependencies, so gating on the grouped title runs e2e once
+# per group instead of once per dependency. It also skips ungrouped,
+# single-module bumps, which may be minor/patch changes or have
+# interdependencies with other in-flight bumps, so testing them in
+# isolation would not be meaningful.
+on:
+  workflow_run:
+    workflows:
+    - ci
+    types:
+    - completed
+
+jobs:
+  e2e_tests_requested:
+    if: startsWith(github.event.workflow_run.head_branch, 'dependabot/') && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+    - name: Look up the pull request for this ci run
+      id: pr
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+      run: |
+        if [ -z "$PR_NUMBER" ]; then
+          echo "No pull request associated with this ci run; nothing to label."
+          exit 0
+        fi
+
+        pr_json=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}")
+        echo "number=$PR_NUMBER" >>"$GITHUB_OUTPUT"
+        echo "author=$(echo "$pr_json" | jq -r '.user.login')" >>"$GITHUB_OUTPUT"
+        {
+          echo "title<<EOF"
+          echo "$pr_json" | jq -r '.title'
+          echo "EOF"
+        } >>"$GITHUB_OUTPUT"
+
+        already_tested=false
+        if echo "$pr_json" | jq -r '.labels[].name' \
+            | grep -Fxq -e 'e2e_tests_inprogress' -e 'e2e_tests_successful' -e 'e2e_tests_unsuccessful'; then
+          already_tested=true
+        fi
+        echo "already_tested=$already_tested" >>"$GITHUB_OUTPUT"
+
+    - name: Ensure the e2e_tests_requested label exists
+      if: steps.pr.outputs.number != '' && steps.pr.outputs.author == 'dependabot[bot]' && contains(steps.pr.outputs.title, ' group with ') && steps.pr.outputs.already_tested != 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh label create "e2e_tests_requested" \
+          --repo "${{ github.repository }}" \
+          --color BFD4F2 \
+          --description "Single-directory grouped Dependabot bump that passed CI; e2e tests requested" \
+          --force
+
+    - name: Label single-directory grouped Dependabot bumps that passed CI for e2e testing
+      if: steps.pr.outputs.number != '' && steps.pr.outputs.author == 'dependabot[bot]' && contains(steps.pr.outputs.title, ' group with ') && steps.pr.outputs.already_tested != 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh pr edit "${{ steps.pr.outputs.number }}" \
+          --repo "${{ github.repository }}" \
+          --add-label "e2e_tests_requested"

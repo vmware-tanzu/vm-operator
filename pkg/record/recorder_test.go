@@ -21,13 +21,13 @@ var _ = Describe("Event utils", func() {
 		It("should not publish an event", func() {
 			var err error
 			recorder.EmitEvent(nil, "Create", err, true)
-			Expect(len(fakeRecorder.Events)).Should(Equal(0))
+			Expect(fakeRecorder.Events).Should(BeEmpty())
 		})
 
 		It("should publish a success event", func() {
 			var err error
 			recorder.EmitEvent(nil, "Create", err, false)
-			Expect(len(fakeRecorder.Events)).Should(Equal(1))
+			Expect(fakeRecorder.Events).Should(HaveLen(1))
 			event := <-fakeRecorder.Events
 			Expect(event).Should(Equal("Normal CreateSuccess Create success"))
 		})
@@ -35,7 +35,7 @@ var _ = Describe("Event utils", func() {
 		It("should publish a failure event", func() {
 			err := errors.New("something wrong")
 			recorder.EmitEvent(nil, "Create", err, false)
-			Expect(len(fakeRecorder.Events)).Should(Equal(1))
+			Expect(fakeRecorder.Events).Should(HaveLen(1))
 			event := <-fakeRecorder.Events
 			Expect(event).Should(Equal("Warning CreateFailure something wrong"))
 		})

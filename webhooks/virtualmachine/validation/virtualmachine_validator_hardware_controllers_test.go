@@ -824,7 +824,7 @@ func controllerValidationTests() {
 				// Controller 1 has 14 devices.
 				ctx.vm.Spec.Volumes = make([]vmopv1.VirtualMachineVolume, 14)
 				unitNum := int32(0)
-				for i := 0; i < 14; i++ {
+				for i := range 14 {
 					if unitNum == 7 {
 						unitNum++ // Skip reserved unit 7.
 					}
@@ -1002,7 +1002,7 @@ func controllerValidationTests() {
 					ctx.WebhookRequestContext.OldObj = nil
 
 					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-					Expect(response.Allowed).To(Equal(true))
+					Expect(response.Allowed).To(BeTrue())
 				})
 			})
 		})
@@ -1020,7 +1020,7 @@ func controllerValidationTests() {
 					ctx.WebhookRequestContext.OldObj = nil
 
 					response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-					Expect(response.Allowed).To(Equal(true))
+					Expect(response.Allowed).To(BeTrue())
 				})
 			})
 
@@ -1046,7 +1046,7 @@ func controllerValidationTests() {
 					Expect(err).ToNot(HaveOccurred())
 
 					response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-					Expect(response.Allowed).To(Equal(true))
+					Expect(response.Allowed).To(BeTrue())
 				})
 			})
 		})

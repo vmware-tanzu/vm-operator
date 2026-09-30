@@ -51,7 +51,7 @@ var _ = Describe("Availability Zones and Zones", func() {
 	})
 
 	JustBeforeEach(func() {
-		for i := 0; i < numberOfAvailabilityZones; i++ {
+		for i := range numberOfAvailabilityZones {
 			obj := &topologyv1.AvailabilityZone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: fmt.Sprintf("az-%d", i),
@@ -65,7 +65,7 @@ var _ = Describe("Availability Zones and Zones", func() {
 			} else {
 				obj.Spec.ClusterComputeResourceMoIDs = []string{fmt.Sprintf("cluster-%d", i)}
 			}
-			for j := 0; j < numberOfNamespaces; j++ {
+			for j := range numberOfNamespaces {
 				obj.Spec.Namespaces[fmt.Sprintf("ns-%d", j)] = topologyv1.NamespaceInfo{
 					PoolMoIDs:  []string{poolMoID},
 					FolderMoId: folderMoID,
@@ -73,8 +73,8 @@ var _ = Describe("Availability Zones and Zones", func() {
 			}
 			Expect(client.Create(ctx, obj)).To(Succeed())
 		}
-		for i := 0; i < numberOfNamespaces; i++ {
-			for j := 0; j < numberOfZonesPerNamespace; j++ {
+		for i := range numberOfNamespaces {
+			for j := range numberOfZonesPerNamespace {
 				obj := &topologyv1.Zone{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: fmt.Sprintf("ns-%d", i),
@@ -99,7 +99,7 @@ var _ = Describe("Availability Zones and Zones", func() {
 	}
 
 	assertGetZonesSuccess := func() {
-		for i := 0; i < numberOfNamespaces; i++ {
+		for i := range numberOfNamespaces {
 			zones, err := topology.GetZones(ctx, client, fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(1, err).ToNot(HaveOccurred())
 			ExpectWithOffset(1, zones).To(HaveLen(numberOfZonesPerNamespace))
@@ -107,15 +107,15 @@ var _ = Describe("Availability Zones and Zones", func() {
 	}
 
 	assertGetAvailabilityZoneSuccess := func() {
-		for i := 0; i < numberOfAvailabilityZones; i++ {
+		for i := range numberOfAvailabilityZones {
 			_, err := topology.GetAvailabilityZone(ctx, client, fmt.Sprintf("az-%d", i))
 			ExpectWithOffset(1, err).ToNot(HaveOccurred())
 		}
 	}
 
 	assertGetZoneSuccess := func() {
-		for i := 0; i < numberOfNamespaces; i++ {
-			for j := 0; j < numberOfZonesPerNamespace; j++ {
+		for i := range numberOfNamespaces {
+			for j := range numberOfZonesPerNamespace {
 				_, err := topology.GetZone(ctx, client, fmt.Sprintf("zone-%d", j), fmt.Sprintf("ns-%d", i))
 				ExpectWithOffset(1, err).ToNot(HaveOccurred())
 			}
@@ -128,14 +128,14 @@ var _ = Describe("Availability Zones and Zones", func() {
 	}
 
 	assertGetZonesErrNoZones := func() {
-		for i := 0; i < numberOfNamespaces; i++ {
+		for i := range numberOfNamespaces {
 			_, err := topology.GetZones(ctx, client, fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(1, err).To(MatchError(topology.ErrNoZones))
 		}
 	}
 
 	assertGetAvailabilityZoneValidNamesErrNotFound := func() {
-		for i := 0; i < numberOfAvailabilityZones; i++ {
+		for i := range numberOfAvailabilityZones {
 			_, err := topology.GetAvailabilityZone(ctx, client, fmt.Sprintf("az-%d", i))
 			ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 		}
@@ -147,7 +147,7 @@ var _ = Describe("Availability Zones and Zones", func() {
 	}
 
 	assertGetZoneInvalidNameErrNotFound := func() {
-		for i := 0; i < numberOfNamespaces; i++ {
+		for i := range numberOfNamespaces {
 			_, err := topology.GetZone(ctx, client, "invalid", fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 		}
@@ -159,7 +159,7 @@ var _ = Describe("Availability Zones and Zones", func() {
 	}
 
 	assertGetZoneEmptyNameErrNotFound := func() {
-		for i := 0; i < numberOfNamespaces; i++ {
+		for i := range numberOfNamespaces {
 			_, err := topology.GetZone(ctx, client, "", fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 		}
@@ -189,7 +189,7 @@ var _ = Describe("Availability Zones and Zones", func() {
 	}
 
 	assertGetNamespaceFolderAndRPMoIDSuccessForAZ := func(azName string) {
-		for i := 0; i < numberOfNamespaces; i++ {
+		for i := range numberOfNamespaces {
 			folder, rp, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, azName, fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(2, err).ToNot(HaveOccurred())
 			ExpectWithOffset(2, rp).To(Equal(poolMoID))
@@ -198,23 +198,23 @@ var _ = Describe("Availability Zones and Zones", func() {
 	}
 
 	assertGetNamespaceFolderAndRPMoIDSuccess := func() {
-		for i := 0; i < numberOfAvailabilityZones; i++ {
+		for i := range numberOfAvailabilityZones {
 			assertGetNamespaceFolderAndRPMoIDSuccessForAZ(fmt.Sprintf("az-%d", i))
 		}
-		for i := 0; i < numberOfZonesPerNamespace; i++ {
+		for i := range numberOfZonesPerNamespace {
 			assertGetNamespaceFolderAndRPMoIDSuccessForAZ(fmt.Sprintf("zone-%d", i))
 		}
 	}
 
 	assertGetNamespaceFolderAndRPMoIDInvalidAZErrNotFound := func() {
-		for i := 0; i < numberOfNamespaces; i++ {
+		for i := range numberOfNamespaces {
 			_, _, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, "invalid", fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 		}
 	}
 
 	assertGetNamespaceFolderAndRPMoIDInvalidNamespaceErrNotFound := func() {
-		for i := 0; i < numberOfAvailabilityZones; i++ {
+		for i := range numberOfAvailabilityZones {
 			azName := fmt.Sprintf("az-%d", i)
 			_, _, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, azName, "invalid")
 			ExpectWithOffset(1, err).To(
@@ -230,7 +230,7 @@ var _ = Describe("Availability Zones and Zones", func() {
 	}
 
 	assertGetNamespaceFolderAndRPMoIDsSuccess := func() {
-		for i := 0; i < numberOfNamespaces; i++ {
+		for i := range numberOfNamespaces {
 			folder, rpMoIDs, err := topology.GetNamespaceFolderAndRPMoIDs(ctx, client, fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(1, err).ToNot(HaveOccurred())
 			ExpectWithOffset(1, rpMoIDs).To(Not(BeEmpty()))
@@ -244,7 +244,7 @@ var _ = Describe("Availability Zones and Zones", func() {
 	}
 
 	assertGetNamespaceFolderMoIDSuccess := func() {
-		for i := 0; i < numberOfNamespaces; i++ {
+		for i := range numberOfNamespaces {
 			folder, err := topology.GetNamespaceFolderMoID(ctx, client, fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(1, err).ToNot(HaveOccurred())
 			ExpectWithOffset(1, folder).To(Equal(folderMoID))

@@ -94,7 +94,7 @@ type FuzzTestFuncInput struct {
 func SpokeHubSpoke(input FuzzTestFuncInput) {
 	fuzzer := GetFuzzer(input.Scheme, input.FuzzerFuncs...)
 
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		// Create the spoke and fuzz it
 		spokeBefore := input.Spoke.DeepCopyObject().(ctrlconversion.Convertible)
 		fuzzer.Fill(spokeBefore)
@@ -128,7 +128,7 @@ func SpokeHubSpoke(input FuzzTestFuncInput) {
 func HubSpokeHub(input FuzzTestFuncInput) {
 	fuzzer := GetFuzzer(input.Scheme, input.FuzzerFuncs...)
 
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		// Create the hub and fuzz it
 		hubBefore := input.Hub.DeepCopyObject().(ctrlconversion.Hub)
 		fuzzer.Fill(hubBefore)

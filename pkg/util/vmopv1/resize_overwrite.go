@@ -34,7 +34,7 @@ func overwriteExtraConfigNamespaceName(
 	ci vimtypes.VirtualMachineConfigInfo,
 	cs *vimtypes.VirtualMachineConfigSpec) {
 
-	var toMerge []vimtypes.BaseOptionValue
+	var toMerge []vimtypes.BaseOptionValue //nolint:prealloc // variadic append of unknown size; nil when nothing to merge
 
 	toMerge = append(toMerge, ensureNamespaceName(vm, ci, cs)...)
 

@@ -254,7 +254,7 @@ func determineTargetController(
 
 	// If a specific bus number is not requested, get the first controller
 	// matching the type and sharing mode and that has an available slot.
-	for busNum := int32(0); busNum < controllerType.MaxCount(); busNum++ {
+	for busNum := range controllerType.MaxCount() {
 		controllerID := pkgutil.ControllerID{
 			ControllerType: controllerType,
 			BusNumber:      busNum,
@@ -279,7 +279,7 @@ func determineTargetController(
 	}
 
 	// If no available controller is found, create a new one.
-	for busNum := int32(0); busNum < controllerType.MaxCount(); busNum++ {
+	for busNum := range controllerType.MaxCount() {
 		if _, ok := controllerSpecs.Get(controllerType, busNum); !ok {
 			return vmopv1util.CreateNewController(controllerType, busNum, sharingMode)
 		}

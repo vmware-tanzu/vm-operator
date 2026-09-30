@@ -212,7 +212,7 @@ var _ = Describe("Start", func() {
 	}
 
 	assertNoError := func() {
-		ConsistentlyWithOffset(1, w.Err()).Should(BeNil())
+		ConsistentlyWithOffset(1, w.Err).Should(Succeed())
 	}
 
 	assertNoResult := func() {
@@ -220,7 +220,7 @@ var _ = Describe("Start", func() {
 	}
 
 	assertError := func() {
-		EventuallyWithOffset(1, func() error { return w.Err() }).ShouldNot(BeNil())
+		EventuallyWithOffset(1, func() error { return w.Err() }).ShouldNot(Succeed())
 
 		var urlErr *url.Error
 		ExpectWithOffset(1, errors.As(w.Err(), &urlErr)).To(BeTrue())
@@ -231,7 +231,7 @@ var _ = Describe("Start", func() {
 		case errors.As(urlErr.Err, &tErr):
 			ExpectWithOffset(1, tErr.Op).To(Equal("dial"))
 			ExpectWithOffset(1, tErr.Net).To(Equal("tcp"))
-			ExpectWithOffset(1, tErr.Err).ToNot(BeNil())
+			ExpectWithOffset(1, tErr.Err).To(HaveOccurred())
 			var sysErr *os.SyscallError
 			ExpectWithOffset(1, errors.As(tErr.Err, &sysErr)).To(BeTrue())
 			ExpectWithOffset(1, sysErr.Syscall).To(Equal("connect"))

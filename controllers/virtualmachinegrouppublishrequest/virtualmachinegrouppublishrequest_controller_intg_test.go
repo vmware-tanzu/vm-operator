@@ -112,7 +112,7 @@ func intgTestsReconcile() {
 
 		Eventually(func(g Gomega) {
 			reqs := getVMPubReqs(ctx, vmGroupPubReq.Namespace)
-			g.Expect(len(reqs)).To(Equal(0))
+			g.Expect(reqs).To(BeEmpty())
 			req := &vmopv1.VirtualMachineGroupPublishRequest{}
 			err := ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmGroupPubReq), req)
 			g.Expect(client.IgnoreNotFound(err)).ToNot(HaveOccurred())

@@ -214,7 +214,7 @@ func DeleteZoneBindingsWithSupervisor(input ZonesBindingInput) error {
 	}
 	// Supervisor don’t allow > 1 zone to be removed at the same time. If one is being removed, need to wait until the
 	// first is removed and remove another
-	for i := 0; i < (len(zones)); i++ {
+	for i := range zones {
 		err = wcpClient.DeleteZoneBindingsWithSupervisor(supervisorID, zones[i])
 		if err != nil {
 			return fmt.Errorf("failed to delete zone binding for %s: %w", zones[i], err)

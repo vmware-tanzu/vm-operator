@@ -83,8 +83,6 @@ func updateImgRegStorageVersion(ctx context.Context, crd apiextensionsv1.CustomR
 // indexOfVersion returns the index of the specified schema version for a given
 // CRD. This function is useful for writing the functions that are passed into
 // the applyFeatureStateFnsToCRD function.
-//
-//nolint:unused
 func indexOfVersion(
 	crd apiextensionsv1.CustomResourceDefinition,
 	version string) int {

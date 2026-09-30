@@ -512,12 +512,12 @@ var _ = DescribeTableSubtree("GetPVCZoneConstraints Table",
 
 		DescribeTable("PVC Phase",
 			func(pvcsZones [][]string, expZones []string, expErr string) {
-				var pvcs []corev1.PersistentVolumeClaim
+				pvcs := make([]corev1.PersistentVolumeClaim, 0, len(pvcsZones))
 				for i, zones := range pvcsZones {
 					var annotations map[string]string
 
 					if len(zones) > 0 {
-						var topology []map[string]string
+						topology := make([]map[string]string, 0, len(zones))
 						for _, z := range zones {
 							topology = append(topology, map[string]string{"topology.kubernetes.io/zone": z})
 						}

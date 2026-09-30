@@ -310,7 +310,7 @@ func getPlaceVMRecommendation(
 		return Recommendation{}, err
 	}
 
-	return recommendations[rand.Intn(len(recommendations))], nil // nolint:gosec
+	return recommendations[rand.Intn(len(recommendations))], nil //nolint:gosec
 }
 
 func getPlacementRecommendation(

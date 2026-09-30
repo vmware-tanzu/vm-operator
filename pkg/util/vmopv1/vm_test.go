@@ -1119,7 +1119,7 @@ var _ = Describe("CnsRegisterVolumeToVirtualMachineMapper", func() {
 
 		It("should return no reconcile requests", func() {
 			requests := mapperFunc(ctx, crv)
-			Expect(requests).To(HaveLen(0))
+			Expect(requests).To(BeEmpty())
 		})
 	})
 
@@ -1335,7 +1335,7 @@ var _ = Describe("PVCToVirtualMachineVolumeClaimNameMapper", func() {
 	})
 
 	pvcsToVMVolumes := func(pvcs ...*corev1.PersistentVolumeClaim) []vmopv1.VirtualMachineVolume {
-		var vols []vmopv1.VirtualMachineVolume
+		vols := make([]vmopv1.VirtualMachineVolume, 0, len(pvcs))
 		for _, pvc := range pvcs {
 			vol := vmopv1.VirtualMachineVolume{
 				Name: "disk-" + pvc.Name,

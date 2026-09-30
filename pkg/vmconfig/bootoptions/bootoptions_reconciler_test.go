@@ -162,7 +162,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be set in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(configSpec.BootOptions.BootDelay).To(Equal(metav1.Duration{Duration: 10 * time.Second}.Milliseconds()))
 				})
@@ -182,7 +182,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should not be set in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).To(BeNil())
 				})
 			})
@@ -201,7 +201,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should leave an empty configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).To(BeNil())
 				})
 			})
@@ -220,7 +220,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be updated in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(configSpec.BootOptions.BootDelay).To(Equal(metav1.Duration{Duration: 5 * time.Second}.Milliseconds()))
 				})
@@ -235,7 +235,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be set in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(*configSpec.BootOptions.BootRetryEnabled).To(BeTrue())
 				})
@@ -255,7 +255,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be updated in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(*configSpec.BootOptions.BootRetryEnabled).To(BeFalse())
 				})
@@ -275,7 +275,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should leave an empty configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).To(BeNil())
 				})
 			})
@@ -289,7 +289,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be set in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(configSpec.BootOptions.BootRetryDelay).To(Equal(metav1.Duration{Duration: 10 * time.Second}.Milliseconds()))
 				})
@@ -309,7 +309,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should not be set in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).To(BeNil())
 				})
 			})
@@ -330,7 +330,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should leave an empty configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).To(BeNil())
 				})
 			})
@@ -351,7 +351,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be updated in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(configSpec.BootOptions.BootRetryDelay).To(Equal(metav1.Duration{Duration: 5 * time.Second}.Milliseconds()))
 				})
@@ -366,7 +366,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be set in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(*configSpec.BootOptions.EfiSecureBootEnabled).To(BeTrue())
 				})
@@ -386,7 +386,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be updated in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(*configSpec.BootOptions.EfiSecureBootEnabled).To(BeFalse())
 				})
@@ -406,7 +406,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should leave an empty configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).To(BeNil())
 				})
 			})
@@ -420,7 +420,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be set in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(configSpec.BootOptions.NetworkBootProtocol).To(Equal(string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv4)))
 				})
@@ -440,7 +440,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should not be set in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).To(BeNil())
 				})
 			})
@@ -459,7 +459,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 					}
 				})
 				It("should be updated in configSpec", func() {
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
 					Expect(configSpec.BootOptions.NetworkBootProtocol).To(Equal(string(vimtypes.VirtualMachineBootOptionsNetworkBootProtocolTypeIpv6)))
 				})
@@ -527,7 +527,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 				It("should be set in configSpec", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
-					Expect(len(configSpec.BootOptions.BootOrder)).To(Equal(len(vm.Spec.BootOptions.BootOrder)))
+					Expect(configSpec.BootOptions.BootOrder).To(HaveLen(len(vm.Spec.BootOptions.BootOrder)))
 					Expect(configSpec.BootOptions.BootOrder[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{}))
 					Expect(configSpec.BootOptions.BootOrder[1]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{}))
 					diskDevice := configSpec.BootOptions.BootOrder[1].(*vimtypes.VirtualMachineBootOptionsBootableDiskDevice)
@@ -603,7 +603,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 				It("should be updated in configSpec", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
-					Expect(len(configSpec.BootOptions.BootOrder)).To(Equal(len(vm.Spec.BootOptions.BootOrder)))
+					Expect(configSpec.BootOptions.BootOrder).To(HaveLen(len(vm.Spec.BootOptions.BootOrder)))
 					Expect(configSpec.BootOptions.BootOrder[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableCdromDevice{}))
 					Expect(configSpec.BootOptions.BootOrder[1]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{}))
 					diskDevice := configSpec.BootOptions.BootOrder[1].(*vimtypes.VirtualMachineBootOptionsBootableDiskDevice)
@@ -888,7 +888,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha4), func() {
 				It("should set the correct configSpec bootOrder", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(configSpec.BootOptions).NotTo(BeNil())
-					Expect(len(configSpec.BootOptions.BootOrder)).To(Equal(len(vm.Spec.BootOptions.BootOrder)))
+					Expect(configSpec.BootOptions.BootOrder).To(HaveLen(len(vm.Spec.BootOptions.BootOrder)))
 					Expect(configSpec.BootOptions.BootOrder[0]).To(BeAssignableToTypeOf(&vimtypes.VirtualMachineBootOptionsBootableDiskDevice{}))
 					disk1 := configSpec.BootOptions.BootOrder[0].(*vimtypes.VirtualMachineBootOptionsBootableDiskDevice)
 					Expect(disk1.DeviceKey).To(Equal(int32(2001)))

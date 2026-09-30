@@ -102,7 +102,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 
 		dskMgr := object.NewVirtualDiskManager(vimClient)
 
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			var diskName string
 			switch i {
 			case 0:
@@ -661,7 +661,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						BeforeEach(func() {
 							devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 							allDisks := devices.SelectByType(&vimtypes.VirtualDisk{})
-							var snapshotDisks []vimtypes.VirtualMachineFileLayoutExDiskLayout
+							snapshotDisks := make([]vimtypes.VirtualMachineFileLayoutExDiskLayout, 0, len(allDisks))
 							for _, d := range allDisks {
 								snapshotDisks = append(snapshotDisks, vimtypes.VirtualMachineFileLayoutExDiskLayout{
 									Key: d.GetVirtualDevice().Key,

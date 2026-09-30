@@ -145,7 +145,7 @@ func unitTestsReconcile() {
 	// returns early, so callers typically need at least 2 calls to reach a
 	// converged state.
 	reconcileN := func(n int) {
-		for i := 0; i < n; i++ {
+		for range n {
 			_, err := reconcileOnce()
 			ExpectWithOffset(1, err).ToNot(HaveOccurred())
 		}
@@ -677,7 +677,7 @@ func unitTestsReconcile() {
 				reconcileN(3)
 				before := getRS().Status.Replicas
 
-				for i := 0; i < 3; i++ {
+				for range 3 {
 					_, err := reconcileOnce()
 					Expect(err).ToNot(HaveOccurred())
 				}

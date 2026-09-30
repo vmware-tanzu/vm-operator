@@ -114,7 +114,7 @@ func intgTestsValidateUpdate() {
 			ctx.vmSnapshot.Spec.Description = originalDescription
 		})
 
-		It("should should allow the request", func() {
+		It("should allow the request", func() {
 			Expect(ctx.Client.Update(ctx, ctx.vmSnapshot)).To(Succeed())
 		})
 	})

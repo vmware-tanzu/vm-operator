@@ -71,6 +71,8 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		if SetControllerName(modified, oldObj) {
 			wasMutated = true
 		}
+	case admissionv1.Delete, admissionv1.Connect:
+		// No mutation is performed for these operations.
 	}
 
 	if !wasMutated {

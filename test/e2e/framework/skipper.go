@@ -23,7 +23,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2" //nolint:depguard // E2E skipper mirrors k8s framework and must call ginkgo.Skip.
+	"github.com/onsi/ginkgo/v2"
 	"k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -97,7 +97,7 @@ func pruneStack(skip int) string {
 	var prunedStack []string
 
 	// skip the top of the stack
-	for i := 0; i < 2*skip+1; i++ {
+	for range 2*skip + 1 {
 		scanner.Scan()
 	}
 

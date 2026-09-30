@@ -45,7 +45,7 @@ func CollectSupportBundle(vm *vmopv1.VirtualMachine, svKubeconfig, testName stri
 }
 
 func runCommand(cmdString string) error {
-	cmd := exec.CommandContext(context.Background(), "/bin/sh", "-c", cmdString) //nolint:gosec // G204: E2E helper runs shell for support-bundle CLI
+	cmd := exec.CommandContext(context.Background(), "/bin/sh", "-c", cmdString)
 	stdout, err := cmd.StdoutPipe()
 	Expect(err).ToNot(HaveOccurred())
 	stderr, err := cmd.StderrPipe()

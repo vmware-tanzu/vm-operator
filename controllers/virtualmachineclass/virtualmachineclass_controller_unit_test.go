@@ -98,7 +98,7 @@ func unitTestsReconcile() {
 				// Verify no VirtualMachineClassInstances were created
 				list := &vmopv1.VirtualMachineClassInstanceList{}
 				Expect(ctx.Client.List(ctx, list, client.InNamespace(vmClassCtx.VMClass.Namespace))).To(Succeed())
-				Expect(list.Items).To(HaveLen(0))
+				Expect(list.Items).To(BeEmpty())
 			})
 		})
 

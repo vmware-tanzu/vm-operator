@@ -625,7 +625,7 @@ func (s *TestSuite) afterSuiteForIntegrationTesting() {
 func (s *TestSuite) applyFeatureStatesToCRDs(
 	in []*apiextensionsv1.CustomResourceDefinition) []*apiextensionsv1.CustomResourceDefinition {
 
-	out := make([]*apiextensionsv1.CustomResourceDefinition, 0)
+	out := make([]*apiextensionsv1.CustomResourceDefinition, 0, len(in))
 	for i := range in {
 		crd := applyFeatureStateFnsToCRD(
 			s,

@@ -135,6 +135,8 @@ func CreateNetworkDevices(
 			return createNetworkDevicesForNamedNetwork(ctx, vm, finder)
 		case "":
 			return nil, fmt.Errorf("no network provider set")
+		default:
+			// Other network providers are handled below.
 		}
 	}
 
@@ -490,6 +492,8 @@ func CreateAndWaitForNetworkInterfaces(
 			return createAndWaitNamedNetworkInterfaces(vmCtx, vmCtx.VM, finder)
 		case "":
 			return nil, fmt.Errorf("no network provider set")
+		default:
+			// Other network providers are handled below.
 		}
 	}
 
@@ -763,6 +767,8 @@ func IPAMModesToNetOPInterfaceIPFamilyPolicy(ipamModes []corev1.IPFamily) netopv
 			hasV4 = true
 		case corev1.IPv6Protocol:
 			hasV6 = true
+		case corev1.IPFamilyUnknown:
+			// Unknown IP families are ignored.
 		}
 	}
 

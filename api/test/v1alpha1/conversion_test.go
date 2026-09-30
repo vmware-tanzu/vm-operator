@@ -203,7 +203,7 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 	})
 })
 
-// nolint:gocyclo
+//nolint:gocyclo
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(vmSpec *vmopv1a1.VirtualMachineSpec, c randfill.Continue) {
@@ -430,7 +430,7 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			imageStatus.PowerState = ""
 
 			// This is backed from annotation.
-			imageStatus.ContentLibraryRef = nil //nolint:staticcheck
+			imageStatus.ContentLibraryRef = nil
 		},
 		func(osInfo *vmopv1.VirtualMachineImageOSInfo, c randfill.Continue) {
 			c.FillNoCustom(osInfo)

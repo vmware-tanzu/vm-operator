@@ -93,7 +93,7 @@ type VirtualMachineServiceSpec struct {
 	// +optional
 	Selector map[string]string `json:"selector,omitempty"`
 
-	// Only applies to VirtualMachineService Type: LoadBalancer
+	// Only applies to VirtualMachineService Type: LoadBalancer.
 	// LoadBalancer will get created with the IP specified in this field.
 	// This feature depends on whether the underlying load balancer provider
 	// supports specifying the loadBalancerIP when a load balancer is created.

@@ -78,7 +78,7 @@ func GetTemplatePathInPackerPluginDir(templateName string) (string, error) {
 	}
 
 	path := filepath.Join(repoRoot, templatesDirName, templateName)
-	if _, err := os.Stat(path); err == nil { //nolint:gosec // G703: path is built from known template dir
+	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	} else if os.IsNotExist(err) {
 		return "", fmt.Errorf("template file %s does not exist: %w", path, err)

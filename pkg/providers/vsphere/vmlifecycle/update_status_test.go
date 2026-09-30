@@ -3565,6 +3565,8 @@ var _ = Describe("UpdateStatus", func() {
 						scsiController = controller
 					case vmopv1.VirtualControllerTypeIDE:
 						ideController = controller
+					default:
+						// Other controller types are not checked here.
 					}
 				}
 
@@ -6272,7 +6274,7 @@ var _ = Describe("Hardware status", func() {
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(vmCtx.VM.Status.Hardware).ToNot(BeNil())
-					Expect(vmCtx.VM.Status.Hardware.VGPUs).To(HaveLen(0))
+					Expect(vmCtx.VM.Status.Hardware.VGPUs).To(BeEmpty())
 				})
 			})
 		})

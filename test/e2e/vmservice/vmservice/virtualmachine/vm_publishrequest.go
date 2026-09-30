@@ -588,6 +588,8 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 						vimtypes.VirtualMachineFileLayoutExFileTypeDiskDescriptor,
 						vimtypes.VirtualMachineFileLayoutExFileTypeDiskExtent:
 						actualUsedBytes += f.Size
+					default:
+						// Other file types do not count toward the used bytes.
 					}
 				}
 				requestedCapacity := resource.NewQuantity(actualUsedBytes, resource.BinarySI)
@@ -710,7 +712,7 @@ func createVMPublishRequest(
 		}
 
 		return vmPub != nil
-	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-creation")...).Should(Equal(true), "Timed out waiting for VirtualMachinePublishRequest %s to be created", name)
+	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-creation")...).Should(BeTrue(), "Timed out waiting for VirtualMachinePublishRequest %s to be created", name)
 }
 
 // publishRequestCompletedWithReadyImage waits for the named publish request to

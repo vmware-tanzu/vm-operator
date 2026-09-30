@@ -186,7 +186,7 @@ func vmConfigSpecTests() {
 
 				vcVM, err := createOrUpdateAndGetVcVM(
 					ctx, vmProvider, vm)
-				ExpectWithOffset(1, err).ToNot(BeNil())
+				ExpectWithOffset(1, err).To(HaveOccurred())
 				ExpectWithOffset(1, err.Error()).To(ContainSubstring(
 					fmt.Sprintf(
 						"virtualmachineclasses.vmoperator.vmware.com %q not found",
@@ -300,7 +300,7 @@ func vmConfigSpecTests() {
 			})
 			It("should retrieve a non-zero number of properties", func() {
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(HaveLen(0))
+				Expect(result).ToNot(BeEmpty())
 			})
 		})
 		DescribeTable("getting "+propExtraConfigKey,

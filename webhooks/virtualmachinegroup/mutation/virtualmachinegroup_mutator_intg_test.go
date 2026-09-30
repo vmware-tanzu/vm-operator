@@ -222,7 +222,7 @@ func intgTestsMutating() {
 				Expect(updated.Spec.NextForcePowerStateSyncTime).ToNot(BeEmpty())
 				nextSyncTimestamp, err := time.Parse(time.RFC3339Nano, updated.Spec.NextForcePowerStateSyncTime)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(nextSyncTimestamp).NotTo(Equal(originalTimestamp))
+				Expect(updated.Spec.NextForcePowerStateSyncTime).NotTo(Equal(originalTimestamp))
 
 				// Check that the annotation was updated to the same timestamp as the nextForcePowerStateSyncTime
 				Expect(updated.Annotations).To(HaveKey(constants.LastUpdatedPowerStateTimeAnnotation))

@@ -22,15 +22,12 @@ formatters:
 linters:
   default: all
   disable:
-  - containedctx      # 3
   - contextcheck      # 50
   - cyclop            # 5
   - dupl              # 50
-  - dupword           # 11
   - embeddedstructfieldcheck # 179
   - err113            # 50
   - errname           # 6
-  - exhaustive        # 29
   - exhaustruct       # 50
   - exhaustruct_v5    # 50
   - exptostd          # 2
@@ -38,16 +35,13 @@ linters:
   - forcetypeassert   # 6
   - funcorder         # 50
   - funlen            # 50
-  - ginkgolinter      # 38
   - gochecknoglobals  # 50
   - gochecknoinits    # 3
   - gocognit          # 43
   - goconst
-  - godox             # 50
   - gomoddirectives   # 9
   - inamedparam       # 11
   - interfacebloat    # 2
-  - intrange          # 4
   - ireturn           # 50
   - lll               # 50
   - maintidx          # 26
@@ -59,11 +53,9 @@ linters:
   - nilnil            # 3
   - nlreturn          # 9
   - noinlineerr
-  - nolintlint        # 5
   - nonamedreturns    # 23
   - paralleltest      # 50
   - perfsprint        # 7
-  - prealloc
   - recvcheck         # 5
   - tagalign          # 33
   - tagliatelle       # 8
@@ -75,6 +67,31 @@ linters:
   - wsl_v5            # 50
 
   settings:
+
+    exhaustive:
+      # A switch with a default case is treated as intentionally handling
+      # the remaining values.
+      default-signifies-exhaustive: true
+
+    dupword:
+      # Placeholder test strings ("blah blah", "yada yada yada") and phrases
+      # such as "power back on on the same host" repeat these on purpose.
+      ignore:
+      - blah
+      - yada
+      - "on"
+
+    ginkgolinter:
+      forbid-focus-container: true
+
+    godox:
+      keywords:
+      # FIXMEs should be resolved before merging. TODOs are allowed.
+      - FIXME
+
+    nolintlint:
+      require-specific: true
+      allow-unused: false
 
     importas:
       alias:
@@ -387,6 +404,8 @@ linters:
       linters:
       - depguard
       - gosec
+      # Preallocating test fixtures adds noise without measurable benefit.
+      - prealloc
 
     - path: pkg/config/env/env.go
       linters:
@@ -394,6 +413,13 @@ linters:
     - path: pkg/providers/vsphere/vmlifecycle/update_status.go
       linters:
       - gocyclo
+
+    # The doc comment illustrating the VM spec setup contains the example
+    # code "= nil, nil, nil, nil", which cannot carry an inline nolint.
+    - path: pkg/providers/vsphere/vmprovider_test.go
+      text: "Duplicate words \\(nil,\\) found"
+      linters:
+      - dupword
 
     # Ignore underscores in conversion function names as required by K8s API.
     - path: "_conversion.go"
@@ -406,6 +432,20 @@ linters:
     # Ignore different receiver names in conversion functions (e.g. src vs dst).
     - path: "_conversion.go"
       text: ".*receiver name"
+
+    # Validators accumulate field.ErrorList values from variadic appends of
+    # unknown size, and callers rely on a nil list meaning "valid".
+    - linters:
+        - prealloc
+      source: '^\s*var \w+ field\.ErrorList$'
+
+    # Storing a context.Context in a struct is allowed for the typed
+    # contexts in pkg/context, for reconcilers and long-lived services that
+    # hold the controller-manager context, and for test harnesses. See
+    # .sdd/memory/architectural-standards.md, "Context Usage".
+    - path: "(pkg/context/|pkg/prober/|controllers/|services/|test/)"
+      linters:
+        - containedctx
 
     # E2E tests and research CLIs under hack/ write progress and reports to
     # stdout by design.

@@ -1154,8 +1154,8 @@ func (d *wcpDcliClient) ListVMClasses() ([]VMClassInfo, error) {
 
 func (d *wcpDcliClient) CreateVMClass(createSpec VMClassSpec) error {
 	// CPUCount and MemoryMB are compulsory fields for VMClass creation.
-	Expect(createSpec.CPUCount).NotTo(Equal(BeNil()))
-	Expect(createSpec.MemoryMB).NotTo(Equal(BeNil()))
+	Expect(createSpec.CPUCount).NotTo(BeNil())
+	Expect(createSpec.MemoryMB).NotTo(BeNil())
 	operation := fmt.Sprintf("create --id %s", createSpec.ID)
 
 	vmClassSpecCmd, err := GenerateVMClassSpecCmd(createSpec)

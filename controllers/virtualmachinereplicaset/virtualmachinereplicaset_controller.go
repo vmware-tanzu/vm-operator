@@ -484,7 +484,7 @@ func (r *Reconciler) syncReplicas(
 			errs   []error
 		)
 
-		for i := 0; i < diff; i++ {
+		for i := range diff {
 			vm := r.getNewVirtualMachine(rs)
 			log := ctx.Logger.WithValues("vm", vm.Name)
 			log.Info("Creating VM", "index", i+1, "totalVMsToBeCreated", diff)
@@ -636,7 +636,7 @@ func isVMReady(vm *vmopv1.VirtualMachine) bool {
 	}
 
 	p := vm.Spec.ReadinessProbe
-	return p == nil || (p.TCPSocket == nil && p.GuestHeartbeat == nil && len(p.GuestInfo) == 0) //nolint:staticcheck // TCPSocket deprecation warning; same field VMService already checks
+	return p == nil || (p.TCPSocket == nil && p.GuestHeartbeat == nil && len(p.GuestInfo) == 0)
 }
 
 // updateStatus updates the Status field of the VirtualMachineReplicaSet.
@@ -667,9 +667,9 @@ func (r *Reconciler) updateStatus(
 		}
 	}
 
-	newStatus.Replicas = int32(len(filteredVMs))                      //nolint:gosec // disable G115
-	newStatus.FullyLabeledReplicas = int32(fullyLabeledReplicasCount) //nolint:gosec // disable G115
-	newStatus.ReadyReplicas = int32(readyReplicasCount)               //nolint:gosec // disable G115
+	newStatus.Replicas = int32(len(filteredVMs)) //nolint:gosec // disable G115
+	newStatus.FullyLabeledReplicas = int32(fullyLabeledReplicasCount)
+	newStatus.ReadyReplicas = int32(readyReplicasCount)
 
 	// Copy the newly calculated status into the VirtualMachineReplicaSet.
 	if rs.Status.Replicas != newStatus.Replicas ||

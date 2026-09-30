@@ -741,7 +741,7 @@ func TestNewHelperNil(t *testing.T) {
 	var x *appsv1.Deployment
 	g := NewWithT(t)
 	_, err := NewHelper(x, nil)
-	g.Expect(err).ToNot(BeNil())
+	g.Expect(err).To(HaveOccurred())
 	_, err = NewHelper(nil, nil)
-	g.Expect(err).ToNot(BeNil())
+	g.Expect(err).To(HaveOccurred())
 }

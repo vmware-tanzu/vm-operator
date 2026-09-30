@@ -17,50 +17,6 @@ VM Operator does not own the coordination mechanism itself. A separate Lifecycle
 
 ---
 
-## Reconcile pipeline (big picture)
-
-```
-Reconcile(req)
-  │
-  └─DeletionTimestamp set?
-      │
-      ├─no  ─▶ ReconcileNormal
-      │           │
-      │           ├─Delete/ResourceDelete hook tracking (every reconcile, all VMs)
-      │           │     hook now registered for either stage ─▶ note it for later,
-      │           │     without pausing anything yet — the actual checkpoint is
-      │           │     still ReconcileDelete's, below
-      │           │
-      │           ├─Create stage checkpoint (once per VM lifecycle)
-      │           │     not yet created + hook registered + not ready ─▶ pause, skip provider Create
-      │           │     ready or no hook ─▶ proceed to provider Create
-      │           │
-      │           └─PowerStateChange stage checkpoint (every power transition)
-      │                 desired power state ≠ observed + hook registered + not ready ─▶ pause,
-      │                 skip the power-state apply only — all other config/device reconcile continues
-      │                 ready or no hook ─▶ apply the power-state change
-      │
-      └─yes ─▶ ReconcileDelete
-                  │
-                  ├─Delete stage checkpoint (vSphere-side, once)
-                  │     hook registered + not ready ─▶ pause, skip provider Delete, keep finalizer
-                  │     ready or no hook ─▶ delete the vSphere VM
-                  │
-                  └─ResourceDelete stage checkpoint (Kubernetes-side, once — never in
-                     parallel with Delete; only evaluated once Delete has fully resolved)
-                        hook registered + not ready ─▶ pause, skip RemoveFinalizer
-                        ready or no hook ─▶ RemoveFinalizer, object is garbage-collected
-```
-
-Every checkpoint above calls the same shared routine, applied at four different
-points in the reconcile flow. That routine — sketched in Diagram D below — lazily
-creates the VM's `LifecycleState` the first time a checkpoint is reached, as part
-of the same get-or-create/pause/resume decision the rest of the routine makes. See
-"Reconcile flows" below for the per-checkpoint decision logic and its two
-failure-free exits (no capability, no hook).
-
----
-
 ## Goals
 
 - **G1**: VM Operator MUST expose exactly four lifecycle stages for `VirtualMachine`: **Create**, **PowerStateChange**, **Delete** (vSphere-side deletion), and **ResourceDelete** (Kubernetes CR finalizer removal).
@@ -91,9 +47,9 @@ A DevOps user creates a `VirtualMachine` in a namespace where a `LifecycleHook` 
 
 **Acceptance scenarios**:
 
-1. **Given** a `VirtualMachine` with no `LifecycleState` yet and a `LifecycleHook` registered for the `Create` stage on `(vmoperator.vmware.com, VirtualMachine)` in its namespace, **When** VM Operator reconciles the VM for the first time, **Then** VM Operator creates a `LifecycleState` for the VM, sets `spec.stages[Create].workflowPaused=true`, sets the VM's `Create` stage condition to blocked, emits the stage's event, and does not create the underlying vSphere VM.
-2. **Given** a `LifecycleState` with `spec.stages[Create].workflowPaused=true` and `status.stages[Create].conditions[HooksReady]=True`, **When** VM Operator reconciles the VM, **Then** VM Operator sets `workflowResumed=true`, updates the VM's `Create` condition to ready, and proceeds to create the VM in vSphere on that same or a subsequent reconcile.
-3. **Given** no `LifecycleHook` exists for the `Create` stage in the VM's namespace, **When** VM Operator reconciles a newly created VM, **Then** VM Operator proceeds to create the VM in vSphere without creating a `LifecycleState` or pausing, identical to today's behavior.
+1. **Given** a `VirtualMachine` with no `LifecycleState` yet and a `LifecycleHook` registered for the `Create` stage on `(vmoperator.vmware.com, VirtualMachine)` in its namespace, **When** VM Operator reconciles the VM for the first time, **Then** VM Operator pauses before creating the VM — no vSphere VM is created, the VM's `LifecycleHooksReady` condition is `False` with a message naming the `Create` stage, and the stage's event is emitted.
+2. **Given** the `Create` stage is paused and its hooks have reported ready (`HooksReady=True`), **When** VM Operator reconciles the VM, **Then** VM Operator resumes, the `LifecycleHooksReady` condition becomes `True`, and the VM is created in vSphere on that same or a subsequent reconcile.
+3. **Given** no `LifecycleHook` exists for the `Create` stage in the VM's namespace, **When** VM Operator reconciles a newly created VM, **Then** VM Operator proceeds to create the VM in vSphere without pausing and without creating any lifecycle resource, identical to today's behavior.
 
 ---
 
@@ -127,7 +83,7 @@ A DevOps user deletes a VM that needs external cleanup (e.g. an external CMDB en
 2. **Given** `HooksReady=True` for the `Delete` stage, **When** VM Operator next reconciles the deleting VM, **Then** the vSphere VM is deleted, and VM Operator then evaluates the `ResourceDelete` stage the same way — pausing before finalizer removal if a hook is registered and not ready, or removing the finalizer immediately if none is.
 3. **Given** `HooksReady=True` for `ResourceDelete` (or no hook registered for it), **When** VM Operator next reconciles, **Then** the finalizer is removed and Kubernetes garbage-collects the object.
 4. **Given** `Delete` and `ResourceDelete` are two distinct, independently-hookable stages, **When** a hook is registered on either or both, **Then** `Delete` fully resolves (vSphere VM gone) before `ResourceDelete` is ever evaluated — the two stages are never evaluated in parallel.
-5. **Given** a `Delete`-stage hook registered on a VM in a namespace, **When** that entire namespace is deleted (not just the VM individually), **Then** the `Delete`/`ResourceDelete` hooks are still honored — the namespace remains in `Terminating` until `HooksReady` resolves for both, the same as any other stuck finalizer — rather than the VM and its hook obligations disappearing silently as a side effect of the namespace's own teardown.
+5. **Given** a `Delete`-stage hook whose `LifecycleState` carries VM Operator's finalizer (created at the VM's first reconcile, or created by the Lifecycle Operator with that finalizer), **When** the entire namespace is deleted (not just the VM individually), **Then** the `Delete`/`ResourceDelete` hooks are still honored — the namespace remains in `Terminating` until `HooksReady` resolves for both, the same as any other stuck finalizer. A `LifecycleState` created day-2 by the Lifecycle Operator *without* VM Operator's finalizer is not protected — see the accepted-race note in "Resolved decisions."
 
 ---
 
@@ -141,29 +97,11 @@ A DevOps user needs to tell, from the VM object alone, whether any stage is curr
 
 **Acceptance scenarios**:
 
-1. **Given** any of the four stages is currently blocked, **When** a DevOps user runs `kubectl get vm <name> -o yaml`, **Then** the `VirtualMachineConditionLifecycleHooksBlocked` condition is `False` with reason `HooksBlocked` and a message like "blocked on Create stage hooks", without needing to inspect the `LifecycleState` or any hook resource directly.
+1. **Given** any of the four stages is currently blocked, **When** a DevOps user runs `kubectl get vm <name> -o yaml`, **Then** the `VirtualMachineConditionLifecycleHooksReady` condition is `False` with reason `HooksBlocked` and a message like "blocked on Create stage hooks", without needing to inspect the `LifecycleState` or any hook resource directly.
 2. **Given** no stage is currently blocked, **When** status is read, **Then** the condition is `True`, never `Unknown`.
+3. **Given** the `Delete` stage is blocked, **When** status is read, **Then** the condition message names `Delete` only — `Delete` and `ResourceDelete` are sequential and never blocked together, and `Create`, `PowerStateChange` and `Delete` are mutually exclusive by VM phase, so at most one stage is ever named. The condition reads inverted (`True` means *not* blocked); see `model.md`.
 
 ---
-
-## Reconcile flows (high-level)
-
-VM Operator's reconciliation has two main paths: `ReconcileNormal` (for living VMs) and `ReconcileDelete` (for terminating VMs). Each path has its own stage checkpoints:
-
-- **ReconcileNormal** pauses at two stages before and during config reconciliation:
-  - **Create** (once, before vSphere VM creation)
-  - **PowerStateChange** (on each power-state transition; all other config/device work continues unaffected)
-
-- **ReconcileDelete** pauses at two stages in strict sequence:
-  - **Delete** (before vSphere VM deletion)
-  - **ResourceDelete** (before finalizer removal; only evaluated after Delete has fully resolved)
-
-The feature is capability-gated: when disabled, all checkpoints are skipped and behavior is identical to today.
-
-The `VirtualMachineConditionLifecycleHooksBlocked` condition (G4) tracks whether any stage is currently blocked, with the stage name in the message (e.g., "blocked on Create stage hooks").
-
-For detailed implementation flow and stage-gate decision logic, see `plan.md` "Reconcile flow".
-
 
 
 ## Resolved decisions
@@ -172,13 +110,13 @@ All open questions from the prior draft have been resolved:
 
 - **Power-off inclusion**: `PowerStateChange` covers both `PoweredOff → PoweredOn` and `PoweredOn → PoweredOff`, and is `Reentrant`.
 - **Stage `type`/`blocking` defaults**: `Create`=`Single`, `PowerStateChange`=`Reentrant`, `Delete`=`Single`, `ResourceDelete`=`Single`; all four are `blocking=true`.
-- **Hooks-not-ready handling**: VM Operator does not distinguish pending/failed/timed-out; it only mirrors the `HooksReady` boolean via a single `False` reason, `HooksPending`. That detail lives in the Lifecycle Operator and is out of scope here. This is not a terminal state — VM Operator is a level-triggered controller with no concept of permanent failure (see [`research.md`](./research.md) "Terminal failures"); it keeps reconciling at the normal cadence and self-heals the moment `HooksReady` flips `True`.
+- **Hooks-not-ready handling**: VM Operator does not distinguish pending/failed/timed-out; it only mirrors the `HooksReady` boolean via a single `False` reason, `HooksBlocked`. That detail lives in the Lifecycle Operator and is out of scope here. This is not a terminal state — VM Operator is a level-triggered controller with no concept of permanent failure (see [`research.md`](./research.md) "Terminal failures"); it keeps reconciling at the normal cadence and self-heals the moment `HooksReady` flips `True`.
 - **Supervisor-level opt-in gating**: a dedicated Supervisor capability, `supports_vm_service_lifecycle_hooks`, gates the entire feature (see G6, `model.md`/`plan.md`), not deferred.
-- **Condition type/reason names**: one new `VirtualMachine` condition type, `VirtualMachineConditionLifecycleHooksBlocked`. When `False`, reason is `HooksBlocked` and the message includes which stage is currently pausing (e.g., "blocked on Create stage hooks"); when `True`, no hooks are blocking any stage (see `model.md`).
-- **`LifecycleState` deleted out-of-band while a stage is paused**: VM Operator re-creates it and re-enters the paused state on the next reconcile, rather than treating its absence as "resume."
+- **Condition type/reason names**: one new `VirtualMachine` condition type, `VirtualMachineConditionLifecycleHooksReady`. When `False`, reason is `HooksBlocked` and the message includes which stage is currently pausing (e.g., "blocked on Create stage hooks"); when `True`, no hooks are blocking any stage (see `model.md`).
+- **`LifecycleState` deleted out-of-band**: VM Operator does not re-create it. A missing `LifecycleState` (or a missing stage entry) means "no hook," so the checkpoint proceeds until the Lifecycle Operator re-creates it. Keeping `LifecycleState` accurate after the VM's first reconcile is the Lifecycle Operator's responsibility.
 - **VM Operator restart mid-pause**: state lives in the `LifecycleState` CR, not in-memory, so a restart does not lose the pause — the next reconcile re-evaluates from the CR as normal (level-triggered reconciliation).
-- **Zero-hook detection (`HookExists` in Diagram D)**: the Lifecycle Operator owns and fully maintains a new `AggregatedLifecycleHooks` resource (`lifecycle.vcfa.vmware.com/v1alpha1`, namespaced), **one instance per namespace** (not per `(group, kind)` — a single instance covers every consumer kind in that namespace, disambiguated internally). Its `status` is the union of every stage name currently registered across all `LifecycleHook`s in that namespace — entirely computed and kept current by the Lifecycle Operator. VM Operator's `HookExists` check is a single cached `Get` against this resource, consulted only once per VM (to decide whether to create `LifecycleState` in the first place); it never lists or watches `LifecycleHook` itself (see `model.md` "`AggregatedLifecycleHooks`").
-- **Namespace deletion must not silently bypass `Delete`/`ResourceDelete` hooks**: `LifecycleState` carries a VM-Operator-managed finalizer (added at creation, removed once `ResourceDelete` resolves) so that neither Kubernetes' garbage collector (normal VM delete) nor the namespace controller's direct object sweep (namespace delete) can remove it mid-check. Additionally, `Delete`/`ResourceDelete` hook existence is committed into `LifecycleState` proactively, during ordinary `ReconcileNormal` reconciles, rather than only at the moment of deletion — closing the window where `AggregatedLifecycleHooks` itself could be swept away by the same namespace teardown before VM Operator gets a chance to read it. `Create`/`PowerStateChange` do not need this: a missed `Create` hook is recoverable in spirit (nothing irreversible happens), and `PowerStateChange` self-heals by re-evaluating on every future transition. See `model.md` "Namespace-deletion protection" and `plan.md` for the full mechanics.
+- **Zero-hook detection (`HookExists` in Diagram D)**: the Lifecycle Operator owns and fully maintains a new `AggregatedLifecycleHooks` resource (`lifecycle.vcfa.vmware.com/v1alpha1`, one per namespace), computed and kept current by the Lifecycle Operator. VM Operator's `HookExists` check is a single cached read of it, read exactly once, at the VM's first reconcile, to decide whether a `LifecycleState` is needed at all and to seed its stages; it never lists or watches `LifecycleHook` (see `model.md` "`AggregatedLifecycleHooks`").
+- **Namespace deletion must not silently bypass `Delete`/`ResourceDelete` hooks**: a `Delete`/`ResourceDelete` hook is honored across a namespace teardown **whenever its `LifecycleState` carries VM Operator's finalizer** — which VM Operator adds when it creates the object at the VM's first reconcile (seeding every stage the namespace's `AggregatedLifecycleHooks` then lists). `Create`/`PowerStateChange` do not need this: a missed `Create` hook is recoverable in spirit, and `PowerStateChange` self-heals on every future transition. Two races are accepted: (1) a hook registered in the same instant teardown begins; (2) a `Delete`/`ResourceDelete` hook registered *day-2* against a VM that had no `LifecycleState` at first reconcile — the Lifecycle Operator creates the object, and unless it adds VM Operator's finalizer the namespace controller can remove it mid-check. Closing (2) requires the Lifecycle Operator to create day-2 `LifecycleState`s with VM Operator's finalizer (see `plan.md` "Confirmations needed from the Lifecycle Operator team"). Mechanics: `model.md` "Namespace-deletion protection" and `plan.md` §1a.
 
 ---
 
@@ -191,8 +129,8 @@ All open questions from the prior draft have been resolved:
 - **SC-003**: A `Delete`-stage hook prevents vSphere-side VM deletion, and a `ResourceDelete`-stage hook prevents finalizer removal, until each resolves in sequence — never in parallel.
 - **SC-004**: A VM with no `LifecycleHook` registered anywhere in its namespace shows zero behavior change from today — no `LifecycleState` created, no pause, no extra reconcile latency.
 - **SC-005**: With the `supports_vm_service_lifecycle_hooks` capability disabled, behavior is identical to the feature not existing — verifiable by the pre-existing test suites passing unchanged.
-- **SC-006**: A DevOps user can determine, from the `VirtualMachineConditionLifecycleHooksBlocked` condition alone, whether any stage is blocked by hooks and which stage.
-- **SC-007**: Deleting the namespace containing a VM with a `Delete`/`ResourceDelete`-stage hook does not bypass that hook — the namespace stays in `Terminating` until `HooksReady` resolves for the affected stage(s), verifiable by deleting a namespace with such a VM and confirming both the namespace and the VM remain present (with the `LifecycleHooksBlocked` condition `False`) until the hook is resolved.
+- **SC-006**: A DevOps user can determine, from the `VirtualMachineConditionLifecycleHooksReady` condition alone, whether any stage is blocked by hooks and which stage.
+- **SC-007**: Deleting the namespace containing a VM whose `LifecycleState` carries VM Operator's finalizer (the hook was present at the VM's first reconcile, or the Lifecycle Operator created the object with that finalizer) does not bypass a `Delete`/`ResourceDelete` hook — the namespace stays in `Terminating` until `HooksReady` resolves for the affected stage(s), verifiable by deleting a namespace with such a VM and confirming both the namespace and the VM remain present (with the `LifecycleHooksReady` condition `False`) until the hook is resolved. The day-2/no-finalizer case in "Resolved decisions" is out of scope for this criterion.
 
 ## Open questions
 
@@ -209,4 +147,4 @@ None.
 - [x] Condition/reason names and the capability name are specified.
 - [x] Out-of-scope items (Lifecycle Operator, eventing system, additional stages, hook-failure-detail parsing) are listed.
 - [x] Feature-flag/capability-off behavior is specified (G6, SC-005).
-- [x] The reconcile pipeline and the per-checkpoint decision logic (shared `ReconcileStage`) are diagrammed.
+- [x] The reconcile pipeline and the per-checkpoint decision logic (shared `ReconcileStage`) are diagrammed in `plan.md` "Reconcile flow" and decision table.

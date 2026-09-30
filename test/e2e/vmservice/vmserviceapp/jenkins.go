@@ -67,6 +67,9 @@ func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
 		DeferCleanup(cancelPodWatches)
 
 		vmName = fmt.Sprintf("source-%s", capiutil.RandomString(4))
+		// Packer owns the source VM's lifecycle, so only describe it on failure.
+		vmoperator.DeferCleanupWithDumpOnFailure(nil,
+			vmoperator.DescribeResource(kubeconfigPath, "vm", input.WCPNamespaceName, vmName))
 		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, k8sClient, input.WCPNamespaceName, ubuntuImageName)
 
 		ubuntuVMIName = vmiName
@@ -89,12 +92,6 @@ func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
 		templateFilePath, err = GetTemplatePathInPackerPluginDir(jenkinsSpecTemplateName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(templateFilePath).NotTo(BeEmpty())
-	})
-
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, k8sClient, kubeconfigPath, input.WCPNamespaceName, vmName, "vm")
-		}
 	})
 
 	It("Should successfully run the Jenkins workload using Packer", func() {

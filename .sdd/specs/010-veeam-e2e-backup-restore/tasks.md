@@ -58,7 +58,7 @@
 ## Phase 7 — Rollout and deprecation
 
 - [x] T026a Mark the replaced simulated contexts in `registervm.go` as `Deprecated:` ("Incremental Restore - Register VM with pre-existing VM CR", "... and PVCs", "RegisterVM - Restore to new", "RegisterVM Alarm").
-- [ ] T026b Run `make e2e-backup-restore` on a real testbed, and fix what it finds.
+- [x] T026b Run `make e2e-backup-restore` on a real testbed, and fix what it finds. See `research.md` "Findings from the automated runs".
 - [ ] T026c After T026b, T022b, and a green run of the CI suite (T022): remove `experimental` from the three specs, delete the deprecated contexts and any helpers used only by them from `registervm.go`, and drop the `&& !backup-restore` exclusion from the quarantined `experimental` CI suite if it is no longer needed.
 
 ## Phase Final — Polish

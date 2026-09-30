@@ -44,6 +44,11 @@ type fakeVBR struct {
 	// the job jobGetsAfterDelete times after that, as VBR removes it lazily.
 	jobDeleted         bool
 	jobGetsAfterDelete int
+
+	// backupGetsAfterDelete is how many times GET /backups/b1 still returns
+	// the backup after DELETE /backups/b1, as VBR removes it lazily.
+	backupDeleted         bool
+	backupGetsAfterDelete int
 }
 
 func newFakeVBR(t *testing.T, versions ...string) (*fakeVBR, *httptest.Server) {
@@ -154,6 +159,7 @@ func (f *fakeVBR) serve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"data": []map[string]any{
 			{"id": "b1", "jobId": r.URL.Query().Get("jobIdFilter")},
 			{"id": "b-other", "jobId": "someone-elses-job"},
+			{"id": "b-orphan"},
 		}})
 	case path == "/api/v1/restorePoints":
 		if r.URL.Query().Get("backupIdFilter") != "b1" {
@@ -168,7 +174,19 @@ func (f *fakeVBR) serve(w http.ResponseWriter, r *http.Request) {
 	case path == "/api/v1/restore/vmRestore/vSphere" || path == "/api/v1/restore/vmRestore/vmware/":
 		writeJSON(w, http.StatusCreated, map[string]any{"id": "s1", "state": "Starting"})
 	case path == "/api/v1/backups/b1" && r.Method == http.MethodDelete:
+		f.backupDeleted = true
 		writeJSON(w, http.StatusCreated, map[string]any{"id": "s1", "state": "Starting"})
+	case path == "/api/v1/backups/b1" && r.Method == http.MethodGet:
+		if f.backupDeleted && f.backupGetsAfterDelete == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		if f.backupDeleted {
+			f.backupGetsAfterDelete--
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"id": "b1", "jobId": "job-1"})
 	case path == "/api/v1/jobs/job-1" && r.Method == http.MethodDelete:
 		f.jobDeleted = true
 		w.WriteHeader(http.StatusNoContent)
@@ -465,6 +483,7 @@ func TestWaitForSession(t *testing.T) {
 func TestDeleteJob(t *testing.T) {
 	f, srv := newFakeVBR(t, "1.3-rev2")
 	f.jobGetsAfterDelete = 2
+	f.backupGetsAfterDelete = 2
 	c := mustConnect(t, srv)
 
 	if err := c.DeleteJob(t.Context(), "job-1", fastWait); err != nil {
@@ -485,8 +504,18 @@ func TestDeleteJob(t *testing.T) {
 		t.Errorf("DeleteJob returned while VBR still listed the job")
 	}
 
+	// The job is deleted only once VBR no longer lists its backup.
+	if f.backupGetsAfterDelete != 0 {
+		t.Errorf("DeleteJob deleted the job while VBR still listed its backup")
+	}
+
 	if f.saw("DELETE /api/v1/backups/b-other?fromDB=false&includeGFS=true") {
 		t.Error("deleted a backup that belongs to another job")
+	}
+
+	// A backup without a job may belong to any run.
+	if f.saw("DELETE /api/v1/backups/b-orphan?fromDB=false&includeGFS=true") {
+		t.Error("deleted a backup that belongs to no job")
 	}
 
 	// A job that is already gone is not an error.
@@ -505,6 +534,25 @@ func TestDeleteJobTimesOutWhileJobRemains(t *testing.T) {
 	err := c.DeleteJob(t.Context(), "job-1", opts)
 	if err == nil || !strings.Contains(err.Error(), "still exists") {
 		t.Fatalf("expected a timeout error, got %v", err)
+	}
+}
+
+func TestDeleteJobKeepsJobWhileBackupRemains(t *testing.T) {
+	f, srv := newFakeVBR(t, "1.3-rev2")
+	f.backupGetsAfterDelete = 1 << 30
+	c := mustConnect(t, srv)
+
+	opts := veeam.WaitOptions{Timeout: 20 * time.Millisecond, Interval: time.Millisecond}
+
+	err := c.DeleteJob(t.Context(), "job-1", opts)
+	if err == nil || !strings.Contains(err.Error(), "backup b1 still exists") {
+		t.Fatalf("expected a timeout error for the backup, got %v", err)
+	}
+
+	// Deleting the job would orphan the backup, which then could not be
+	// traced back to the run.
+	if f.saw("DELETE /api/v1/jobs/job-1") {
+		t.Error("deleted the job while its backup remained")
 	}
 }
 

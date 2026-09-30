@@ -292,10 +292,12 @@ func (c *Client) backupsForJob(ctx context.Context, jobID string) ([]backup, err
 	}
 
 	// Filter client-side as well, in case the server ignores the filter.
+	// A backup whose job was deleted has no job ID and may belong to any
+	// run, so it never matches.
 	var out []backup
 
 	for _, b := range resp.Data {
-		if b.JobID == "" || b.JobID == jobID {
+		if b.JobID == jobID {
 			out = append(out, b)
 		}
 	}
@@ -376,44 +378,58 @@ func (c *Client) DeleteJob(ctx context.Context, jobID string, opts WaitOptions) 
 
 		switch {
 		case IsNotFound(err):
+			continue
 		case err != nil:
 			errs = append(errs, fmt.Errorf("failed to delete veeam backup %s: %w", b.ID, err))
+			continue
 		case s.ID != "":
 			if _, err := c.WaitForSession(ctx, s.ID, opts); err != nil {
 				errs = append(errs, fmt.Errorf("failed to delete veeam backup %s: %w", b.ID, err))
+				continue
 			}
 		}
+
+		if err := c.waitForGone(ctx, "/api/v1/backups/"+b.ID, "backup "+b.ID, opts); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	// Once the job is gone its backups no longer carry its ID, so a backup
+	// that survived could not be traced back and would leak on the
+	// repository. Keep the job so a later cleanup can retry.
+	if len(errs) > 0 {
+		return fmt.Errorf("not deleting veeam job %s, which still has backups: %w", jobID, errors.Join(errs...))
 	}
 
 	switch err := c.do(ctx, "DELETE", "/api/v1/jobs/"+jobID, nil, nil); {
 	case IsNotFound(err):
 	case err != nil:
-		errs = append(errs, fmt.Errorf("failed to delete veeam job %s: %w", jobID, err))
+		return fmt.Errorf("failed to delete veeam job %s: %w", jobID, err)
 	default:
-		if err := c.waitForJobGone(ctx, jobID, opts); err != nil {
-			errs = append(errs, err)
-		}
+		// VBR accepts the DELETE before it has removed the job, and until
+		// then it refuses to remove the vCenter the job backs up.
+		return c.waitForGone(ctx, "/api/v1/jobs/"+jobID, "job "+jobID, opts)
 	}
 
-	return errors.Join(errs...)
+	return nil
 }
 
-// waitForJobGone polls a deleted job until VBR no longer lists it. VBR accepts
-// the DELETE before it has removed the job, and until then it refuses to
-// remove the vCenter the job backs up.
-func (c *Client) waitForJobGone(ctx context.Context, jobID string, opts WaitOptions) error {
+// waitForGone polls a deleted object until VBR no longer returns it. VBR
+// accepts a DELETE, and may even finish its session, before the object is
+// gone.
+func (c *Client) waitForGone(ctx context.Context, path, what string, opts WaitOptions) error {
 	deadline := time.Now().Add(opts.Timeout)
 
 	for {
-		err := c.do(ctx, "GET", "/api/v1/jobs/"+jobID, nil, nil)
+		err := c.do(ctx, "GET", path, nil, nil)
 
 		switch {
 		case IsNotFound(err):
 			return nil
 		case err != nil:
-			return fmt.Errorf("failed to wait for veeam job %s to be deleted: %w", jobID, err)
+			return fmt.Errorf("failed to wait for veeam %s to be deleted: %w", what, err)
 		case time.Now().After(deadline):
-			return fmt.Errorf("veeam job %s still exists %s after it was deleted", jobID, opts.Timeout)
+			return fmt.Errorf("veeam %s still exists %s after it was deleted", what, opts.Timeout)
 		}
 
 		select {

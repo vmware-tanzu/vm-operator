@@ -55,7 +55,7 @@ The client lives under `infrastructure/` and not under `vmservice/lib/`. In Gink
 - **Version-specific shapes**: `1.1-*` uses job type `Backup` and `/restore/vmRestore/vmware/`. `1.2+` uses `VSphereBackup` and `/restore/vmRestore/vSphere`.
 - **Errors**: connection-time failures are `*ConnectError` with a kind: `NotConfigured`, `Unreachable`, `UnsupportedVersion`, or `AuthFailure`. Session failures are `*SessionError`, carrying the session id, state, result, and the session log.
 - **Proxy**: the transport sets `Proxy: nil`. The E2E environment points `HTTPS_PROXY` at the testbed gateway, which cannot reach the appliance.
-- **Cleanup**: `DeleteJob` deletes every backup of the job with `DELETE /api/v1/backups/{id}?fromDB=false&includeGFS=true`, waits for the delete session, then deletes the job. A `404` is treated as already gone.
+- **Cleanup**: `DeleteJob` deletes every backup of the job with `DELETE /api/v1/backups/{id}?fromDB=false&includeGFS=true`, waits for the delete session, and polls the backup until it returns `404`. Only then does it delete the job: once the job is gone its backups lose their `jobId` and can no longer be traced back to the run. If a backup survives, the job is kept and an error is returned. A backup without a `jobId` never matches a job, since it may belong to any run. A `404` is treated as already gone.
 - **Job naming**: `vmop-e2e-<runID>-<vmName>`. `runID` comes from `E2E_RUN_ID`; if it is unset, a random 6-character value is used.
 
 ### Suite selection
@@ -75,12 +75,13 @@ The client lives under `infrastructure/` and not under `vmservice/lib/`. In Gink
 
 **Restore to new**, validated manually in `research.md`:
 
-1. Create a VM with a data PVC and wait for the backup to be up to date.
+1. Create a VM with a data PVC and the seed-data cloud-config, wait for the seed, record the VM's extension compatibility constraint count, and wait for the backup to be up to date.
 2. Create the job, back up, and pick the latest restore point.
 3. Delete the VM and its data PVC, and wait until no vSphere VM with that name remains.
-4. Restore with `overwrite: false`.
+4. Restore with `overwrite: false`. From here on, a cleanup destroys any vSphere VM with that name that no VM resource manages, so a restore or RegisterVM failure does not leak the VM and its disks.
 5. Assert exactly one VM with that name and a new moref.
 6. Run `InvokeRegisterVM`, then `VerifyPostRegisterVM(diskCount)`.
+7. Assert the guest hashes verify, and that protection is restored (see below).
 
 **Restore to existing**, validated manually in `research.md`:
 
@@ -88,14 +89,25 @@ The client lives under `infrastructure/` and not under `vmservice/lib/`. In Gink
 2. Set the marker annotation to `before-backup`, and wait until it shows up in the backup ExtraConfig.
 3. Back up.
 4. Diverge: delete the seed files in the guest and set the marker to `after-backup`.
-5. Power off, pause, then restore with `overwrite: true`.
+5. Power off and pause, and wait for the `vmoperator.vmware.com/paused` label, which VM Operator sets once a reconcile has seen the pause. Then clear the VM's extension compatibility constraints, recording how many there were, and restore with `overwrite: true`.
+   - The constraints' DEVICE invariant makes vCenter reject Veeam's reconfigure, and Veeam cannot skip the check. Clearing them is a VI-admin step: a reconfigure with an empty constraint set and `skipExtensionCompatibilityChecks`.
+   - Waiting for the label first ensures no reconcile in flight puts the constraints back.
+   - The client must speak vCenter's newest API version (`UseServiceVersion`), as VM Operator does. A development vCenter answers `InvalidProperty` below it.
+   - From the restore on, a cleanup deletes the VM and the old PVCs, waits for the VM to be gone, and removes the `cns.vmware.com/pvc-protection` finalizer from the old PVCs, whose volumes the restore destroyed. This runs before the VM's own cleanups, so the PVCs do not stay `Terminating` even when the spec fails early.
 6. Run `InvokeRegisterVM` on the same moref.
 7. Assert:
    - the `restored-vm` annotation is present and the marker is back to `before-backup`;
    - the pause annotation is removed;
-   - the old PVCs are gone or terminating;
+   - the VM no longer references any old PVC;
    - `VerifyPostRegisterVM` passes;
-   - the guest hashes verify.
+   - the guest hashes verify;
+   - protection is restored (see below);
+   - the old PVCs are gone or marked for deletion. A failure describes the PVC and the VM's volumes.
+
+**Protection restored**, after either restore:
+
+- VM Operator sets the same number of extension compatibility constraints on the restored VM as the original had.
+- VM Operator writes backup data again: the backup ExtraConfig matches the VM's current PVCs, and a new marker value (`after-restore`) shows up in it, so the next backup of the restored VM is not stale.
 
 **RegisterVM alarm**:
 
@@ -120,7 +132,7 @@ The spec's "two backup runs, restore the older point" is replaced by one backup 
 
 ## Test strategy
 
-- `go test ./infrastructure/veeam/...` covers version selection, connect-error kinds, re-login on `401`, moref matching, repository lookup, the version-specific job type and restore path, the `WaitForSession` start/finish/fail timeouts, and `DeleteJob`, including the `404` case.
+- `go test ./infrastructure/veeam/...` covers version selection, connect-error kinds, re-login on `401`, moref matching, repository lookup, the version-specific job type and restore path, the `WaitForSession` start/finish/fail timeouts, and `DeleteJob`, including the `404` case, waiting for each backup to be gone, keeping the job while a backup survives, and never deleting a backup without a job.
 - `ginkgo --dry-run` confirms all three specs are selected by `backup-restore` and by none of the smoke/core/extended filters.
 - Both restore scenarios were validated manually against the appliance (see `research.md`); the alarm test reuses the restore-to-new steps. The automated suite runs against a live testbed with `make e2e-backup-restore` before `experimental` is removed.
 

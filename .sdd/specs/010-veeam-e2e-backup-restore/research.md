@@ -220,8 +220,15 @@ Done once per vCenter; the suite does it in `BeforeAll` (`RegisterVCenter`). The
   - The pause annotation was **removed by RegisterVM**.
   - Both volumes now reference new `restored-*` PVCs backed by newly registered FCDs; volume names and `removable` values are kept from the backup.
   - Powered off; all conditions `True` after power-on.
-- Old PVCs were marked for deletion but stayed `Terminating` with the `cns.vmware.com/pvc-protection` finalizer — the same PV/PVC cleanup gap noted by the TODO in `vmservice.UnregisterPVCVolumes`. The test should assert that they have a `deletionTimestamp` rather than wait for them to disappear, and cleanup must tolerate them.
+- Old PVCs were marked for deletion but stayed `Terminating` with the `cns.vmware.com/pvc-protection` finalizer — the same PV/PVC cleanup gap noted by the TODO in `vmservice.UnregisterPVCVolumes`. The test should assert that they have a `deletionTimestamp` rather than wait for them to disappear, and cleanup must remove the finalizer, since the volumes it protects are gone.
 - Power on → same IPv4 address. After `mount -a`, the `sha256sum` of all four seeded files matched the pre-backup values exactly. File mtimes equal the original seed time, which confirms the data came from the restore and not from a cloud-init re-run.
+
+### Findings from the automated runs (2026-09-29)
+
+- **Run 1439448**: the in-place restore failed. vCenter rejected Veeam's reconfigure because of the DEVICE invariant in the extension compatibility constraints VM Operator sets on the VM. Veeam has no option to skip the check. The manual run above predates the constraints. The test now clears them, as a VI admin would, after the pause has taken effect, and asserts that VM Operator sets them again after RegisterVM.
+- **Run 1443962**: reading `config.extensionCompatibilityConstraint` failed with `InvalidProperty`. The testbed's development vCenter exposes it only in an internal API version newer than the release version govmomi uses by default. The vim client now calls `UseServiceVersion`, as VM Operator does.
+- **Run 1452477**: the in-place spec failed because the old boot PVC was never marked for deletion, while the data PVC was. It was not late; it never happened within the timeout. RegisterVM or the Supervisor deletes the old PVCs, not VM Operator, so this may be a product bug and needs a ticket if it recurs. The assertion now dumps the PVC and the VM's volumes on failure.
+- **Leaks**: a run killed mid-spec left its job, backups, and managed server on the appliance. Separately, a backup from run 1444310 outlived its job and was left with no `jobId`, so nothing could trace it back to the run. It was still there a day later, so either VBR never removed it after a successful delete session, or the job was deleted before VBR had finished; the cause is not known. The backups of later runs, including the green one, were removed. `DeleteJob` now waits for each backup to be gone and otherwise keeps the job and fails, so a stuck backup is reported and stays traceable. That wait is bounded by `wait-veeam-session`.
 
 ### Consequences for the test design
 

@@ -152,6 +152,11 @@ const (
 	// ControlledRebalancingPolicy CRD, which excludes matching workloads from
 	// DRS evacuation during cluster load balancing.
 	CapabilityKeyControlledRebalancingPolicy = "supports_infrapolicy_controlled_rebalancing"
+
+	// CapabilityKeyVMNetworkUnitNumbers is the name of the capability key
+	// defined in the Supervisor capabilities CRD for the VM Service's support
+	// for VM network interface unit numbers.
+	CapabilityKeyVMNetworkUnitNumbers = "supports_VM_service_network_unit_numbers"
 )
 
 var (
@@ -334,6 +339,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMEviction = capStatus.Activated
 		case CapabilityKeyControlledRebalancingPolicy:
 			fs.ControlledRebalancingPolicy = capStatus.Activated
+		case CapabilityKeyVMNetworkUnitNumbers:
+			fs.VMNetworkUnitNumbers = capStatus.Activated
 		}
 
 	}

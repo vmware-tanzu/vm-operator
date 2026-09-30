@@ -6,6 +6,7 @@ package validation_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -136,7 +137,7 @@ func intgTestsValidateCreateVM() {
 		port := suite.GetManager().GetWebhookServer().(*webhook.DefaultServer).Options.Port
 		body, _ := json.Marshal(ar)
 
-		resp, err = httpClient.Post(fmt.Sprintf(url, port), contentType, bytes.NewBuffer(body))
+		resp, err = postJSON(httpClient, fmt.Sprintf(url, port), body)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -290,7 +291,7 @@ func intgTestsValidateUpdate() {
 		port := suite.GetManager().GetWebhookServer().(*webhook.DefaultServer).Options.Port
 		body, _ := json.Marshal(ar)
 
-		resp, err = httpClient.Post(fmt.Sprintf(url, port), contentType, bytes.NewBuffer(body))
+		resp, err = postJSON(httpClient, fmt.Sprintf(url, port), body)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -392,11 +393,22 @@ func intgTestsValidateCreateVMSnapshot() {
 						TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 					},
 				}
-				resp, err := httpClient.Post(fmt.Sprintf(vmSnapshotURL, port), contentType, bytes.NewBuffer(body))
+				resp, err := postJSON(httpClient, fmt.Sprintf(vmSnapshotURL, port), body)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
 				Expect(resp.Body.Close()).To(Succeed())
 			})
 		})
 	})
+}
+
+// postJSON sends body to url as an HTTP POST request.
+func postJSON(c *http.Client, url string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(
+		context.Background(), http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", contentType)
+	return c.Do(req)
 }

@@ -13,6 +13,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -32,7 +34,8 @@ func GetWebConsoleTicket(
 		return "", err
 	}
 
-	url := fmt.Sprintf("wss://%s:%d/ticket/%s", ticket.Host, ticket.Port, ticket.Ticket)
+	url := fmt.Sprintf("wss://%s/ticket/%s",
+		net.JoinHostPort(ticket.Host, strconv.Itoa(int(ticket.Port))), ticket.Ticket)
 	return EncryptWebMKS(pubKey, url)
 }
 

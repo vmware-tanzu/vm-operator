@@ -1,6 +1,7 @@
 package vmservice
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -44,7 +45,7 @@ func CollectSupportBundle(vm *vmopv1.VirtualMachine, svKubeconfig, testName stri
 }
 
 func runCommand(cmdString string) error {
-	cmd := exec.Command("/bin/sh", "-c", cmdString) //nolint:gosec // G204: E2E helper runs shell for support-bundle CLI
+	cmd := exec.CommandContext(context.Background(), "/bin/sh", "-c", cmdString) //nolint:gosec // G204: E2E helper runs shell for support-bundle CLI
 	stdout, err := cmd.StdoutPipe()
 	Expect(err).ToNot(HaveOccurred())
 	stderr, err := cmd.StderrPipe()

@@ -1512,13 +1512,15 @@ func getThumbprint(urlStr string) (string, error) {
 		host += ":443"
 	}
 
-	conn, err := tls.Dial("tcp", host, &tls.Config{InsecureSkipVerify: true})
+	dialer := &tls.Dialer{Config: &tls.Config{InsecureSkipVerify: true}}
+	netConn, err := dialer.DialContext(context.Background(), "tcp", host)
 	if err != nil {
 		return "", err
 	}
 
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = netConn.Close() }()
 
+	conn := netConn.(*tls.Conn)
 	cert := conn.ConnectionState().PeerCertificates[0]
 	hash := sha1.Sum(cert.Raw)
 

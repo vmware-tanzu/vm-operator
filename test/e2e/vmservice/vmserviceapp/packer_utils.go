@@ -59,7 +59,7 @@ func RunPackerBuildCmd(ctx context.Context, opts PackerBuildCmdOpts) ([]byte, er
 
 	// Add the template file path to the end of packer build command.
 	cmdArgs = append(cmdArgs, opts.TemplateFilePath)
-	cmd := exec.Command("packer", cmdArgs...)
+	cmd := exec.CommandContext(context.Background(), "packer", cmdArgs...)
 
 	// Set the command directory to ensure packer-plugin-vsphere binary is accessible.
 	cmd.Dir = pluginDirPath

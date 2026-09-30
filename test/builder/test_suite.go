@@ -324,6 +324,7 @@ func (s *TestSuite) init() {
 // integration testing is enabled with
 // Describe("Unit tests", runIntegrationTestsFn).
 func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, runUnitTestsFn func()) {
+	t.Helper()
 	RegisterFailHandler(Fail)
 
 	if runIntegrationTestsFn != nil && envTestsEnabled() {
@@ -496,11 +497,13 @@ func (s *TestSuite) postConfigureManager() {
 		By("waiting for the webhook server to come online", func() {
 			svr := s.manager.GetWebhookServer().(*webhook.DefaultServer)
 			addr := net.JoinHostPort(svr.Options.Host, strconv.Itoa(svr.Options.Port))
-			dialer := &net.Dialer{Timeout: time.Second}
-			//nolint:gosec
-			tlsConfig := &tls.Config{InsecureSkipVerify: true}
+			dialer := &tls.Dialer{
+				NetDialer: &net.Dialer{Timeout: time.Second},
+				//nolint:gosec
+				Config: &tls.Config{InsecureSkipVerify: true},
+			}
 			Eventually(func() error {
-				conn, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
+				conn, err := dialer.DialContext(context.Background(), "tcp", addr)
 				if err != nil {
 					return err
 				}
@@ -728,7 +731,8 @@ func updateValidatingWebhookConfig(webhookConfig admissionregv1.ValidatingWebhoo
 	//   2. Use the test webhook endpoint
 	for _, webhook := range webhookConfig.Webhooks {
 		if webhook.Name == webhookName {
-			url := fmt.Sprintf("https://%s:%d%s", host, port, *webhook.ClientConfig.Service.Path)
+			url := fmt.Sprintf("https://%s%s",
+				net.JoinHostPort(host, strconv.Itoa(port)), *webhook.ClientConfig.Service.Path)
 			webhook.ClientConfig.CABundle = key
 			webhook.ClientConfig.Service = nil
 			webhook.ClientConfig.URL = &url
@@ -749,7 +753,8 @@ func updateMutatingWebhookConfig(webhookConfig admissionregv1.MutatingWebhookCon
 	//   2. Use the test webhook endpoint
 	for _, webhook := range webhookConfig.Webhooks {
 		if webhook.Name == webhookName {
-			url := fmt.Sprintf("https://%s:%d%s", host, port, *webhook.ClientConfig.Service.Path)
+			url := fmt.Sprintf("https://%s%s",
+				net.JoinHostPort(host, strconv.Itoa(port)), *webhook.ClientConfig.Service.Path)
 			webhook.ClientConfig.CABundle = key
 			webhook.ClientConfig.Service = nil
 			webhook.ClientConfig.URL = &url

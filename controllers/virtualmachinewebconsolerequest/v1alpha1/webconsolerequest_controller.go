@@ -120,7 +120,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	err = r.Get(ctx, client.ObjectKey{Name: webconsolerequest.Spec.VirtualMachineName, Namespace: webconsolerequest.Namespace}, webConsoleRequestCtx.VM)
 	if err != nil {
 		r.Recorder.Warn(webConsoleRequestCtx.WebConsoleRequest, "VirtualMachine Not Found", "")
-		webConsoleRequestCtx.Logger.Error(err, "failed to get subject vm %s", webconsolerequest.Spec.VirtualMachineName)
+		webConsoleRequestCtx.Logger.Error(err, "failed to get subject vm", "vmName", webconsolerequest.Spec.VirtualMachineName)
 		return ctrl.Result{}, fmt.Errorf("failed to get subject vm %s: %w", webconsolerequest.Spec.VirtualMachineName, err)
 	}
 

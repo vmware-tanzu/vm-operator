@@ -165,7 +165,7 @@ func (k *KubectlPlugin) Logout() error {
 	}
 
 	args := []string{"logout"}
-	cmd := exec.Command(pluginPath, args...)
+	cmd := exec.CommandContext(context.Background(), pluginPath, args...)
 
 	return cmd.Run()
 }

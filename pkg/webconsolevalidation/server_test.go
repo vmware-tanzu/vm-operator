@@ -5,6 +5,7 @@
 package webconsolevalidation_test
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -57,7 +58,7 @@ func serverUnitTests() {
 
 			Eventually(func(g Gomega) {
 				url := fmt.Sprintf("http://127.0.0.1:%d%s", serverPort, serverPath)
-				resp, err := http.Get(url)
+				resp, err := httpGet(url)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(resp).NotTo(BeNil())
 				g.Expect(resp.Body.Close()).To(Succeed())
@@ -66,7 +67,7 @@ func serverUnitTests() {
 
 		It("should accept connections via IPv4 loopback (127.0.0.1)", func() {
 			url := fmt.Sprintf("http://127.0.0.1:%d%s?uuid=test&namespace=test", serverPort, serverPath)
-			resp, err := http.Get(url)
+			resp, err := httpGet(url)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp).NotTo(BeNil())
 			Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
@@ -75,7 +76,7 @@ func serverUnitTests() {
 
 		It("should accept connections via IPv6 loopback ([::1])", func() {
 			url := fmt.Sprintf("http://[::1]:%d%s?uuid=test&namespace=test", serverPort, serverPath)
-			resp, err := http.Get(url)
+			resp, err := httpGet(url)
 			if err != nil {
 				Skip("IPv6 not available on this system: " + err.Error())
 			}
@@ -144,7 +145,7 @@ func serverUnitTests() {
 			}()
 
 			Eventually(func(g Gomega) {
-				resp, err := http.Get("http://" + serverAddr + serverPath)
+				resp, err := httpGet("http://" + serverAddr + serverPath)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(resp).NotTo(BeNil())
 				g.Expect(resp.StatusCode).NotTo(Equal(http.StatusNotFound))
@@ -304,7 +305,7 @@ func serverUnitTests() {
 func fakeValidationRequest(url string, server webconsolevalidation.Server) int {
 	responseRecorder := httptest.NewRecorder()
 	handler := http.HandlerFunc(server.HandleWebConsoleValidation)
-	testRequest, err := http.NewRequest("GET", url, nil)
+	testRequest, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	Expect(err).NotTo(HaveOccurred())
 	handler.ServeHTTP(responseRecorder, testRequest)
 	response := responseRecorder.Result()
@@ -315,10 +316,19 @@ func fakeValidationRequest(url string, server webconsolevalidation.Server) int {
 	return response.StatusCode
 }
 
-func getAvailablePort() int {
-	listener, err := net.Listen("tcp", "[::]:0")
+// httpGet issues a GET request to the specified URL.
+func httpGet(url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
-		listener, err = net.Listen("tcp", "127.0.0.1:0")
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
+}
+
+func getAvailablePort() int {
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "[::]:0")
+	if err != nil {
+		listener, err = (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 		Expect(err).NotTo(HaveOccurred())
 	}
 	defer func() {

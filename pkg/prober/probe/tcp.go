@@ -56,7 +56,7 @@ func (pr tcpProber) Probe(ctx *context.ProbeContext) (Result, error) {
 		timeout = time.Duration(p.TimeoutSeconds) * time.Second
 	}
 
-	if err := checkConnection("tcp", ip, strconv.Itoa(portNum), timeout); err != nil {
+	if err := checkConnection(ctx, "tcp", ip, strconv.Itoa(portNum), timeout); err != nil {
 		return Failure, err
 	}
 
@@ -74,9 +74,14 @@ func findPort(vm *vmopv1.VirtualMachine, portName intstr.IntOrString, _ corev1.P
 	return 0, fmt.Errorf("no suitable port for manifest: %s", vm.UID)
 }
 
-func checkConnection(proto, host, port string, timeout time.Duration) error {
+func checkConnection(
+	ctx *context.ProbeContext,
+	proto, host, port string,
+	timeout time.Duration) error {
+
 	address := net.JoinHostPort(host, port)
-	conn, err := net.DialTimeout(proto, address, timeout)
+	dialer := &net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, proto, address)
 	if err != nil {
 		return err
 	}

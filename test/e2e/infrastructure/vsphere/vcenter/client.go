@@ -117,8 +117,22 @@ func GetH5SessionCookie(client *http.Client, hostname, username, password string
 	return cookie
 }
 
+// postForm is http.Client.PostForm with a context.
+func postForm(client *http.Client, u string, data url.Values) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(
+		context.Background(), http.MethodPost, u, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return client.Do(req)
+}
+
 func getWebSsoLocation(client *http.Client, hostname string) string {
-	resp, err := client.Get(fmt.Sprintf(h5LoginURLFormat, hostname))
+	req, err := http.NewRequestWithContext(
+		context.Background(), http.MethodGet, fmt.Sprintf(h5LoginURLFormat, hostname), nil)
+	Expect(err).NotTo(HaveOccurred())
+	resp, err := client.Do(req)
 	Expect(err).NotTo(HaveOccurred())
 
 	defer func() { _ = resp.Body.Close() }()
@@ -128,7 +142,7 @@ func getWebSsoLocation(client *http.Client, hostname string) string {
 
 func loginToWebSso(client *http.Client, location, username, password string) (string, string) {
 	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
-	resp, err := client.PostForm(location, url.Values{castleAuthorizationKey: {fmt.Sprintf(castleAuthorizationFormat, auth)}})
+	resp, err := postForm(client, location, url.Values{castleAuthorizationKey: {fmt.Sprintf(castleAuthorizationFormat, auth)}})
 	Expect(err).NotTo(HaveOccurred())
 
 	defer func() { _ = resp.Body.Close() }()
@@ -146,7 +160,7 @@ func loginToWebSso(client *http.Client, location, username, password string) (st
 }
 
 func loginByTokenToH5(client *http.Client, hostname, relayState, samlResponse string) *http.Cookie {
-	resp, err := client.PostForm(fmt.Sprintf(ssoLoginURLFormat, hostname), url.Values{samlResponseKey: {samlResponse}, relayStateKey: {relayState}})
+	resp, err := postForm(client, fmt.Sprintf(ssoLoginURLFormat, hostname), url.Values{samlResponseKey: {samlResponse}, relayStateKey: {relayState}})
 	Expect(err).NotTo(HaveOccurred())
 
 	defer func() { _ = resp.Body.Close() }()

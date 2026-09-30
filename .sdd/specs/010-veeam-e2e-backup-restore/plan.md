@@ -89,7 +89,7 @@ The client lives under `infrastructure/` and not under `vmservice/lib/`. In Gink
 2. Set the marker annotation to `before-backup`, and wait until it shows up in the backup ExtraConfig.
 3. Back up.
 4. Diverge: delete the seed files in the guest and set the marker to `after-backup`.
-5. Power off and pause, and wait for the `vmoperator.vmware.com/paused` label, which VM Operator sets once a reconcile has seen the pause. Then clear the VM's extension compatibility constraints, recording how many there were, and restore with `overwrite: true`.
+5. Power off and pause. Clear the VM's extension compatibility constraints, recording how many there were, and check for 30 seconds that they stay cleared. Then restore with `overwrite: true`. VM Operator skips a VM with the pause annotation before it reaches the provider, so it records the pause in neither the `vmoperator.vmware.com/paused` label nor the `ReconcileReady` condition; only a reconcile that started before the patch could still set the constraints again.
    - The constraints' DEVICE invariant makes vCenter reject Veeam's reconfigure, and Veeam cannot skip the check. Clearing them is a VI-admin step: a reconfigure with an empty constraint set and `skipExtensionCompatibilityChecks`.
    - Waiting for the label first ensures no reconcile in flight puts the constraints back.
    - The client must speak vCenter's newest API version (`UseServiceVersion`), as VM Operator does. A development vCenter answers `InvalidProperty` below it.

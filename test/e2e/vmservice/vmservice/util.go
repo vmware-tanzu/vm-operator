@@ -1095,6 +1095,8 @@ func InvokeRegisterVM(
 
 	taskID = fromVmodl1ID(taskID)
 	vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+	defer vcenter.LogoutVimClient(vCenterClient)
+
 	taskMoref := types.ManagedObjectReference{Type: "Task", Value: taskID}
 	task := object.NewTask(vCenterClient, taskMoref)
 

@@ -108,7 +108,7 @@ func verifyRegisterVMAlarm(
 		events = newRegisterVMEvents(ctx, collector, wcpAlarm)
 		g.Expect(events).To(HaveLen(1))
 		g.Expect(events[registerVMEventFailure]).To(HaveLen(1))
-	}, t.config.GetIntervals("default", "wait-config-map-creation")...).Should(Succeed(), "timed out waiting for the RegisterVM failure event")
+	}, t.config.GetIntervals("default", "wait-registervm-event")...).Should(Succeed(), "timed out waiting for the RegisterVM failure event")
 
 	state := triggeredRegisterVMAlarm(ctx, c, vmRef)
 	Expect(state).ToNot(BeNil())
@@ -128,7 +128,7 @@ func verifyRegisterVMAlarm(
 		events = newRegisterVMEvents(ctx, collector, wcpAlarm)
 		g.Expect(events).To(HaveLen(1))
 		g.Expect(events[registerVMEventSuccess]).To(HaveLen(1))
-	}, t.config.GetIntervals("default", "wait-config-map-creation")...).Should(Succeed(), "timed out waiting for the RegisterVM success event")
+	}, t.config.GetIntervals("default", "wait-registervm-event")...).Should(Succeed(), "timed out waiting for the RegisterVM success event")
 
 	Expect(triggeredRegisterVMAlarm(ctx, c, vmRef)).To(BeNil())
 }

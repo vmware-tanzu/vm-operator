@@ -61,6 +61,7 @@ const (
 	restoreMarkerAnnotation = "e2e.vmoperator.vmware.com/restore-marker"
 	markerBeforeBackup      = "before-backup"
 	markerAfterBackup       = "after-backup"
+	markerAfterRestore      = "after-restore"
 
 	// pvcProtectionFinalizer is left on the PVCs superseded by a restore to
 	// an existing VM; see research.md.
@@ -130,11 +131,16 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 		It("Should restore a lost VM as a new VM and register it", Label("experimental"), func() {
 			vmName := fmt.Sprintf("%s-new-%s", specName, capiutil.RandomString(4))
 
-			moID, diskCount := t.restoreLostVM(ctx, vmName)
+			lost := t.restoreLostVM(ctx, vmName)
 
-			t.registerVM(ctx, moID)
+			t.registerVM(ctx, lost.moID)
 
-			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, diskCount, clusterProxy, config, svClusterClient, input.WCPClient)
+			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, lost.diskCount, clusterProxy, config, svClusterClient, input.WCPClient)
+
+			By("Verify the seeded data on both disks matches the backup")
+			runGuestCmd(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, cmdSeedVerify, outSeedVerified)
+
+			t.verifyProtectionRestored(ctx, vmName, lost.constraints)
 		})
 
 		It("Should raise the RegisterVM alarm on failure and clear it on success", Label("experimental"), func() {
@@ -150,9 +156,9 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 
 			vmName := fmt.Sprintf("%s-alarm-%s", specName, capiutil.RandomString(4))
 
-			moID, diskCount := t.restoreLostVM(ctx, vmName)
+			lost := t.restoreLostVM(ctx, vmName)
 
-			verifyRegisterVMAlarm(ctx, t, vimClient, wcpAlarm, vmName, moID, diskCount)
+			verifyRegisterVMAlarm(ctx, t, vimClient, wcpAlarm, vmName, lost.moID, lost.diskCount)
 		})
 
 		It("Should restore an existing VM in place and register it", Label("experimental"), func() {
@@ -174,6 +180,16 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 			vm = waitForBackupReady(ctx, config, clusterProxy, ns, vmName)
 			oldVolumes := pvcNames(vm)
 
+			// Registered after createVM's cleanups so it runs before them, and
+			// deletes the overwritten PVCs itself: otherwise they are deleted
+			// later and stay Terminating even when the spec fails early.
+			var restoreStarted bool
+			DeferCleanup(func(ctx SpecContext) {
+				if restoreStarted {
+					releaseOverwrittenPVCs(ctx, config, svClusterClient, ns, vmName, oldVolumes)
+				}
+			})
+
 			rp := t.backupVM(ctx, vm)
 
 			By("Diverge from the backup: delete the seeded data and change the mark")
@@ -191,8 +207,22 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, "true")
 			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
 
-			clearExtensionCompatConstraints(ctx, clusterProxy, vm.Status.UniqueID)
+			// VM Operator labels the VM once a reconcile has seen the pause, so
+			// no reconcile in flight can put the constraints back after they are
+			// cleared.
+			By("Wait for VM Operator to pause the VM")
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vm.Labels).To(HaveKey(vmopv1.PausedVMLabelKey))
+			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(),
+				"VM %s/%s was not paused", ns, vmName)
 
+			constraints := clearExtensionCompatConstraints(ctx, clusterProxy, vm.Status.UniqueID)
+
+			// A failed or timed-out restore may already have overwritten the
+			// disks, so the cleanup releases the old PVCs from here on.
+			restoreStarted = true
 			t.restoreVM(ctx, rp, true, "vmop e2e restore to existing")
 
 			By("Register the restored VM, which keeps its managed object ID")
@@ -205,7 +235,15 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 				g.Expect(vm.Annotations).To(HaveKey(vmopv1.RestoredVMAnnotation))
 				g.Expect(vm.Annotations).To(HaveKeyWithValue(restoreMarkerAnnotation, markerBeforeBackup))
 				g.Expect(vm.Annotations).ToNot(HaveKey(vmopv1.PauseAnnotation))
+				g.Expect(pvcNames(vm)).ToNot(ContainElement(BeElementOf(oldVolumes)), "VM still uses the PVCs of the overwritten disks")
 			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+
+			vmservice.VerifyPostRegisterVM(ctx, vmName, ns, nil, len(oldVolumes), clusterProxy, config, svClusterClient, input.WCPClient)
+
+			By("Verify the seeded data on both disks matches the backup")
+			runGuestCmd(ctx, config, clusterProxy, ns, vmName, cmdSeedVerify, outSeedVerified)
+
+			t.verifyProtectionRestored(ctx, vmName, constraints)
 
 			// The superseded PVCs point at volumes the restore destroyed. They
 			// are marked for deletion but are held by the CNS PVC protection
@@ -220,17 +258,9 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 					}
 					g.Expect(err).ToNot(HaveOccurred())
 					g.Expect(pvc.DeletionTimestamp).ToNot(BeNil(), "PVC %s/%s is not marked for deletion", ns, name)
-				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(),
+					func() string { return describePVCAndVM(ctx, svClusterClient, ns, name, vmName) })
 			}
-
-			DeferCleanup(func(ctx SpecContext) {
-				removePVCProtectionFinalizers(ctx, svClusterClient, ns, oldVolumes)
-			})
-
-			vmservice.VerifyPostRegisterVM(ctx, vmName, ns, nil, len(oldVolumes), clusterProxy, config, svClusterClient, input.WCPClient)
-
-			By("Verify the seeded data on both disks matches the backup")
-			runGuestCmd(ctx, config, clusterProxy, ns, vmName, cmdSeedVerify, outSeedVerified)
 		})
 	})
 }
@@ -396,18 +426,39 @@ func (t *testEnv) backupVM(ctx context.Context, vm *vmopv1.VirtualMachine) veeam
 	return rp
 }
 
-// restoreLostVM creates a VM, backs it up with Veeam, deletes the VM and its
-// user PVC, and restores it with Veeam as a new vSphere VM. It returns the
-// restored VM's managed object ID, which has no VirtualMachine resource yet,
-// and the number of disks RegisterVM should turn into restored PVCs.
-func (t *testEnv) restoreLostVM(ctx context.Context, vmName string) (string, int) {
+// lostVM describes a VM that restoreLostVM restored as a new vSphere VM.
+type lostVM struct {
+	// moID is the restored VM's managed object ID. It has no VirtualMachine
+	// resource until RegisterVM adopts it.
+	moID string
+	// diskCount is the number of disks RegisterVM should turn into restored
+	// PVCs.
+	diskCount int
+	// constraints is the number of extension compatibility constraints the
+	// original VM had, which VM Operator should set on the restored one.
+	constraints int
+}
+
+// restoreLostVM creates a VM that seeds data on its disks, backs it up with
+// Veeam, deletes the VM and its user PVC, and restores it with Veeam as a new
+// vSphere VM. The restored vSphere VM is destroyed when the test ends if
+// RegisterVM never adopted it.
+func (t *testEnv) restoreLostVM(ctx context.Context, vmName string) lostVM {
 	ns := t.input.WCPNamespaceName
 	secretName := vmName + "-cloud-config"
-	secretYaml := manifestbuilders.GetSecretYamlCloudConfig(manifestbuilders.Secret{Namespace: ns, Name: secretName})
+	secretYaml := manifestbuilders.GetSecretYamlCloudConfigSeedData(manifestbuilders.Secret{Namespace: ns, Name: secretName})
 
 	vm := t.createVM(ctx, vmName, secretYaml, secretName)
 	oldMoID := vm.Status.UniqueID
-	diskCount := len(vm.Spec.Volumes)
+
+	By("Wait for the guest to seed data on the boot and data disks")
+	vmoperator.WaitForVirtualMachineIP(ctx, t.config, t.client, ns, vmName)
+	runGuestCmd(ctx, t.config, t.clusterProxy, ns, vmName, cmdSeedDone, outSeedDone)
+
+	lost := lostVM{
+		diskCount:   len(vm.Spec.Volumes),
+		constraints: extensionCompatConstraintCount(ctx, t.clusterProxy, vm.Status.UniqueID),
+	}
 
 	rp := t.backupVM(ctx, vm)
 
@@ -426,6 +477,14 @@ func (t *testEnv) restoreLostVM(ctx context.Context, vmName string) (string, int
 	}, t.config.GetIntervals("default", "wait-virtual-machine-deletion")...).Should(Succeed(),
 		"vSphere VM %s was not deleted", vmName)
 
+	// Registered after createVM's cleanups so it runs before them, while a
+	// VirtualMachine resource still shows whether RegisterVM adopted the VM.
+	// It looks the VM up by name, so it also catches a restore that fails or
+	// times out after creating the VM.
+	DeferCleanup(func(ctx SpecContext) {
+		t.destroyUnregisteredVM(ctx, vmName)
+	})
+
 	t.restoreVM(ctx, rp, false, "vmop e2e restore to new")
 
 	By("Find the restored VM, which has a new managed object ID")
@@ -435,7 +494,9 @@ func (t *testEnv) restoreLostVM(ctx context.Context, vmName string) (string, int
 	Expect(morefs).To(HaveLen(1), "expected exactly one restored vSphere VM named %s", vmName)
 	Expect(morefs[0]).ToNot(Equal(oldMoID), "a restore to new should create a new VM")
 
-	return morefs[0], diskCount
+	lost.moID = morefs[0]
+
+	return lost
 }
 
 func (t *testEnv) restoreVM(ctx context.Context, rp veeam.RestorePoint, overwrite bool, reason string) {
@@ -447,28 +508,22 @@ func (t *testEnv) restoreVM(ctx context.Context, rp veeam.RestorePoint, overwrit
 }
 
 // clearExtensionCompatConstraints removes the extension compatibility
-// constraints VM Operator registered on the VM, if any. The DEVICE invariant
-// makes vCenter reject Veeam's in-place restore, and Veeam cannot skip the
-// check, so a VI admin has to clear the constraints first. RegisterVM makes
-// VM Operator manage the restored VM again.
-func clearExtensionCompatConstraints(ctx context.Context, clusterProxy *common.VMServiceClusterProxy, moID string) {
-	vimClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+// constraints VM Operator registered on the VM, if any, and returns how many
+// it removed. The DEVICE invariant makes vCenter reject Veeam's in-place
+// restore, and Veeam cannot skip the check, so a VI admin has to clear the
+// constraints first. RegisterVM makes VM Operator manage the restored VM
+// again, which sets them again.
+func clearExtensionCompatConstraints(ctx context.Context, clusterProxy *common.VMServiceClusterProxy, moID string) int {
+	vimClient := newServiceVersionVimClient(ctx, clusterProxy)
 	defer vcenter.LogoutVimClient(vimClient)
-
-	// Speak the newest API version vCenter serves, as VM Operator does. A
-	// development vCenter may only expose the constraints in an internal
-	// version newer than the release version govmomi defaults to, and answers
-	// InvalidProperty otherwise.
-	Expect(vimClient.UseServiceVersion()).To(Succeed())
 
 	vmRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: moID}
 
-	var vmMO mo.VirtualMachine
-	Expect(property.DefaultCollector(vimClient).RetrieveOne(ctx, vmRef, []string{"config.extensionCompatibilityConstraint"}, &vmMO)).To(Succeed())
+	count, err := getExtensionCompatConstraintCount(ctx, vimClient, vmRef)
+	Expect(err).ToNot(HaveOccurred())
 
-	if vmMO.Config == nil || vmMO.Config.ExtensionCompatibilityConstraint == nil ||
-		len(vmMO.Config.ExtensionCompatibilityConstraint.Constraint) == 0 {
-		return
+	if count == 0 {
+		return 0
 	}
 
 	By("Clear the VM's extension compatibility constraints so Veeam can restore it in place")
@@ -482,6 +537,121 @@ func clearExtensionCompatConstraints(ctx context.Context, clusterProxy *common.V
 	})
 	Expect(err).ToNot(HaveOccurred())
 	Expect(task.Wait(ctx)).To(Succeed(), "failed to clear the extension compatibility constraints of VM %s", moID)
+
+	return count
+}
+
+// extensionCompatConstraintCount returns the number of extension
+// compatibility constraints set on the VM.
+func extensionCompatConstraintCount(ctx context.Context, clusterProxy *common.VMServiceClusterProxy, moID string) int {
+	vimClient := newServiceVersionVimClient(ctx, clusterProxy)
+	defer vcenter.LogoutVimClient(vimClient)
+
+	count, err := getExtensionCompatConstraintCount(ctx, vimClient, types.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
+	Expect(err).ToNot(HaveOccurred())
+
+	return count
+}
+
+func getExtensionCompatConstraintCount(ctx context.Context, c *vim25.Client, vmRef types.ManagedObjectReference) (int, error) {
+	var vmMO mo.VirtualMachine
+	if err := property.DefaultCollector(c).RetrieveOne(ctx, vmRef, []string{"config.extensionCompatibilityConstraint"}, &vmMO); err != nil {
+		return 0, err
+	}
+
+	if vmMO.Config == nil || vmMO.Config.ExtensionCompatibilityConstraint == nil {
+		return 0, nil
+	}
+
+	return len(vmMO.Config.ExtensionCompatibilityConstraint.Constraint), nil
+}
+
+// newServiceVersionVimClient returns a vim client that speaks the newest API
+// version vCenter serves, as VM Operator does. A development vCenter may only
+// expose the extension compatibility constraints in an internal version newer
+// than the release version govmomi defaults to, and answers InvalidProperty
+// otherwise.
+func newServiceVersionVimClient(ctx context.Context, clusterProxy *common.VMServiceClusterProxy) *vim25.Client {
+	vimClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+	if err := vimClient.UseServiceVersion(); err != nil {
+		vcenter.LogoutVimClient(vimClient)
+		Fail(fmt.Sprintf("failed to use vCenter's API version: %v", err))
+	}
+
+	return vimClient
+}
+
+// verifyProtectionRestored checks that VM Operator protects a restored VM
+// again after RegisterVM: it sets the extension compatibility constraints
+// again, and it writes backup data that matches the VM's current PVCs and
+// tracks later changes to the VM resource, so the next backup is not stale.
+func (t *testEnv) verifyProtectionRestored(ctx context.Context, vmName string, constraints int) {
+	ns := t.input.WCPNamespaceName
+
+	By("Verify VM Operator writes current backup data for the restored VM")
+
+	vm := waitForBackupReady(ctx, t.config, t.clusterProxy, ns, vmName)
+	setMarker(ctx, t.client, vm, markerAfterRestore)
+	waitForMarkerInBackup(ctx, t.config, t.clusterProxy, vm, markerAfterRestore)
+
+	By(fmt.Sprintf("Verify VM Operator set %d extension compatibility constraints on the restored VM", constraints))
+
+	vimClient := newServiceVersionVimClient(ctx, t.clusterProxy)
+	defer vcenter.LogoutVimClient(vimClient)
+
+	vmRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vm.Status.UniqueID}
+
+	Eventually(func(g Gomega) {
+		count, err := getExtensionCompatConstraintCount(ctx, vimClient, vmRef)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(count).To(Equal(constraints))
+	}, t.config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(),
+		"VM %s/%s does not have the extension compatibility constraints it had before the restore", ns, vmName)
+}
+
+// destroyUnregisteredVM destroys the vSphere VMs named vmName unless a
+// VirtualMachine resource manages them, so a restored VM that RegisterVM never
+// adopted does not leak with its disks.
+func (t *testEnv) destroyUnregisteredVM(ctx context.Context, vmName string) {
+	ns := t.input.WCPNamespaceName
+
+	err := t.client.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: vmName}, &vmopv1.VirtualMachine{})
+	if !apierrors.IsNotFound(err) {
+		if err != nil {
+			framework.Logf("Not destroying vSphere VM %s: failed to get VM %s/%s: %v", vmName, ns, vmName, err)
+		}
+
+		return
+	}
+
+	vimClient := vcenter.NewVimClientFromKubeconfig(ctx, t.clusterProxy.GetKubeconfigPath())
+	defer vcenter.LogoutVimClient(vimClient)
+
+	morefs, err := findVMsByName(ctx, vimClient, vmName)
+	if err != nil {
+		framework.Logf("Failed to find vSphere VM %s: %v", vmName, err)
+		return
+	}
+
+	for _, moID := range morefs {
+		framework.Logf("Destroying vSphere VM %s (%s), which RegisterVM did not adopt", vmName, moID)
+
+		vm := object.NewVirtualMachine(vimClient, types.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
+		if state, err := vm.PowerState(ctx); err == nil && state != types.VirtualMachinePowerStatePoweredOff {
+			if task, err := vm.PowerOff(ctx); err == nil {
+				_ = task.Wait(ctx)
+			}
+		}
+
+		task, err := vm.Destroy(ctx)
+		if err == nil {
+			err = task.Wait(ctx)
+		}
+
+		if err != nil {
+			framework.Logf("Failed to destroy vSphere VM %s (%s): %v", vmName, moID, err)
+		}
+	}
 }
 
 func (t *testEnv) registerVM(ctx context.Context, vmMoID string) {
@@ -692,13 +862,32 @@ func deleteVMAndPVCs(ctx context.Context, c ctrlclient.Client, ns, vmName string
 	}
 }
 
-// removePVCProtectionFinalizers releases PVCs whose volumes a restore to an
-// existing VM destroyed, so they do not stay Terminating forever.
-func removePVCProtectionFinalizers(ctx context.Context, c ctrlclient.Client, ns string, names []string) {
+// releaseOverwrittenPVCs deletes the VM and the PVCs whose volumes a restore
+// to an existing VM overwrote, and releases those PVCs, so they do not stay
+// Terminating forever. Their volumes are gone, so the CNS PVC protection
+// finalizer is never removed. Only call it once a restore has started. It
+// waits for the VM to be gone first, so no PVC is released while a VM that a
+// failed restore left untouched still uses its volume.
+func releaseOverwrittenPVCs(ctx context.Context, config *e2econfig.E2EConfig, c ctrlclient.Client, ns, vmName string, names []string) {
+	deleteVMAndPVCs(ctx, c, ns, vmName)
+
+	Eventually(func() bool {
+		err := c.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: vmName}, &vmopv1.VirtualMachine{})
+		return apierrors.IsNotFound(err)
+	}, config.GetIntervals("default", "wait-virtual-machine-deletion")...).Should(BeTrue(),
+		"VM %s/%s was not deleted", ns, vmName)
+
 	for _, name := range names {
 		pvc := &corev1.PersistentVolumeClaim{}
-		if err := c.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: name}, pvc); err != nil || pvc.DeletionTimestamp == nil {
+		if err := c.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: name}, pvc); err != nil {
 			continue
+		}
+
+		if pvc.DeletionTimestamp == nil {
+			if err := c.Delete(ctx, pvc); err != nil {
+				framework.Logf("Failed to delete PVC %s/%s: %v", ns, name, err)
+				continue
+			}
 		}
 
 		base := pvc.DeepCopy()
@@ -708,4 +897,27 @@ func removePVCProtectionFinalizers(ctx context.Context, c ctrlclient.Client, ns 
 			}
 		}
 	}
+}
+
+// describePVCAndVM describes a PVC and the volumes of a VM for a failure
+// message.
+func describePVCAndVM(ctx context.Context, c ctrlclient.Client, ns, pvcName, vmName string) string {
+	var b strings.Builder
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := c.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: pvcName}, pvc); err != nil {
+		fmt.Fprintf(&b, "failed to get PVC %s/%s: %v\n", ns, pvcName, err)
+	} else {
+		fmt.Fprintf(&b, "PVC %s/%s: phase %s, volume %s, finalizers %v, owners %v, annotations %v\n",
+			ns, pvcName, pvc.Status.Phase, pvc.Spec.VolumeName, pvc.Finalizers, pvc.OwnerReferences, pvc.Annotations)
+	}
+
+	vm, err := utils.GetVirtualMachine(ctx, c, ns, vmName)
+	if err != nil {
+		fmt.Fprintf(&b, "failed to get VM %s/%s: %v", ns, vmName, err)
+	} else {
+		fmt.Fprintf(&b, "VM %s/%s PVCs: %v", ns, vmName, pvcNames(vm))
+	}
+
+	return b.String()
 }

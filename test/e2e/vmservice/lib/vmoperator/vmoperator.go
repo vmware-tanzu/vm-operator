@@ -4,7 +4,6 @@
 package vmoperator
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -624,16 +623,12 @@ func DeleteSubnetOrSubnetSetAndWait(ctx context.Context, config *config.E2EConfi
 	WaitForSubnetOrSubnetSetToBeDeleted(ctx, config, client, ns, subnetName, kind)
 }
 
-// DescribeResourceIfExists logs the output of `kubectl describe <resource>` if the given resource exists.
-func DescribeResourceIfExists(ctx context.Context, client ctrlclient.Client, kubeconfigPath, ns, resourceName, resource string) {
-	stdout, stderr, err := framework.KubectlDescribeWithNamespacedName(ctx, kubeconfigPath, resource, ns, resourceName)
-	if bytes.Contains(stderr, []byte("NotFound")) {
-		e2eframework.Logf("Skip kubectl describe output as the resource %s '%s/%s' doesn't exist", resource, ns, resourceName)
-		return
-	}
-
-	Expect(err).ToNot(HaveOccurred(), "Failed to run kubectl describe for resource %s '%s/%s': %s", resource, ns, resourceName, stderr)
-	e2eframework.Logf("kubectl describe %s -n %s %s:\n%s", resource, ns, resourceName, stdout)
+// DescribeResourceIfExists logs the output of `kubectl describe <resource>` if
+// the given resource exists. It does not fail the spec if kubectl fails, so it
+// is safe to call ahead of cleanup. New code should prefer
+// DeferCleanupWithDumpOnFailure with DescribeResource.
+func DescribeResourceIfExists(ctx context.Context, _ ctrlclient.Client, kubeconfigPath, ns, resourceName, resource string) {
+	describeResource(ctx, kubeconfigPath, resource, ns, resourceName)
 }
 
 // Utility function to get a image k8s name given its display name.

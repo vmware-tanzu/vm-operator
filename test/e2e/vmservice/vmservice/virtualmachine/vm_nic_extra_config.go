@@ -392,12 +392,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmName := "nic-ec-live-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vmNamespace, vmName, input.SkipCleanup)
 
 			By("Phase 1: creating VM with CoalescingScheme=Disabled")
 
@@ -445,12 +441,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmName := "nic-ec-pc-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vmNamespace, vmName, input.SkipCleanup)
 
 			By("Creating VM with live-mode baseline CoalescingScheme=Adapt")
 
@@ -543,12 +535,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmName := "nic-ec-bag-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vmNamespace, vmName, input.SkipCleanup)
 
 			By("Creating VM with live-mode and powercycle-mode fields")
 
@@ -669,12 +657,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			vmNameB := "nic-ec-uptv2-" + capiutil.RandomString(5)
 			vmKeyB := types.NamespacedName{Namespace: vmNamespace, Name: vmNameB}
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameB)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmNameB)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vmNamespace, vmNameB, input.SkipCleanup)
 
 			vmB := buildNICExtraConfigVM(
 				nicExtraConfigVMOptions{
@@ -781,12 +765,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			vmNameB := "nic-ec-vnuma-" + capiutil.RandomString(5)
 			vmKeyB := types.NamespacedName{Namespace: vmNamespace, Name: vmNameB}
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmNameB)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmNameB)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vmNamespace, vmNameB, input.SkipCleanup)
 
 			vmB := buildNICExtraConfigVM(
 				nicExtraConfigVMOptions{
@@ -869,12 +849,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmName := "nic-ec-promotedisks-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vmNamespace, vmName, input.SkipCleanup)
 
 			By("Creating VM with PromoteDisksMode=Online and CoalescingScheme=Disabled")
 
@@ -932,12 +908,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmName := "nic-ec-reorder-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vmNamespace, vmName, input.SkipCleanup)
 
 			By("Creating VM with three NICs: eth0 baseline, eth1 and eth2 with distinct CoalescingScheme values")
 

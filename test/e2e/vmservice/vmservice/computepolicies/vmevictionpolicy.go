@@ -1524,11 +1524,9 @@ func createAndWaitForPoweredOnVM(
 
 	GinkgoHelper()
 
-	createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, labels, policies...)
-	DeferCleanup(func(cleanupCtx context.Context) {
-		vmoperator.DeleteVirtualMachine(cleanupCtx, svClusterClient, input.WCPNamespaceName, vmName)
-		vmoperator.WaitForVirtualMachineToBeDeleted(cleanupCtx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
-	})
+	vm := createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, labels, policies...)
+	vmoperator.DeferCleanupVirtualMachine(input.Config, svClusterClient, input.ClusterProxy.GetKubeconfigPath(),
+		vm.Namespace, vm.Name, false)
 
 	vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 	vmoperator.WaitOnVirtualMachineCondition(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName,

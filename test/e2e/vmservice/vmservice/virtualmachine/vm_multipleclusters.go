@@ -68,6 +68,8 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = input.ClusterProxy.GetClient()
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, input.ClusterProxy.GetKubeconfigPath(),
+			input.WCPNamespaceName, vmName, false)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 
@@ -75,17 +77,6 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
-	})
-
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, input.ClusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, "vm")
-		}
-
-		// Delete the virtual machine
-		vmoperator.DeleteVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-		// Verify that virtual machine does not exist
-		vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 	})
 
 	Context("When there are multiple clusters", func() {

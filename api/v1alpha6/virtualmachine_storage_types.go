@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// +kubebuilder:validation:Enum=Classic;Managed
+// +kubebuilder:validation:Enum=Classic;Managed;VirtualMachineSnapshotDisk
 
 // VolumeType describes the type of a VirtualMachine volume.
 type VolumeType string
@@ -24,6 +24,9 @@ const (
 	// VolumeTypeManaged describes a managed virtual disk, such as persistent
 	// volumes.
 	VolumeTypeManaged VolumeType = "Managed"
+
+	// VolumeTypeVirtualMachineSnapshotDisk describes a virtual disk derived from a VirtualMachineSnapshot.
+	VolumeTypeVirtualMachineSnapshotDisk VolumeType = "VirtualMachineSnapshotDisk"
 )
 
 // +kubebuilder:validation:Enum=Thin;Thick;ThickEagerZero
@@ -231,6 +234,25 @@ type VirtualMachineVolumeSource struct {
 	// More information is available at
 	// https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims.
 	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+
+	// +optional
+
+	// VirtualMachineSnapshotDisk defines a specific disk from a VirtualMachineSnapshot.
+	VirtualMachineSnapshotDisk *VirtualMachineSnapshotDiskSpec `json:"virtualMachineSnapshotDisk,omitempty"`
+}
+
+// VirtualMachineSnapshotDiskSpec defines a specific disk from a VirtualMachineSnapshot.
+type VirtualMachineSnapshotDiskSpec struct {
+	// +required
+
+	// Name is the name of the VirtualMachineSnapshot object for the source VirtualMachine.
+	Name string `json:"name"`
+
+	// +required
+
+	// DiskID is the ID of the disk as it appears in
+	// VirtualMachineSnapshot.status.disks[].id.
+	DiskID string `json:"diskID"`
 }
 
 // PersistentVolumeClaimVolumeSource is a composite for the Kubernetes

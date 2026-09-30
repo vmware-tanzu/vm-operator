@@ -256,6 +256,7 @@ spec:
                             enum:
                             - Classic
                             - Managed
+                            - VirtualMachineSnapshotDisk
                             type: string
                           id:
                             description: |-
@@ -563,6 +564,7 @@ spec:
                             enum:
                             - Classic
                             - Managed
+                            - VirtualMachineSnapshotDisk
                             type: string
                           id:
                             description: |-
@@ -867,6 +869,7 @@ spec:
                             enum:
                             - Classic
                             - Managed
+                            - VirtualMachineSnapshotDisk
                             type: string
                           id:
                             description: |-
@@ -1171,6 +1174,7 @@ spec:
                             enum:
                             - Classic
                             - Managed
+                            - VirtualMachineSnapshotDisk
                             type: string
                           id:
                             description: |-

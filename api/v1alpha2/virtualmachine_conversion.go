@@ -28,6 +28,12 @@ func Convert_v1alpha6_PersistentVolumeClaimVolumeSource_To_v1alpha2_PersistentVo
 	return autoConvert_v1alpha6_PersistentVolumeClaimVolumeSource_To_v1alpha2_PersistentVolumeClaimVolumeSource(in, out, s)
 }
 
+func Convert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha2_VirtualMachineVolumeSource(
+	in *vmopv1.VirtualMachineVolumeSource, out *VirtualMachineVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha2_VirtualMachineVolumeSource(in, out, s)
+}
+
 func Convert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha2_VirtualMachineBootstrapSpec(
 	in *vmopv1.VirtualMachineBootstrapSpec, out *VirtualMachineBootstrapSpec, s apiconversion.Scope) error {
 
@@ -204,7 +210,7 @@ func Convert_v1alpha6_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 
 	out.Volumes = nil
 	for i := range in.Volumes {
-		if in.Volumes[i].Type != vmopv1.VolumeTypeClassic {
+		if in.Volumes[i].Type != vmopv1.VolumeTypeClassic && in.Volumes[i].Type != vmopv1.VolumeTypeVirtualMachineSnapshotDisk {
 
 			// Only down-convert volume statuses if the volume is managed.
 			var vol VirtualMachineVolumeStatus
@@ -502,6 +508,7 @@ func restore_v1alpha6_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 			dstVol.SharingMode = srcVol.SharingMode
 			dstVol.UnitNumber = srcVol.UnitNumber
 			dstVol.Removable = srcVol.Removable
+			dstVol.VirtualMachineSnapshotDisk = srcVol.VirtualMachineSnapshotDisk
 		}
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// +kubebuilder:validation:Enum=Classic;Managed
+// +kubebuilder:validation:Enum=Classic;Managed;VirtualMachineSnapshotDisk
 
 // VolumeType describes the type of a VirtualMachine volume.
 type VolumeType string
@@ -24,6 +24,9 @@ const (
 	// VolumeTypeManaged describes a managed virtual disk, such as persistent
 	// volumes.
 	VolumeTypeManaged VolumeType = "Managed"
+
+	// VolumeTypeVirtualMachineSnapshotDisk describes a virtual disk derived from a VirtualMachineSnapshot.
+	VolumeTypeVirtualMachineSnapshotDisk VolumeType = "VirtualMachineSnapshotDisk"
 )
 
 // +kubebuilder:validation:Enum=Thin;Thick;ThickEagerZero

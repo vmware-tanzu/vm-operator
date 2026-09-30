@@ -261,7 +261,7 @@ var _ = Describe("Manifest builders", func() {
 		}, "vmsvc-pwd", "vmware"),
 		Entry("Secret VAppConfig hostname template", func() []byte {
 			return mb.GetSecretYamlVAppConfig(mb.Secret{Name: "s", Namespace: "my-ns"})
-		}, "hostname", "{{ .V1alpha1.VM.Name }} "),
+		}, "hostname", "{{ .V1alpha1.VM.Name }}"),
 	)
 
 	It("renders the Secret sysprep unattend with the guest-customization template markers", func() {

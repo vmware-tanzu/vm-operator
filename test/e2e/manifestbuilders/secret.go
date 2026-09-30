@@ -76,7 +76,7 @@ func GetSecretYamlVAppConfig(secret Secret) []byte {
 		ObjectMeta: secretObjectMeta(secret),
 		StringData: map[string]string{
 			"nameservers":        `{{ V1alpha1_FormatNameservers 2 "," }}`,
-			"hostname":           `{{ .V1alpha1.VM.Name }} `,
+			"hostname":           `{{ .V1alpha1.VM.Name }}`,
 			"management_ip":      `{{ V1alpha1_FirstIP }}`,
 			"management_gateway": `{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}`,
 		},

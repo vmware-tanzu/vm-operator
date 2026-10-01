@@ -102,7 +102,7 @@ The client lives under `infrastructure/` and not under `vmservice/lib/`. In Gink
    - `VerifyPostRegisterVM` passes;
    - the guest hashes verify;
    - protection is restored (see below);
-   - the old PVCs are gone or marked for deletion. A failure describes the PVC and the VM's volumes.
+   - any old PVC that still exists and is not marked for deletion is reported, not failed on. The Supervisor does not reliably release all of them (see research.md), and the cleanup deletes them.
 
 **Protection restored**, after either restore:
 

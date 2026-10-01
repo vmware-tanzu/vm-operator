@@ -41,13 +41,19 @@ users:
     shell: /bin/bash
 write_files:
   # Seeds random data on the boot disk and on the first non-boot disk
-  # and records its checksums in /root/seed.sha256, so a restore test
-  # can prove the data came back. The data disk is only formatted when
-  # it is blank, so a re-run never wipes restored data.
+  # and records its checksums in /var/lib/vmop-seed.sha256, so a
+  # restore test can prove the data came back. The data disk is only
+  # formatted when it is blank, so a re-run never wipes restored data.
+  # The seed is owned by the vmware user so the test can check and
+  # delete it without sudo, which some images do not ship. A restored
+  # VM may get a new instance ID, which makes cloud-init run this
+  # again, so it never re-seeds a disk that already holds a seed:
+  # new data and checksums would hide a restore that lost the data.
   - path: /usr/local/bin/vmop-seed.sh
     permissions: '0755'
     content: |
       #!/bin/bash
+      [ -f /var/lib/vmop-seed.done ] && exit 0
       set -eux
       ROOTDISK=$(lsblk -no PKNAME "$(findmnt -no SOURCE /)")
       DATA=$(lsblk -dn -o NAME,TYPE | awk -v r="$ROOTDISK" \
@@ -64,9 +70,10 @@ write_files:
       head -c 8M /dev/urandom > /mnt/data/data.bin
       echo "data $(date +%s%N)" > /mnt/data/data.txt
       sha256sum /var/lib/vmop-seed/boot.* /mnt/data/data.* \
-        > /root/seed.sha256
+        > /var/lib/vmop-seed.sha256
+      chown -R vmware /var/lib/vmop-seed /mnt/data
       sync
-      touch /root/seed.done
+      touch /var/lib/vmop-seed.done
 runcmd:
   - [/usr/local/bin/vmop-seed.sh]
 `

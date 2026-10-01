@@ -6,6 +6,7 @@ package crd_test
 
 import (
 	"context"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -42,7 +43,6 @@ var (
 		"virtualmachinereservedprofiles.vmoperator.vmware.com",
 		"virtualmachineimages.vmoperator.vmware.com",
 		"virtualmachinepublishrequests.vmoperator.vmware.com",
-		"virtualmachinereplicasets.vmoperator.vmware.com",
 		"virtualmachines.vmoperator.vmware.com",
 		"virtualmachineservices.vmoperator.vmware.com",
 		"virtualmachinesetresourcepolicies.vmoperator.vmware.com",
@@ -67,12 +67,17 @@ var (
 		"virtualmachineclassinstances.vmoperator.vmware.com",
 	}
 
+	basesK8sWorkloadMgmtAPI = []string{
+		"virtualmachinereplicasets.vmoperator.vmware.com",
+	}
+
 	basesAll = slices.Concat(
 		basesNonGated,
 		basesFastDeploy,
 		basesImmutableClasses,
 		basesSnapshots,
 		basesVMGroups,
+		basesK8sWorkloadMgmtAPI,
 	)
 
 	externalBYOK = []string{
@@ -172,10 +177,11 @@ var _ = Describe("Install", func() {
 		ctx = pkgcfg.WithConfig(pkgcfg.Config{
 			CRDCleanupEnabled: false,
 			Features: pkgcfg.FeatureStates{
-				FastDeploy:       false,
-				ImmutableClasses: false,
-				VMGroups:         false,
-				VMSnapshots:      false,
+				FastDeploy:         false,
+				ImmutableClasses:   false,
+				VMGroups:           false,
+				VMSnapshots:        false,
+				K8sWorkloadMgmtAPI: false,
 			},
 		})
 
@@ -549,6 +555,19 @@ var _ = Describe("Install", func() {
 			})
 		})
 
+		When("K8sWorkloadMgmtAPI is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.K8sWorkloadMgmtAPI = true
+				})
+			})
+			It("should get the expected crds", func() {
+				var obj apiextensionsv1.CustomResourceDefinitionList
+				Expect(client.List(ctx, &obj)).To(Succeed())
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesK8sWorkloadMgmtAPI)...)
+			})
+		})
+
 		When("snapshots are enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -844,6 +863,7 @@ var _ = Describe("Install", func() {
 					config.Features.GuestCustomizationVCDParity = true
 					config.Features.TelcoVMServiceAPI = true
 					config.Features.VirtualMachineConfigPolicy = true
+					config.Features.K8sWorkloadMgmtAPI = true
 				})
 			})
 			It("should get the expected crds", func() {
@@ -889,6 +909,7 @@ var _ = Describe("Install", func() {
 						ControlledRebalancingPolicy: true,
 						BringYourOwnEncryptionKey:   true,
 						VirtualMachineConfigPolicy:  true,
+						K8sWorkloadMgmtAPI:          true,
 					},
 				}),
 				client,
@@ -1381,3 +1402,134 @@ var _ = Describe(
 		})
 	},
 )
+
+// These tests apply mutated CRD schemas to a real kube-apiserver and verify
+// acceptance. The fake-client unit tests cannot catch CEL compilation errors
+// since the fake client skips schema validation — only a real apiserver runs
+// the CEL type-checker at CRD apply time.
+var _ = Describe(
+	"Install against real API server",
+	Label(testlabels.EnvTest),
+	func() {
+		It("should accept CRDs with all capabilities disabled", func() {
+			ctx := pkgcfg.WithConfig(pkgcfg.Config{
+				CRDCleanupEnabled: true,
+				Features:          pkgcfg.FeatureStates{},
+			})
+			// The kube-apiserver will reject the CRD if any x-kubernetes-validations
+			// entry references a field that was removed from the schema.
+			Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+		})
+
+		It("should accept CRDs with all capabilities enabled", func() {
+			ctx := pkgcfg.WithConfig(pkgcfg.Config{
+				CRDCleanupEnabled: true,
+				Features:          featureStates(true),
+			})
+			Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+		})
+
+		It("should accept CRDs when all features are enabled then disabled", func() {
+			install := func(enabled bool) error {
+				return pkgcrd.Install(
+					pkgcfg.WithConfig(pkgcfg.Config{
+						CRDCleanupEnabled: true,
+						Features:          featureStates(enabled),
+					}),
+					envTestClient,
+					nil)
+			}
+			// Reset to a clean state; earlier specs leave CRDs installed.
+			// CRD presence checks are flaky and hence not doing those.
+			Expect(install(false)).To(Succeed())
+			Expect(install(true)).To(Succeed())
+			Expect(install(false)).To(Succeed())
+		})
+
+		When("K8sWorkloadMgmtAPI is disabled after being enabled", func() {
+			const replicaSetCRD = "virtualmachinereplicasets.vmoperator.vmware.com"
+
+			newReplicaSetCR := func() *unstructured.Unstructured {
+				return &unstructured.Unstructured{
+					Object: map[string]any{
+						"apiVersion": "vmoperator.vmware.com/v1alpha6",
+						"kind":       "VirtualMachineReplicaSet",
+						"metadata": map[string]any{
+							"name":      "test-rs",
+							"namespace": "default",
+						},
+						"spec": map[string]any{
+							"replicas": int64(0),
+							"selector": map[string]any{
+								"matchLabels": map[string]any{"app": "test-rs"},
+							},
+						},
+					},
+				}
+			}
+
+			getReplicaSetCRD := func() error {
+				var obj apiextensionsv1.CustomResourceDefinition
+				return envTestClient.Get(
+					context.Background(),
+					ctrlclient.ObjectKey{Name: replicaSetCRD},
+					&obj)
+			}
+
+			BeforeEach(func() {
+				ctx := pkgcfg.WithConfig(pkgcfg.Config{
+					Features: pkgcfg.FeatureStates{
+						K8sWorkloadMgmtAPI: true,
+					},
+				})
+				Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+				Eventually(getReplicaSetCRD).Should(Succeed())
+
+				// Create a CR so the CRD is in use when it is disabled.
+				Eventually(func() error {
+					return envTestClient.Create(
+						context.Background(), newReplicaSetCR())
+				}).Should(Succeed())
+			})
+
+			AfterEach(func() {
+				// Ignore errors since the CRD may have been deleted.
+				_ = envTestClient.Delete(context.Background(), newReplicaSetCR())
+			})
+
+			It("should delete the CRD when cleanup is enabled", func() {
+				ctx := pkgcfg.WithConfig(pkgcfg.Config{
+					CRDCleanupEnabled: true,
+					Features:          pkgcfg.FeatureStates{},
+				})
+				Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+				Eventually(func() bool {
+					return apierrors.IsNotFound(getReplicaSetCRD())
+				}).Should(BeTrue())
+			})
+
+			It("should keep the CRD when cleanup is disabled", func() {
+				ctx := pkgcfg.WithConfig(pkgcfg.Config{
+					CRDCleanupEnabled: false,
+					Features:          pkgcfg.FeatureStates{},
+				})
+				Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+				Consistently(getReplicaSetCRD).Should(Succeed())
+			})
+		})
+	},
+)
+
+// featureStates returns a FeatureStates with every bool field set to the
+// given value.
+func featureStates(enabled bool) pkgcfg.FeatureStates {
+	var fs pkgcfg.FeatureStates
+	v := reflect.ValueOf(&fs).Elem()
+	for _, f := range v.Fields() {
+		if f.Kind() == reflect.Bool {
+			f.SetBool(enabled)
+		}
+	}
+	fs.VirtualMachineConfigPolicy = true
+	return fs
+}

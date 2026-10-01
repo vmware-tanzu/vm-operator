@@ -390,49 +390,16 @@ func (s *SimulatedWCPClusterProxy) CreateWCPNamespace(ctx context.Context, confi
 		return NamespaceContext{}, fmt.Errorf("apply storage quota to namespace %q", namespace.Name)
 	}
 
-	// When FSS_WCP_NAMESPACED_VM_CLASS is enabled,
-	// manually create namespaced VirtualMachineClass resources,
-	// else, create VirtualMachineClassBinding resources in the cluster.
-	// Note: in a real WCP env, when we associate VM class to a namespace, VM class binding will be created accordingly.
-	// In a kind cluster, there is no wcpsvc, manually create them as a hack.
-	NamespacedVMClassFssEnabled := utils.IsFssEnabled(ctx, s.ClusterProxyInterface.GetClient(),
-		config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSNamespacedVMClass"))
-
 	e2eframework.Logf("vmsvcSpecs: %+v", vmsvcSpecs)
 
-	if NamespacedVMClassFssEnabled {
-		for _, vmClass := range vmsvcSpecs.VMClasses {
-			e2eframework.Logf("Create Namespaced VM class: %s", vmClass)
-			vmclassYAML := manifestbuilders.GetVirtualMachineClassYaml(namespace.Name, vmClass)
-			e2eframework.Logf("%v", string(vmclassYAML))
+	for _, vmClass := range vmsvcSpecs.VMClasses {
+		e2eframework.Logf("Create Namespaced VM class: %s", vmClass)
+		vmclassYAML := manifestbuilders.GetVirtualMachineClassYaml(namespace.Name, vmClass)
+		e2eframework.Logf("%v", string(vmclassYAML))
 
-			err := s.applyWithArgs(ctx, vmclassYAML, "-n", namespace.Name)
-			if err != nil {
-				return NamespaceContext{}, fmt.Errorf("apply VM class to namespace %q failed", namespace.Name)
-			}
-		}
-	} else {
-		for _, vmClass := range vmsvcSpecs.VMClasses {
-			e2eframework.Logf("Create VM class binding: %s", vmClass)
-			vmclassBindingYAML := manifestbuilders.GetVirtualMachineClassBindingYaml(namespace.Name, vmClass)
-			e2eframework.Logf("%v", string(vmclassBindingYAML))
-
-			err := s.applyWithArgs(ctx, vmclassBindingYAML, "-n", namespace.Name)
-			if err != nil {
-				return NamespaceContext{}, fmt.Errorf("apply VM class binding to namespace %q failed", namespace.Name)
-			}
-		}
-	}
-
-	for _, contentSource := range vmsvcSpecs.ContentLibraries {
-		e2eframework.Logf("Create content source binding: %s", contentSource)
-		contentSourceBindingYAML := manifestbuilders.GetContentSourceBindingYaml(namespace.Name, contentSource)
-		e2eframework.Logf("%v", string(contentSourceBindingYAML))
-
-		err := s.applyWithArgs(ctx, contentSourceBindingYAML, "-n", namespace.Name)
+		err := s.applyWithArgs(ctx, vmclassYAML, "-n", namespace.Name)
 		if err != nil {
-			return NamespaceContext{}, fmt.Errorf("apply content source binding to namespace %q failed", namespace.Name)
+			return NamespaceContext{}, fmt.Errorf("apply VM class to namespace %q failed", namespace.Name)
 		}
 	}
 

@@ -1,12 +1,13 @@
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package manifestbuilders
 
 import (
-	"bytes"
-	"text/template"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
-
-	"github.com/vmware-tanzu/vm-operator/test/e2e/fixtures"
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
 type VirtualMachinePublishRequestSource struct {
@@ -36,22 +37,36 @@ type VirtualMachinePublishRequestYaml struct {
 	Target      VirtualMachinePublishRequestTarget `json:"target,omitempty"`
 }
 
+// GetVirtualMachinePublishRequestYaml returns a v1alpha2
+// VirtualMachinePublishRequest YAML manifest.
 func GetVirtualMachinePublishRequestYaml(vmPublishRequestYaml VirtualMachinePublishRequestYaml) []byte {
-	test := "test/e2e/fixtures/yaml/vmoperator/virtualmachinepublishrequests"
-	vmPublishRequestYamlIn := fixtures.ReadFile(test, "singlevirtualmachinepublishrequest.yaml.in")
-	vmPublishRequestYamlBytes, _ := ReadVirtualMachinePublishRequestTemplate(vmPublishRequestYaml, vmPublishRequestYamlIn)
-
-	return vmPublishRequestYamlBytes
+	return ToYAML(VirtualMachinePublishRequestA2(vmPublishRequestYaml))
 }
 
-func ReadVirtualMachinePublishRequestTemplate(virtualMachinePublishRequestYaml VirtualMachinePublishRequestYaml, input string) ([]byte, error) {
-	tmpl := template.Must(template.New("vmPublishRequest").Parse(input))
-	parsed := new(bytes.Buffer)
-
-	err := tmpl.Execute(parsed, virtualMachinePublishRequestYaml)
-	if err != nil {
-		e2eframework.Failf("Failed executing virtualMachinePublishRequestYaml template: %v", err)
+// VirtualMachinePublishRequestA2 returns the v1alpha2
+// VirtualMachinePublishRequest described by vmPublishRequestYaml.
+func VirtualMachinePublishRequestA2(vmPublishRequestYaml VirtualMachinePublishRequestYaml) *vmopv1a2.VirtualMachinePublishRequest {
+	return &vmopv1a2.VirtualMachinePublishRequest{
+		TypeMeta: typeMeta(vmopv1a2.GroupVersion.String(), "VirtualMachinePublishRequest"),
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        vmPublishRequestYaml.Name,
+			Namespace:   vmPublishRequestYaml.Namespace,
+			Labels:      vmPublishRequestYaml.Labels,
+			Annotations: vmPublishRequestYaml.Annotations,
+		},
+		Spec: vmopv1a2.VirtualMachinePublishRequestSpec{
+			Source: vmopv1a2.VirtualMachinePublishRequestSource{
+				Name: vmPublishRequestYaml.Source.Name,
+			},
+			Target: vmopv1a2.VirtualMachinePublishRequestTarget{
+				Item: vmopv1a2.VirtualMachinePublishRequestTargetItem{
+					Name:        vmPublishRequestYaml.Target.Item.Name,
+					Description: vmPublishRequestYaml.Target.Item.Description,
+				},
+				Location: vmopv1a2.VirtualMachinePublishRequestTargetLocation{
+					Name: vmPublishRequestYaml.Target.Location.Name,
+				},
+			},
+		},
 	}
-
-	return parsed.Bytes(), nil
 }

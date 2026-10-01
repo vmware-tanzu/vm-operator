@@ -19,6 +19,7 @@ import (
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	imageregistryv1alpha1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
 	imageregistryv1alpha2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
@@ -63,6 +64,11 @@ func addSchemes(sc *runtime.Scheme) {
 	err = capv1.AddToScheme(sc)
 	if err != nil {
 		e2eframework.Failf("unable to add capabilities v1alpha1 to scheme: %v", err)
+	}
+
+	err = byokv1.AddToScheme(sc)
+	if err != nil {
+		e2eframework.Failf("unable to add byok v1alpha1 to scheme: %v", err)
 	}
 
 	err = vmopv1a1.AddToScheme(sc)

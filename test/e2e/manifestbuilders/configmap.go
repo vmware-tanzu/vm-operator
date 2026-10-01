@@ -1,52 +1,83 @@
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package manifestbuilders
 
 import (
-	"bytes"
-	"text/template"
+	"encoding/base64"
 
-	"github.com/vmware-tanzu/vm-operator/test/e2e/fixtures"
-
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-const configMapFixtureBasePath = "test/e2e/fixtures/yaml/vmoperator/configmap"
 
 type ConfigMap struct {
 	Namespace string `json:"namespace,omitempty"`
 	Name      string `json:"name,omitempty"`
 }
 
-func GetConfigMapYamlGOSC(configMap ConfigMap) []byte {
-	configMapYamlIn := fixtures.ReadFile(configMapFixtureBasePath, "configmapgosc.yaml.in")
-	configMapYaml, _ := ReadConfigMapTemplate(configMap, configMapYamlIn)
+// goscCloudConfig is the cloud-init user-data used by both
+// GetConfigMapYamlGOSC and GetConfigMapYamlOvfEnv, which sends the same
+// content base64-encoded under an "OvfEnv" key naming convention.
+const goscCloudConfig = `#cloud-config
+ssh_pwauth: true
+users:
+  - name: vmware
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    # Password set to Admin!23
+    passwd: '$1$salt$SOC33fVbA/ZxeIwD5yw1u1'
+    shell: /bin/bash
+write_files:
+  - content: |
+      VMSVC Says Hello World
+    path: /helloworld
+`
 
-	return configMapYaml
+// GetConfigMapYamlGOSC returns a ConfigMap whose user-data is a plaintext
+// cloud-init configuration.
+func GetConfigMapYamlGOSC(cm ConfigMap) []byte {
+	return ToYAML(&corev1.ConfigMap{
+		TypeMeta:   typeMeta("v1", "ConfigMap"),
+		ObjectMeta: configMapObjectMeta(cm),
+		Data: map[string]string{
+			"user-data": goscCloudConfig,
+		},
+	})
 }
 
-func GetConfigMapYamlOvfEnv(configMap ConfigMap) []byte {
-	configMapYamlIn := fixtures.ReadFile(configMapFixtureBasePath, "configmapOvfEnv.yaml.in")
-	configMapYaml, _ := ReadConfigMapTemplate(configMap, configMapYamlIn)
-
-	return configMapYaml
+// GetConfigMapYamlOvfEnv returns a ConfigMap whose user-data is the same
+// cloud-init configuration as GetConfigMapYamlGOSC, but base64-encoded, as
+// vSphere delivers it through the guestinfo.ovfEnv OVF property.
+func GetConfigMapYamlOvfEnv(cm ConfigMap) []byte {
+	return ToYAML(&corev1.ConfigMap{
+		TypeMeta:   typeMeta("v1", "ConfigMap"),
+		ObjectMeta: configMapObjectMeta(cm),
+		Data: map[string]string{
+			"user-data": base64.StdEncoding.EncodeToString([]byte(goscCloudConfig)),
+		},
+	})
 }
 
-func GetConfigMapYamlVAppConfig(configMap ConfigMap) []byte {
-	configMapYamlIn := fixtures.ReadFile(configMapFixtureBasePath, "configmapvapp.yaml.in")
-	configMapYaml, _ := ReadConfigMapTemplate(configMap, configMapYamlIn)
-	// templating cannot be parsed here only to keep its text
-	dataYaml := fixtures.ReadFileBytes(configMapFixtureBasePath, "vappData.yaml")
-
-	return append(configMapYaml, dataYaml...)
+// GetConfigMapYamlVAppConfig returns a ConfigMap whose values are vApp
+// property template expressions evaluated by VM Operator's guest
+// customization engine, not by this package. They are literal strings here.
+func GetConfigMapYamlVAppConfig(cm ConfigMap) []byte {
+	return ToYAML(&corev1.ConfigMap{
+		TypeMeta:   typeMeta("v1", "ConfigMap"),
+		ObjectMeta: configMapObjectMeta(cm),
+		Data: map[string]string{
+			"nameservers":        `{{ (index .V1alpha1.Net.Nameservers 0) }}`,
+			"hostname":           `{{ .V1alpha1.VM.Name }}`,
+			"management_ip":      `{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}`,
+			"management_gateway": `{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}`,
+		},
+	})
 }
 
-func ReadConfigMapTemplate(configMap ConfigMap, input string) ([]byte, error) {
-	tmpl := template.Must(template.New("configmap").Parse(input))
-	parsed := new(bytes.Buffer)
-
-	err := tmpl.Execute(parsed, configMap)
-	if err != nil {
-		e2eframework.Failf("Failed executing configmap template: %v", err)
+func configMapObjectMeta(cm ConfigMap) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:      cm.Name,
+		Namespace: cm.Namespace,
 	}
-
-	return parsed.Bytes(), nil
 }

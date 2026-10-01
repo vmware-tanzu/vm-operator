@@ -1,15 +1,15 @@
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package manifestbuilders
 
 import (
-	"bytes"
-	"text/template"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware-tanzu/vm-operator/test/e2e/fixtures"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
-)
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
 
-const (
-	securitypolicyFilePath = "test/e2e/fixtures/yaml/vmoperator/securitypolicy"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 type SecurityPolicy struct {
@@ -17,23 +17,30 @@ type SecurityPolicy struct {
 	Name      string `json:"name,omitempty"`
 }
 
-// Util function to return a Namespaced SecurityPolicy yaml from a templatized fixture.
+// GetSecurityPolicyYaml returns a SecurityPolicy that allows ingress traffic
+// to VMs labeled role=allow-ingress.
 func GetSecurityPolicyYaml(securitypolicy SecurityPolicy) []byte {
-	securitypolicyYamlIn := fixtures.ReadFile(securitypolicyFilePath, "securitypolicy.yaml.in")
-	securitypolicyYaml := ReadSecurityPolicy(securitypolicy, securitypolicyYamlIn)
-
-	return securitypolicyYaml
-}
-
-func ReadSecurityPolicy(securitypolicy SecurityPolicy, input string) []byte {
-	tmpl := template.Must(template.New("securitypolicy").Parse(input))
-
-	parsed := new(bytes.Buffer)
-
-	err := tmpl.Execute(parsed, securitypolicy)
-	if err != nil {
-		e2eframework.Failf("Failed executing securitypolicy template: %v", err)
-	}
-
-	return parsed.Bytes()
+	return ToYAML(&vpcv1alpha1.SecurityPolicy{
+		TypeMeta: typeMeta(vpcv1alpha1.GroupVersion.String(), "SecurityPolicy"),
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      securitypolicy.Name,
+			Namespace: securitypolicy.Namespace,
+		},
+		Spec: vpcv1alpha1.SecurityPolicySpec{
+			Priority: 10,
+			AppliedTo: []vpcv1alpha1.SecurityPolicyTarget{
+				{
+					VMSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"role": "allow-ingress"},
+					},
+				},
+			},
+			Rules: []vpcv1alpha1.SecurityPolicyRule{
+				{
+					Direction: ptr.To(vpcv1alpha1.RuleDirection("in")),
+					Action:    ptr.To(vpcv1alpha1.RuleAction("allow")),
+				},
+			},
+		},
+	})
 }

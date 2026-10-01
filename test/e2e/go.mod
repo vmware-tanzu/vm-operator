@@ -59,6 +59,7 @@ require (
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20260619161849-aeb1b9769d4b
 	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/capabilities v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/image-registry-operator v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/mobility-operator v0.0.0-00010101000000-000000000000
@@ -72,7 +73,6 @@ require (
 	github.com/vmware/govmomi v0.57.0-alpha.0.0.20260908193317-e23a942e8f55
 	golang.org/x/crypto v0.56.0
 	gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.0
 	k8s.io/apiextensions-apiserver v0.37.0
 	k8s.io/apimachinery v0.37.0
@@ -159,7 +159,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/pod-security-admission v0.0.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
-	sigs.k8s.io/randfill v1.0.0 // indirect
+	sigs.k8s.io/randfill v1.0.0
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
 

@@ -716,13 +716,13 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Create Encryption Class using native key provider for the VM")
 
-		vmClass := manifestbuilders.EncryptionClass{
+		class := manifestbuilders.EncryptionClass{
 			Namespace:   tmpNamespaceName,
 			Name:        nativeKeyProviderID,
 			KeyProvider: nativeKeyProviderID,
 		}
-		vmECYaml := manifestbuilders.GetEncryptionClassYaml(vmClass)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, vmECYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(vmECYaml))
+		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
+		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
 		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		By("Create Encryption Class using standard key provider for the PVC")
@@ -757,7 +757,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 			PVCNames:         []string{pvcName},
 			Crypto: &manifestbuilders.Crypto{
-				EncryptionClassName: vmClass.Name,
+				EncryptionClassName: class.Name,
 			},
 		}
 		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)

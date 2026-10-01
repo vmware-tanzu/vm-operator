@@ -79,7 +79,6 @@ intervals:
   default/wait-virtual-machine-web-console-request-creation: ["30s", "5s"]
   default/wait-virtual-machine-cns-node-batch-attachment-creation: ["10m", "5s"]
   default/wait-virtual-machine-cns-node-batch-attachment-deletion: ["5m", "5s"]
-  default/wait-vmsetrp-clustermodules: ["3m", "5s"]
   default/wait-content-library-name: ["2m", "5s"]
   default/wait-storage-class-ready: ["5m", "15s"]
   default/wait-namespace-ready: ["5m", "10s"]
@@ -107,10 +106,6 @@ intervals:
   default/wait-pvc-attachment: ["5m", "10s"]
   default/wait-pvc-deletion: ["2m", "5s"]
   default/wait-jumpbox-sshpass-ready: ["30m", "10s"]
-  default/wait-vm-compute-config-synced:     ["5m", "10s"]
-  default/wait-vm-compute-config-powerstate: ["3m", "10s"]
-  default/wait-vm-extraconfig-synced:    ["5m", "10s"]
-  default/wait-vm-nic-extra-config-synced: ["5m", "10s"]
 
   # windows-sysprep overrides apply only to the Windows Sysprep spec.
   # Empirically, Sysprep GOSC on this image reliably reports an IP in

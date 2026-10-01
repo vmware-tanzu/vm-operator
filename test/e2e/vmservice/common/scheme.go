@@ -26,7 +26,6 @@ import (
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	vspherepolv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 )
@@ -108,11 +107,6 @@ func addSchemes(sc *runtime.Scheme) {
 	err = topologyv1.AddToScheme(sc)
 	if err != nil {
 		e2eframework.Failf("unable add tanzu topology APIs to scheme: %v", err)
-	}
-
-	err = vimv1.AddToScheme(sc)
-	if err != nil {
-		e2eframework.Failf("unable add vim v1alpha1 APIs to scheme: %v", err)
 	}
 
 	err = ncpv1alpha1.AddToScheme(sc)

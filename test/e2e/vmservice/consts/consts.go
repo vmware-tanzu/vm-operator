@@ -48,26 +48,9 @@ const (
 	MultiWriterDiskVMotionCapabilityName     = "supports_multiwriter_disk_vmotion"
 	IaaSComputePoliciesCapabilityName        = "supports_iaas_compute_policies"
 	VirtualMachineConfigPolicyCapabilityName = "supports_vm_service_vm_config_policy"
-	TelcoVMServiceAPICapabilityName          = "supports_telco_vm_service_api"
-	WorkloadIPv6CapabilityName               = "supports_workload_ipv6"
-
-	// VMEvictionCapabilityName gates the AutomaticVMEvictionPolicy and
-	// BestEffortRestartPolicy CRDs; must match
-	// pkg/config/capabilities.CapabilityKeyVMEviction.
-	VMEvictionCapabilityName = "supports_infrapolicy_vm_evacuation"
-
-	// ControlledRebalancingPolicyCapabilityName gates the
-	// ControlledRebalancingPolicy CRD; must match
-	// pkg/config/capabilities.CapabilityKeyControlledRebalancingPolicy.
-	ControlledRebalancingPolicyCapabilityName = "supports_infrapolicy_controlled_rebalancing"
 
 	// ExtensionCompatConstraintCapabilityName gates VM Operator registering
 	// extension-compatibility INVARIANT constraints on VMs it manages; must
 	// match pkg/config/capabilities.CapabilityKeyExtensionCompatConstraint.
 	ExtensionCompatConstraintCapabilityName = "supports_extension_compat_constraint"
-
-	// K8sWorkloadMgmtAPICapabilityName gates the VirtualMachineReplicaSet
-	// controller, webhooks, and CRD; must match
-	// pkg/config/capabilities.CapabilityKeyK8sWorkloadMgmtAPI.
-	K8sWorkloadMgmtAPICapabilityName = "supports_k8s_workload_mgmt_api"
 )

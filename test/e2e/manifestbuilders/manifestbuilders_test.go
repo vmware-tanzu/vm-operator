@@ -94,11 +94,6 @@ var _ = Describe("Manifest builders", func() {
 				return mb.GetVirtualMachineGroupWithBootOrderYaml(mb.VirtualMachineGroupYaml{Name: "g"})
 			},
 			"vmoperator.vmware.com/v1alpha5", "VirtualMachineGroup"),
-		Entry("VirtualMachineGroup v1alpha6 with boot order",
-			func() []byte {
-				return mb.GetVirtualMachineGroupWithBootOrderYamlV1Alpha6(mb.VirtualMachineGroupYaml{Name: "g"})
-			},
-			"vmoperator.vmware.com/v1alpha6", "VirtualMachineGroup"),
 		Entry("VirtualMachineGroupPublishRequest",
 			func() []byte {
 				return mb.GetVirtualMachineGroupPublishRequestYaml(mb.VirtualMachineGroupPublishRequestYaml{Name: "p"})

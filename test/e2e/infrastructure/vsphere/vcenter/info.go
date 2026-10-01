@@ -78,13 +78,6 @@ func GetVCPNIDFromKubeconfigFile(ctx context.Context, path string) string {
 	return GetVCPNIDFromKubeconfig(ctx, path)
 }
 
-// GetClusterMoIDFromKubeconfigFile returns the clusterMoID from a kubeconfig file currently pointing to a supervisor cluster.
-func GetClusterMoIDFromKubeconfigFile(ctx context.Context, path string) string {
-	// Useful when the current context does not point to a kubeconfig, eg. during GC app tests.
-	yamlData := getWCPClusterConfig(ctx, path)
-	return yamlData[clusterMoIDKey]
-}
-
 // CreateUserAndAssignToGrp creates user with given username and password, and assigns it to the given group.
 func CreateUserAndAssignToGrp(ctx context.Context, vimClient *vim25.Client, sshCommandRunner e2essh.SSHCommandRunner, userName, password, group string) (*User, error) {
 	// Create the non-admin VC user via admin

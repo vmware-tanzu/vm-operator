@@ -201,21 +201,29 @@ func getAssociatedDatastores(
 			profileID, err)
 	}
 
+	// When no hubs are specified, PBM returns one result for every datastore
+	// and storage pod in the inventory, compatible or not. Only the results
+	// without errors are compatible with the policy. Despite its name,
+	// CompatibleDatastores does not filter on the hub type, so storage pods
+	// must be skipped explicitly.
 	var dsRefs []vimtypes.ManagedObjectReference
-	for _, r := range results {
+	for _, h := range results.CompatibleDatastores() {
 		if strings.EqualFold(
-			r.Hub.HubType,
+			h.HubType,
 			string(vimtypes.ManagedObjectTypeDatastore)) {
 
 			dsRefs = append(dsRefs, vimtypes.ManagedObjectReference{
 				Type:  string(vimtypes.ManagedObjectTypeDatastore),
-				Value: r.Hub.HubId,
+				Value: h.HubId,
 			})
 		}
 	}
 
+	if len(dsRefs) == 0 {
+		return nil
+	}
+
 	var datastores []mo.Datastore
-	status.Datastores = make([]infrav1.Datastore, len(dsRefs))
 	pc := property.DefaultCollector(vimClient)
 	if err := pc.Retrieve(
 		ctx,
@@ -227,19 +235,25 @@ func getAssociatedDatastores(
 			"failed to query datastore types for policy %q: %w",
 			profileID, err)
 	}
-	for i, ds := range datastores {
-		status.Datastores[i].ID.ObjectID = ds.Reference().Value
-		status.Datastores[i].ID.ServerID = ds.Reference().ServerGUID
+	status.Datastores = make([]infrav1.Datastore, 0, len(datastores))
+	for _, ds := range datastores {
+		d := infrav1.Datastore{
+			ID: infrav1.ManagedObjectID{
+				ObjectID: ds.Reference().Value,
+				ServerID: ds.Reference().ServerGUID,
+			},
+		}
 		switch vimtypes.HostFileSystemVolumeFileSystemType(ds.Summary.Type) {
 		case vimtypes.HostFileSystemVolumeFileSystemTypeVsan,
 			vimtypes.HostFileSystemVolumeFileSystemTypeVsanD,
 			vimtypes.HostFileSystemVolumeFileSystemTypeVVOL:
 
-			status.Datastores[i].Type = infrav1.DatastoreTypeVSAN
+			d.Type = infrav1.DatastoreTypeVSAN
 
 		default: // VMFS
-			status.Datastores[i].Type = infrav1.DatastoreTypeVMFS
+			d.Type = infrav1.DatastoreTypeVMFS
 		}
+		status.Datastores = append(status.Datastores, d)
 	}
 	return nil
 }

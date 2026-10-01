@@ -62,6 +62,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/capabilities v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/image-registry-operator v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/infra v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/mobility-operator v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-20260414073537-dff710623a20
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000

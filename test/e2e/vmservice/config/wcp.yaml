@@ -92,6 +92,7 @@ intervals:
   default/wait-vmsetrp-clustermodules: ["3m", "5s"]
   default/wait-content-library-name: ["2m", "5s"]
   default/wait-storage-class-ready: ["5m", "15s"]
+  default/wait-storage-policy-status: ["3m", "10s"]
   default/wait-namespace-ready: ["5m", "10s"]
   default/wait-kms-cluster-ready: ["2m", "5s"]
   default/wait-backup-to-complete: ["10m", "5s"]

@@ -23,6 +23,7 @@ import (
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	imageregistryv1alpha1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
 	imageregistryv1alpha2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
+	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	mopv1alpha2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
@@ -149,5 +150,10 @@ func addSchemes(sc *runtime.Scheme) {
 	err = vspherepolv1alpha1.AddToScheme(sc)
 	if err != nil {
 		e2eframework.Failf("unable to add vsphere-policy v1alpha1 APIs to scheme: %v", err)
+	}
+
+	err = infrav1.AddToScheme(sc)
+	if err != nil {
+		e2eframework.Failf("unable to add infra v1alpha1 APIs to scheme: %v", err)
 	}
 }

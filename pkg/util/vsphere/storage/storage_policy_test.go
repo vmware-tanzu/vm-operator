@@ -158,6 +158,11 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 
 			numDatastores int
 
+			datastore1Incompatible bool
+			datastore2Incompatible bool
+
+			includeStoragePod bool
+
 			datastore1Ref     vimtypes.ManagedObjectReference
 			datastore1Type    vimtypes.HostFileSystemVolumeFileSystemType
 			datastore1K8sType infrav1.DatastoreType
@@ -169,6 +174,9 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 
 		BeforeEach(func() {
 			numDatastores = 1
+			datastore1Incompatible = false
+			datastore2Incompatible = false
+			includeStoragePod = false
 
 			datastore1Type = vimtypes.HostFileSystemVolumeFileSystemTypeVMFS
 			datastore1K8sType = infrav1.DatastoreTypeVMFS
@@ -200,6 +208,12 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 
 				if m.Name == "PbmCheckRequirements" {
 
+					incompatibleErr := []vimtypes.LocalizedMethodFault{
+						{
+							LocalizedMessage: "Datastore does not satisfy compatibility requirements.",
+						},
+					}
+
 					r := []pbmtypes.PbmPlacementCompatibilityResult{
 						{
 							Hub: pbmtypes.PbmPlacementHub{
@@ -208,11 +222,25 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 							},
 						},
 					}
+					if datastore1Incompatible {
+						r[0].Error = incompatibleErr
+					}
 					if numDatastores > 1 {
 						r = append(r, pbmtypes.PbmPlacementCompatibilityResult{
 							Hub: pbmtypes.PbmPlacementHub{
 								HubType: string(vimtypes.ManagedObjectTypeDatastore),
 								HubId:   datastore2Ref.Value,
+							},
+						})
+						if datastore2Incompatible {
+							r[1].Error = incompatibleErr
+						}
+					}
+					if includeStoragePod {
+						r = append(r, pbmtypes.PbmPlacementCompatibilityResult{
+							Hub: pbmtypes.PbmPlacementHub{
+								HubType: string(vimtypes.ManagedObjectTypeStoragePod),
+								HubId:   "group-p1",
 							},
 						})
 					}
@@ -911,6 +939,61 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 							},
 						))
 						Expect(status.Encrypted).To(BeTrue())
+					})
+
+					When("one of the datastores is not compatible", func() {
+						BeforeEach(func() {
+							datastore2Incompatible = true
+						})
+						It("should return only the compatible datastore", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(status.Datastores).To(ConsistOf(
+								infrav1.Datastore{
+									ID: infrav1.ManagedObjectID{
+										ObjectID: datastore1Ref.Value,
+										ServerID: datastore1Ref.ServerGUID,
+									},
+									Type: datastore1K8sType,
+								},
+							))
+						})
+					})
+
+					When("a compatible storage pod is also returned", func() {
+						BeforeEach(func() {
+							includeStoragePod = true
+						})
+						It("should return only the datastores", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(status.Datastores).To(ConsistOf(
+								infrav1.Datastore{
+									ID: infrav1.ManagedObjectID{
+										ObjectID: datastore1Ref.Value,
+										ServerID: datastore1Ref.ServerGUID,
+									},
+									Type: datastore1K8sType,
+								},
+								infrav1.Datastore{
+									ID: infrav1.ManagedObjectID{
+										ObjectID: datastore2Ref.Value,
+										ServerID: datastore2Ref.ServerGUID,
+									},
+									Type: datastore2K8sType,
+								},
+							))
+						})
+					})
+
+					When("none of the datastores are compatible", func() {
+						BeforeEach(func() {
+							datastore1Incompatible = true
+							datastore2Incompatible = true
+						})
+						It("should return no datastores", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(status.StorageClasses).To(HaveLen(2))
+							Expect(status.Datastores).To(BeEmpty())
+						})
 					})
 				})
 

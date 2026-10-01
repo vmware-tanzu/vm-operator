@@ -229,6 +229,11 @@ func vmSnapshotTests() {
 
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
+			// Verify the spec.currentSnapshot is cleared, since reverting
+			// to the VM's already-current snapshot is a no-op and must
+			// still converge rather than getting stuck.
+			Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty())
+
 			// Verify VM status reflects current snapshot.
 			Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
 			Expect(vm.Status.CurrentSnapshot.Type).To(Equal(vmopv1.VirtualMachineSnapshotReferenceTypeManaged))
@@ -323,6 +328,58 @@ func vmSnapshotTests() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(currentSnap).ToNot(BeNil())
 			Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
+		})
+
+		It("should succeed without error when reverting to the already-current snapshot", func() {
+			// Create VM first.
+			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create snapshot in vCenter.
+			task, err := vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "first snapshot", false, false)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+
+			// Create snapshot CR.
+			conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
+			conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+			Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
+			// Snapshot should be owned by the VM resource.
+			o := vmopv1.VirtualMachine{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), &o)).To(Succeed())
+			Expect(controllerutil.SetOwnerReference(&o, vmSnapshot, ctx.Scheme)).To(Succeed())
+			Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
+
+			// Revert to the snapshot once so it becomes the VM's current snapshot.
+			vm.Spec.CurrentSnapshotName = vmSnapshot.Name
+			_, err = vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+			Expect(err).To(HaveOccurred())
+			Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue(), "Should return NoRequeueError")
+
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty())
+			Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
+			Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+
+			// Revert to the same, already-current snapshot again. vCenter
+			// rejects RevertToSnapshot_Task when the VM is already on the
+			// target snapshot, so this must be a no-op that still succeeds
+			// and clears spec.currentSnapshotName.
+			vm.Spec.CurrentSnapshotName = vmSnapshot.Name
+			_, err = vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+			Expect(err).To(HaveOccurred())
+			Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue(), "Should return NoRequeueError")
+
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			Expect(vm.Spec.CurrentSnapshotName).To(BeEmpty())
+			Expect(vm.Status.CurrentSnapshot).ToNot(BeNil())
+			Expect(vm.Status.CurrentSnapshot.Name).To(Equal(vmSnapshot.Name))
+
+			// Verify the revert-in-progress annotation was cleared and did
+			// not leave the VM permanently wedged.
+			_, ok := vm.Annotations[pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey]
+			Expect(ok).To(BeFalse())
 		})
 
 		Context("and the snapshot was taken when VM was powered on and is now powered off", func() {
@@ -705,6 +762,78 @@ func vmSnapshotTests() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(currentSnap).ToNot(BeNil())
 			Expect(currentSnap.Name).To(Equal(vmSnapshot.Name))
+		})
+	})
+
+	Context("when the vSphere-side revert task fails", func() {
+		It("should clear the revert-in-progress annotation so the retry is not permanently blocked", func() {
+			// Create VM and a real snapshot in vCenter.
+			vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			Expect(err).ToNot(HaveOccurred())
+
+			task, err := vcVM.CreateSnapshot(ctx, vmSnapshot.Name, "first snapshot", false, false)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+
+			conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
+			conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+			Expect(ctx.Client.Create(ctx, vmSnapshot)).To(Succeed())
+
+			o := vmopv1.VirtualMachine{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), &o)).To(Succeed())
+			Expect(controllerutil.SetOwnerReference(&o, vmSnapshot, ctx.Scheme)).To(Succeed())
+			Expect(ctx.Client.Update(ctx, vmSnapshot)).To(Succeed())
+
+			// Create a second snapshot so the VM's current snapshot differs
+			// from the first one. Otherwise, reverting to a snapshot that
+			// was just created (and so is already current) would hit the
+			// isCurrent short-circuit and never reach performSnapshotRevert
+			// at all.
+			secondSnapshot := builder.DummyVirtualMachineSnapshot("", "test-second-snap", vm.Name)
+			secondSnapshot.Namespace = nsInfo.Namespace
+
+			task, err = vcVM.CreateSnapshot(ctx, secondSnapshot.Name, "second snapshot", false, false)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+
+			conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
+			conditions.MarkTrue(secondSnapshot, vmopv1.VirtualMachineSnapshotReadyCondition)
+			Expect(controllerutil.SetOwnerReference(&o, secondSnapshot, ctx.Scheme)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, secondSnapshot)).To(Succeed())
+
+			// Find the first vSphere snapshot's moref, then remove it directly from
+			// the simulator registry (without going through RemoveSnapshot,
+			// which would also clean up the VM's snapshot tree). This leaves
+			// the VM's cached snapshot tree still pointing at the now-missing
+			// object, so FindSnapshot still resolves a ref, but the
+			// subsequent RevertToSnapshot call fails immediately with
+			// ManagedObjectNotFound -- simulating the real-vCenter transient
+			// "operation not allowed in the current state" failure from
+			// performSnapshotRevert without vcsim needing to model it.
+			var moVM mo.VirtualMachine
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
+			snapNode, err := virtualmachine.FindSnapshot(moVM, vmSnapshot.Name)
+			Expect(err).ToNot(HaveOccurred())
+
+			simCtx := ctx.SimulatorContext()
+			reg := simCtx.Map
+			reg.Remove(simCtx, snapNode.Snapshot)
+
+			vm.Spec.CurrentSnapshotName = vmSnapshot.Name
+			_, err = vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to revert vSphere snapshot"))
+
+			// This must be a plain, retryable error -- not a NoRequeueError --
+			// so the standard controller-runtime backoff requeue applies.
+			Expect(pkgerr.IsNoRequeueError(err)).To(BeFalse(),
+				"a failed vSphere-side revert should be retried, not treated as terminal")
+
+			// The in-progress annotation must be cleared so the next
+			// reconcile's reconcileSnapshotRevertCheckTask doesn't
+			// permanently short-circuit the retry.
+			_, ok := vm.Annotations[pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey]
+			Expect(ok).To(BeFalse())
 		})
 	})
 

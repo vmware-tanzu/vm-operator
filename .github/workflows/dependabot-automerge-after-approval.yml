@@ -1,0 +1,34 @@
+name: dependabot-automerge
+
+# Enables GitHub's native auto-merge on a Dependabot PR once it's labeled
+# e2e_tests_successful. This does not merge the PR itself - it only flips
+# the auto-merge switch, so the PR still merges only once GitHub's normal
+# merge requirements for the base branch are met: required status checks
+# (ci) passing and, since branch protection on this repo requires it, a
+# maintainer's approving review. The label can land before or after the
+# approval - auto-merge waits for whichever is still missing.
+#
+# pull_request_target is required (not pull_request) for the same reason
+# as dependabot-codegen.yml: a Dependabot-authored pull_request run
+# always gets a read-only GITHUB_TOKEN, which can't enable auto-merge.
+on:
+  pull_request_target:
+    types:
+    - labeled
+
+jobs:
+  automerge-on-maintainers-approval:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.label.name == 'e2e_tests_successful'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+    - name: Enable auto-merge
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh pr merge "${{ github.event.pull_request.number }}" \
+          --repo "${{ github.repository }}" \
+          --auto \
+          --squash

@@ -1,0 +1,161 @@
+name: e2e-comment-command
+
+# Lets the PR author or a maintainer request e2e coverage by commenting:
+#   - "/e2e" - applies e2e_tests_requested (the same label
+#     dependabot-e2e-label.yml applies automatically for grouped
+#     Dependabot bumps). With no params, the default suite/topology is
+#     smoke/vds.
+#   - "/e2e <param>[,<param>...]" - also applies one label per param, on
+#     top of e2e_tests_requested. Each param is either a suite (smoke,
+#     core, extended, experimental -> e2e_suite_<param>) or a topology
+#     (vds, vds-ssv, vpc, nsx -> e2e_topology_<param>); suites and
+#     topologies can be mixed in one comma-separated list.
+#   - "/e2e help" - replies with a comment listing the above; must be the
+#     only param, and applies no labels.
+# Anything else after "/e2e" - an unknown param, help mixed with other
+# params, a stray comma, whatever - is treated as no match and ignored
+# entirely.
+#
+# Restricted to the PR's own author or commenters with OWNER/MEMBER/
+# COLLABORATOR association, so a random comment on this public repo can't
+# trigger e2e resources on someone else's PR.
+on:
+  issue_comment:
+    types:
+    - created
+
+jobs:
+  e2e_tests_requested:
+    if: >-
+      github.event.issue.pull_request != null &&
+      (github.event.comment.user.login == github.event.issue.user.login ||
+       github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+    - name: Parse the /e2e command
+      id: command
+      env:
+        COMMENT_BODY: ${{ github.event.comment.body }}
+      run: |
+        # Trim leading/trailing whitespace only - internal spaces around
+        # commas in the param list are trimmed per-token below.
+        body="$(printf '%s' "$COMMENT_BODY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+        matched=false
+        help=false
+        suites=""
+        topologies=""
+
+        if [[ "$body" =~ ^/e2e([[:space:]]+(.+))?$ ]]; then
+          params="${BASH_REMATCH[2]:-}"
+          if [ -z "$params" ]; then
+            matched=true
+          else
+            IFS=',' read -ra tokens <<<"$params"
+
+            # "help" is only recognized as the sole param.
+            if [ "${#tokens[@]}" -eq 1 ]; then
+              t="$(echo "${tokens[0]}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
+              [ "$t" = "help" ] && help=true
+            fi
+
+            if [ "$help" = false ]; then
+              valid=true
+              parsed_suites=()
+              parsed_topologies=()
+              for token in "${tokens[@]}"; do
+                t="$(echo "$token" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
+                case "$t" in
+                  smoke|core|extended|experimental) parsed_suites+=("$t") ;;
+                  vds|vds-ssv|vpc|nsx) parsed_topologies+=("$t") ;;
+                  *) valid=false ;;
+                esac
+              done
+              total=$(( ${#parsed_suites[@]} + ${#parsed_topologies[@]} ))
+              if [ "$valid" = true ] && [ "$total" -gt 0 ]; then
+                matched=true
+                [ "${#parsed_suites[@]}" -gt 0 ] && suites="$(printf '%s\n' "${parsed_suites[@]}" | sort -u | paste -sd ',' -)"
+                [ "${#parsed_topologies[@]}" -gt 0 ] && topologies="$(printf '%s\n' "${parsed_topologies[@]}" | sort -u | paste -sd ',' -)"
+              fi
+            fi
+          fi
+        fi
+
+        echo "matched=$matched" >>"$GITHUB_OUTPUT"
+        echo "help=$help" >>"$GITHUB_OUTPUT"
+        echo "suites=$suites" >>"$GITHUB_OUTPUT"
+        echo "topologies=$topologies" >>"$GITHUB_OUTPUT"
+
+    - name: Ensure the e2e labels exist
+      if: steps.command.outputs.matched == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SUITES: ${{ steps.command.outputs.suites }}
+        TOPOLOGIES: ${{ steps.command.outputs.topologies }}
+      run: |
+        gh label create "e2e_tests_requested" \
+          --repo "${{ github.repository }}" \
+          --color BFD4F2 \
+          --description "e2e tests requested" \
+          --force
+
+        IFS=',' read -ra suites <<<"$SUITES"
+        for suite in "${suites[@]}"; do
+          [ -z "$suite" ] && continue
+          gh label create "e2e_suite_${suite}" \
+            --repo "${{ github.repository }}" \
+            --color BFD4F2 \
+            --description "Run the ${suite} e2e suite" \
+            --force
+        done
+
+        IFS=',' read -ra topologies <<<"$TOPOLOGIES"
+        for topology in "${topologies[@]}"; do
+          [ -z "$topology" ] && continue
+          gh label create "e2e_topology_${topology}" \
+            --repo "${{ github.repository }}" \
+            --color BFD4F2 \
+            --description "Run e2e against the ${topology} topology" \
+            --force
+        done
+
+    - name: Label the PR for e2e testing
+      if: steps.command.outputs.matched == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SUITES: ${{ steps.command.outputs.suites }}
+        TOPOLOGIES: ${{ steps.command.outputs.topologies }}
+      run: |
+        args=(--add-label "e2e_tests_requested")
+
+        IFS=',' read -ra suites <<<"$SUITES"
+        for suite in "${suites[@]}"; do
+          [ -z "$suite" ] && continue
+          args+=(--add-label "e2e_suite_${suite}")
+        done
+
+        IFS=',' read -ra topologies <<<"$TOPOLOGIES"
+        for topology in "${topologies[@]}"; do
+          [ -z "$topology" ] && continue
+          args+=(--add-label "e2e_topology_${topology}")
+        done
+
+        gh pr edit "${{ github.event.issue.number }}" \
+          --repo "${{ github.repository }}" \
+          "${args[@]}"
+
+    - name: Reply with /e2e usage
+      if: steps.command.outputs.help == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        body=$'### `/e2e` command usage\n\n- `/e2e` - request e2e testing (applies `e2e_tests_requested`); default is the `smoke` suite and `vds` topology\n- `/e2e <param>[,<param>...]` - also scope the run; params can be mixed in one comma-separated list:\n  - suites: `smoke`, `core`, `extended`, `experimental` (applies `e2e_suite_<param>`)\n  - topologies: `vds`, `vds-ssv`, `vpc`, `nsx` (applies `e2e_topology_<param>`)\n  - example: `/e2e smoke,vds,nsx`\n- `/e2e help` - show this message'
+
+        gh pr comment "${{ github.event.issue.number }}" \
+          --repo "${{ github.repository }}" \
+          --body "$body"

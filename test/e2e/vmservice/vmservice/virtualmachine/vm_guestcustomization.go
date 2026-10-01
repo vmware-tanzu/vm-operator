@@ -23,8 +23,8 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -304,24 +304,24 @@ func verifyV1alpha6TemplateFunctionProperties(ctx context.Context, vCenterClient
 func verifyV1alpha6RemainingTemplateFunctionsRoundB(ctx context.Context, vCenterClient *vim25.Client, vmmoid string) {
 	actualPropsMap := getVAppPropertyValues(ctx, vCenterClient, vmmoid)
 
-	verifyRenderedIPv4(actualPropsMap, "string-valid", constants.V1alpha6FirstIP)
-	verifyRenderedIPv4(actualPropsMap, "string-trimmed", constants.V1alpha6FirstIPFromNIC)
+	verifyRenderedIPv4(actualPropsMap, "string-valid", constants.V1alpha5FirstIP)
+	verifyRenderedIPv4(actualPropsMap, "string-trimmed", constants.V1alpha5FirstIPFromNIC)
 
-	By(fmt.Sprintf("Verifying %s rendered a real MAC address into string-padding-user-configurable", constants.V1alpha6FirstNicMacAddr))
+	By(fmt.Sprintf("Verifying %s rendered a real MAC address into string-padding-user-configurable", constants.V1alpha5FirstNicMacAddr))
 	macValue, ok := actualPropsMap["string-padding-user-configurable"]
 	Expect(ok).To(BeTrue(), "string-padding-user-configurable vApp property should exist")
 	Expect(macValue).To(MatchRegexp(`^([0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}$`),
-		"%s should have rendered a MAC address, got %q", constants.V1alpha6FirstNicMacAddr, macValue)
+		"%s should have rendered a MAC address, got %q", constants.V1alpha5FirstNicMacAddr, macValue)
 
-	By(fmt.Sprintf("Verifying %s rendered the NIC's IPv4 addresses into string-empty", constants.V1alpha6IPsFromNIC))
+	By(fmt.Sprintf("Verifying %s rendered the NIC's IPv4 addresses into string-empty", constants.V1alpha5IPsFromNIC))
 	ipsValue, ok := actualPropsMap["string-empty"]
 	Expect(ok).To(BeTrue(), "string-empty vApp property should exist")
 	tokens := strings.Fields(ipsValue)
-	Expect(tokens).ToNot(BeEmpty(), "%s should have rendered at least one address, got %q", constants.V1alpha6IPsFromNIC, ipsValue)
+	Expect(tokens).ToNot(BeEmpty(), "%s should have rendered at least one address, got %q", constants.V1alpha5IPsFromNIC, ipsValue)
 	for _, tok := range tokens {
 		ip, _, err := net.ParseCIDR(tok)
-		Expect(err).To(Succeed(), "%s should render valid CIDRs, got %q in %q", constants.V1alpha6IPsFromNIC, tok, ipsValue)
-		Expect(ip.To4()).ToNot(BeNil(), "%s should have rendered an IPv4 address, got %q", constants.V1alpha6IPsFromNIC, tok)
+		Expect(err).To(Succeed(), "%s should render valid CIDRs, got %q in %q", constants.V1alpha5IPsFromNIC, tok, ipsValue)
+		Expect(ip.To4()).ToNot(BeNil(), "%s should have rendered an IPv4 address, got %q", constants.V1alpha5IPsFromNIC, tok)
 	}
 
 	By(fmt.Sprintf("Verifying %s rendered false for a link-local input into bool-user-configurable-1", constants.V1alpha6IsUsableIP))
@@ -348,33 +348,33 @@ func verifyV1alpha6RemainingTemplateFunctionsRoundB(ctx context.Context, vCenter
 func verifyV1alpha6RemainingTemplateFunctionsRoundC(ctx context.Context, vCenterClient *vim25.Client, vmmoid string) {
 	actualPropsMap := getVAppPropertyValues(ctx, vCenterClient, vmmoid)
 
-	By(fmt.Sprintf("Verifying %s rendered a nameserver list into string-valid, or was left unrendered", constants.V1alpha6FormatNameservers))
+	By(fmt.Sprintf("Verifying %s rendered a nameserver list into string-valid, or was left unrendered", constants.V1alpha5FormatNameservers))
 	nameserversValue, ok := actualPropsMap["string-valid"]
 	Expect(ok).To(BeTrue(), "string-valid vApp property should exist")
-	unrenderedTemplate := "{{ " + constants.V1alpha6FormatNameservers + ` -1 "," }}`
+	unrenderedTemplate := "{{ " + constants.V1alpha5FormatNameservers + ` -1 "," }}`
 	if nameserversValue == unrenderedTemplate {
-		GinkgoWriter.Printf("%s did not render -- this VM/environment likely has no nameservers configured\n", constants.V1alpha6FormatNameservers)
+		GinkgoWriter.Printf("%s did not render -- this VM/environment likely has no nameservers configured\n", constants.V1alpha5FormatNameservers)
 	} else {
-		Expect(nameserversValue).ToNot(BeEmpty(), "%s should not render an empty string", constants.V1alpha6FormatNameservers)
+		Expect(nameserversValue).ToNot(BeEmpty(), "%s should not render an empty string", constants.V1alpha5FormatNameservers)
 		for _, ns := range strings.Split(nameserversValue, ",") {
-			Expect(net.ParseIP(ns)).ToNot(BeNil(), "%s should render a comma-delimited list of IPs, got %q in %q", constants.V1alpha6FormatNameservers, ns, nameserversValue)
+			Expect(net.ParseIP(ns)).ToNot(BeNil(), "%s should render a comma-delimited list of IPs, got %q in %q", constants.V1alpha5FormatNameservers, ns, nameserversValue)
 		}
 	}
 
-	By(fmt.Sprintf("Verifying %s rendered the expected subnet mask into string-trimmed", constants.V1alpha6SubnetMask))
+	By(fmt.Sprintf("Verifying %s rendered the expected subnet mask into string-trimmed", constants.V1alpha5SubnetMask))
 	subnetMaskValue, ok := actualPropsMap["string-trimmed"]
 	Expect(ok).To(BeTrue(), "string-trimmed vApp property should exist")
-	Expect(subnetMaskValue).To(Equal("255.255.255.0"), "%s should have rendered 255.255.255.0, got %q", constants.V1alpha6SubnetMask, subnetMaskValue)
+	Expect(subnetMaskValue).To(Equal("255.255.255.0"), "%s should have rendered 255.255.255.0, got %q", constants.V1alpha5SubnetMask, subnetMaskValue)
 
-	By(fmt.Sprintf("Verifying %s rendered the expected default-netmask CIDR into string-padding-user-configurable", constants.V1alpha6IP))
+	By(fmt.Sprintf("Verifying %s rendered the expected default-netmask CIDR into string-padding-user-configurable", constants.V1alpha5IP))
 	ipValue, ok := actualPropsMap["string-padding-user-configurable"]
 	Expect(ok).To(BeTrue(), "string-padding-user-configurable vApp property should exist")
-	Expect(ipValue).To(Equal("192.168.1.10/24"), "%s should have rendered 192.168.1.10/24, got %q", constants.V1alpha6IP, ipValue)
+	Expect(ipValue).To(Equal("192.168.1.10/24"), "%s should have rendered 192.168.1.10/24, got %q", constants.V1alpha5IP, ipValue)
 
-	By(fmt.Sprintf("Verifying %s rendered the expected re-masked CIDR into string-empty", constants.V1alpha6FormatIP))
+	By(fmt.Sprintf("Verifying %s rendered the expected re-masked CIDR into string-empty", constants.V1alpha5FormatIP))
 	formatIPValue, ok := actualPropsMap["string-empty"]
 	Expect(ok).To(BeTrue(), "string-empty vApp property should exist")
-	Expect(formatIPValue).To(Equal("192.168.1.10/16"), "%s should have rendered 192.168.1.10/16, got %q", constants.V1alpha6FormatIP, formatIPValue)
+	Expect(formatIPValue).To(Equal("192.168.1.10/16"), "%s should have rendered 192.168.1.10/16, got %q", constants.V1alpha5FormatIP, formatIPValue)
 }
 
 func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
@@ -943,10 +943,10 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 			It("round B: should render the remaining network-dependent V1alpha6 template functions into real vApp properties", Label("experimental"), func() {
 				properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
-					vAppProp("string-valid", "{{ "+constants.V1alpha6FirstIP+" }}"),
-					vAppProp("string-trimmed", "{{ "+constants.V1alpha6FirstIPFromNIC+" 0 }}"),
-					vAppProp("string-padding-user-configurable", "{{ "+constants.V1alpha6FirstNicMacAddr+" }}"),
-					vAppProp("string-empty", "{{range "+constants.V1alpha6IPsFromNIC+" 0}}{{.}} {{end}}"),
+					vAppProp("string-valid", "{{ "+constants.V1alpha5FirstIP+" }}"),
+					vAppProp("string-trimmed", "{{ "+constants.V1alpha5FirstIPFromNIC+" 0 }}"),
+					vAppProp("string-padding-user-configurable", "{{ "+constants.V1alpha5FirstNicMacAddr+" }}"),
+					vAppProp("string-empty", "{{range "+constants.V1alpha5IPsFromNIC+" 0}}{{.}} {{end}}"),
 					// Dummy, fixed, link-local input -- doesn't depend on the VM's network.
 					vAppProp("bool-user-configurable-1", `{{ `+constants.V1alpha6IsUsableIP+` "fe80::1" }}`),
 					// Dummy, fixed, IPv6 input -- doesn't depend on the VM's network.
@@ -965,10 +965,10 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				// input as a literal argument rather than reading the VM's
 				// network status.
 				properties := []vmopv1common.KeyValueOrSecretKeySelectorPair{
-					vAppProp("string-valid", `{{ `+constants.V1alpha6FormatNameservers+` -1 "," }}`),
-					vAppProp("string-trimmed", `{{ `+constants.V1alpha6SubnetMask+` "10.0.0.0/24" }}`),
-					vAppProp("string-padding-user-configurable", `{{ `+constants.V1alpha6IP+` "192.168.1.10" }}`),
-					vAppProp("string-empty", `{{ `+constants.V1alpha6FormatIP+` "192.168.1.10/24" "/16" }}`),
+					vAppProp("string-valid", `{{ `+constants.V1alpha5FormatNameservers+` -1 "," }}`),
+					vAppProp("string-trimmed", `{{ `+constants.V1alpha5SubnetMask+` "10.0.0.0/24" }}`),
+					vAppProp("string-padding-user-configurable", `{{ `+constants.V1alpha5IP+` "192.168.1.10" }}`),
+					vAppProp("string-empty", `{{ `+constants.V1alpha5FormatIP+` "192.168.1.10/24" "/16" }}`),
 				}
 				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
 				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)

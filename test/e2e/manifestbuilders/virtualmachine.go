@@ -13,7 +13,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 type Network struct {
@@ -162,15 +162,6 @@ func GetVirtualMachineYamlA3(vmYaml VirtualMachineYaml) []byte {
 func GetVirtualMachineYamlA5(vmYaml VirtualMachineYaml) []byte {
 	return ToYAML(append(
 		[]ctrlclient.Object{must(VirtualMachineA5(vmYaml))},
-		must(persistentVolumeClaimObjects(vmYaml.PVCs))...)...)
-}
-
-// GetVirtualMachineYamlA6 returns a multi-document manifest containing a
-// v1alpha6 VirtualMachine followed by a PersistentVolumeClaim for each entry
-// in vmYaml.PVCs.
-func GetVirtualMachineYamlA6(vmYaml VirtualMachineYaml) []byte {
-	return ToYAML(append(
-		[]ctrlclient.Object{must(VirtualMachineA6(vmYaml))},
 		must(persistentVolumeClaimObjects(vmYaml.PVCs))...)...)
 }
 

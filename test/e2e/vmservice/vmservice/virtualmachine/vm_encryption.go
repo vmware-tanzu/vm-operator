@@ -21,7 +21,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -186,7 +186,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
+		vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)

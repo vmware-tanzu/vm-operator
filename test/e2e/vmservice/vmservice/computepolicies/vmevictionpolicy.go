@@ -30,7 +30,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 

@@ -7,11 +7,11 @@ package manifestbuilders
 import (
 	corev1 "k8s.io/api/core/v1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1a5cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
 	vmopv1a5common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	vmopv1a5sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
@@ -56,10 +56,10 @@ func VirtualMachineA5(vmYaml VirtualMachineYaml) (*vmopv1a5.VirtualMachine, erro
 			},
 			ControllerBusNumber: pvc.ControllerBusNumber,
 			UnitNumber:          pvc.UnitNumber,
-			ApplicationType:     vmopv1a5.VolumeApplicationType(pvc.ApplicationType),
+			ApplicationType:     pvc.ApplicationType,
 		}
 		if pvc.ControllerType != nil {
-			v.ControllerType = vmopv1a5.VirtualControllerType(*pvc.ControllerType)
+			v.ControllerType = *pvc.ControllerType
 		}
 		if pvc.SharingMode != nil {
 			v.SharingMode = vmopv1a5.VolumeSharingMode(*pvc.SharingMode)
@@ -199,7 +199,7 @@ func hardwareToV1A5(in *vmopv1.VirtualMachineHardwareSpec) *vmopv1a5.VirtualMach
 				Name: c.Image.Name,
 			},
 			ControllerBusNumber: copyPtr(c.ControllerBusNumber),
-			ControllerType:      vmopv1a5.VirtualControllerType(c.ControllerType),
+			ControllerType:      c.ControllerType,
 			UnitNumber:          copyPtr(c.UnitNumber),
 			Connected:           copyPtr(c.Connected),
 			AllowGuestControl:   copyPtr(c.AllowGuestControl),
@@ -215,7 +215,7 @@ func hardwareToV1A5(in *vmopv1.VirtualMachineHardwareSpec) *vmopv1a5.VirtualMach
 	for _, c := range in.NVMEControllers {
 		out.NVMEControllers = append(out.NVMEControllers, vmopv1a5.NVMEControllerSpec{
 			BusNumber:   c.BusNumber,
-			SharingMode: vmopv1a5.VirtualControllerSharingMode(c.SharingMode),
+			SharingMode: c.SharingMode,
 		})
 	}
 
@@ -228,8 +228,8 @@ func hardwareToV1A5(in *vmopv1.VirtualMachineHardwareSpec) *vmopv1a5.VirtualMach
 	for _, c := range in.SCSIControllers {
 		out.SCSIControllers = append(out.SCSIControllers, vmopv1a5.SCSIControllerSpec{
 			BusNumber:   c.BusNumber,
-			SharingMode: vmopv1a5.VirtualControllerSharingMode(c.SharingMode),
-			Type:        vmopv1a5.SCSIControllerType(c.Type),
+			SharingMode: c.SharingMode,
+			Type:        c.Type,
 		})
 	}
 

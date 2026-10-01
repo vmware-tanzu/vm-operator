@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/randfill"
 	"sigs.k8s.io/yaml"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	mb "github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 )
 
@@ -81,9 +81,6 @@ var _ = Describe("Manifest builders", func() {
 		Entry("VirtualMachine v1alpha5",
 			func() []byte { return mb.GetVirtualMachineYamlA5(minimalVM()) },
 			"vmoperator.vmware.com/v1alpha5", "VirtualMachine"),
-		Entry("VirtualMachine v1alpha6",
-			func() []byte { return mb.GetVirtualMachineYamlA6(minimalVM()) },
-			"vmoperator.vmware.com/v1alpha6", "VirtualMachine"),
 		Entry("PersistentVolumeClaim",
 			func() []byte {
 				return mb.GetPersistentVolumeClaimYaml(mb.PVC{ClaimName: "claim", Namespace: "my-ns", RequestSize: "1Gi"})
@@ -204,7 +201,6 @@ var _ = Describe("Manifest builders", func() {
 			}
 		},
 		Entry("v1alpha5", mb.GetVirtualMachineYamlA5, "vmoperator.vmware.com/v1alpha5"),
-		Entry("v1alpha6", mb.GetVirtualMachineYamlA6, "vmoperator.vmware.com/v1alpha6"),
 	)
 
 	It("renders VirtualMachineGroupPublishRequest virtualMachines as a list", func() {

@@ -19,7 +19,7 @@ import (
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"

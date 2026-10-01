@@ -25,8 +25,8 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"

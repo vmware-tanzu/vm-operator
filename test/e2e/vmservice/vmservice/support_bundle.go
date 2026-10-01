@@ -10,7 +10,7 @@ import (
 
 	"k8s.io/kubernetes/test/e2e/framework"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 const supportBundleImage = "wcp-gc-docker-local.packages.vcfd.broadcom.net/utils/tkc-support-bundler:v1.2.0"

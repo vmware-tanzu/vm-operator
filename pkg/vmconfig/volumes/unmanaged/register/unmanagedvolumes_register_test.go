@@ -425,6 +425,78 @@ var _ = Describe("Reconcile", func() {
 					}
 				})
 
+				It("should not register a disk that has a pending extend until it is applied", func() {
+					// Mimic updateVirtualDiskDeviceChanges extending the disk.
+					extended := moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+					edited := *extended
+					edited.CapacityInBytes = 50 * 1024 * 1024 * 1024
+					configSpec.DeviceChange = append(
+						configSpec.DeviceChange,
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+							Device:    &edited,
+						})
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(Succeed())
+
+					var pvcList corev1.PersistentVolumeClaimList
+					Expect(k8sClient.List(ctx, &pvcList)).To(Succeed())
+					Expect(pvcList.Items).To(BeEmpty())
+
+					// Once the extend is applied, the disk is registered with
+					// its new capacity.
+					moVM.Config.Hardware.Device[1] = &edited
+					configSpec = &vimtypes.VirtualMachineConfigSpec{}
+
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx,
+						k8sClient,
+						vimClient,
+						vm,
+						moVM,
+						configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+					Expect(k8sClient.List(ctx, &pvcList)).To(Succeed())
+					Expect(pvcList.Items).To(HaveLen(1))
+					expectedStorage := *kubeutil.BytesToResource(50 * 1024 * 1024 * 1024)
+					Expect(pvcList.Items[0].Spec.Resources.Requests[corev1.ResourceStorage].Equal(expectedStorage)).To(BeTrue())
+				})
+
+				DescribeTable("should register a disk when the pending edit does not extend it",
+					func(key int32, capacityInBytes int64) {
+						edited := *moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+						edited.Key = key
+						edited.CapacityInBytes = capacityInBytes
+						configSpec.DeviceChange = append(
+							configSpec.DeviceChange,
+							&vimtypes.VirtualDeviceConfigSpec{
+								Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,
+								Device:    &edited,
+							})
+
+						Expect(unmanagedvolsreg.Reconcile(
+							ctx,
+							k8sClient,
+							vimClient,
+							vm,
+							moVM,
+							configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+
+						var pvcList corev1.PersistentVolumeClaimList
+						Expect(k8sClient.List(ctx, &pvcList)).To(Succeed())
+						Expect(pvcList.Items).To(HaveLen(1))
+					},
+					Entry("same capacity, ex. a policy-only edit", int32(300), int64(2*1024*1024*1024)),
+					Entry("smaller capacity", int32(300), int64(1024*1024*1024)),
+					Entry("larger capacity but a different disk", int32(301), int64(50*1024*1024*1024)),
+				)
+
 				It("should add volumes to VM spec and return ErrPendingBackfill then ErrPendingRegister", func() {
 					Expect(unmanagedvolsreg.Reconcile(
 						ctx,

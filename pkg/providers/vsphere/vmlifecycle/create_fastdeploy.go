@@ -19,6 +19,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -338,6 +339,11 @@ func fastDeploy(
 	case !pkgutil.IsOnlinePromoteDisksSupported(createArgs.ConfigSpec):
 		fastDeployMode = pkgconst.FastDeployModeDirect
 		fastDeployModeReason = "online promote disks not supported"
+	case isBootDiskExtended(vmCtx.VM, disks):
+		// vSphere cannot extend a disk that has a parent, so a linked clone's
+		// boot disk cannot be resized before power on.
+		fastDeployMode = pkgconst.FastDeployModeDirect
+		fastDeployModeReason = "boot disk capacity larger than image"
 	default:
 		fastDeployMode = vmCtx.VM.Annotations[pkgconst.FastDeployAnnotationKey]
 		if fastDeployMode == "" {
@@ -645,4 +651,28 @@ func fastDeployDirectCopyDisks(
 	}
 
 	return copyDiskErr
+}
+
+// isBootDiskExtended returns true if the VM requests a boot disk capacity that
+// is larger than the capacity of the image's boot disk. Like the resize in
+// updateVirtualDiskDeviceChanges(), it assumes the first disk is the boot disk.
+func isBootDiskExtended(
+	vm *vmopv1.VirtualMachine,
+	disks []*vimtypes.VirtualDisk) bool {
+
+	if len(disks) == 0 || vm.Spec.Advanced == nil {
+		return false
+	}
+
+	capacity := vm.Spec.Advanced.BootDiskCapacity
+	if capacity == nil || capacity.IsZero() {
+		return false
+	}
+
+	imageCapacity := disks[0].CapacityInBytes
+	if imageCapacity == 0 {
+		imageCapacity = disks[0].CapacityInKB * 1024
+	}
+
+	return capacity.Value() > imageCapacity
 }

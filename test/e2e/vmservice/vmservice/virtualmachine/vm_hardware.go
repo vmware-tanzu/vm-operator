@@ -1864,6 +1864,46 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.AllDisksArePVCapabilityName)
 			})
 
+			// The image's boot disk must be smaller than this. With Fast Deploy
+			// the VM is a linked clone by default, which vSphere cannot extend,
+			// and the boot disk PVC must request the extended size (VMSVC-4249).
+			It("Should power on a VM whose spec.advanced.bootDiskCapacity is larger than the image", Label("experimental"), func() {
+				bootDiskCapacity := resource.MustParse("64Gi")
+
+				vm := &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      vmName,
+						Namespace: vmSvcNamespace,
+					},
+					Spec: vmopv1.VirtualMachineSpec{
+						ClassName:    clusterResources.VMClassName,
+						ImageName:    linuxVMIName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1.VirtualMachinePowerStateOn,
+						Advanced: &vmopv1.VirtualMachineAdvancedSpec{
+							BootDiskCapacity: &bootDiskCapacity,
+						},
+					},
+				}
+
+				By("Creating the Virtual Machine")
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
+				DeferCleanup(func() {
+					if !input.SkipCleanup {
+						vmoperator.DeleteVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+					}
+				})
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+
+				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
+
+				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				defer vcenter.LogoutVimClient(vCenterClient)
+
+				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the requested size")
+				vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, bootDiskCapacity)
+			})
+
 			It("Boot disk PVC lifecycle operations should succeed", func() {
 				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,

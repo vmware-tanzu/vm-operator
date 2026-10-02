@@ -37,7 +37,7 @@ require (
 
 // The version of Ginkgo must match the version in hack/tools/go.mod and api/test/go.mod.
 // If updating one, please update the others.
-require github.com/onsi/ginkgo/v2 v2.32.1
+require github.com/onsi/ginkgo/v2 v2.33.0
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -46,7 +46,7 @@ require (
 	github.com/go-pkgz/expirable-cache/v3 v3.1.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
-	github.com/onsi/gomega v1.43.0
+	github.com/onsi/gomega v1.43.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250813160346-0f6259af5cbb
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20260619161849-aeb1b9769d4b

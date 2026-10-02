@@ -70,4 +70,8 @@ const (
 	// controller, webhooks, and CRD; must match
 	// pkg/config/capabilities.CapabilityKeyK8sWorkloadMgmtAPI.
 	K8sWorkloadMgmtAPICapabilityName = "supports_k8s_workload_mgmt_api"
+
+	// VMHardAffinityDuringExecutionCapabilityName gates the Tag CRD,
+	// controller, and admission webhook (Features.TaggingAPI).
+	VMHardAffinityDuringExecutionCapabilityName = "supports_vm_service_vm_hard_affinity_during_execution"
 )

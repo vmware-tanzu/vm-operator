@@ -69,7 +69,7 @@ const (
 	// K8sWorkloadMgmtAPICapabilityName gates the VirtualMachineReplicaSet
 	// controller, webhooks, and CRD; must match
 	// pkg/config/capabilities.CapabilityKeyK8sWorkloadMgmtAPI.
-	K8sWorkloadMgmtAPICapabilityName = "supports_k8s_workload_mgmt_api"
+	K8sWorkloadMgmtAPICapabilityName = "supports_vm_service_k8s_workload_mgmt_api"
 
 	// VMHardAffinityDuringExecutionCapabilityName gates the Tag CRD,
 	// controller, and admission webhook (Features.TaggingAPI).

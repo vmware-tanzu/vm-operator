@@ -161,7 +161,7 @@ const (
 	// CapabilityKeyK8sWorkloadMgmtAPI is the name of the capability key
 	// defined in the Supervisor capabilities CRD for the VirtualMachineReplicaSet
 	// controller, webhooks, and CRD.
-	CapabilityKeyK8sWorkloadMgmtAPI = "supports_k8s_workload_mgmt_api"
+	CapabilityKeyK8sWorkloadMgmtAPI = "supports_vm_service_k8s_workload_mgmt_api"
 
 	// CapabilityKeyVMHardAffinityDuringExecution is the name of the
 	// capability key defined in the Supervisor capabilities CRD. It gates

@@ -560,6 +560,48 @@ func vmFastDeployTests() {
 							})
 						})
 
+						When("vm boot disk capacity is larger than the image", func() {
+							BeforeEach(func() {
+								vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+									BootDiskCapacity: ptr.To(resource.MustParse("20Gi")),
+								}
+							})
+
+							It("should succeed by falling back to direct mode", func() {
+								Expect(createVM()).To(Succeed())
+								By("Assert no kept disks", assertNoKeptDisks)
+								By("Assert disk names", assertFileNames)
+							})
+
+							When("vm specifies linked mode via annotation", func() {
+								BeforeEach(func() {
+									vm.SetAnnotation(
+										pkgconst.FastDeployAnnotationKey,
+										pkgconst.FastDeployModeLinked)
+								})
+
+								It("should still fall back to direct mode", func() {
+									Expect(createVM()).To(Succeed())
+									By("Assert no kept disks", assertNoKeptDisks)
+									By("Assert disk names", assertFileNames)
+								})
+							})
+						})
+
+						When("vm boot disk capacity is not larger than the image", func() {
+							BeforeEach(func() {
+								vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+									BootDiskCapacity: ptr.To(resource.MustParse("10Gi")),
+								}
+							})
+
+							It("should succeed with linked mode", func() {
+								Expect(createVM()).To(Succeed())
+								By("Assert kept disks", assertKeptDisks)
+								By("Assert disk names", assertFileNames)
+							})
+						})
+
 						When("vm specifies direct mode via annotation", func() {
 							BeforeEach(func() {
 								vm.SetAnnotation(

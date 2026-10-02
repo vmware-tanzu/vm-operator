@@ -46,7 +46,6 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 		clusterProxy     *common.VMServiceClusterProxy
 		svClusterClient  ctrlclient.Client
 		webconsoleName   string
-		resourceName     string
 		webconsoleParams manifestbuilders.VirtualMachineWebConsoleRequestYaml
 	)
 
@@ -77,15 +76,10 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 		}
 	})
 
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, webconsoleName, resourceName)
-		}
-	})
-
 	Context("Create web console request CR", func() {
 		It("should successfully create v1a1 webconsolerequests and populate status", Label("smoke"), func() {
-			resourceName = "webconsolerequests"
+			vmoperator.DeferCleanupWithDumpOnFailure(nil,
+				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "webconsolerequests", input.WCPNamespaceName, webconsoleName))
 			webconsoleYaml := manifestbuilders.GetV1A1WebConsoleRequestYaml(webconsoleParams)
 			e2eframework.Logf("%v", string(webconsoleYaml))
 			Expect(clusterProxy.CreateWithArgs(ctx, webconsoleYaml)).NotTo(HaveOccurred(), "failed to create v1a1 webconsole request", string(webconsoleYaml))
@@ -95,7 +89,8 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 		})
 
 		It("When WCP_VMService_v1alpha2 enabled, should successfully create v1a2 virtualmachinewebconsolerequests and populate status", func() {
-			resourceName = "virtualmachinewebconsolerequests"
+			vmoperator.DeferCleanupWithDumpOnFailure(nil,
+				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "virtualmachinewebconsolerequests", input.WCPNamespaceName, webconsoleName))
 			vmWebconsoleYaml := manifestbuilders.GetVirtualMachineWebConsoleRequestYaml(webconsoleParams)
 			e2eframework.Logf("%v", string(vmWebconsoleYaml))
 			Expect(clusterProxy.CreateWithArgs(ctx, vmWebconsoleYaml)).NotTo(HaveOccurred(), "failed to create v1a2 virtualmachinewebconsole request", string(vmWebconsoleYaml))

@@ -150,12 +150,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -247,12 +243,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -318,12 +310,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -402,12 +390,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -461,12 +445,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -566,12 +546,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -658,12 +634,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -727,12 +699,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off, guaranteed class)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -800,12 +768,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off, best-effort class)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -875,12 +839,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			By("Creating VM (first instance)")
 			Expect(svClusterClient.Create(ctx, makeVM())).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vmNamespace, vmName, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
 				vmNamespace, vmName)
@@ -936,12 +896,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1032,12 +988,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and ComputeConfigSynced=True (powered-off)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1126,12 +1078,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and ComputeConfigSynced=True (powered-off, hotAddEnabled applied)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1226,12 +1174,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1320,12 +1264,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1391,12 +1331,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1448,12 +1384,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1541,12 +1473,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1658,12 +1586,8 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
 				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			DeferCleanup(func() {
-				if !input.SkipCleanup {
-					vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
-					vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
-				}
-			})
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off with hot-add flags applied)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,

@@ -106,19 +106,11 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 		}
 
 		Expect(vmservice.EnsureNamespaceHasAccess(wcpClient, vmClassName, input.WCPNamespaceName)).To(Succeed())
-	})
 
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmClassName, "vmclass")
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, "vm")
-		}
-
-		// Delete and verify the virtual machine doesn't exist.
-		if len(vmYaml) > 0 {
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
-			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		}
+		// The VMClass is shared across specs and is not deleted, so only
+		// describe it on failure.
+		vmoperator.DeferCleanupWithDumpOnFailure(nil,
+			vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "vmclass", input.WCPNamespaceName, vmClassName))
 	})
 
 	When("VM Class is associated with default namespace, not associated with the second namespace", func() {
@@ -152,6 +144,8 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			}
 			vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				input.WCPNamespaceName, vmName, false)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		})
 

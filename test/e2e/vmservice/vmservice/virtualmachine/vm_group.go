@@ -7,6 +7,7 @@ package virtualmachine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -918,6 +919,281 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			Expect(vm2Zone).ToNot(Equal(vm3Zone))
 		})
 
+		When("VMs are pinned to zones via the topology zone label", Label("experimental"), func() {
+			var (
+				zones       []string
+				tinyVMIName string
+			)
+
+			BeforeEach(func() {
+				skipper.SkipUnlessStretchSupervisorIsEnabled()
+				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+
+				namespaceZones, err := utils.ListZonesByNamespace(ctx, input.ClusterProxy.GetClient(), tmpNamespaceName)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(namespaceZones.Items)).To(BeNumerically(">=", 3))
+
+				zones = nil
+				for _, zone := range namespaceZones.Items {
+					zones = append(zones, zone.Name)
+				}
+
+				By("Resolving the tiny-core-linux-complex-hw VMI in the temporary namespace")
+
+				tinyVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, "tiny-core-linux-complex-hw")
+			})
+
+			It("Should place group members in the distinct zones pinned via the topology zone label", func() {
+				vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+				pinnedZones := make(map[string]string, len(vmMemberNames))
+				for i, vmName := range vmMemberNames {
+					pinnedZones[vmName] = zones[i]
+				}
+
+				By("Creating a VirtualMachineGroup with 3 VM-kind members")
+
+				vmgParameters := manifestbuilders.VirtualMachineGroupYaml{
+					Namespace: tmpNamespaceName,
+					Name:      vmgRootName,
+					BootOrder: []manifestbuilders.BootOrder{
+						{
+							Members: []vmopv1.GroupMember{
+								{Kind: vmKind, Name: vm1Name},
+								{Kind: vmKind, Name: vm2Name},
+								{Kind: vmKind, Name: vm3Name},
+							},
+						},
+					},
+				}
+				vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
+				e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
+				Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+
+				By("Creating each VM with a different pinned zone and host affinity only to itself")
+
+				for _, vmName := range vmMemberNames {
+					vmParameters := manifestbuilders.VirtualMachineYaml{
+						Namespace: tmpNamespaceName,
+						Name:      vmName,
+						GroupName: vmgRootName,
+						Labels: map[string]string{
+							"topology.kubernetes.io/zone": pinnedZones[vmName],
+							"vm":                          vmName,
+						},
+						ImageName:        tinyVMIName,
+						VMClassName:      clusterResources.VMClassName,
+						StorageClassName: clusterResources.StorageClassName,
+						PowerState:       "PoweredOff",
+						Affinity: &vmopv1.AffinitySpec{
+							VMAffinity: &vmopv1.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{"vm": vmName},
+										},
+										TopologyKey: "kubernetes.io/hostname",
+									},
+								},
+							},
+						},
+					}
+					vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+					e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
+					Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+				}
+
+				By("Waiting for all VMs to be created")
+
+				for _, vmName := range vmMemberNames {
+					vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+				}
+
+				By("Verifying each VM landed in its pinned zone")
+
+				placedZones := make(map[string]struct{}, len(vmMemberNames))
+				for _, vmName := range vmMemberNames {
+					vmZone := waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+					Expect(vmZone).To(Equal(pinnedZones[vmName]), "vm %s zone mismatch", vmName)
+					placedZones[vmZone] = struct{}{}
+				}
+
+				By("Verifying the VMs are in 3 separate zones")
+				Expect(placedZones).To(HaveLen(len(vmMemberNames)))
+			})
+
+			It("Should place each member in its own pinned zone regardless of member order", func() {
+				By("Creating 6 VMs in interleaved zone order, one of them unpinned")
+
+				vms := []zonePinnedVM{
+					{Name: fmt.Sprintf("%s-vm1", vmgRootName), Zone: zones[2]},
+					{Name: fmt.Sprintf("%s-vm2", vmgRootName), Zone: zones[0]},
+					{Name: fmt.Sprintf("%s-vm3", vmgRootName)},
+					{Name: fmt.Sprintf("%s-vm4", vmgRootName), Zone: zones[1]},
+					{Name: fmt.Sprintf("%s-vm5", vmgRootName), Zone: zones[0]},
+					{Name: fmt.Sprintf("%s-vm6", vmgRootName), Zone: zones[2]},
+				}
+				vmMemberNames = getZonePinnedVMNames(vms)
+				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
+
+				for _, vm := range vms {
+					vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)
+				}
+
+				By("Verifying each pinned VM landed in its own zone and the unpinned VM in a namespace zone")
+
+				for _, vm := range vms {
+					zone := waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)
+					if vm.Zone != "" {
+						Expect(zone).To(Equal(vm.Zone), "vm %s zone mismatch", vm.Name)
+					} else {
+						Expect(zones).To(ContainElement(zone), "unpinned vm %s zone", vm.Name)
+					}
+				}
+			})
+
+			It("Should place pinned members in their zones when another member is unpinned", func() {
+				By("Creating 2 VMs pinned to different zones and 1 unpinned VM")
+
+				vms := []zonePinnedVM{
+					{Name: vm1Name, Zone: zones[0]},
+					{Name: vm2Name, Zone: zones[1]},
+					{Name: vm3Name},
+				}
+				vmMemberNames = getZonePinnedVMNames(vms)
+				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
+
+				for _, vm := range vms {
+					vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)
+				}
+
+				Expect(waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vm1Name)).To(Equal(zones[0]))
+				Expect(waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vm2Name)).To(Equal(zones[1]))
+				Expect(zones).To(ContainElement(waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vm3Name)))
+			})
+
+			It("Should place all members in the zone they are all pinned to", func() {
+				By("Creating 3 VMs pinned to the same zone")
+
+				vms := []zonePinnedVM{
+					{Name: vm1Name, Zone: zones[0]},
+					{Name: vm2Name, Zone: zones[0]},
+					{Name: vm3Name, Zone: zones[0]},
+				}
+				vmMemberNames = getZonePinnedVMNames(vms)
+				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
+
+				for _, vm := range vms {
+					vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)
+					Expect(waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)).To(Equal(zones[0]), "vm %s zone mismatch", vm.Name)
+				}
+			})
+
+			It("Should place members pinned to different zones that also have zone anti-affinity", func() {
+				By("Creating 3 VMs pinned to different zones with required zone anti-affinity to each other")
+
+				appLabels := map[string]string{"app": vmgRootName}
+				vms := []zonePinnedVM{
+					{Name: vm1Name, Zone: zones[0], Labels: appLabels, Affinity: requiredAntiAffinity(zoneLabelKey, appLabels)},
+					{Name: vm2Name, Zone: zones[1], Labels: appLabels, Affinity: requiredAntiAffinity(zoneLabelKey, appLabels)},
+					{Name: vm3Name, Zone: zones[2], Labels: appLabels, Affinity: requiredAntiAffinity(zoneLabelKey, appLabels)},
+				}
+				vmMemberNames = getZonePinnedVMNames(vms)
+				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
+
+				for _, vm := range vms {
+					vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)
+					Expect(waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)).To(Equal(vm.Zone), "vm %s zone mismatch", vm.Name)
+				}
+			})
+
+			It("Should place a VM that is not in a group in its pinned zone", func() {
+				By("Creating a standalone VM pinned to a zone")
+
+				vms := []zonePinnedVM{{Name: vm1Name, Zone: zones[1]}}
+				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, "", tinyVMIName, vms)
+
+				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm1Name)
+				Expect(waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vm1Name)).To(Equal(zones[1]))
+			})
+
+			It("Should place members pinned to the same zone on different hosts with host anti-affinity", func() {
+				zone, _ := getZoneWithMinHosts(ctx, clusterProxy, 3)
+
+				By(fmt.Sprintf("Creating 3 VMs pinned to zone %s with required host anti-affinity to each other", zone))
+
+				appLabels := map[string]string{"app": vmgRootName}
+				vms := []zonePinnedVM{
+					{Name: vm1Name, Zone: zone, Labels: appLabels, Affinity: requiredAntiAffinity(hostTopoKey, appLabels)},
+					{Name: vm2Name, Zone: zone, Labels: appLabels, Affinity: requiredAntiAffinity(hostTopoKey, appLabels)},
+					{Name: vm3Name, Zone: zone, Labels: appLabels, Affinity: requiredAntiAffinity(hostTopoKey, appLabels)},
+				}
+				vmMemberNames = getZonePinnedVMNames(vms)
+				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
+
+				hosts := map[string]string{}
+				for _, vm := range vms {
+					vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)
+					Expect(waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)).To(Equal(zone), "vm %s zone mismatch", vm.Name)
+
+					host := getVMHostFromVmodl(ctx, svClusterClient, vCenterClient, tmpNamespaceName, vm.Name)
+					Expect(hosts).ToNot(HaveKey(host), "vms %s and %s are on the same host %s", hosts[host], vm.Name, host)
+					hosts[host] = vm.Name
+				}
+			})
+
+			It("Should place all members in their pinned zones when each zone has more members than hosts with preferred host anti-affinity", func() {
+				const vmCountPerZone = 5
+
+				zoneHostInfos, err := utils.GetHostsPerZone(ctx, clusterProxy.GetClient(), clusterProxy.GetKubeconfigPath())
+				Expect(err).NotTo(HaveOccurred(), "failed to list zones with hosts")
+
+				var smallZones []string
+				for _, info := range zoneHostInfos {
+					if len(info.HostIDs) >= 1 && len(info.HostIDs) < vmCountPerZone {
+						smallZones = append(smallZones, info.ZoneName)
+					}
+				}
+				if len(smallZones) < 2 {
+					Skip(fmt.Sprintf("skip the test as fewer than 2 zones have fewer than %d hosts", vmCountPerZone))
+				}
+				pinnedZones := smallZones[:2]
+
+				By(fmt.Sprintf("Creating %d VMs in each of zones %v with preferred host anti-affinity", vmCountPerZone, pinnedZones))
+
+				var vms []zonePinnedVM
+				for zi, zone := range pinnedZones {
+					appLabels := map[string]string{"app": fmt.Sprintf("%s-zone%d", vmgRootName, zi+1)}
+					for i := 0; i < vmCountPerZone; i++ {
+						vms = append(vms, zonePinnedVM{
+							Name:     fmt.Sprintf("%s-z%d-vm%d", vmgRootName, zi+1, i+1),
+							Zone:     zone,
+							Labels:   appLabels,
+							Affinity: preferredAntiAffinity(hostTopoKey, appLabels),
+						})
+					}
+				}
+				vmMemberNames = getZonePinnedVMNames(vms)
+				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
+
+				zoneCounts := map[string]int{}
+				for _, vm := range vms {
+					vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)
+					zone := waitForVMZone(ctx, config, svClusterClient, tmpNamespaceName, vm.Name)
+					Expect(zone).To(Equal(vm.Zone), "vm %s zone mismatch", vm.Name)
+					zoneCounts[zone]++
+				}
+				for _, zone := range pinnedZones {
+					Expect(zoneCounts[zone]).To(Equal(vmCountPerZone), "zone %s VM count mismatch", zone)
+				}
+			})
+		})
+
 		When("VMs have both AF/AAF and IaaS Policies applied", func() {
 			var (
 				tagManager        *tags.Manager
@@ -1816,4 +2092,182 @@ func waitForVMPoweredOffTime(
 	}, "3m", "2s").Should(Succeed(), "Timed out waiting for VM %v to be powered off", moRef)
 
 	return offTime
+}
+
+const (
+	pinnedVMKind = "VirtualMachine"
+	zoneLabelKey = "topology.kubernetes.io/zone"
+	hostTopoKey  = "kubernetes.io/hostname"
+)
+
+// zonePinnedVM describes a VirtualMachineGroup member VM that may be pinned to
+// a zone via the topology.kubernetes.io/zone label.
+type zonePinnedVM struct {
+	Name string
+	// Zone is the zone the VM is pinned to. Empty means the VM is not pinned.
+	Zone     string
+	Labels   map[string]string
+	Affinity *vmopv1.AffinitySpec
+}
+
+// preferredAntiAffinity returns an AffinitySpec that prefers the VM to be
+// placed in a different topologyKey domain than the VMs matching matchLabels.
+func preferredAntiAffinity(topologyKey string, matchLabels map[string]string) *vmopv1.AffinitySpec {
+	return &vmopv1.AffinitySpec{
+		VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+			PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+				LabelSelector: &metav1.LabelSelector{MatchLabels: matchLabels},
+				TopologyKey:   topologyKey,
+			}},
+		},
+	}
+}
+
+// requiredAntiAffinity returns an AffinitySpec that requires the VM to be
+// placed in a different topologyKey domain than the VMs matching matchLabels.
+func requiredAntiAffinity(topologyKey string, matchLabels map[string]string) *vmopv1.AffinitySpec {
+	return &vmopv1.AffinitySpec{
+		VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+			RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+				LabelSelector: &metav1.LabelSelector{MatchLabels: matchLabels},
+				TopologyKey:   topologyKey,
+			}},
+		},
+	}
+}
+
+// createVMGroupWithVMs creates a root VirtualMachineGroup whose boot order has
+// the given VMs as its members, and returns the group's YAML.
+func createVMGroupWithVMs(
+	ctx context.Context,
+	clusterProxy *common.VMServiceClusterProxy,
+	namespace, groupName string,
+	vms []zonePinnedVM) []byte {
+
+	GinkgoHelper()
+
+	members := make([]vmopv1.GroupMember, len(vms))
+	for i, vm := range vms {
+		members[i] = vmopv1.GroupMember{Kind: pinnedVMKind, Name: vm.Name}
+	}
+
+	groupYAML := manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(
+		manifestbuilders.VirtualMachineGroupYaml{
+			Namespace: namespace,
+			Name:      groupName,
+			BootOrder: []manifestbuilders.BootOrder{{Members: members}},
+		})
+	e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(groupYAML))
+	Expect(clusterProxy.CreateWithArgs(ctx, groupYAML)).To(Succeed())
+
+	return groupYAML
+}
+
+// createZonePinnedVMs creates the given VMs as members of the group, powered
+// off since only placement is under test. VMs with a Zone get the
+// topology.kubernetes.io/zone label.
+func createZonePinnedVMs(
+	ctx context.Context,
+	clusterProxy *common.VMServiceClusterProxy,
+	clusterResources *e2eConfig.Resources,
+	namespace, groupName, imageName string,
+	vms []zonePinnedVM) {
+
+	GinkgoHelper()
+
+	for _, vm := range vms {
+		labels := map[string]string{}
+		maps.Copy(labels, vm.Labels)
+		if vm.Zone != "" {
+			labels[zoneLabelKey] = vm.Zone
+		}
+
+		vmYAML := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+			Namespace:        namespace,
+			Name:             vm.Name,
+			GroupName:        groupName,
+			Labels:           labels,
+			ImageName:        imageName,
+			VMClassName:      clusterResources.VMClassName,
+			StorageClassName: clusterResources.StorageClassName,
+			PowerState:       "PoweredOff",
+			Affinity:         vm.Affinity,
+		})
+		e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
+		Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vm.Name, string(vmYAML))
+	}
+}
+
+// getZonePinnedVMNames returns the names of the given VMs.
+func getZonePinnedVMNames(vms []zonePinnedVM) []string {
+	names := make([]string, len(vms))
+	for i, vm := range vms {
+		names[i] = vm.Name
+	}
+
+	return names
+}
+
+// getZoneWithMinHosts returns a zone with at least minHostCount hosts and its
+// host count. It skips the test if there is no such zone.
+func getZoneWithMinHosts(
+	ctx context.Context,
+	clusterProxy *common.VMServiceClusterProxy,
+	minHostCount int) (string, int) {
+
+	GinkgoHelper()
+
+	zoneHostInfos, err := utils.GetHostsPerZone(ctx, clusterProxy.GetClient(), clusterProxy.GetKubeconfigPath())
+	Expect(err).NotTo(HaveOccurred(), "failed to list zones with hosts")
+
+	for _, zoneHostInfo := range zoneHostInfos {
+		if len(zoneHostInfo.HostIDs) >= minHostCount {
+			return zoneHostInfo.ZoneName, len(zoneHostInfo.HostIDs)
+		}
+	}
+
+	Skip(fmt.Sprintf("skip the test as no zone has at least %d hosts", minHostCount))
+
+	return "", 0
+}
+
+// waitForVMZone waits for the VM to have a zone in its status and returns it.
+func waitForVMZone(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	client ctrlclient.Client,
+	namespace, vmName string) string {
+
+	GinkgoHelper()
+
+	var zone string
+	Eventually(func(g Gomega) {
+		vm, err := utils.GetVirtualMachine(ctx, client, namespace, vmName)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(vm.Status.Zone).ToNot(BeEmpty())
+		zone = vm.Status.Zone
+	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(),
+		"timed out waiting for VirtualMachine %s to have a zone", vmName)
+
+	return zone
+}
+
+// getVMHostFromVmodl returns the host MoID of the VM from vSphere directly. Use
+// this when the VM is not powered on, since vm.Status.NodeName is not yet set.
+func getVMHostFromVmodl(
+	ctx context.Context,
+	client ctrlclient.Client,
+	vimClient *vim25.Client,
+	namespace, vmName string) string {
+
+	GinkgoHelper()
+
+	moid := vmoperator.GetVirtualMachineMOID(ctx, client, namespace, vmName)
+	vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: moid}
+
+	var vmMO mo.VirtualMachine
+	Expect(property.DefaultCollector(vimClient).RetrieveOne(ctx, vmMoRef, []string{"runtime.host"}, &vmMO)).To(Succeed())
+	Expect(vmMO.Runtime.Host).ToNot(BeNil())
+
+	return vmMO.Runtime.Host.Value
 }

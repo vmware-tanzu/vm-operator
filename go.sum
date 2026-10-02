@@ -172,8 +172,8 @@ github.com/vmware-tanzu/net-operator-api v0.0.0-20260619161849-aeb1b9769d4b h1:p
 github.com/vmware-tanzu/net-operator-api v0.0.0-20260619161849-aeb1b9769d4b/go.mod h1:w6QJGm3crIA16ZIz1FVQXD2NVeJhOgGXxW05RbVTSTo=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c h1:ZYd1EUxMifaI//+lNw81fRSuVdqzxjlhbmzVNoOI0x4=
 github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c/go.mod h1:lyi/HGVxk/UK+bGCSSGdsZB6ep/NxN+NZ6AdQqcxWrg=
-github.com/vmware/govmomi v0.57.0-alpha.0.0.20260908193317-e23a942e8f55 h1:XCDLBB657VSQSZSS8FR7JO9pONEc1H5O7AGKPHCJdhs=
-github.com/vmware/govmomi v0.57.0-alpha.0.0.20260908193317-e23a942e8f55/go.mod h1:XI+N/NkdbIz5rOAVzfg4wbNJVj2CXUAZmzEEA7RCMh4=
+github.com/vmware/govmomi v0.57.0-alpha.0.0.20260930024634-9b65cf3964d3 h1:WzymqdA3MkcJkR57LUScQP27p6DzWuPipze5giQwPbA=
+github.com/vmware/govmomi v0.57.0-alpha.0.0.20260930024634-9b65cf3964d3/go.mod h1:XI+N/NkdbIz5rOAVzfg4wbNJVj2CXUAZmzEEA7RCMh4=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=

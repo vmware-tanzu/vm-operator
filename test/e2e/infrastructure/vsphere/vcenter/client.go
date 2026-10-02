@@ -21,6 +21,7 @@ import (
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework/chaos"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 )
 
@@ -66,6 +67,7 @@ func NewVimClient(vCenterHost string, username string, password string) (*vim25.
 	}
 	ctx := context.Background()
 	sc := soap.NewClient(&clientURL, true)
+	sc.Transport = chaos.WrapTransport(sc.Transport)
 
 	client, err := vim25.NewClient(ctx, sc)
 	if err != nil {

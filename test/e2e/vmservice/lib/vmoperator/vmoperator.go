@@ -16,7 +16,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/meta"
 
 	corev1 "k8s.io/api/core/v1"
@@ -1448,6 +1451,88 @@ func EventuallyBootDiskStoragePolicyMatchesVMStorageClass(
 			boot.Name, scName, vm.Spec.StorageClass, namespace, name)
 	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(),
 		"Timed out waiting for boot disk storage policy to match spec.storageClass on VirtualMachine %s/%s", namespace, name)
+}
+
+// EventuallyBootDiskCapacityMatches polls until the VM is powered on and the
+// boot disk capacity agrees in all three places: the vCenter virtual disk, the
+// boot disk PVC's spec.resources.requests.storage, and the PV bound to the PVC
+// (status.capacity). The boot disk PVC must be Bound.
+//
+// Only call this when the AllDisksArePVCs capability is enabled.
+func EventuallyBootDiskCapacityMatches(
+	ctx context.Context,
+	vmSvcE2EConfig *config.E2EConfig,
+	vimClient *vim25.Client,
+	k8sClient ctrlclient.Client,
+	namespace, name string,
+	expected resource.Quantity,
+) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		vm, err := utils.GetVirtualMachine(ctx, k8sClient, namespace, name)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		g.Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn),
+			"VirtualMachine %s/%s is not powered on", namespace, name)
+		g.Expect(vm.Status.UniqueID).NotTo(BeEmpty())
+
+		bootVol := findBootDiskVolume(vm.Spec.Volumes)
+		g.Expect(bootVol).NotTo(BeNil(), "boot disk volume not found in spec.volumes")
+		g.Expect(bootVol.PersistentVolumeClaim).NotTo(BeNil())
+		g.Expect(bootVol.PersistentVolumeClaim.ClaimName).NotTo(BeEmpty())
+
+		var boot *vmopv1.VirtualMachineVolumeStatus
+		for i := range vm.Status.Volumes {
+			if vm.Status.Volumes[i].Name == bootVol.Name {
+				boot = &vm.Status.Volumes[i]
+				break
+			}
+		}
+		g.Expect(boot).NotTo(BeNil(), "boot disk %q not found in status.volumes", bootVol.Name)
+		g.Expect(boot.DiskUUID).NotTo(BeEmpty())
+
+		// The PVC requests the expected size and is bound to a PV of that size.
+		var pvc corev1.PersistentVolumeClaim
+		g.Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+			Namespace: namespace,
+			Name:      bootVol.PersistentVolumeClaim.ClaimName,
+		}, &pvc)).To(Succeed())
+		g.Expect(pvc.Status.Phase).To(Equal(corev1.ClaimBound))
+		requested := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+		g.Expect(requested.Cmp(expected)).To(BeZero(),
+			"boot disk PVC requests %s, expected %s", requested.String(), expected.String())
+		capacity := pvc.Status.Capacity[corev1.ResourceStorage]
+		g.Expect(capacity.Cmp(expected)).To(BeZero(),
+			"boot disk PVC capacity is %s, expected %s", capacity.String(), expected.String())
+
+		// The vCenter disk has the expected size.
+		var moVM mo.VirtualMachine
+		vcVM := object.NewVirtualMachine(vimClient, vimtypes.ManagedObjectReference{
+			Type:  "VirtualMachine",
+			Value: vm.Status.UniqueID,
+		})
+		g.Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"config.hardware.device"}, &moVM)).To(Succeed())
+		g.Expect(moVM.Config).NotTo(BeNil())
+
+		var found bool
+		for _, d := range moVM.Config.Hardware.Device {
+			disk, ok := d.(*vimtypes.VirtualDisk)
+			if !ok {
+				continue
+			}
+			b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
+			if !ok || b.Uuid != boot.DiskUUID {
+				continue
+			}
+			found = true
+			g.Expect(disk.CapacityInBytes).To(Equal(expected.Value()),
+				"vCenter boot disk capacity is %d bytes, expected %d", disk.CapacityInBytes, expected.Value())
+			g.Expect(b.Parent).To(BeNil(), "boot disk still has a parent")
+		}
+		g.Expect(found).To(BeTrue(), "boot disk with UUID %q not found on the vCenter VM", boot.DiskUUID)
+	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed(),
+		"Timed out waiting for the boot disk capacity of VirtualMachine %s/%s to be %s", namespace, name, expected.String())
 }
 
 // WaitForVMCnsRegisterVolumesRegistered waits until every CnsRegisterVolume

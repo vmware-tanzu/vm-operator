@@ -81,6 +81,16 @@ make e2e-core
 make e2e-extended
 ```
 
+**Backup/Restore Tests** (real backups and restores with Veeam Backup & Replication; needs a Veeam server that can reach the testbed's vCenter on port 443 and its ESXi hosts on port 902):
+```bash
+VEEAM_SERVER=<vbr-host> VEEAM_USERNAME=<user> VEEAM_PASSWORD=<password> \
+  make e2e-backup-restore
+```
+
+The tests are skipped only when `VEEAM_SERVER` is unset. When it is set, a server that cannot be reached, speaks no supported REST API version, or rejects the credentials fails the tests, so a misconfigured suite is visible instead of passing silently. The Veeam client never uses `HTTP_PROXY`/`HTTPS_PROXY`, which `setup-testbed-env.sh` points at the testbed gateway.
+
+Before the first test, the suite registers the testbed vCenter with Veeam by its PNID, using the vCenter administrator credentials, unless Veeam already manages it. After the last test it removes the registration and its credentials again, but only if it added them; an existing registration is never changed. A failed registration fails the tests.
+
 #### Focused Test Execution
 
 **Run specific test patterns**:
@@ -124,6 +134,8 @@ Tests are organized using Ginkgo labels for easy filtering:
 - `core-functional` - Core feature tests
 - `extended-functional` - Advanced feature tests
 - `experimental` - Excluded from all CI targets; requires infrastructure unavailable in the standard `vds_standard_medium` testbed (e.g. encryption-capable storage)
+- `backup-restore` - Backup/restore tests that need an external backup server. Run only by `make e2e-backup-restore` (and the matching CI suite); excluded from the smoke, core, and extended targets. While these tests also carry `experimental`, the `backup-restore` filter still selects them so they can be validated in their own suite.
+- `veeam` - The `backup-restore` tests that use Veeam Backup & Replication. They run in order and share one Veeam connection and vCenter registration.
 
 ## Configuration
 
@@ -143,6 +155,10 @@ The primary configuration is in `vmservice/config/wcp.yaml`:
 | `TEST_SKIP` | Ginkgo skip pattern | No skips | ✅ |
 | `LABEL_FILTER` | Ginkgo label filter | No filter | ✅ |
 | `FLAKE_ATTEMPTS` | Retry count for flaky tests | No retries | ✅ |
+| `VEEAM_SERVER` | Veeam B&R REST API: `host`, `host:port`, or `https://host:port` (port defaults to `9419`) | Unset (backup/restore tests skip) | ❌ |
+| `VEEAM_USERNAME` / `VEEAM_PASSWORD` | Veeam B&R credentials | Unset | ❌ |
+| `VEEAM_REPOSITORY` | Name of the backup repository the tests' jobs write to | First repository | ❌ |
+| `E2E_RUN_ID` | ID folded into the names of Veeam jobs (`vmop-e2e-<run-id>-<vm>`) so runs sharing a server don't collide | Random | ❌ |
 
 #### Namespace Management
 

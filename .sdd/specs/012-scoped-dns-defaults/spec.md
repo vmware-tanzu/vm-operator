@@ -17,7 +17,7 @@ The Supervisor defines default, "global" DNS nameservers and search domains in t
 - **Sysprep**: the default nameservers, and `spec.network.nameservers`, are written only to the global list. Windows DNS servers are configured per adapter, and GOSC documents the per-adapter list as the one Windows uses.
 - **VMs with no bootstrap provider**: Linux VMs without a bootstrap provider are customized with LinuxPrep. Since `6c4fbc485` (2024-03), which moved the DNS logic out of `DoBootstrap` so it could be reported in status, the operator decides whether search domains apply from the raw `spec.bootstrap`, as if these VMs used no GOSC engine at all. As a result, they receive the default search domains even though explicit LinuxPrep VMs never do. Before that change, implicit LinuxPrep counted as GOSC and did not receive them, and the v1alpha1 provider never set a GOSC suffix list at all.
 
-This feature adds a second mode, **Scoped**. In Scoped mode, DNS in the VM spec always wins, VM-level DNS is applied only to interfaces with a static IP address, and a global default is applied only to the VM's first interface, and only when that interface has a static IP address with a gateway and nothing in the VM spec provides its DNS. Nameservers are only applied to an interface when they match its IP families, and the default nameservers only when the interface has a gateway for their family, since they are often resolvers on other networks, such as `1.1.1.1`. The existing behavior remains available as **Legacy** mode.
+This feature adds a second mode, **Scoped**. In Scoped mode, DNS in the VM spec always wins, VM-level DNS is applied only to interfaces with a static IP address, and a global default is applied only to the VM's first interface, and only when that interface has a static IP address with a gateway and nothing in the VM spec provides its DNS. Nameservers are only applied to an interface when they match its IP families, and the default nameservers only when the interface has a gateway for their family, since they are often resolvers on other networks, such as `1.1.1.1`. Per-interface DNS from the network provider is treated like interface-level DNS. The existing behavior remains available as **Legacy** mode.
 
 ## Terminology
 
@@ -26,23 +26,25 @@ This feature adds a second mode, **Scoped**. In Scoped mode, DNS in the VM spec 
 | **Global defaults** | `nameservers` / `searchsuffixes` from the `vmoperator-network-config` ConfigMap in the VM Operator namespace. |
 | **VM-level DNS** | `spec.network.nameservers` / `spec.network.searchDomains`. |
 | **Interface-level DNS** | `spec.network.interfaces[i].nameservers` / `.searchDomains`. |
-| **Interface DNS** | An interface's interface-level DNS. Nameservers and search domains are resolved independently. |
+| **Provider DNS** | Nameservers / search domains for an interface reported by its network provider, such as a VPC SubnetPort. |
+| **Interface DNS** | An interface's interface-level DNS, or else its provider DNS. Nameservers and search domains are resolved independently. |
 | **Static interface** | An interface that has at least one static IP address, is not DHCPv4, is not DHCPv6, and whose network does not report NoIPAM. |
 | **Interface families** | The IP families of an interface's static IP addresses, plus IPv6 when the interface accepts Router Advertisements. |
 | **Gateway families** | IPv4 when the interface has a static IPv4 address with a gateway. IPv6 when it has a static IPv6 address with a gateway, or accepts Router Advertisements, which provide the default route. A gateway set to `None` does not count. |
 | **Family filter** | Keeping only the nameservers of the given families, in order. A nameserver that is not an IP address is kept. |
 | **Primary interface** | The VM's first interface in `spec.network.interfaces` order, when it is a static interface with at least one gateway family. Otherwise, for example when the first interface is DHCP or NoIPAM, or has no gateway, the VM has none. Later interfaces are never considered. This matches the vSphere GOSC primary adapter: the first adapter, when it has a static IP address and a static gateway. |
 | **TKG VM** | A VM carrying Cluster API labels (a VKS node). TKG VMs are always Linux, always use Cloud-Init, and their first interface is the node's primary interface. |
-| **Resolved global DNS** | The VM-level DNS, falling back to the global defaults. Exposed to bootstrap templates as `.Net.Nameservers`. |
+| **Resolved global DNS** | The global DNS (VM-level DNS, followed for LinuxPrep by the rolled-up provider DNS), falling back to the global defaults. Exposed to bootstrap templates as `.Net.Nameservers`. |
 
 ## Goals
 
 ### Precedence
 
-- **G0 (MUST)** — In Scoped mode, DNS from the VM spec always wins over the global defaults. For each interface, the order is: interface DNS, then VM-level DNS, then the global defaults. Each source is used only when no earlier source provides that value. Nameservers and search domains each fall back independently.
+- **G0 (MUST)** — In Scoped mode, DNS from the VM spec always wins over the global defaults. For each interface, the order is: interface DNS (interface-level, then provider), then VM-level DNS, then the global defaults. Each source is used only when no earlier source provides that value. Nameservers and search domains each fall back independently.
   - Interface DNS is applied to its interface however the interface is addressed, including DHCP and NoIPAM interfaces.
   - VM-level DNS is applied only to static interfaces. VM-level nameservers are filtered to each interface's families.
   - A global default is applied only to the primary interface, and only when the matching VM-level value is empty. The default nameservers are filtered to its gateway families. It is never applied to a DHCP or NoIPAM interface, or to any interface other than the primary one.
+- **G0a (MUST)** — In Scoped mode, provider DNS for an interface MUST be treated as that interface's interface-level DNS when the interface spec does not set its own. Where the bootstrap engine supports a value per interface, it is applied to that interface. Where the engine supports a value only globally, the interfaces' DNS MUST be rolled up into the global list: the VM-level values first, followed by each interface's DNS in interface order, without duplicates (G9, G11). Legacy mode MUST ignore provider DNS, so its output does not change when a provider starts to report it. [NEEDS CLARIFICATION: the SubnetPort API fields are not available yet; only the plumbing is done.]
 
 ### Mode selection
 
@@ -63,20 +65,20 @@ This feature adds a second mode, **Scoped**. In Scoped mode, DNS in the VM spec 
 
 ### Scoped mode: LinuxPrep (explicit or implicit)
 
-LinuxPrep supports DNS only globally, and a non-empty GOSC global DNS server list overrides the DNS servers from DHCP on every interface. The webhook rejects interface-level DNS with LinuxPrep.
+LinuxPrep supports DNS only globally, and a non-empty GOSC global DNS server list overrides the DNS servers from DHCP on every interface. The webhook rejects interface-level DNS with LinuxPrep, so the only interface DNS is provider DNS.
 
-- **G9 (MUST)** — The GOSC global DNS server list MUST be the VM-level nameservers. They are not family filtered. When there are none, it MUST be the global default nameservers, filtered to the primary interface's gateway families, when the VM has a primary interface. Only the first interface is considered: another interface that uses DHCP does not prevent the defaults, and receives them in place of its DHCP-provided DNS servers, as in Legacy mode. The GOSC global suffix list MUST be the VM-level search domains. The global default search domains are not applied, as with explicit LinuxPrep in Legacy mode, and with implicit LinuxPrep before `6c4fbc485`.
+- **G9 (MUST)** — The GOSC global DNS server list MUST be the VM-level nameservers followed by the interfaces' nameservers, rolled up per G0a. It is not family filtered. When it is empty, it MUST be the global default nameservers, filtered to the primary interface's gateway families, when the VM has a primary interface. Only the first interface is considered: another interface that uses DHCP does not prevent the defaults, and receives them in place of its DHCP-provided DNS servers, as in Legacy mode. The GOSC global suffix list MUST be the VM-level search domains followed by the interfaces' search domains, rolled up per G0a. The global default search domains are not applied, as with explicit LinuxPrep in Legacy mode, and with implicit LinuxPrep before `6c4fbc485`.
 
 ### Scoped mode: Sysprep
 
-Windows configures DNS servers per adapter, and does not use the GOSC global DNS server list. Its DNS suffix search list is global. A non-empty per-adapter DNS server list overrides the DNS servers from DHCP on that adapter.
+Windows configures DNS servers per adapter, and does not use the GOSC global DNS server list. Its DNS suffix search list is global. A non-empty per-adapter DNS server list overrides the DNS servers from DHCP on that adapter. The webhook rejects interface-level search domains with Sysprep, so the only interface search domains are provider search domains.
 
 - **G10 (MUST)** — The GOSC global DNS server list MUST be empty. Each adapter's interface nameservers MUST be applied to it, including on an adapter that uses DHCP, where they override DHCP. The VM-level nameservers MUST be applied to each static adapter that has no interface nameservers, filtered to that adapter's families. DHCP and NoIPAM adapters MUST NOT receive the VM-level nameservers, so a DHCP adapter keeps its DHCP-provided DNS servers unless it has interface nameservers.
-- **G11 (MUST)** — The primary adapter MUST get the global default nameservers, filtered to its gateway families, when `spec.network.nameservers` is empty and it has no interface nameservers. The GOSC global suffix list MUST be the VM-level search domains. The global default search domains are not applied, as in Legacy mode.
+- **G11 (MUST)** — The primary adapter MUST get the global default nameservers, filtered to its gateway families, when `spec.network.nameservers` is empty and it has no interface nameservers. The GOSC global suffix list MUST be the VM-level search domains followed by the adapters' search domains, rolled up per G0a. The global default search domains are not applied, as in Legacy mode.
 
 ### Scoped mode: status and templates
 
-- **G12 (MUST)** — The resolved nameservers provided to vAppConfig and Sysprep templates MUST be the resolved global DNS: the VM-level nameservers, falling back to the global defaults even when every interface has nameservers of its own, so existing templates that index `.Net.Nameservers` keep rendering.
+- **G12 (MUST)** — The resolved nameservers provided to vAppConfig and Sysprep templates MUST be the resolved global DNS: the VM-level nameservers (followed for LinuxPrep by the rolled-up interface nameservers), falling back to the global defaults even when every interface has nameservers of its own, so existing templates that index `.Net.Nameservers` keep rendering.
 - **G12a (MUST)** — Status MUST report only DNS that was applied:
   - For Cloud-Init, `status.network.config.dns` MUST report no nameservers or search domains, since netplan has no global DNS. For LinuxPrep, it MUST report the GOSC global lists that are applied. For Sysprep, it MUST report no nameservers, since the global DNS server list is not used, and the GOSC global suffix list that is applied.
   - When no bootstrap engine configures the guest network (vAppConfig only, no bootstrap provider, or bootstrap disabled), it MUST report the resolved global DNS, for users who configure the guest by hand.
@@ -108,12 +110,13 @@ Cloud-Init:
 - **Given** a Cloud-Init VM's DHCP interface sets interface-level nameservers, **when** it is deployed, **then** that interface carries them.
 - **Given** a Cloud-Init VM sets `useGlobalNameserversAsDefault: false` and its first interface is static with a gateway, **when** it is deployed, **then** the first interface carries the filtered global default nameservers.
 - **Given** a Cloud-Init VM has only DHCP or NoIPAM interfaces, **when** it is deployed, **then** no interface carries the global defaults or the VM-level DNS.
+- **Given** a Cloud-Init VM's first interface has provider nameservers and the VM sets `spec.network.nameservers`, **when** it is deployed, **then** the first interface carries the provider nameservers, and every other static interface without interface nameservers carries the VM-level nameservers.
 
 LinuxPrep:
 
-- **Given** a LinuxPrep VM's first interface is static with a gateway, a later interface uses DHCP, and the VM has no VM-level nameservers, **when** it is customized, **then** the GOSC global DNS server list contains the global default nameservers of the first interface's gateway families.
-- **Given** a LinuxPrep VM's first interface uses DHCP and the VM has no VM-level nameservers, **when** it is customized, **then** the GOSC global DNS server list is empty.
-- **Given** a LinuxPrep VM sets `spec.network.nameservers` and its first interface uses DHCP, **when** it is customized, **then** the GOSC global DNS server list contains the VM-level nameservers.
+- **Given** a LinuxPrep VM's first interface is static with a gateway, a later interface uses DHCP, and the VM has no VM-level or provider nameservers, **when** it is customized, **then** the GOSC global DNS server list contains the global default nameservers of the first interface's gateway families.
+- **Given** a LinuxPrep VM's first interface uses DHCP and the VM has no VM-level or provider nameservers, **when** it is customized, **then** the GOSC global DNS server list is empty.
+- **Given** a LinuxPrep VM sets `spec.network.nameservers` and its interfaces have provider nameservers, **when** it is customized, **then** the GOSC global DNS server list contains the VM-level nameservers followed by each interface's provider nameservers in interface order, without duplicates.
 
 Sysprep:
 
@@ -150,8 +153,10 @@ Status:
 - Resolved: the global defaults are not used when the matching VM-level value is set, even if family filtering leaves an interface without nameservers. The user chose the nameservers; to configure another family on an interface, they set interface-level nameservers.
 - Resolved: VM-level DNS is applied only to static interfaces, for Cloud-Init and Sysprep. To configure DNS on a DHCP or NoIPAM interface, users set interface-level DNS, which Cloud-Init and Sysprep (nameservers only) support.
 - Resolved: for LinuxPrep, only the first interface determines whether the defaults are applied, even though the global list also overrides DHCP on later DHCP interfaces, as it does in Legacy mode.
+- Resolved: provider DNS is treated like interface-level DNS, including on DHCP interfaces. For the global-only lists, it is rolled up after the VM-level values.
 - Resolved: `useGlobal*AsDefault: false` does not opt out of the global defaults. The knobs only control whether VM-level DNS is copied to interfaces, and the webhook already rejects VM-level DNS when the knob is false.
 - Resolved: deactivating the capability returns every VM to Legacy mode, including annotated VMs (G1). The annotation is kept, so a VM resumes its mode if the capability is reactivated. To return a `scoped` VM to Legacy mode while the capability is activated, an admin sets the annotation to `legacy`.
 - Resolved: Sysprep does not apply VM-level nameservers to DHCP adapters, since that would override DHCP. Interface-level nameservers on a DHCP adapter are applied, so users can still override DHCP explicitly.
+- Once SubnetPorts report DNS, the bootstrap of existing scoped VMs changes, which re-applies Cloud-Init guestinfo and re-customizes GOSC VMs without the latch. This needs a plan before it lands (T009b).
 - During the rollout, multi-NIC VKS clusters will mix DNS layouts: existing nodes stay `legacy` and new nodes are `scoped`, until every node is replaced.
 - Follow-up: the VirtualMachineReplicaSet controller copies its template's annotations onto the VMs it creates as a privileged account, so a DevOps user can set `vmoperator.vmware.com/dns-defaults` through a ReplicaSet template, bypassing G4. The same applies to other privileged annotations such as `first-boot-done`, so it is tracked separately.

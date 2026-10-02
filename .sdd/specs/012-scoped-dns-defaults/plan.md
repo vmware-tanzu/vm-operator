@@ -77,12 +77,23 @@ In Scoped mode, VM-level DNS is applied only to static interfaces:
 - **LinuxPrep**: applied to the GOSC global lists, unfiltered.
 - **Sysprep**: Windows does not use the GOSC global DNS server list, so the VM-level nameservers are copied to each static adapter without its own, filtered to its families, and the global list is left empty. A per-adapter list overrides DHCP, so DHCP adapters keep their DHCP DNS servers; interface-level nameservers on a DHCP adapter are still applied, which lets users override DHCP explicitly. VM-level search domains go to the global suffix list, since Windows search suffixes are global.
 
+### Network provider DNS
+
+`network.Bootstrap` gains `ProviderNameservers` / `ProviderSearchDomains`, to be set from the SubnetPort by `bootstrapFromVPC` once its API reports them. `InterfaceBootstrap` clears them when the interface spec sets its own DNS, and leaves `Nameservers` / `SearchDomains` alone, so Legacy mode ignores them. At the start of `applyScopedDNSDefaults`, they are copied into each interface's `Nameservers` / `SearchDomains`, so they are treated exactly like interface-level DNS, including on DHCP interfaces. The later steps then see the interface as having DNS, so the VM-level copy and the global defaults skip it.
+
+For the engines that support a value only globally, the interfaces' values are moved to the global list, after the VM-level values, in interface order and without duplicates, and cleared from the interfaces so status does not report them per interface:
+
+- **LinuxPrep**: nameservers and search domains.
+- **Sysprep**: search domains. Nameservers stay per adapter.
+
+The merged global lists replace the VM-level values in the conditions below: a non-empty merged list suppresses the global defaults. The template nameservers are the merged list, falling back to the ConfigMap.
+
 ### Global defaults
 
 The global defaults are applied only when the VM has a primary interface, and the default nameservers only of its gateway families:
 
 - **Cloud-Init**: the primary interface gets the filtered default nameservers only when `spec.network.nameservers` is empty and the interface has none of its own. `useGlobalNameserversAsDefault` keeps its documented meaning: it only controls whether the VM-level nameservers are copied to interfaces. For TKG VMs only, the default search domains follow the same rule: only when `spec.network.searchDomains` is empty and the interface has none of its own, regardless of `useGlobalSearchDomainsAsDefault`. Interface DNS on other interfaces does not prevent the default.
-- **LinuxPrep**: the global list gets the filtered default nameservers only when the VM-level value is empty. Only the first interface is considered: a later DHCP interface does not prevent the defaults, and GOSC uses them in place of its DHCP DNS servers, as in Legacy mode. The default search domains are not applied.
+- **LinuxPrep**: the global list gets the filtered default nameservers only when the merged global value (VM-level plus interfaces', see above) is empty. Only the first interface is considered: a later DHCP interface does not prevent the defaults, and GOSC uses them in place of its DHCP DNS servers, as in Legacy mode. The default search domains are not applied.
 - **Sysprep**: like Cloud-Init, the primary adapter gets the filtered default nameservers only when `spec.network.nameservers` is empty and the adapter has none of its own. The default search domains are not applied, as in Legacy mode; on Windows, a suffix search list replaces appending the primary and connection-specific DNS suffixes, which could break a domain-joined VM.
 
 As in Legacy mode, the default search domains apply only to TKG VMs, which use Cloud-Init, and never through GOSC. Unlike Legacy mode, they go only on the primary interface rather than every non-DHCP interface.
@@ -91,7 +102,7 @@ As in Legacy mode, the default search domains apply only to TKG VMs, which use C
 
 `BootstrapArgs.DNSServers`/`SearchSuffixes` previously did three jobs: GOSC global settings, template data, and status. Template data is now split out:
 
-- **`TemplateDNSServers`** holds the resolved nameservers used by templates. They are the VM-level nameservers, falling back to the ConfigMap. Unlike Legacy mode, the ConfigMap is read even when every interface has nameservers, so templates are not left without any.
+- **`TemplateDNSServers`** holds the resolved nameservers used by templates. They are the global nameservers (VM-level, merged with the interfaces' for LinuxPrep), falling back to the ConfigMap. Unlike Legacy mode, the ConfigMap is read even when every interface has nameservers, so templates are not left without any.
 - **`DNSServers`/`SearchSuffixes`** hold the global DNS configuration that is applied to the GOSC global IP settings and reported in status. In scoped mode:
   - for Cloud-Init, nothing: netplan has no global DNS, and Cloud-Init does not read these fields, so all DNS is reported per interface;
   - for LinuxPrep, the GOSC global lists, as described above;
@@ -130,6 +141,7 @@ In scoped mode, `status.network.config.dns` reports the global DNS described abo
   - scoped LinuxPrep, explicit and implicit: DHCP first, static then DHCP (defaults applied), first interface without a gateway, VM-level DNS;
   - scoped vAppConfig: status reports the resolved values;
   - scoped Sysprep: static first, DHCP first, VM-level nameservers on every static adapter, with an adapter's own nameservers kept, interface-level nameservers on a DHCP adapter applied, NoIPAM and other-family adapters (not applied), all-DHCP adapters (not applied or reported), VM-level search domains, interface-level nameservers on another adapter and on the first adapter;
+  - provider DNS: Cloud-Init (instead of the defaults and the VM's), LinuxPrep (merged in interface order without duplicates, also with DHCP), Sysprep (per adapter, including a DHCP adapter; search domains merged), vAppConfig templates.
 - Capability tests extended for the new key.
 - Webhook annotation tests extended for create, update and removal by a non-privileged user.
 - E2E (`Label("experimental")` until run on a real Supervisor): with the capability activated,

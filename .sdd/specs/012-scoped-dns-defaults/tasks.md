@@ -23,6 +23,8 @@
 - [x] T007 [vmop-TBD] Point templates at `TemplateDNSServers` (`bootstrap_templatedata.go` and its tests)
 - [x] T008 [vmop-TBD] Unit tests for `GetBootstrapArgs` (`pkg/providers/vsphere/vmlifecycle/bootstrap_test.go`)
 - [x] T009 [vmop-TBD] E2E: scoped Cloud-Init and LinuxPrep (`test/e2e/vmservice/vmservice/virtualmachine/vm_guestcustomization.go`, `test/e2e/vmservice/consts/consts.go`)
+- [x] T009a [vmop-TBD] Plumb network provider DNS: `Bootstrap.ProviderNameservers` / `ProviderSearchDomains`, treated like interface-level DNS only in Scoped mode, and merged into the global lists for LinuxPrep and Sysprep (`pkg/providers/vsphere/network/bootstrap.go`, `pkg/providers/vsphere/vmlifecycle/bootstrap.go`, and their tests)
+- [ ] T009b [vmop-TBD] Set the provider DNS from the SubnetPort in `bootstrapFromVPC` once its API is available. Before landing: decide how existing scoped VMs are protected from the resulting bootstrap hash change (re-applied Cloud-Init guestinfo, GOSC re-customization without the latch), for example by shipping it with the capability; update the scoped E2E expectations, which assume only the ConfigMap supplies DNS; and update `guest-net-config.md` and the API field docs for the provider precedence
 
 ## Phase Final — Polish
 

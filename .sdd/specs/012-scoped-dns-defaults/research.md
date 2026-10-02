@@ -58,7 +58,7 @@ Consequences:
 
 - With Cloud-Init, `useGlobal*AsDefault: false` can never be combined with VM-level DNS. In Legacy mode the knob therefore had no effect on the guest, and the global defaults were still applied.
 - Linux VMs with no bootstrap provider (implicit LinuxPrep) and vAppConfig-only VMs cannot set any DNS, so the global defaults are their only source. Adding `spec.bootstrap.linuxPrep` after creation is allowed.
-- Network providers never supply nameservers; interface DNS comes only from the spec.
+- Network providers do not supply nameservers yet. VPC SubnetPorts are expected to report nameservers and search domains per port; `Bootstrap.ProviderNameservers` / `ProviderSearchDomains` are plumbed for them (G0a).
 
 ## Netplan and DHCP
 

@@ -359,6 +359,10 @@ func useScopedDNSDefaults(ctx pkgctx.VirtualMachineContext) bool {
 // on other networks, are only applied for the IP families that the primary
 // interface has a gateway for.
 //
+// An interface's DNS configuration from the network provider, such as a VPC
+// SubnetPort, is treated as the interface's own DNS configuration unless the
+// interface spec specifies its own.
+//
 //   - CloudInit: each interface's own DNS configuration is applied to it. The
 //     VM-level DNS configuration is applied to each static interface that
 //     does not have its own, when the matching UseGlobal*AsDefault is unset
@@ -367,7 +371,8 @@ func useScopedDNSDefaults(ctx pkgctx.VirtualMachineContext) bool {
 //     its own. Search domains are handled the same, but only for TKG VMs.
 //   - LinuxPrep: DNS configuration is only global, and GOSC treats the global
 //     DNS servers as an override of the DNS servers from DHCP. The VM-level
-//     DNS configuration is applied globally. Otherwise, the Supervisor's
+//     DNS configuration is applied globally, followed by each interface's in
+//     interface order, without duplicates. Otherwise, the Supervisor's
 //     default nameservers are applied globally when the VM has a primary
 //     interface. The Supervisor's default search domains are not applied.
 //   - Sysprep: Windows does not use the global DNS servers, so nameservers
@@ -377,11 +382,12 @@ func useScopedDNSDefaults(ctx pkgctx.VirtualMachineContext) bool {
 //     the per-adapter list overrides the DNS servers from DHCP. The primary
 //     adapter gets the Supervisor's default nameservers when there are no
 //     VM-level nameservers and it does not have its own. Search suffixes are
-//     global: the VM-level search domains. The Supervisor's default search
+//     global: the VM-level search domains followed by each adapter's in
+//     adapter order, without duplicates. The Supervisor's default search
 //     domains are not applied.
 //
-// The nameservers made available to templates are the VM-level nameservers,
-// or else the Supervisor's defaults. The global DNS configuration is
+// The nameservers made available to templates are the global nameservers
+// above, or else the Supervisor's defaults. The global DNS configuration is
 // what the bootstrap engine applies globally, which is none for CloudInit, or
 // the resolved configuration when no bootstrap engine configures the guest's
 // network.
@@ -417,8 +423,40 @@ func applyScopedDNSDefaults( //nolint:gocyclo
 	vmNS, vmSS := bsa.DNSServers, bsa.SearchSuffixes
 	bootstraps := bsa.NetBootstraps
 
-	// globalNS and globalSS are the VM-level DNS configuration.
+	// The network provider's DNS configuration for an interface is treated
+	// as the interface's own. InterfaceBootstrap has already cleared it for
+	// an interface that specifies its own.
+	for i := range bootstraps {
+		b := &bootstraps[i]
+		if len(b.ProviderNameservers) > 0 {
+			b.Nameservers = b.ProviderNameservers
+		}
+		if len(b.ProviderSearchDomains) > 0 {
+			b.SearchDomains = b.ProviderSearchDomains
+		}
+	}
+
+	// globalNS and globalSS are the VM-level DNS configuration, followed by
+	// the interfaces' DNS configuration that the bootstrap engine only
+	// supports globally, in interface order and without duplicates.
 	globalNS, globalSS := vmNS, vmSS
+	switch {
+	case isLinuxPrep:
+		globalNS, globalSS = appendUnique(nil, vmNS...), appendUnique(nil, vmSS...)
+		for i := range bootstraps {
+			b := &bootstraps[i]
+			globalNS = appendUnique(globalNS, b.Nameservers...)
+			globalSS = appendUnique(globalSS, b.SearchDomains...)
+			b.Nameservers, b.SearchDomains = nil, nil
+		}
+	case isSysprep:
+		globalSS = appendUnique(nil, vmSS...)
+		for i := range bootstraps {
+			b := &bootstraps[i]
+			globalSS = appendUnique(globalSS, b.SearchDomains...)
+			b.SearchDomains = nil
+		}
+	}
 
 	// Apply the VM-level DNS configuration to each static interface that
 	// does not have its own. DNS configuration for a DHCP or NoIPAM
@@ -827,4 +865,14 @@ func getVimTypeHash(obj vimtypes.AnyType) (string, error) {
 	}
 	out := h.Sum(nil)
 	return fmt.Sprintf("%x", out), nil
+}
+
+// appendUnique appends each of values to dst that is not already in dst.
+func appendUnique(dst []string, values ...string) []string {
+	for _, v := range values {
+		if !slices.Contains(dst, v) {
+			dst = append(dst, v)
+		}
+	}
+	return dst
 }

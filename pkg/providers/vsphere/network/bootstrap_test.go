@@ -469,6 +469,41 @@ var _ = Describe("InterfaceBootstrap", func() {
 		})
 	})
 
+	Context("DNS from the network provider", func() {
+		BeforeEach(func() {
+			initial.ProviderNameservers = []string{"10.1.1.53"}
+			initial.ProviderSearchDomains = []string{"provider.local"}
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+				Nameservers:   []string{"1.1.1.1"},
+				SearchDomains: []string{"broadcom.net"},
+			}
+			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+			}
+		})
+
+		It("keeps the network provider's DNS", func() {
+			Expect(bootstrap.ProviderNameservers).To(HaveExactElements("10.1.1.53"))
+			Expect(bootstrap.ProviderSearchDomains).To(HaveExactElements("provider.local"))
+			Expect(bootstrap.Nameservers).To(BeEmpty())
+			Expect(bootstrap.SearchDomains).To(BeEmpty())
+		})
+
+		When("the interface spec specifies DNS", func() {
+			BeforeEach(func() {
+				interfaceSpec.Nameservers = []string{"9.9.9.9"}
+				interfaceSpec.SearchDomains = []string{"vmware.com"}
+			})
+
+			It("clears the network provider's DNS", func() {
+				Expect(bootstrap.ProviderNameservers).To(BeEmpty())
+				Expect(bootstrap.ProviderSearchDomains).To(BeEmpty())
+				Expect(bootstrap.Nameservers).To(HaveExactElements("9.9.9.9"))
+				Expect(bootstrap.SearchDomains).To(HaveExactElements("vmware.com"))
+			})
+		})
+	})
+
 	Context("SearchDomains", func() {
 		When("interfaceSpec.SearchDomains is set", func() {
 			BeforeEach(func() {

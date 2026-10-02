@@ -453,6 +453,9 @@ var _ = Describe("GetBootstrapArgs", func() {
 		specNameserver   = "192.168.0.53"
 		specSearchDomain = "spec.local"
 		ifaceNameserver  = "172.16.0.53"
+		provNameserver1  = "172.16.1.53"
+		provNameserver2  = "172.16.2.53"
+		provSearchDomain = "provider.local"
 	)
 
 	var (
@@ -508,6 +511,12 @@ var _ = Describe("GetBootstrapArgs", func() {
 	}
 	noIPAM := func() network.Bootstrap {
 		return network.Bootstrap{NoIPAM: true}
+	}
+	// withProviderDNS sets the DNS configuration from the network provider.
+	withProviderDNS := func(b network.Bootstrap, ns ...string) network.Bootstrap {
+		b.ProviderNameservers = ns
+		b.ProviderSearchDomains = []string{provSearchDomain}
+		return b
 	}
 
 	enableScoped := func() {
@@ -668,6 +677,22 @@ var _ = Describe("GetBootstrapArgs", func() {
 					}
 					Expect(bsa.NetBootstraps[3].Nameservers).To(Equal([]string{ifaceNameserver}))
 				})
+			})
+		})
+
+		When("an interface has DNS from the network provider", func() {
+			BeforeEach(func() {
+				bootstraps = []network.Bootstrap{withProviderDNS(static(), provNameserver1), static()}
+			})
+
+			It("ignores the network provider's DNS", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(bsa.NetBootstraps[0].Nameservers).To(Equal(cmNS))
+				Expect(bsa.NetBootstraps[0].SearchDomains).To(BeEmpty())
+				Expect(bsa.NetBootstraps[1].Nameservers).To(Equal(cmNS))
+				Expect(bsa.DNSServers).To(Equal(cmNS))
+				Expect(bsa.SearchSuffixes).To(Equal(cmSS))
+				Expect(bsa.TemplateDNSServers).To(Equal(cmNS))
 			})
 		})
 
@@ -1335,6 +1360,145 @@ var _ = Describe("GetBootstrapArgs", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(bsa.NetBootstraps[0].Nameservers).To(Equal([]string{ifaceNameserver}))
 					Expect(bsa.NetBootstraps[2].Nameservers).To(BeEmpty())
+				})
+			})
+		})
+
+		Context("DNS from the network provider", func() {
+			BeforeEach(func() {
+				bootstraps = []network.Bootstrap{
+					withProviderDNS(static(), provNameserver1),
+					static(),
+				}
+			})
+
+			When("the bootstrap provider is CloudInit", func() {
+				It("applies the network provider's DNS instead of the defaults", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(bsa.NetBootstraps[0].Nameservers).To(Equal([]string{provNameserver1}))
+					Expect(bsa.NetBootstraps[0].SearchDomains).To(Equal([]string{provSearchDomain}))
+					Expect(bsa.NetBootstraps[1].Nameservers).To(BeEmpty())
+					Expect(bsa.NetBootstraps[1].SearchDomains).To(BeEmpty())
+				})
+
+				When("the VM specifies DNS", func() {
+					BeforeEach(func() {
+						withVMNameservers()
+						withVMSearchDomains()
+					})
+
+					It("applies the network provider's DNS instead of the VM's", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsa.NetBootstraps[0].Nameservers).To(Equal([]string{provNameserver1}))
+						Expect(bsa.NetBootstraps[0].SearchDomains).To(Equal([]string{provSearchDomain}))
+						Expect(bsa.NetBootstraps[1].Nameservers).To(Equal([]string{specNameserver}))
+						Expect(bsa.NetBootstraps[1].SearchDomains).To(Equal([]string{specSearchDomain}))
+						Expect(bsa.DNSServers).To(BeEmpty())
+						Expect(bsa.SearchSuffixes).To(BeEmpty())
+					})
+				})
+			})
+
+			When("the bootstrap provider is LinuxPrep", func() {
+				BeforeEach(func() {
+					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+					}
+					bootstraps = append(bootstraps,
+						withProviderDNS(static(), provNameserver2, provNameserver1))
+				})
+
+				It("applies the interfaces' DNS globally in interface order without duplicates", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(bsa.DNSServers).To(Equal([]string{provNameserver1, provNameserver2}))
+					Expect(bsa.SearchSuffixes).To(Equal([]string{provSearchDomain}))
+					for i := range bsa.NetBootstraps {
+						Expect(bsa.NetBootstraps[i].Nameservers).To(BeEmpty())
+						Expect(bsa.NetBootstraps[i].SearchDomains).To(BeEmpty())
+					}
+					Expect(bsa.TemplateDNSServers).To(Equal([]string{provNameserver1, provNameserver2}))
+				})
+
+				When("the VM specifies DNS", func() {
+					BeforeEach(func() {
+						withVMNameservers()
+						withVMSearchDomains()
+					})
+
+					It("applies the VM's DNS first", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsa.DNSServers).To(Equal([]string{specNameserver, provNameserver1, provNameserver2}))
+						Expect(bsa.SearchSuffixes).To(Equal([]string{specSearchDomain, provSearchDomain}))
+					})
+				})
+
+				When("an interface uses DHCP", func() {
+					BeforeEach(func() {
+						bootstraps = append(bootstraps, dhcp())
+					})
+
+					It("still applies the interfaces' DNS globally", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsa.DNSServers).To(Equal([]string{provNameserver1, provNameserver2}))
+						Expect(bsa.SearchSuffixes).To(Equal([]string{provSearchDomain}))
+						for i := range bsa.NetBootstraps {
+							Expect(bsa.NetBootstraps[i].Nameservers).To(BeEmpty())
+						}
+					})
+				})
+			})
+
+			When("the bootstrap provider is vAppConfig and every interface has DNS from the network provider", func() {
+				BeforeEach(func() {
+					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+					}
+					bootstraps[1] = withProviderDNS(static(), provNameserver2)
+				})
+
+				It("still provides the default nameservers to templates", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(bsa.NetBootstraps[0].Nameservers).To(Equal([]string{provNameserver1}))
+					Expect(bsa.NetBootstraps[1].Nameservers).To(Equal([]string{provNameserver2}))
+					Expect(bsa.TemplateDNSServers).To(Equal(cmNS))
+					Expect(bsa.DNSServers).To(Equal(cmNS))
+				})
+			})
+
+			When("the bootstrap provider is Sysprep", func() {
+				BeforeEach(func() {
+					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+					}
+					guestID = string(vimtypes.VirtualMachineGuestOsIdentifierWindows9_64Guest)
+					withVMNameservers()
+					withVMSearchDomains()
+				})
+
+				It("applies the network provider's nameservers to the adapter and its search domains globally", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(bsa.NetBootstraps[0].Nameservers).To(Equal([]string{provNameserver1}))
+					Expect(bsa.NetBootstraps[1].Nameservers).To(Equal([]string{specNameserver}))
+					for i := range bsa.NetBootstraps {
+						Expect(bsa.NetBootstraps[i].SearchDomains).To(BeEmpty())
+					}
+					Expect(bsa.DNSServers).To(BeEmpty())
+					Expect(bsa.SearchSuffixes).To(Equal([]string{specSearchDomain, provSearchDomain}))
+				})
+
+				When("an adapter that uses DHCP has DNS from the network provider", func() {
+					BeforeEach(func() {
+						b := withProviderDNS(dhcp(), provNameserver2)
+						b.ProviderSearchDomains = []string{"dhcp.local"}
+						bootstraps = append(bootstraps, b)
+					})
+
+					It("applies it as the adapter's own DNS", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsa.NetBootstraps[0].Nameservers).To(Equal([]string{provNameserver1}))
+						Expect(bsa.NetBootstraps[2].Nameservers).To(Equal([]string{provNameserver2}))
+						Expect(bsa.SearchSuffixes).To(Equal([]string{specSearchDomain, provSearchDomain, "dhcp.local"}))
+					})
 				})
 			})
 		})

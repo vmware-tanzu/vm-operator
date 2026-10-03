@@ -41,6 +41,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 008 | [nic-unit-numbers](specs/008-nic-unit-numbers/) | NIC Unit Numbers | In Progress | vmop-3982 |
 | 009 | [virtualmachinereplicaset](specs/009-virtualmachinereplicaset/) | `VirtualMachineReplicaSet` Functional Test Coverage (`tds.md`/`test-plan.md` in place of `spec.md`/`plan.md`) | In Progress | vmop-1701 |
 | 010 | [veeam-e2e-backup-restore](specs/010-veeam-e2e-backup-restore/) | Use Veeam for Backup/Restore E2E Tests | In Progress | vmop-4013 |
+| 011 | [snapshot-disk-list](specs/011-snapshot-disk-list/) | Expose Disk List in VirtualMachineSnapshot (CSI Backup API) | In Review | vmop-52730 |
 
 ### Finding the right spec
 

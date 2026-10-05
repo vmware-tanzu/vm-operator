@@ -72,6 +72,7 @@ intervals:
   default/wait-virtual-machine-annotation-update: ["30s", "5s"]
   default/wait-virtual-machine-group-deletion: [ "60s", "5s" ]
   default/wait-virtual-machine-group-condition-update: [ "6m", "5s" ]
+  default/wait-virtual-machine-group-member-status: [ "60s", "5s" ]
   default/wait-virtual-machine-publish-request-creation: ["60s", "5s"]
   default/wait-virtual-machine-publish-request-condition: ["10m", "5s"]
   default/wait-virtual-machine-publish-request-upload-condition: ["20m", "5s"]

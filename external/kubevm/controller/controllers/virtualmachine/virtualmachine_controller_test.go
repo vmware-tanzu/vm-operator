@@ -135,6 +135,44 @@ var _ = Describe("Reconcile", func() {
 				g.Expect(obj.Status.Ready).To(BeTrue())
 			}).Should(Succeed())
 		})
+
+		It("mirrors a provider status change made after the generic object is ready", func() {
+			setStatus := func(powerState, address string) {
+				p := newStubProvider(providerNS, provider.GetName())
+				Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: providerNS, Name: provider.GetName()}, p)).To(Succeed())
+				addr := map[string]any{"interface": "eth0", "type": "InternalIP", "address": address}
+				Expect(unstructured.SetNestedSlice(p.Object, []any{addr}, "status", "addresses")).To(Succeed())
+				Expect(unstructured.SetNestedField(p.Object, powerState, "status", "powerState")).To(Succeed())
+				conditions := []any{
+					map[string]any{"type": "InfrastructureReady", "status": "True", "reason": "Reported", "message": ""},
+				}
+				Expect(unstructured.SetNestedSlice(p.Object, conditions, "status", "conditions")).To(Succeed())
+				Expect(k8sClient.Status().Update(ctx, p)).To(Succeed())
+			}
+
+			setStatus("PoweredOn", "10.0.0.9")
+			Eventually(func(g Gomega) {
+				obj := &kubevmv1a1.VirtualMachine{}
+				g.Expect(k8sClient.Get(ctx, vmKey, obj)).To(Succeed())
+				g.Expect(obj.Status.Ready).To(BeTrue())
+				g.Expect(obj.Status.PowerState).To(Equal(kubevmv1a1.PowerStateOn))
+			}).Should(Succeed())
+
+			// Ready, with an address: the core no longer polls. Only a
+			// watch on the provider object can carry this change over,
+			// since the generic object itself is not touched.
+			setStatus("PoweredOff", "10.0.0.10")
+			Eventually(func(g Gomega) {
+				obj := &kubevmv1a1.VirtualMachine{}
+				g.Expect(k8sClient.Get(ctx, vmKey, obj)).To(Succeed())
+				g.Expect(obj.Status.PowerState).To(Equal(kubevmv1a1.PowerStateOff))
+				g.Expect(obj.Status.Addresses).To(ConsistOf(kubevmv1a1.VirtualMachineAddress{
+					Interface: "eth0",
+					Type:      kubevmv1a1.VirtualMachineAddressInternalIP,
+					Address:   "10.0.0.10",
+				}))
+			}).Should(Succeed())
+		})
 	})
 
 	When("the reference is one-sided: the provider object does not name the generic object back", func() {

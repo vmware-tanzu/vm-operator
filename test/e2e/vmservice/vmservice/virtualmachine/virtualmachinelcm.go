@@ -682,6 +682,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
 			GuestID:          "ubuntu64Guest",
+			PowerOffMode:     "Hard",
 			Cdrom: []manifestbuilders.Cdrom{
 				{
 					Name:              "cdrom1",

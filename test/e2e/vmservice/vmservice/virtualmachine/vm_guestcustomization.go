@@ -399,7 +399,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		vmName                        string
 		configMapName                 string
 		secretName                    string
-		skipCleanup                   bool
 		vmServiceBackupRestoreEnabled bool
 		wcpClient                     wcp.WorkloadManagementAPI
 		vmParameters                  manifestbuilders.VirtualMachineYaml
@@ -460,6 +459,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		}
 
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+			input.WCPNamespaceName, vmName, false)
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 	}
 
@@ -467,6 +468,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
 
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+			input.WCPNamespaceName, vmName, false)
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 	}
 
@@ -537,25 +540,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		skipCleanup = false
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))
-	})
-
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, "vm")
-		}
-
-		if skipCleanup {
-			return
-		}
-
-		if CurrentSpecReport().State.String() != "skipped" {
-			// Delete the virtual machine
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).NotTo(HaveOccurred(), "failed to delete virtualmachine")
-			// Verify that virtual machine does not exist
-			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		}
 	})
 
 	Context("CloudInit", func() {
@@ -895,24 +880,10 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			// dual-stack IPAM via ipamModes, letting the IPv6 template
 			// functions exercise a real IPv6 address end-to-end instead of
 			// only ever having IPv4 to work with.
-			//
-			// This Context manages its own VM lifecycle (skipCleanup=true
-			// bypasses the shared, YAML-based AfterEach above, which has no
-			// YAML to delete here).
 			var vm *vmopv1.VirtualMachine
 
 			BeforeEach(func() {
 				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.WorkloadIPv6CapabilityName)
-				skipCleanup = true
-				vm = nil
-			})
-
-			AfterEach(func() {
-				if vm == nil || CurrentSpecReport().State.String() == "skipped" {
-					return
-				}
-				Expect(svClusterClient.Delete(ctx, vm)).To(Succeed(), "failed to delete virtualmachine")
-				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			})
 
 			// Reuse the same OVF image and property keys across all three
@@ -935,6 +906,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "10.0.0.0/24" }}`),
 				}
 				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+					vm.Namespace, vm.Name, false)
 				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -953,6 +926,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "2001:db8::/64" }}`),
 				}
 				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+					vm.Namespace, vm.Name, false)
 				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -971,6 +946,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("string-empty", `{{ `+constants.V1alpha6FormatIP+` "192.168.1.10/24" "/16" }}`),
 				}
 				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
+				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+					vm.Namespace, vm.Name, false)
 				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -1022,12 +999,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				vmName = input.WindowsServerVMName
 				Expect(vmName).ToNot(BeEmpty())
 
-				// Set vmYaml so the VM gets cleaned up.
-				vmParameters = manifestbuilders.VirtualMachineYaml{
-					Name:      vmName,
-					Namespace: input.WCPNamespaceName,
-				}
-				vmYaml = manifestbuilders.GetVirtualMachineYaml(vmParameters)
+				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+					input.WCPNamespaceName, vmName, false)
 
 				verifyWindowsVMDeployed(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			})
@@ -1039,12 +1012,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				vmName = input.WindowsInlineServerVMName
 				Expect(vmName).ToNot(BeEmpty())
 
-				// Set vmYaml so the VM gets cleaned up.
-				vmParameters = manifestbuilders.VirtualMachineYaml{
-					Name:      vmName,
-					Namespace: input.WCPNamespaceName,
-				}
-				vmYaml = manifestbuilders.GetVirtualMachineYaml(vmParameters)
+				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+					input.WCPNamespaceName, vmName, false)
 
 				verifyWindowsVMDeployed(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			})

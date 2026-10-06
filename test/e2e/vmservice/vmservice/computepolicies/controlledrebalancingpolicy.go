@@ -19,7 +19,6 @@ import (
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -56,7 +55,6 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		tagCategoryID   string
 
 		vmName     string
-		vm         *vmopv1.VirtualMachine
 		matchLabel map[string]string
 
 		rebalancingPolicy   *vspherepolv1.ControlledRebalancingPolicy
@@ -115,16 +113,12 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		matchLabel = map[string]string{
 			"vmoperator.vmware.com/e2e-controlled-rebalancing-test": capiutil.RandomString(6),
 		}
-		vm = nil
 		rebalancingPolicy = nil
 	})
 
 	AfterEach(func() {
 		if rebalancingPolicy != nil {
 			_ = adminClient.Delete(ctx, rebalancingPolicy)
-		}
-		if vm != nil {
-			vmoperator.DeleteVirtualMachineAndWait(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 		}
 	})
 
@@ -144,7 +138,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 			}
 
 			By("Creating a VM matching the policy's label selector")
-			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM's status.policies and the real vSphere tag assignment")
@@ -177,7 +171,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 				vspherepolv1.PolicyEnforcementModeMandatory, nonMatchingLabel, tagID)
 
 			By("Creating a VM that does not match the policy yet")
-			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM does not have the policy applied yet")
@@ -220,7 +214,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, tagID)
 
 			By("Creating a VM that explicitly references the policy and matches its label selector")
-			vm = createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
+			createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
 				explicitPolicyRef(controlledRebalancingPolicyKind, rebalancingPolicy.Name))
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
@@ -251,7 +245,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 				vspherepolv1.PolicyEnforcementModeOptional, nonMatchingLabel, tagID)
 
 			By("Creating a VM that explicitly references the non-matching policy")
-			vm = createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
+			createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
 				explicitPolicyRef(controlledRebalancingPolicyKind, rebalancingPolicy.Name))
 
 			By("Verifying the VM's PolicyEvaluation reports a not-ready error naming the non-matching policy")
@@ -273,7 +267,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID1)
 
 			By("Creating a VM matching the policy's label selector")
-			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM has the first tag assigned")
@@ -325,7 +319,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID)
 
 			By("Creating a VM matching the policy's label selector")
-			vm = createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
+			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
 			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM has the tag and policy assigned before deletion")

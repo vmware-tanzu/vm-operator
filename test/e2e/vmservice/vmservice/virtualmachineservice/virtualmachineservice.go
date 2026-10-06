@@ -83,29 +83,31 @@ func VirtualMachineServiceSpec(ctx context.Context, inputGetter func() SpecInput
 		vmServiceName = fmt.Sprintf("%s-%s", specName, suffix)
 		selectorKey = fmt.Sprintf("%s-selector", vmServiceName)
 		vmNames = []string{fmt.Sprintf("%s-vm1", vmServiceName), fmt.Sprintf("%s-vm2", vmServiceName)}
-	})
 
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmServiceName, virtualMachineServiceKind)
+		kubeconfigPath := clusterProxy.GetKubeconfigPath()
+		dumps := []vmoperator.DumpFunc{
+			vmoperator.DescribeResource(kubeconfigPath, virtualMachineServiceKind, input.WCPNamespaceName, vmServiceName),
+		}
+		for _, vmName := range vmNames {
+			dumps = append(dumps,
+				vmoperator.DescribeResource(kubeconfigPath, virtualMachineKind, input.WCPNamespaceName, vmName))
+		}
+
+		vmoperator.DeferCleanupWithDumpOnFailure(func(ctx context.Context) {
+			Expect(ctrlclient.IgnoreNotFound(svClusterClient.Delete(ctx, &vmopv1.VirtualMachineService{
+				ObjectMeta: metav1.ObjectMeta{Name: vmServiceName, Namespace: input.WCPNamespaceName},
+			}))).To(Succeed(), "failed to delete VirtualMachineService")
+
 			for _, vmName := range vmNames {
-				vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, virtualMachineKind)
+				Expect(ctrlclient.IgnoreNotFound(svClusterClient.Delete(ctx, &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: input.WCPNamespaceName},
+				}))).To(Succeed(), "failed to delete VirtualMachine %q", vmName)
 			}
-		}
 
-		Expect(ctrlclient.IgnoreNotFound(svClusterClient.Delete(ctx, &vmopv1.VirtualMachineService{
-			ObjectMeta: metav1.ObjectMeta{Name: vmServiceName, Namespace: input.WCPNamespaceName},
-		}))).To(Succeed(), "failed to delete VirtualMachineService")
-
-		for _, vmName := range vmNames {
-			Expect(ctrlclient.IgnoreNotFound(svClusterClient.Delete(ctx, &vmopv1.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: input.WCPNamespaceName},
-			}))).To(Succeed(), "failed to delete VirtualMachine %q", vmName)
-		}
-
-		for _, vmName := range vmNames {
-			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		}
+			for _, vmName := range vmNames {
+				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			}
+		}, dumps...)
 	})
 
 	It("Should remove a VM from VirtualMachineService Endpoints once it no longer matches the selector", Label("core-functional", "experimental"), func() {

@@ -105,6 +105,9 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 		DeferCleanup(cancelPodWatches)
 
 		vmName = fmt.Sprintf("source-%s", capiutil.RandomString(4))
+		// Packer owns the source VM's lifecycle, so only describe it on failure.
+		vmoperator.DeferCleanupWithDumpOnFailure(nil,
+			vmoperator.DescribeResource(kubeconfigPath, "vm", input.WCPNamespaceName, vmName))
 		vmiObjName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, k8sClient, input.WCPNamespaceName, ubuntuImageName)
 
 		vmiName = vmiObjName
@@ -159,12 +162,6 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 				"publish_location_name": "",
 				"publish_image_name":    "",
 			},
-		}
-	})
-
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, k8sClient, kubeconfigPath, input.WCPNamespaceName, vmName, "vm")
 		}
 	})
 

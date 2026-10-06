@@ -31,6 +31,7 @@ import (
 	e2etestingmanifests "k8s.io/kubernetes/test/e2e/testing-manifests"
 	testfixtures "k8s.io/kubernetes/test/fixtures"
 	capiutil "sigs.k8s.io/cluster-api/util"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -360,6 +361,19 @@ func createWCPNamespaceCtx(ctx context.Context, name, clName, vmClassName, stora
 	return wcpNamespaceCtx
 }
 
+// deferCleanupSuiteVM registers a DeferCleanup that unconditionally deletes a
+// VM precreated during suite setup, if it exists. Unlike the per-spec cleanup
+// in the specs that consume the VM, this does not depend on any spec having
+// run or failed, so the VM is removed even if every spec that would have used
+// it is skipped or never starts.
+func deferCleanupSuiteVM(client ctrlclient.Client, ns, vmName string) {
+	GinkgoHelper()
+
+	vmoperator.DeferCleanupWithDumpOnFailure(func(ctx context.Context) {
+		vmoperator.DeleteVirtualMachineAndWait(ctx, config, client, ns, vmName)
+	})
+}
+
 // deployWindowsVMWithSysprep deploys a Windows VM with the minimal Sysprep config passed.
 func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string) {
 	vmsvcClusterProxy := svClusterProxy.(*common.VMServiceClusterProxy)
@@ -393,6 +407,7 @@ func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string)
 		PowerState:       "poweredOn",
 		PowerOffMode:     "Hard",
 	}
+	deferCleanupSuiteVM(vmsvcClusterProxy.GetClient(), ns, vmName)
 	vmYaml := manifestbuilders.GetVirtualMachineYaml(vmParameters)
 	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Windows VM", string(vmYaml))
 }
@@ -448,6 +463,7 @@ func deployWindowsVMWithInlineSysprep(ctx context.Context, ns, vmName, vmiName s
 			},
 		},
 	}
+	deferCleanupSuiteVM(vmsvcClusterProxy.GetClient(), ns, vmName)
 	vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Windows VM with inline Sysprep", string(vmYaml))
 }

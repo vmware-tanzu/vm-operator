@@ -1233,7 +1233,13 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			Expect(restoredVol).ToNot(BeNil())
 
-			findDisk(Default, restoredVol.PersistentVolumeClaim.ClaimName, true)
+			// RegisterVM returns once the restored volume is added to spec.volumes,
+			// but vm-operator and CNS attach it to the vSphere VM asynchronously
+			// afterward, so wait for the disk to show up on the VM.
+			By("Waiting for the restored disk to be attached to the VM")
+			Eventually(func(g Gomega) {
+				findDisk(g, restoredVol.PersistentVolumeClaim.ClaimName, true)
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
 
 			dir = path.Dir(datastorePath.Path)
 			Expect(dir).To(Equal(vmHome))

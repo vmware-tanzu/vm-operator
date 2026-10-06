@@ -89,9 +89,17 @@ func WaitForVirtualMachineConditionCreated(ctx context.Context, config *config.E
 
 // WaitForVirtualMachineImageCacheReady waits for VirtualMachineConditionImageCacheReady to become True.
 // This is needed for ISO-type images whose content library files must be cached on the datastore.
-func WaitForVirtualMachineImageCacheReady(ctx context.Context,
+func WaitForVirtualMachineImageCacheReady(
+	ctx context.Context,
 	config *config.E2EConfig,
-	client ctrlclient.Client, ns, vmName string) {
+	client ctrlclient.Client, ns, vmName string,
+	optSpec ...string) {
+
+	spec := "default"
+	if len(optSpec) > 0 && optSpec[0] != "" {
+		spec = optSpec[0]
+	}
+
 	By("Waiting for VirtualMachine image cache to be ready")
 
 	Eventually(func(g Gomega) {
@@ -103,7 +111,7 @@ func WaitForVirtualMachineImageCacheReady(ctx context.Context,
 			"VirtualMachineConditionImageCacheReady condition not yet present on VM %s/%s", ns, vmName)
 		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
 			"VirtualMachineConditionImageCacheReady is %s: %s", cond.Status, cond.Message)
-	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).
+	}, config.GetIntervals(spec, "wait-virtual-machine-image-creation")...).
 		Should(Succeed(), "Timed out waiting for VirtualMachine %s/%s image cache to be ready", ns, vmName)
 }
 
@@ -171,7 +179,12 @@ func intervalDurations(intervals []any) (timeout, poll time.Duration) {
 
 // hasVirtualMachineIP polls, without failing the spec, whether the
 // VirtualMachine has an IPv4 address within the given timeout.
-func hasVirtualMachineIP(ctx context.Context, svClusterClient ctrlclient.Client, ns, vmName string, timeout, poll time.Duration) bool {
+func hasVirtualMachineIP(
+	ctx context.Context,
+	svClusterClient ctrlclient.Client,
+	ns, vmName string,
+	timeout, poll time.Duration) bool {
+
 	err := wait.PollUntilContextTimeout(ctx, poll, timeout, true, func(ctx context.Context) (bool, error) {
 		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
 		if err != nil {
@@ -179,9 +192,11 @@ func hasVirtualMachineIP(ctx context.Context, svClusterClient ctrlclient.Client,
 			return false, nil
 		}
 
-		return vm.Status.Network != nil &&
-			vm.Status.Network.PrimaryIP4 != "" &&
-			net.ParseIP(vm.Status.Network.PrimaryIP4).To4() != nil, nil
+		if vm.Status.Network == nil || vm.Status.Network.PrimaryIP4 == "" {
+			return false, nil
+		}
+
+		return net.ParseIP(vm.Status.Network.PrimaryIP4) != nil, nil
 	})
 	return err == nil
 }
@@ -190,8 +205,19 @@ func hasVirtualMachineIP(ctx context.Context, svClusterClient ctrlclient.Client,
 // first wait times out and disk promotion has started for this VM, that is
 // a plausible cause (promotion can reset guest networking), so it waits for
 // promotion to finish and checks the IP once more.
-func WaitForVirtualMachineIP(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
-	ipTimeout, ipPoll := intervalDurations(config.GetIntervals("default", "wait-virtual-machine-vmip"))
+func WaitForVirtualMachineIP(
+	ctx context.Context,
+	config *config.E2EConfig,
+	svClusterClient ctrlclient.Client,
+	ns, vmName string,
+	optSpec ...string) {
+
+	spec := "default"
+	if len(optSpec) > 0 && optSpec[0] != "" {
+		spec = optSpec[0]
+	}
+
+	ipTimeout, ipPoll := intervalDurations(config.GetIntervals(spec, "wait-virtual-machine-vmip"))
 
 	By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", ns, vmName))
 	if hasVirtualMachineIP(ctx, svClusterClient, ns, vmName, ipTimeout, ipPoll) {

@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
@@ -127,8 +128,14 @@ var _ = Describe("VolumeInfo.BootDiskPVCName", func() {
 	BeforeEach(func() {
 		info = pkgvol.VolumeInfo{
 			Disks: []pkgvol.VirtualDiskInfo{
-				{Target: bootTarget},
-				{Target: dataTarget},
+				{
+					VirtualDiskInfo: pkgutil.VirtualDiskInfo{Device: &vimtypes.VirtualDisk{}},
+					Target:          bootTarget,
+				},
+				{
+					VirtualDiskInfo: pkgutil.VirtualDiskInfo{Device: &vimtypes.VirtualDisk{}},
+					Target:          dataTarget,
+				},
 			},
 			Volumes: map[string]*vmopv1.VirtualMachineVolume{},
 		}
@@ -148,7 +155,7 @@ var _ = Describe("VolumeInfo.BootDiskPVCName", func() {
 		Expect(info.BootDiskPVCName()).To(BeEmpty())
 	})
 
-	It("should return the claim name of the first disk's volume", func() {
+	It("should return the claim name of the boot disk's volume", func() {
 		info.Volumes[bootTarget.String()] = vol
 		Expect(info.BootDiskPVCName()).To(Equal("my-boot-pvc"))
 	})

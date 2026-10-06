@@ -181,7 +181,7 @@ func (r reconciler) Reconcile(
 	logger.V(4).Info("Finding candidates for disk promotion")
 
 	if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
-		if bootDiskPendingExtend(vm, moVM) != nil {
+		if bootDiskAwaitingPromotion(vm, moVM) != nil {
 			// The boot disk cannot be extended until it is promoted.
 			pkgcond.MarkFalse(
 				vm,
@@ -317,7 +317,7 @@ func (r reconciler) Reconcile(
 		// cannot be extended while it has a parent. If the VM has not booted
 		// yet, promote just the boot disk now instead of waiting for the VM to
 		// be powered on, so the guest boots with the requested capacity.
-		bootDisk := bootDiskPendingExtend(vm, moVM)
+		bootDisk := bootDiskAwaitingPromotion(vm, moVM)
 		bootExtendBeforeFirstBoot := bootDisk != nil &&
 			moVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOff &&
 			vm.Annotations[vmopv1.FirstBootDoneAnnotation] == ""
@@ -377,36 +377,17 @@ func (r reconciler) Reconcile(
 	return promoteChildDisks(ctx, vimClient, vm, moVM, childDisks)
 }
 
-// bootDiskPendingExtend returns the VM's boot disk if
-// spec.advanced.bootDiskCapacity extends it and it still has a parent. Like the
-// boot disk resize, it assumes the first disk is the boot disk.
-func bootDiskPendingExtend(
+// bootDiskAwaitingPromotion returns the VM's boot disk if
+// spec.advanced.bootDiskCapacity extends it and it is a linked clone.
+func bootDiskAwaitingPromotion(
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine) *vimtypes.VirtualDisk {
 
-	if vm.Spec.Advanced == nil ||
-		vm.Spec.Advanced.BootDiskCapacity == nil ||
-		vm.Spec.Advanced.BootDiskCapacity.IsZero() ||
-		moVM.Config == nil {
-
+	if moVM.Config == nil {
 		return nil
 	}
-
-	devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
-	allDisks := devices.SelectByType(&vimtypes.VirtualDisk{})
-	if len(allDisks) == 0 {
-		return nil
-	}
-
-	bootDisk := allDisks[0].(*vimtypes.VirtualDisk)
-	if bootDisk.VDiskId != nil ||
-		vm.Spec.Advanced.BootDiskCapacity.Value() <= bootDisk.CapacityInBytes ||
-		!pkgutil.GetVirtualDiskInfo(bootDisk).HasParent {
-
-		return nil
-	}
-
-	return bootDisk
+	return pkgutil.GetBootDiskAwaitingPromotion(
+		vm, moVM.Config.Hardware.Device, moVM.LayoutEx)
 }
 
 // promoteChildDisks starts a task that promotes the given child disks.

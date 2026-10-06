@@ -53,14 +53,36 @@ type VolumeInfo struct {
 	Volumes map[string]*vmopv1.VirtualMachineVolume
 }
 
+// BootDisk returns the VM's boot disk, or nil if the VM has no disks.
+func (i VolumeInfo) BootDisk() *VirtualDiskInfo {
+	devices := make([]vimtypes.BaseVirtualDevice, 0, len(i.Disks))
+	for j := range i.Disks {
+		if i.Disks[j].Device != nil {
+			devices = append(devices, i.Disks[j].Device)
+		}
+	}
+
+	bootDisk := pkgutil.GetBootDisk(devices)
+	if bootDisk == nil {
+		return nil
+	}
+
+	for j := range i.Disks {
+		if i.Disks[j].Device == bootDisk {
+			return &i.Disks[j]
+		}
+	}
+	return nil
+}
+
 // BootDiskPVCName returns the name of the PVC that backs the VM's boot disk,
-// or an empty string if the boot disk does not have a PVC yet. Like the boot
-// disk resize, it assumes the first disk is the boot disk.
+// or an empty string if the boot disk does not have a PVC yet.
 func (i VolumeInfo) BootDiskPVCName() string {
-	if len(i.Disks) == 0 {
+	bootDisk := i.BootDisk()
+	if bootDisk == nil {
 		return ""
 	}
-	vol := i.Volumes[i.Disks[0].Target.String()]
+	vol := i.Volumes[bootDisk.Target.String()]
 	if vol == nil || vol.PersistentVolumeClaim == nil {
 		return ""
 	}

@@ -724,3 +724,83 @@ func BuildHardwareInfo(moVM mo.VirtualMachine) HardwareInfo {
 
 	return hwInfo
 }
+
+// GetBootDisk returns the VM's boot disk, or nil if the VM has no disks. Like
+// the boot disk resize, it assumes the first disk is the boot disk.
+func GetBootDisk(
+	devices []vimtypes.BaseVirtualDevice) *vimtypes.VirtualDisk {
+
+	for _, d := range devices {
+		if disk, ok := d.(*vimtypes.VirtualDisk); ok {
+			return disk
+		}
+	}
+	return nil
+}
+
+// GetRequestedBootDiskCapacity returns spec.advanced.bootDiskCapacity in bytes,
+// or zero if it is not set. It also returns zero for an ISO VM with CD-ROMs,
+// since the disks of such a VM are PVCs that the user sizes.
+func GetRequestedBootDiskCapacity(vm *vmopv1.VirtualMachine) int64 {
+	if vm.Spec.Advanced == nil || vm.Spec.Advanced.BootDiskCapacity == nil {
+		return 0
+	}
+	if hw := vm.Spec.Hardware; hw != nil && len(hw.Cdrom) > 0 {
+		return 0
+	}
+	return vm.Spec.Advanced.BootDiskCapacity.Value()
+}
+
+// GetDiskCapacityInBytes returns the capacity of the disk in bytes.
+func GetDiskCapacityInBytes(disk *vimtypes.VirtualDisk) int64 {
+	if disk.CapacityInBytes != 0 {
+		return disk.CapacityInBytes
+	}
+	return disk.CapacityInKB * 1024
+}
+
+// IsLinkedCloneDisk returns true if the disk has a parent that is not the
+// result of a snapshot, ie. the disk is a linked clone that can be promoted.
+func IsLinkedCloneDisk(
+	disk *vimtypes.VirtualDisk,
+	layoutEx *vimtypes.VirtualMachineFileLayoutEx) bool {
+
+	if !GetVirtualDiskInfo(disk).HasParent {
+		return false
+	}
+	if layoutEx != nil {
+		for _, snap := range layoutEx.Snapshot {
+			for _, d := range snap.Disk {
+				if d.Key == disk.Key {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// GetBootDiskAwaitingPromotion returns the VM's boot disk if
+// spec.advanced.bootDiskCapacity extends it and it is a linked clone, which
+// cannot be extended until it is promoted.
+func GetBootDiskAwaitingPromotion(
+	vm *vmopv1.VirtualMachine,
+	devices []vimtypes.BaseVirtualDevice,
+	layoutEx *vimtypes.VirtualMachineFileLayoutEx) *vimtypes.VirtualDisk {
+
+	capacity := GetRequestedBootDiskCapacity(vm)
+	if capacity == 0 {
+		return nil
+	}
+
+	disk := GetBootDisk(devices)
+	if disk == nil ||
+		disk.VDiskId != nil ||
+		capacity <= GetDiskCapacityInBytes(disk) ||
+		!IsLinkedCloneDisk(disk, layoutEx) {
+
+		return nil
+	}
+
+	return disk
+}

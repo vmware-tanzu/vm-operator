@@ -272,10 +272,7 @@ func ensureBootDiskPVCCapacity(
 	vm *vmopv1.VirtualMachine,
 	info pkgvol.VolumeInfo) error {
 
-	if vm.Spec.Advanced == nil ||
-		vm.Spec.Advanced.BootDiskCapacity == nil ||
-		vm.Spec.Advanced.BootDiskCapacity.IsZero() {
-
+	if pkgutil.GetRequestedBootDiskCapacity(vm) == 0 {
 		return nil
 	}
 

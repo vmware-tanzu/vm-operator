@@ -661,25 +661,21 @@ func fastDeployDirectCopyDisks(
 }
 
 // isBootDiskExtended returns true if the VM requests a boot disk capacity that
-// is larger than the capacity of the image's boot disk. Like the resize in
-// updateVirtualDiskDeviceChanges(), it assumes the first disk is the boot disk.
+// is larger than the capacity of the image's boot disk.
 func isBootDiskExtended(
 	vm *vmopv1.VirtualMachine,
 	disks []*vimtypes.VirtualDisk) bool {
 
-	if len(disks) == 0 || vm.Spec.Advanced == nil {
+	capacity := pkgutil.GetRequestedBootDiskCapacity(vm)
+	if capacity == 0 || len(disks) == 0 {
 		return false
 	}
 
-	capacity := vm.Spec.Advanced.BootDiskCapacity
-	if capacity == nil || capacity.IsZero() {
-		return false
+	devices := make([]vimtypes.BaseVirtualDevice, len(disks))
+	for i := range disks {
+		devices[i] = disks[i]
 	}
 
-	imageCapacity := disks[0].CapacityInBytes
-	if imageCapacity == 0 {
-		imageCapacity = disks[0].CapacityInKB * 1024
-	}
-
-	return capacity.Value() > imageCapacity
+	bootDisk := pkgutil.GetBootDisk(devices)
+	return bootDisk != nil && capacity > pkgutil.GetDiskCapacityInBytes(bootDisk)
 }

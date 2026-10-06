@@ -53,6 +53,20 @@ type VolumeInfo struct {
 	Volumes map[string]*vmopv1.VirtualMachineVolume
 }
 
+// BootDiskPVCName returns the name of the PVC that backs the VM's boot disk,
+// or an empty string if the boot disk does not have a PVC yet. Like the boot
+// disk resize, it assumes the first disk is the boot disk.
+func (i VolumeInfo) BootDiskPVCName() string {
+	if len(i.Disks) == 0 {
+		return ""
+	}
+	vol := i.Volumes[i.Disks[0].Target.String()]
+	if vol == nil || vol.PersistentVolumeClaim == nil {
+		return ""
+	}
+	return vol.PersistentVolumeClaim.ClaimName
+}
+
 // FilterOutEmptyUUIDOrFilename returns only the disks that have non-empty UUIDs
 // and filenames.
 func FilterOutEmptyUUIDOrFilename(disks ...VirtualDiskInfo) []VirtualDiskInfo {

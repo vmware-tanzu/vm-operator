@@ -13,6 +13,7 @@ import (
 
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -95,6 +96,61 @@ var _ = Describe("GetVolumeInfoFrom", func() {
 			Expect(fn).To(PanicWith(
 				"disk at device index 2 missing unit number"))
 		})
+	})
+})
+
+var _ = Describe("VolumeInfo.BootDiskPVCName", func() {
+	var (
+		info pkgvol.VolumeInfo
+		vol  = &vmopv1.VirtualMachineVolume{
+			Name: "boot",
+			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "my-boot-pvc",
+					},
+				},
+			},
+		}
+		bootTarget = vmopv1util.TargetID{
+			ControllerType: vmopv1.VirtualControllerTypeSCSI,
+			ControllerBus:  0,
+			UnitNumber:     0,
+		}
+		dataTarget = vmopv1util.TargetID{
+			ControllerType: vmopv1.VirtualControllerTypeSCSI,
+			ControllerBus:  0,
+			UnitNumber:     1,
+		}
+	)
+
+	BeforeEach(func() {
+		info = pkgvol.VolumeInfo{
+			Disks: []pkgvol.VirtualDiskInfo{
+				{Target: bootTarget},
+				{Target: dataTarget},
+			},
+			Volumes: map[string]*vmopv1.VirtualMachineVolume{},
+		}
+	})
+
+	It("should return an empty string if there are no disks", func() {
+		Expect(pkgvol.VolumeInfo{}.BootDiskPVCName()).To(BeEmpty())
+	})
+
+	It("should return an empty string if the boot disk has no volume", func() {
+		info.Volumes[dataTarget.String()] = vol
+		Expect(info.BootDiskPVCName()).To(BeEmpty())
+	})
+
+	It("should return an empty string if the boot disk volume has no PVC", func() {
+		info.Volumes[bootTarget.String()] = &vmopv1.VirtualMachineVolume{Name: "boot"}
+		Expect(info.BootDiskPVCName()).To(BeEmpty())
+	})
+
+	It("should return the claim name of the first disk's volume", func() {
+		info.Volumes[bootTarget.String()] = vol
+		Expect(info.BootDiskPVCName()).To(Equal("my-boot-pvc"))
 	})
 })
 

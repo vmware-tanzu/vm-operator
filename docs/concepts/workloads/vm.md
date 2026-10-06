@@ -964,7 +964,7 @@ VM advanced settings can be configured using optional fields under `spec.advance
 
 | Field | Description | Change applies on |
 |-------|-------------|:----:|
-| `bootDiskCapacity` | Desired capacity of the boot disk from the VM image. Ignored when deploying from an ISO with CD-ROM devices. Resizing has guest and risk implications. | _NA_ |
+| `bootDiskCapacity` | Desired capacity of the boot disk from the VM image. Ignored when deploying from an ISO with CD-ROM devices. Resizing has guest and risk implications. The capacity cannot be smaller than the boot disk. With Fast Deploy, the boot disk must be promoted (see `spec.promoteDisksMode`) before it can be extended. A VM that has not booted yet has its boot disk promoted first, and the disk is extended before the VM is powered on. If `spec.promoteDisksMode` is `Disabled`, a VM that needs promotion is not created, and an existing VM keeps its boot disk size, reports the `VirtualMachineDiskPromotionSynced` condition with reason `DiskPromotionDisabled`, and emits a warning event. If the boot disk has a PVC, the PVC request is raised to the capacity and the PVC is used to extend the disk, like for any other disk, which requires the storage class to allow volume expansion. | _NA_ |
 | `defaultVolumeProvisioningMode` | Default provisioning mode for PVCs owned by this VM. | _NA_ |
 | `changeBlockTracking` | Enables change block tracking for backup integrations. | _NA_ |
 | `preferHtEnabled` | Prefer scheduling vCPUs on hyperthreads of the same core for locality. | PowerCycle |

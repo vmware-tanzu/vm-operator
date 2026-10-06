@@ -1864,44 +1864,192 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.AllDisksArePVCapabilityName)
 			})
 
-			// The image's boot disk must be smaller than this. With Fast Deploy
-			// the VM is a linked clone by default, which vSphere cannot extend,
-			// and the boot disk PVC must request the extended size (VMSVC-4249).
-			It("Should power on a VM whose spec.advanced.bootDiskCapacity is larger than the image", Label("experimental"), func() {
-				bootDiskCapacity := resource.MustParse("64Gi")
+			Describe("spec.advanced.bootDiskCapacity", Label("experimental"), func() {
+				var (
+					imageCapacity  resource.Quantity
+					largerCapacity resource.Quantity
+				)
 
-				vm := &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      vmName,
-						Namespace: vmSvcNamespace,
-					},
-					Spec: vmopv1.VirtualMachineSpec{
-						ClassName:    clusterResources.VMClassName,
-						ImageName:    linuxVMIName,
-						StorageClass: clusterResources.StorageClassName,
-						PowerState:   vmopv1.VirtualMachinePowerStateOn,
-						Advanced: &vmopv1.VirtualMachineAdvancedSpec{
-							BootDiskCapacity: &bootDiskCapacity,
-						},
-					},
-				}
+				BeforeEach(func() {
+					imageCapacity = imageBootDiskCapacity(ctx, config, svClusterClient, vmSvcNamespace, linuxVMIName)
 
-				By("Creating the Virtual Machine")
-				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-				DeferCleanup(func() {
-					if !input.SkipCleanup {
-						vmoperator.DeleteVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
-					}
+					// Request 10Gi more than the boot disk of the image.
+					largerCapacity = imageCapacity.DeepCopy()
+					largerCapacity.Add(resource.MustParse("10Gi"))
+					e2eframework.Logf("Image %s has a boot disk of %s. Requesting a boot disk of %s for VM %s/%s",
+						linuxVMIName, imageCapacity.String(), largerCapacity.String(), vmSvcNamespace, vmName)
+
+					vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+					DeferCleanup(func() {
+						vcenter.LogoutVimClient(vCenterClient)
+					})
 				})
-				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
-				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
+				Describe("when the VM is created", func() {
+					// With Fast Deploy the boot disk depends on the image disk by default, which
+					// vSphere cannot extend. The boot disk is promoted before the VM
+					// is powered on, and then it is extended, and the boot disk PVC
+					// must request the extended size (vmop-4249).
+					DescribeTable("should power on a VM whose boot disk capacity is larger than the image",
+						func(mode vmopv1.VirtualMachinePromoteDisksMode) {
+							opts := newBootDiskVMOptions(vmSvcNamespace, vmName, linuxVMIName, clusterResources)
+							opts.PromoteDisksMode = mode
+							opts.BootDiskCapacity = &largerCapacity
+							createBootDiskVM(ctx, config, svClusterClient, opts, input.SkipCleanup)
+							vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
-				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-				defer vcenter.LogoutVimClient(vCenterClient)
+							vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 
-				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the requested size")
-				vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, bootDiskCapacity)
+							By("Verifying the vCenter disk, the PVC request and the PV capacity are all the requested size")
+							vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, largerCapacity, vmopv1.VirtualMachinePowerStateOn)
+						},
+						Entry("with promoteDisksMode Online", vmopv1.VirtualMachinePromoteDisksModeOnline),
+						Entry("with promoteDisksMode Offline", vmopv1.VirtualMachinePromoteDisksModeOffline),
+					)
+
+					// The boot disk of a Fast Deploy VM cannot be extended without being
+					// promoted, so the VM is not created.
+					It("should not create the VM if promoteDisksMode is Disabled", func() {
+						opts := newBootDiskVMOptions(vmSvcNamespace, vmName, linuxVMIName, clusterResources)
+						opts.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
+						opts.BootDiskCapacity = &largerCapacity
+						createBootDiskVM(ctx, config, svClusterClient, opts, input.SkipCleanup)
+
+						By("Verifying the VM says why it was not created")
+						vmoperator.WaitOnVirtualMachineConditionMessage(ctx, config, svClusterClient, vmSvcNamespace, vmName,
+							vmopv1.VirtualMachineConditionCreated, "Error", "spec.promoteDisksMode is Disabled")
+
+						vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(vm.Status.UniqueID).To(BeEmpty(), "the VM was created in vCenter")
+					})
+
+					// vSphere cannot shrink a disk. The VM is created, but the
+					// reconcile fails and the VM does not power on.
+					It("should not power on a VM whose boot disk capacity is smaller than the image", func() {
+						Expect(imageCapacity.Cmp(resource.MustParse("2Gi"))).To(BeNumerically(">", 0),
+							"image %s boot disk %s is too small to request 1Gi less", linuxVMIName, imageCapacity.String())
+
+						// Request 1Gi less than the boot disk of the image.
+						smallerCapacity := imageCapacity.DeepCopy()
+						smallerCapacity.Sub(resource.MustParse("1Gi"))
+
+						opts := newBootDiskVMOptions(vmSvcNamespace, vmName, linuxVMIName, clusterResources)
+						opts.BootDiskCapacity = &smallerCapacity
+						createBootDiskVM(ctx, config, svClusterClient, opts, input.SkipCleanup)
+
+						By("Verifying the VM stays powered off and the boot disk keeps the size of the image")
+						consistentlyBootDiskCapacity(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, imageCapacity)
+						vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(vm.Status.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOn))
+					})
+				})
+
+				Describe("when the VM exists", func() {
+					// The VM never boots, so its boot disk is not promoted yet.
+					It("should promote and extend the boot disk of a VM that has not booted", func() {
+						opts := newBootDiskVMOptions(vmSvcNamespace, vmName, linuxVMIName, clusterResources)
+						opts.PowerState = vmopv1.VirtualMachinePowerStateOff
+						createBootDiskVM(ctx, config, svClusterClient, opts, input.SkipCleanup)
+						vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+
+						setBootDiskCapacity(ctx, config, svClusterClient, vmSvcNamespace, vmName, largerCapacity)
+
+						vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
+
+						By("Verifying the vCenter disk, the PVC request and the PV capacity are all the requested size")
+						vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, largerCapacity, vmopv1.VirtualMachinePowerStateOff)
+
+						setBootDiskVMPowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
+						vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, largerCapacity, vmopv1.VirtualMachinePowerStateOn)
+					})
+
+					// The boot disk PVC is the source of truth for the size, like for
+					// any other disk.
+					DescribeTable("should resize the boot disk through its PVC of a VM that has booted",
+						func(powerState vmopv1.VirtualMachinePowerState) {
+							opts := newBootDiskVMOptions(vmSvcNamespace, vmName, linuxVMIName, clusterResources)
+							createBootDiskVM(ctx, config, svClusterClient, opts, input.SkipCleanup)
+							vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+							vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
+
+							if powerState == vmopv1.VirtualMachinePowerStateOff {
+								setBootDiskVMPowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, powerState)
+							}
+
+							setBootDiskCapacity(ctx, config, svClusterClient, vmSvcNamespace, vmName, largerCapacity)
+
+							By("Verifying the vCenter disk, the PVC request and the PV capacity are all the requested size")
+							vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, largerCapacity, powerState)
+						},
+						Entry("powered on", vmopv1.VirtualMachinePowerStateOn),
+						Entry("powered off", vmopv1.VirtualMachinePowerStateOff),
+					)
+
+					// Without a boot disk PVC there is nothing to resize but the disk.
+					It("should resize the boot disk of a VM that does not register its disks", func() {
+						opts := newBootDiskVMOptions(vmSvcNamespace, vmName, linuxVMIName, clusterResources)
+						opts.Annotations = map[string]string{
+							pkgconst.NoUnmanagedVolumesRegisterAnnotationKey: "",
+						}
+						createBootDiskVM(ctx, config, svClusterClient, opts, input.SkipCleanup)
+						vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+						waitForBootDiskPromoted(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+
+						setBootDiskVMPowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOff)
+
+						setBootDiskCapacity(ctx, config, svClusterClient, vmSvcNamespace, vmName, largerCapacity)
+
+						By("Verifying the vCenter disk has the requested size")
+						eventuallyVCenterBootDiskCapacity(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, largerCapacity)
+
+						By("Verifying the boot disk does not have a PVC")
+						vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
+						Expect(err).ToNot(HaveOccurred())
+						for _, vol := range vm.Spec.Volumes {
+							isBootDisk := vol.ControllerBusNumber != nil && *vol.ControllerBusNumber == 0 &&
+								vol.UnitNumber != nil && *vol.UnitNumber == 0
+							Expect(isBootDisk && vol.PersistentVolumeClaim != nil).To(BeFalse(),
+								"volume %s is a PVC for the boot disk", vol.Name)
+						}
+					})
+
+					// The boot disk of a VM that has booted with promoteDisksMode
+					// Disabled is not promoted.
+					It("should extend the boot disk once the disks of a VM that has booted are promoted", func() {
+						opts := newBootDiskVMOptions(vmSvcNamespace, vmName, linuxVMIName, clusterResources)
+						opts.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
+						createBootDiskVM(ctx, config, svClusterClient, opts, input.SkipCleanup)
+						vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+						waitForFirstBootDone(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+
+						setBootDiskVMPowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOff)
+
+						setBootDiskCapacity(ctx, config, svClusterClient, vmSvcNamespace, vmName, largerCapacity)
+
+						By("Verifying the VM says that the boot disk needs to be promoted")
+						vmoperator.WaitOnVirtualMachineConditionUpdate(ctx, config, svClusterClient, vmSvcNamespace, vmName, metav1.Condition{
+							Type:   vmopv1.VirtualMachineDiskPromotionSynced,
+							Status: metav1.ConditionFalse,
+							Reason: consts.VMDiskPromotionDisabledReason,
+						})
+
+						By("Verifying the boot disk keeps the size of the image")
+						consistentlyBootDiskCapacity(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, imageCapacity)
+
+						By("Enabling the promotion of the disks and powering on the VM")
+						updateBootDiskVM(ctx, config, svClusterClient, vmSvcNamespace, vmName, func(vm *vmopv1.VirtualMachine) {
+							vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeOnline
+							vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						})
+						waitForBootDiskPromoted(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+
+						By("Verifying the boot disk is extended through its PVC")
+						vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
+						vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, largerCapacity, vmopv1.VirtualMachinePowerStateOn)
+					})
+				})
 			})
 
 			It("Boot disk PVC lifecycle operations should succeed", func() {

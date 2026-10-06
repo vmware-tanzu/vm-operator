@@ -347,6 +347,29 @@ func WaitOnVirtualMachineConditionUpdate(ctx context.Context, config *config.E2E
 	}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed(), "Timed out waiting for VirtualMachines %s condition to be updated", vmName)
 }
 
+// WaitOnVirtualMachineConditionMessage waits for the named condition on a
+// VirtualMachine to be False with the expected reason and a message that
+// contains the expected text. It uses the "wait-virtual-machine-creation"
+// interval.
+func WaitOnVirtualMachineConditionMessage(
+	ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client,
+	ns, vmName, conditionType, reason, message string) {
+
+	Eventually(func(g Gomega) {
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		c := meta.FindStatusCondition(vm.GetConditions(), conditionType)
+		g.Expect(c).ToNot(BeNil())
+		g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(c.Reason).To(Equal(reason))
+		g.Expect(c.Message).To(ContainSubstring(message))
+	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(),
+		"Timed out waiting for Condition %s on VirtualMachine %s/%s to be False with message %q", conditionType, ns, vmName, message)
+}
+
 // WaitOnVirtualMachineCondition waits for the named condition on a
 // VirtualMachine to reach the expected status, and, if the status is False,
 // the expected reason. It uses the "wait-virtual-machine-creation" interval;
@@ -1453,10 +1476,10 @@ func EventuallyBootDiskStoragePolicyMatchesVMStorageClass(
 		"Timed out waiting for boot disk storage policy to match spec.storageClass on VirtualMachine %s/%s", namespace, name)
 }
 
-// EventuallyBootDiskCapacityMatches polls until the VM is powered on and the
-// boot disk capacity agrees in all three places: the vCenter virtual disk, the
-// boot disk PVC's spec.resources.requests.storage, and the PV bound to the PVC
-// (status.capacity). The boot disk PVC must be Bound.
+// EventuallyBootDiskCapacityMatches polls until the VM has the expected power
+// state and the boot disk capacity agrees in all three places: the vCenter
+// virtual disk, the boot disk PVC's spec.resources.requests.storage, and the PV
+// bound to the PVC (status.capacity). The boot disk PVC must be Bound.
 //
 // Only call this when the AllDisksArePVCs capability is enabled.
 func EventuallyBootDiskCapacityMatches(
@@ -1466,6 +1489,7 @@ func EventuallyBootDiskCapacityMatches(
 	k8sClient ctrlclient.Client,
 	namespace, name string,
 	expected resource.Quantity,
+	powerState vmopv1.VirtualMachinePowerState,
 ) {
 	GinkgoHelper()
 
@@ -1473,8 +1497,8 @@ func EventuallyBootDiskCapacityMatches(
 		vm, err := utils.GetVirtualMachine(ctx, k8sClient, namespace, name)
 		g.Expect(err).NotTo(HaveOccurred())
 
-		g.Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn),
-			"VirtualMachine %s/%s is not powered on", namespace, name)
+		g.Expect(vm.Status.PowerState).To(Equal(powerState),
+			"VirtualMachine %s/%s is not %s", namespace, name, powerState)
 		g.Expect(vm.Status.UniqueID).NotTo(BeEmpty())
 
 		bootVol := findBootDiskVolume(vm.Spec.Volumes)

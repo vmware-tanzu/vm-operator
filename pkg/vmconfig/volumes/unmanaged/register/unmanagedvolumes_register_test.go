@@ -6,6 +6,7 @@ package register_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -24,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -359,6 +361,214 @@ var _ = Describe("Reconcile", func() {
 					Expect(cond).ToNot(BeNil())
 					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 					Expect(cond.Reason).To(Equal("NoUnmanagedVolumesRegisterAnnotation"))
+				})
+			})
+		})
+
+		Context("spec.advanced.bootDiskCapacity and the boot disk PVC", func() {
+			const claimName = "my-vm-boot"
+
+			var (
+				pvcRequest   int64
+				diskCapacity int64
+				bootDisk     *vimtypes.VirtualDisk
+			)
+
+			getPVCRequest := func() int64 {
+				var pvc corev1.PersistentVolumeClaim
+				ExpectWithOffset(1, k8sClient.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      claimName,
+				}, &pvc)).To(Succeed())
+				q := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+				return q.Value()
+			}
+
+			BeforeEach(func() {
+				pvcRequest = 1024 * 1024 * 1024
+				diskCapacity = 1024 * 1024 * 1024
+
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name: "disk-uuid-789",
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: claimName,
+								},
+							},
+						},
+						ControllerType:      vmopv1.VirtualControllerTypeIDE,
+						ControllerBusNumber: ptr.To(int32(0)),
+						UnitNumber:          ptr.To(int32(0)),
+					},
+				}
+			})
+
+			JustBeforeEach(func() {
+				// The PVC and the disk are created here, and not in a
+				// BeforeEach, so the nested contexts can change their sizes.
+				Expect(k8sClient.Create(ctx, &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      claimName,
+						Namespace: vm.Namespace,
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: vmopv1.GroupVersion.String(),
+								Kind:       "VirtualMachine",
+								Name:       vm.Name,
+								UID:        vm.UID,
+								Controller: ptr.To(true),
+							},
+						},
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						DataSourceRef: &corev1.TypedObjectReference{
+							APIGroup: &vmopv1.GroupVersion.Group,
+							Kind:     "VirtualMachine",
+							Name:     vm.Name,
+						},
+						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: *kubeutil.BytesToResource(pvcRequest),
+							},
+						},
+					},
+				})).To(Succeed())
+
+				bootDisk = &vimtypes.VirtualDisk{
+					VirtualDevice: vimtypes.VirtualDevice{
+						Key:           300,
+						ControllerKey: 100,
+						UnitNumber:    ptr.To(int32(0)),
+						Backing: &vimtypes.VirtualDiskSeSparseBackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[LocalDS_0] vm1/disk.vmdk",
+							},
+							Uuid: "disk-uuid-789",
+						},
+					},
+					CapacityInBytes: diskCapacity,
+				}
+
+				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							&vimtypes.VirtualIDEController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{Key: 100},
+									BusNumber:     0,
+								},
+							},
+							bootDisk,
+						},
+					},
+				}
+			})
+
+			When("the capacity is larger than the PVC request", func() {
+				BeforeEach(func() {
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						BootDiskCapacity: ptr.To(resource.MustParse("5Gi")),
+					}
+				})
+
+				It("should raise the PVC request and extend the unregistered disk", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+
+					Expect(getPVCRequest()).To(Equal(int64(5 * 1024 * 1024 * 1024)))
+
+					Expect(configSpec.DeviceChange).To(HaveLen(1))
+					dc := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+					Expect(dc.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+					Expect(dc.Device.(*vimtypes.VirtualDisk).CapacityInBytes).
+						To(Equal(int64(5 * 1024 * 1024 * 1024)))
+				})
+
+				When("the disk is an FCD", func() {
+					JustBeforeEach(func() {
+						bootDisk.VDiskId = &vimtypes.ID{Id: "fcd-1"}
+					})
+
+					It("should raise the PVC request and leave the disk to the CSI driver", func() {
+						Expect(unmanagedvolsreg.Reconcile(
+							ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+
+						Expect(getPVCRequest()).To(Equal(int64(5 * 1024 * 1024 * 1024)))
+						Expect(configSpec.DeviceChange).To(BeEmpty())
+					})
+				})
+
+				When("the PVC does not exist", func() {
+					JustBeforeEach(func() {
+						Expect(k8sClient.Delete(ctx, &corev1.PersistentVolumeClaim{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      claimName,
+								Namespace: vm.Namespace,
+							},
+						})).To(Succeed())
+					})
+
+					It("should not fail", func() {
+						Expect(unmanagedvolsreg.Reconcile(
+							ctx, k8sClient, vimClient, vm, moVM, configSpec)).
+							ToNot(MatchError(ContainSubstring("boot disk pvc")))
+					})
+				})
+
+				When("patching the PVC fails", func() {
+					BeforeEach(func() {
+						withFuncs.Patch = func(
+							ctx context.Context,
+							client ctrlclient.WithWatch,
+							obj ctrlclient.Object,
+							patch ctrlclient.Patch,
+							opts ...ctrlclient.PatchOption) error {
+
+							if _, ok := obj.(*corev1.PersistentVolumeClaim); ok {
+								return errors.New("fake patch error")
+							}
+							return client.Patch(ctx, obj, patch, opts...)
+						}
+					})
+
+					It("should return the error and mark the condition", func() {
+						err := unmanagedvolsreg.Reconcile(
+							ctx, k8sClient, vimClient, vm, moVM, configSpec)
+						Expect(err).To(MatchError(ContainSubstring(
+							"failed to resize boot disk pvc my-vm-boot: fake patch error")))
+						c := pkgcond.Get(vm, unmanagedvolsreg.Condition)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Reason).To(Equal("ErrBootDiskPVCCapacity"))
+					})
+				})
+			})
+
+			When("the capacity is not larger than the PVC request", func() {
+				BeforeEach(func() {
+					pvcRequest = 10 * 1024 * 1024 * 1024
+					diskCapacity = 10 * 1024 * 1024 * 1024
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						BootDiskCapacity: ptr.To(resource.MustParse("5Gi")),
+					}
+				})
+
+				It("should not shrink the PVC", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).
+						To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+					Expect(getPVCRequest()).To(Equal(int64(10 * 1024 * 1024 * 1024)))
+				})
+			})
+
+			When("the capacity is not set", func() {
+				It("should not change the PVC", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).
+						To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+					Expect(getPVCRequest()).To(Equal(int64(1024 * 1024 * 1024)))
 				})
 			})
 		})

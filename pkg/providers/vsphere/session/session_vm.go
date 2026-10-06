@@ -10,7 +10,10 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
 func updateVirtualDiskDeviceChanges(
@@ -53,6 +56,29 @@ func updateVirtualDiskDeviceChanges(
 		}
 
 		if vmDisk.CapacityInBytes < newCapacityInBytes {
+			// vSphere cannot extend a disk that has a parent, ex. the boot disk
+			// of a Fast Deploy VM. Wait for the disk to be promoted.
+			if pkgutil.GetVirtualDiskInfo(vmDisk).HasParent {
+				vmCtx.Logger.Info(
+					"Skipping boot disk resize until the disk is promoted",
+					"requestedBytes", newCapacityInBytes,
+					"currentBytes", vmDisk.CapacityInBytes)
+				return nil, nil
+			}
+
+			// If the boot disk has a PVC, the PVC is the source of truth for
+			// the size, ex. like any other disk. The register unmanaged volumes
+			// reconciler raises the PVC request to the requested capacity.
+			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+				info := pkgvol.GetVolumeInfoFromVM(vmCtx.VM, vmCtx.MoVM)
+				if name := info.BootDiskPVCName(); name != "" {
+					vmCtx.Logger.Info(
+						"Skipping boot disk resize since the disk has a PVC",
+						"pvcName", name)
+					return nil, nil
+				}
+			}
+
 			vmDisk.CapacityInBytes = newCapacityInBytes
 			deviceChanges = append(deviceChanges, &vimtypes.VirtualDeviceConfigSpec{
 				Operation: vimtypes.VirtualDeviceConfigSpecOperationEdit,

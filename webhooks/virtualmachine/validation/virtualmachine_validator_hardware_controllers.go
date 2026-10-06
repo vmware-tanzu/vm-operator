@@ -30,7 +30,7 @@ const (
 	invalidUnitNumberRangeFmt              = "unit number must be between 0 and %d for %s controller"
 	invalidControllerCapacityFmt           = "controller %s:%d full, maxDevices: %d"
 	invalidUnitNumberInUse                 = "controller unit number %s:%d:%d is already in use"
-	invalidControllersCountFmt             = "must have exactly %d controllers"
+	ideControllersImmutable                = "IDE controllers are determined by the platform and may not be added or removed"
 )
 
 // validateControllers validates controllers are valid and
@@ -72,19 +72,55 @@ func (v validator) validateControllers(
 
 	allErrs = append(allErrs, v.validateControllerWhenPoweredOn(ctx, vm, oldVM, hwPath)...)
 
-	maxIDEControllers := int(vmopv1.VirtualControllerTypeIDE.MaxCount())
-	numIDEControllers := len(vm.Spec.Hardware.IDEControllers)
-	if numIDEControllers != maxIDEControllers {
-		allErrs = append(allErrs, field.Invalid(
-			hwPath.Child("ideControllers"),
-			fmt.Sprintf("%d controllers", numIDEControllers),
-			fmt.Sprintf(invalidControllersCountFmt, maxIDEControllers),
-		))
-	}
+	allErrs = append(allErrs, v.validateIDEControllersImmutable(ctx, vm, oldVM, hwPath)...)
 
 	allErrs = append(allErrs, v.validateControllerSlots(ctx, vm)...)
 
 	return allErrs
+}
+
+// validateIDEControllersImmutable validates that IDE controllers are not added
+// or removed by unprivileged users once the VM has been upgraded.
+//
+// IDE controllers are platform default devices. They are not defaulted when
+// the VM is created, but backfilled from the vSphere VM by the schema upgrade,
+// since the platform determines whether they exist. For example, x86 VMs have
+// two IDE controllers, but ARM VMs do not support IDE controllers at all.
+// Allowing users to change them could result in a VM that cannot be powered
+// on, so the backfilled value is treated as immutable.
+func (v validator) validateIDEControllersImmutable(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine,
+	hwPath *field.Path) field.ErrorList {
+
+	if oldVM == nil || ctx.IsPrivilegedAccount {
+		return nil
+	}
+
+	// The backfill itself transitions the VM from not upgraded to upgraded.
+	if err := vmopv1util.IsObjectUpgraded(ctx, oldVM); err != nil {
+		return nil
+	}
+
+	ideBusNumbers := func(vm *vmopv1.VirtualMachine) sets.Set[int32] {
+		s := sets.New[int32]()
+		if vm.Spec.Hardware != nil {
+			for _, c := range vm.Spec.Hardware.IDEControllers {
+				s.Insert(c.BusNumber)
+			}
+		}
+		return s
+	}
+
+	if !ideBusNumbers(vm).Equal(ideBusNumbers(oldVM)) {
+		return field.ErrorList{
+			field.Forbidden(
+				hwPath.Child("ideControllers"),
+				ideControllersImmutable),
+		}
+	}
+
+	return nil
 }
 
 // validateControllerWhenPowernedOn validates that when VM is poweredOn, disallow

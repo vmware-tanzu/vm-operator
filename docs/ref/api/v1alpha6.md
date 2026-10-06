@@ -1943,7 +1943,13 @@ CD-ROM devices can be changed.
 CD-ROM devices are attached to the VM in the specified list-order. |
 | `ideControllers` _[IDEControllerSpec](#idecontrollerspec) array_ | IDEControllers describes the desired list of IDE controllers for the VM.
 
-Defaults to two IDE controllers, with bus 0 and bus 1. |
+IDE controllers are platform default devices and are not defaulted when
+the VM is created. Instead, this field is populated from the IDE
+controllers that exist on the underlying vSphere VM, ex. two IDE
+controllers, with bus 0 and bus 1, on x86 VMs, and none on ARM VMs,
+which do not support IDE controllers.
+
+Once populated, IDE controllers may not be added or removed. |
 | `nvmeControllers` _[NVMEControllerSpec](#nvmecontrollerspec) array_ | NVMEControllers describes the desired list of NVME controllers for the
 VM. |
 | `sataControllers` _[SATAControllerSpec](#satacontrollerspec) array_ | SATAControllers describes the desired list of SATA controllers for the

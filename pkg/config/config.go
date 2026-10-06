@@ -224,6 +224,7 @@ type FeatureStates struct {
 	VMNetworkUnitNumbers         bool
 	K8sWorkloadMgmtAPI           bool
 	TaggingAPI                   bool
+	CSIBackupAPI                 bool
 }
 
 type InstanceStorage struct {

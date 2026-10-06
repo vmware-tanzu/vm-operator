@@ -982,35 +982,14 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 	Context("Sysprep", Label(consts.WindowsSysprepLabel, "experimental"), func() {
 
 		// verifyWindowsVMDeployed waits for vmName to exist, power on, and report a
-		// real IPv4 address, shared by both Sysprep Contexts above.
-		//
-		// The IP wait is rolled inline rather than vmoperator.WaitForVirtualMachineIP
-		// so these specs can use the longer "windows-sysprep" interval (see wcp.yaml)
-		// without changing that shared helper's timeout for every other caller, and
-		// so a guest falling back to an APIPA (169.254.0.0/16) self-assigned address
-		// -- which vmoperator.WaitForVirtualMachineIP would otherwise accept as a
-		// real IP -- is treated as still-waiting rather than success.
+		// real IPv4 address.
 		verifyWindowsVMDeployed := func(ctx context.Context, config *e2eConfig.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
 			By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", ns, vmName))
 			vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, ns, vmName)
-			// This suite's warm-up VM is Windows-specific and isn't covered by the Linux
-			// image-cache wait above, so wait for it directly here on its own budget.
-			vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, ns, vmName)
+			vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, ns, vmName, "windows-sysprep")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, ns, vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-
-			By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", ns, vmName))
-			Eventually(func(g Gomega) {
-				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(vm).ToNot(BeNil())
-
-				g.Expect(vm.Status.Network).ToNot(BeNil())
-				g.Expect(vm.Status.Network.PrimaryIP4).ToNot(BeEmpty())
-				ip := net.ParseIP(vm.Status.Network.PrimaryIP4).To4()
-				g.Expect(ip).ToNot(BeNil())
-				g.Expect(ip.IsLinkLocalUnicast()).To(BeFalse())
-			}, config.GetIntervals("windows-sysprep", "wait-virtual-machine-vmip")...).Should(Succeed())
+			vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName, "windows-sysprep")
 		}
 
 		// Register-from-backup isn't Windows-specific -- it's already

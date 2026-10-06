@@ -11,6 +11,7 @@ package virtualmachine
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -20,13 +21,18 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	kubevmv1a1 "github.com/vmware-tanzu/vm-operator/external/kubevm/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/external/kubevm/controller/internal/contract"
@@ -66,18 +72,70 @@ func AddToManager(mgr manager.Manager) error {
 	r := &Reconciler{
 		Client: mgr.GetClient(),
 		Mapper: mgr.GetRESTMapper(),
+		cache:  mgr.GetCache(),
+		scheme: mgr.GetScheme(),
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
+	c, err := ctrl.NewControllerManagedBy(mgr).
 		For(&kubevmv1a1.VirtualMachine{}).
 		Named("kubevm-virtualmachine").
-		Complete(r)
+		Build(r)
+	if err != nil {
+		return err
+	}
+	r.controller = c
+	return nil
 }
 
 // Reconciler reconciles a kube-vm.io VirtualMachine.
 type Reconciler struct {
 	client.Client
 	Mapper meta.RESTMapper
+
+	// controller, cache and scheme let the reconciler add a watch for a
+	// provider kind the first time it adopts an object of that kind. Nil
+	// controller (a Reconciler not built by AddToManager) disables this.
+	controller controller.Controller
+	cache      cache.Cache
+	scheme     *runtime.Scheme
+
+	// watchedKinds records the provider GVKs already watched.
+	watchedKinds sync.Map
+}
+
+// watchProviderKind starts, once per provider GVK, a metadata-only watch on
+// that kind that requeues the generic VirtualMachine controlling the changed
+// object, via the controller owner reference ensureOwnerReference sets.
+//
+// The core cannot watch provider kinds statically, since it does not know
+// them at compile time. Without this watch, a provider status change made
+// after the generic object is ready (a power operation finishing, an address
+// changing) is never mirrored, because nothing else requeues the generic
+// object once it is ready and has an address.
+//
+// A metadata-only watch keeps the cache small and needs no provider types;
+// every write to the provider object, status included, bumps its
+// resourceVersion and so still produces an event. The manager needs list and
+// watch on the provider kind, which a provider's RBAC grants alongside its
+// own controller's.
+func (r *Reconciler) watchProviderKind(gvk schema.GroupVersionKind) error {
+	if r.controller == nil {
+		return nil
+	}
+	if _, loaded := r.watchedKinds.LoadOrStore(gvk, struct{}{}); loaded {
+		return nil
+	}
+
+	obj := &metav1.PartialObjectMetadata{}
+	obj.SetGroupVersionKind(gvk)
+	src := source.Kind(r.cache, obj,
+		handler.TypedEnqueueRequestForOwner[*metav1.PartialObjectMetadata](
+			r.scheme, r.Mapper, &kubevmv1a1.VirtualMachine{}, handler.OnlyControllerOwner()))
+	if err := r.controller.Watch(src); err != nil {
+		r.watchedKinds.Delete(gvk)
+		return fmt.Errorf("failed to watch provider kind %s: %w", gvk, err)
+	}
+	return nil
 }
 
 // Reconcile adopts the provider object named by spec.infrastructureRef once
@@ -197,6 +255,10 @@ func (r *Reconciler) reconcileNormal(
 
 	if err := r.ensureOwnerReference(ctx, vm, provider); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	if err := r.watchProviderKind(provider.GroupVersionKind()); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	return r.reconcileStatus(ctx, vm, provider)

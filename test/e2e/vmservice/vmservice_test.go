@@ -80,6 +80,15 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 		})
 	})
 
+	Context("VI-ADMIN-STORAGE-POLICY", func() {
+		viadmin.VIAdminStoragePolicySpec(context.TODO(), func() viadmin.VIAdminStoragePolicySpecInput {
+			return viadmin.VIAdminStoragePolicySpecInput{
+				ClusterProxy: svClusterProxy,
+				Config:       config,
+			}
+		})
+	})
+
 	Context("DEVOPS-NS", func() {
 		devops.DevOpsSpec(context.TODO(), func() devops.DevOpsSpecInput {
 			return devops.DevOpsSpecInput{

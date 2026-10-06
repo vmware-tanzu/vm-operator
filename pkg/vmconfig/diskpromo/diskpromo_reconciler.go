@@ -299,29 +299,6 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
-	// A boot disk that spec.advanced.bootDiskCapacity extends cannot be
-	// extended while it has a parent. If the VM has not booted yet, promote just
-	// the boot disk now instead of waiting for the VM to be powered on, so the
-	// guest boots with the requested capacity.
-	if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeOnline &&
-		moVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOff &&
-		vm.Annotations[vmopv1.FirstBootDoneAnnotation] == "" &&
-		(moVM.Snapshot == nil || moVM.Snapshot.CurrentSnapshot == nil) {
-
-		if boot := bootDiskPendingExtend(vm, moVM); boot != nil {
-			for i := range childDisks {
-				if childDisks[i].Key == boot.Key {
-					return promoteChildDisks(
-						ctx,
-						vimClient,
-						vm,
-						moVM,
-						[]vimtypes.VirtualDisk{childDisks[i]})
-				}
-			}
-		}
-	}
-
 	switch vm.Spec.PromoteDisksMode {
 	case vmopv1.VirtualMachinePromoteDisksModeOnline:
 		if moVM.Snapshot != nil && moVM.Snapshot.CurrentSnapshot != nil {
@@ -336,7 +313,22 @@ func (r reconciler) Reconcile(
 			return nil
 		}
 
-		if moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
+		// Exception: a boot disk that spec.advanced.bootDiskCapacity extends
+		// cannot be extended while it has a parent. If the VM has not booted
+		// yet, promote just the boot disk now instead of waiting for the VM to
+		// be powered on, so the guest boots with the requested capacity.
+		bootDisk := bootDiskPendingExtend(vm, moVM)
+		bootExtendBeforeFirstBoot := bootDisk != nil &&
+			moVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOff &&
+			vm.Annotations[vmopv1.FirstBootDoneAnnotation] == ""
+
+		if bootExtendBeforeFirstBoot {
+			childDisks = []vimtypes.VirtualDisk{*bootDisk}
+		}
+
+		if moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn &&
+			!bootExtendBeforeFirstBoot {
+
 			pkgcond.MarkFalse(
 				vm,
 				vmopv1.VirtualMachineDiskPromotionSynced,
@@ -406,15 +398,15 @@ func bootDiskPendingExtend(
 		return nil
 	}
 
-	d := allDisks[0].(*vimtypes.VirtualDisk)
-	if d.VDiskId != nil ||
-		vm.Spec.Advanced.BootDiskCapacity.Value() <= d.CapacityInBytes ||
-		!pkgutil.GetVirtualDiskInfo(d).HasParent {
+	bootDisk := allDisks[0].(*vimtypes.VirtualDisk)
+	if bootDisk.VDiskId != nil ||
+		vm.Spec.Advanced.BootDiskCapacity.Value() <= bootDisk.CapacityInBytes ||
+		!pkgutil.GetVirtualDiskInfo(bootDisk).HasParent {
 
 		return nil
 	}
 
-	return d
+	return bootDisk
 }
 
 // promoteChildDisks starts a task that promotes the given child disks.

@@ -320,6 +320,10 @@ func ensureBootDiskPVCCapacity(
 
 // hasPendingDiskExtend returns true if the configSpec has a pending edit that
 // increases the capacity of one of the disks to be registered.
+//
+// The check covers all disks, but today only the boot disk resize for
+// spec.advanced.bootDiskCapacity adds such an edit. Other disks grow through
+// their PVCs, which are updated after this check.
 func hasPendingDiskExtend(
 	info pkgvol.VolumeInfo,
 	configSpec *vimtypes.VirtualMachineConfigSpec) bool {

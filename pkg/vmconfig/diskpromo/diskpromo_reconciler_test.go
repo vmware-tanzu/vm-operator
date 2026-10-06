@@ -996,6 +996,33 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 					Expect(getPromoTaskRef()).ToNot(BeNil())
 				})
 
+				When("there are other child disks", func() {
+					var promotedKeys []int32
+
+					BeforeEach(func() {
+						promotedKeys = nil
+						reg.Handler = func(
+							ctx *simulator.Context,
+							m *simulator.Method) (mo.Reference, vimtypes.BaseMethodFault) {
+
+							if m.Name == "PromoteDisks_Task" {
+								req := m.Body.(*vimtypes.PromoteDisks_Task)
+								for _, d := range req.Disks {
+									promotedKeys = append(promotedKeys, d.Key)
+								}
+							}
+
+							return nil, nil
+						}
+					})
+
+					It("should promote only the boot disk", func() {
+						Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+						bootDisk := moVM.Config.Hardware.Device[0].(*vimtypes.VirtualDisk)
+						Expect(promotedKeys).To(ConsistOf(bootDisk.Key))
+					})
+				})
+
 				When("there is a promote disks task already running", func() {
 					BeforeEach(func() {
 						ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{

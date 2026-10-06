@@ -82,7 +82,7 @@ func createBootDiskVM(
 	config *e2eConfig.E2EConfig,
 	client ctrlclient.Client,
 	opts bootDiskVMOptions,
-	skipCleanup bool) *vmopv1.VirtualMachine {
+	skipCleanup bool) {
 
 	GinkgoHelper()
 
@@ -113,8 +113,6 @@ func createBootDiskVM(
 			vmoperator.DeleteVirtualMachineAndWait(ctx, config, client, opts.Namespace, opts.Name)
 		}
 	})
-
-	return vm
 }
 
 // updateBootDiskVM gets the VM, applies mutate to it, and updates it, retrying

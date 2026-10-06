@@ -1085,15 +1085,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	//
 	err = vs.reconcileConfig(vmCtx, vcVM, vcClient)
 
-	// Warn while the boot disk cannot be extended since disk promotion is
-	// disabled. The condition alone is easy to miss. The event recorder
-	// aggregates identical events, so repeating the warning is cheap.
-	if vs.eventRecorder != nil {
-		c := pkgcond.Get(vmCtx.VM, vmopv1.VirtualMachineDiskPromotionSynced)
-		if c != nil && c.Reason == vmconfdiskpromo.ReasonDisabled {
-			vs.eventRecorder.Warn(vmCtx.VM, vmconfdiskpromo.ReasonDisabled, c.Message)
-		}
-	}
+	vs.warnDiskPromotionDisabled(vmCtx)
 
 	if err != nil {
 		if pkgerr.IsNoRequeueError(err) {
@@ -1145,6 +1137,22 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	return reconcileErr
+}
+
+// warnDiskPromotionDisabled emits a warning event while the boot disk cannot
+// be extended since disk promotion is disabled. The condition alone is easy to
+// miss. The event recorder aggregates identical events, so repeating the
+// warning is cheap.
+func (vs *vSphereVMProvider) warnDiskPromotionDisabled(
+	vmCtx pkgctx.VirtualMachineContext) {
+
+	if vs.eventRecorder == nil {
+		return
+	}
+	c := pkgcond.Get(vmCtx.VM, vmopv1.VirtualMachineDiskPromotionSynced)
+	if c != nil && c.Reason == vmconfdiskpromo.ReasonDisabled {
+		vs.eventRecorder.Warn(vmCtx.VM, vmconfdiskpromo.ReasonDisabled, c.Message)
+	}
 }
 
 // reconcileLocation validates that the VM is within its expected namespace

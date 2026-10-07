@@ -145,10 +145,36 @@ func (r reconciler) Reconcile(
 		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
 	}
 
+	// If the boot disk has a PVC, spec.advanced.bootDiskCapacity grows the PVC
+	// like any other disk, and not the disk through a ConfigSpec.
+	if err := ensureBootDiskPVCCapacity(ctx, k8sClient, vm, info); err != nil {
+		pkgcond.MarkError(
+			vm,
+			Condition,
+			"ErrBootDiskPVCCapacity",
+			err)
+		return err
+	}
+
 	// Filter any linked clones / FCDs from registration.
 	info.Disks = pkgvol.FilterOutFCDs(info.Disks...)
 	info.Disks = pkgvol.FilterOutLinkedClones(info.Disks...)
 	info.Disks = pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)
+
+	// A disk registered with a CnsRegisterVolume gets a PV with the disk's
+	// current capacity, and a PVC that requests more than the PV is never
+	// bound. If the disk is about to be extended, ex. by
+	// spec.advanced.bootDiskCapacity, wait for the extend and register the disk
+	// on a later reconcile.
+	if hasPendingDiskExtend(info, configSpec) {
+		logger.Info("Skipping register unmanaged volumes until disk extend is applied")
+		pkgcond.MarkFalse(
+			vm,
+			Condition,
+			"PendingConfigUpdates",
+			"")
+		return nil
+	}
 
 	hasConfigSpecChanges, err := ensureUnmanagedDisksConfigsAreUpdated(
 		ctx,
@@ -233,6 +259,92 @@ func (r reconciler) Reconcile(
 
 	pkgcond.MarkTrue(vm, Condition)
 	return nil
+}
+
+// ensureBootDiskPVCCapacity raises the storage request of the boot disk's PVC to
+// spec.advanced.bootDiskCapacity if the PVC requests less. The PVC is never
+// shrunk. Raising the request extends the disk, either through
+// ensureUnmanagedDisksHaveUpdatedCapacity if the disk is not registered yet, or
+// through volume expansion by the CSI driver if it is.
+func ensureBootDiskPVCCapacity(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	info pkgvol.VolumeInfo) error {
+
+	if vm.Spec.Advanced == nil ||
+		vm.Spec.Advanced.BootDiskCapacity == nil ||
+		vm.Spec.Advanced.BootDiskCapacity.IsZero() {
+
+		return nil
+	}
+
+	name := info.BootDiskPVCName()
+	if name == "" {
+		return nil
+	}
+
+	obj := &corev1.PersistentVolumeClaim{}
+	if err := k8sClient.Get(
+		ctx,
+		ctrlclient.ObjectKey{Namespace: vm.Namespace, Name: name},
+		obj); err != nil {
+
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get boot disk pvc %s: %w", name, err)
+	}
+
+	capacity := *vm.Spec.Advanced.BootDiskCapacity
+	if requested := obj.Spec.Resources.Requests[corev1.ResourceStorage]; capacity.Cmp(requested) <= 0 {
+		return nil
+	}
+
+	objPatch := ctrlclient.MergeFrom(obj.DeepCopy())
+	if obj.Spec.Resources.Requests == nil {
+		obj.Spec.Resources.Requests = corev1.ResourceList{}
+	}
+	obj.Spec.Resources.Requests[corev1.ResourceStorage] = capacity.DeepCopy()
+	if err := k8sClient.Patch(ctx, obj, objPatch); err != nil {
+		return fmt.Errorf("failed to resize boot disk pvc %s: %w", name, err)
+	}
+
+	pkglog.FromContextOrDefault(ctx).Info(
+		"Resized boot disk PVC to spec.advanced.bootDiskCapacity",
+		"pvcName", name,
+		"capacity", capacity.String())
+
+	return nil
+}
+
+// hasPendingDiskExtend returns true if the configSpec has a pending edit that
+// increases the capacity of one of the disks to be registered.
+func hasPendingDiskExtend(
+	info pkgvol.VolumeInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec) bool {
+
+	if configSpec == nil {
+		return false
+	}
+
+	for _, bdc := range configSpec.DeviceChange {
+		dc := bdc.GetVirtualDeviceConfigSpec()
+		if dc.Operation != vimtypes.VirtualDeviceConfigSpecOperationEdit {
+			continue
+		}
+		vd, ok := dc.Device.(*vimtypes.VirtualDisk)
+		if !ok {
+			continue
+		}
+		for _, di := range info.Disks {
+			if di.DeviceKey == vd.Key && vd.CapacityInBytes > di.CapacityInBytes {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func ensureUnmanagedDisksConfigsAreUpdated(

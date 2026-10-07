@@ -38,6 +38,11 @@ const (
 	VMUnmanagedVolumesBackfilledCondition = "VirtualMachineUnmanagedVolumesBackfilled"
 	VMUnmanagedVolumesRegisteredCondition = "VirtualMachineUnmanagedVolumesRegistered"
 
+	// VMDiskPromotionDisabledReason is the reason of the disk promotion
+	// condition when spec.advanced.bootDiskCapacity needs the boot disk to be
+	// promoted but spec.promoteDisksMode is Disabled.
+	VMDiskPromotionDisabledReason = "DiskPromotionDisabled"
+
 	VMGroupsCapabilityName                   = "supports_VM_service_VM_groups"
 	VirtualMachineSnapshotCapabilityName     = "supports_VM_service_VM_snapshots"
 	VMPlacementPoliciesCapabilityName        = "supports_VM_service_VM_placement_policies"

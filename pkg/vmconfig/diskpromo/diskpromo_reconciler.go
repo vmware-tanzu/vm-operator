@@ -20,6 +20,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 )
 
@@ -34,6 +35,7 @@ const (
 	ReasonTaskTransientError = "DiskPromotionTaskTransientError"
 	ReasonPending            = "DiskPromotionPending"
 	ReasonRunning            = "DiskPromotionRunning"
+	ReasonDisabled           = "DiskPromotionDisabled"
 
 	PromoteDisksTaskKey = "VirtualMachine.promoteDisks"
 )
@@ -179,6 +181,17 @@ func (r reconciler) Reconcile(
 	logger.V(4).Info("Finding candidates for disk promotion")
 
 	if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
+		if bootDiskPendingExtend(vm, moVM) != nil {
+			// The boot disk cannot be extended until it is promoted.
+			pkgcond.MarkFalse(
+				vm,
+				vmopv1.VirtualMachineDiskPromotionSynced,
+				ReasonDisabled,
+				"%s",
+				"spec.advanced.bootDiskCapacity requires the boot disk to be "+
+					"promoted, but spec.promoteDisksMode is Disabled")
+			return nil
+		}
 		// Skip VMs that do not request promotion.
 		pkgcond.Delete(vm, vmopv1.VirtualMachineDiskPromotionSynced)
 		return nil
@@ -286,6 +299,29 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
+	// A boot disk that spec.advanced.bootDiskCapacity extends cannot be
+	// extended while it has a parent. If the VM has not booted yet, promote just
+	// the boot disk now instead of waiting for the VM to be powered on, so the
+	// guest boots with the requested capacity.
+	if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeOnline &&
+		moVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOff &&
+		vm.Annotations[vmopv1.FirstBootDoneAnnotation] == "" &&
+		(moVM.Snapshot == nil || moVM.Snapshot.CurrentSnapshot == nil) {
+
+		if boot := bootDiskPendingExtend(vm, moVM); boot != nil {
+			for i := range childDisks {
+				if childDisks[i].Key == boot.Key {
+					return promoteChildDisks(
+						ctx,
+						vimClient,
+						vm,
+						moVM,
+						[]vimtypes.VirtualDisk{childDisks[i]})
+				}
+			}
+		}
+	}
+
 	switch vm.Spec.PromoteDisksMode {
 	case vmopv1.VirtualMachinePromoteDisksModeOnline:
 		if moVM.Snapshot != nil && moVM.Snapshot.CurrentSnapshot != nil {
@@ -345,6 +381,53 @@ func (r reconciler) Reconcile(
 			return nil
 		}
 	}
+
+	return promoteChildDisks(ctx, vimClient, vm, moVM, childDisks)
+}
+
+// bootDiskPendingExtend returns the VM's boot disk if
+// spec.advanced.bootDiskCapacity extends it and it still has a parent. Like the
+// boot disk resize, it assumes the first disk is the boot disk.
+func bootDiskPendingExtend(
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine) *vimtypes.VirtualDisk {
+
+	if vm.Spec.Advanced == nil ||
+		vm.Spec.Advanced.BootDiskCapacity == nil ||
+		vm.Spec.Advanced.BootDiskCapacity.IsZero() ||
+		moVM.Config == nil {
+
+		return nil
+	}
+
+	devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+	allDisks := devices.SelectByType(&vimtypes.VirtualDisk{})
+	if len(allDisks) == 0 {
+		return nil
+	}
+
+	d := allDisks[0].(*vimtypes.VirtualDisk)
+	if d.VDiskId != nil ||
+		vm.Spec.Advanced.BootDiskCapacity.Value() <= d.CapacityInBytes ||
+		!pkgutil.GetVirtualDiskInfo(d).HasParent {
+
+		return nil
+	}
+
+	return d
+}
+
+// promoteChildDisks starts a task that promotes the given child disks.
+func promoteChildDisks(
+	ctx context.Context,
+	vimClient *vim25.Client,
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine,
+	childDisks []vimtypes.VirtualDisk) error {
+
+	logger := pkglog.FromContextOrDefault(ctx).WithValues(
+		"mode", vm.Spec.PromoteDisksMode,
+		"disks", len(childDisks))
 
 	logger.Info("Promoting disks")
 

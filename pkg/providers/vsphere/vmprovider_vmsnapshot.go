@@ -430,9 +430,7 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 			vmCtx, vcVM, ref, desiredSnapshotName); err != nil {
 
 			// The revert itself failed, so clear the annotation to let
-			// the next retry attempt it again. If restoreVMSpecFromSnapshot
-			// fails below, the revert already succeeded, so leave the
-			// annotation set instead.
+			// the next retry attempt it again.
 			delete(vmCtx.VM.Annotations,
 				pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey)
 
@@ -456,6 +454,13 @@ func (vs *vSphereVMProvider) reconcileSnapshotRevertDoTask(
 
 	if err := vs.restoreVMSpecFromSnapshot(
 		vmCtx, vcVM, obj, snapNode); err != nil {
+
+		// The vSphere revert already succeeded (isCurrent will be true on the
+		// next reconcile, so it won't be re-attempted), but the spec
+		// restoration failed. Clear the annotation so reconcileSnapshotRevertCheckTask
+		// does not permanently block retries of the restoration step.
+		delete(vmCtx.VM.Annotations,
+			pkgconst.VirtualMachineSnapshotRevertInProgressAnnotationKey)
 
 		err := fmt.Errorf(
 			"failed to restore vm spec and metadata from snapshot: %w", err)

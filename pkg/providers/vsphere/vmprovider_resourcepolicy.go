@@ -7,9 +7,11 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/clustermodules"
@@ -48,6 +50,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 
 	resourcePolicy.Status.ResourcePools = nil
 	clusterModuleProvider := clustermodules.NewProvider(client.RestClient())
+	clusterMoIDs := sets.New[string]()
 
 	for _, rpMoID := range rpMoIDs {
 		clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
@@ -55,6 +58,8 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 			errs = append(errs, err)
 			continue
 		}
+
+		clusterMoIDs.Insert(clusterRef.Value)
 
 		if rpSpec := &resourcePolicy.Spec.ResourcePool; rpSpec.Name != "" {
 			childRPMoID, err := vcenter.CreateOrUpdateChildResourcePool(ctx, vimClient, rpMoID, rpSpec)
@@ -75,6 +80,24 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 				errs = append(errs, err)
 			}
 		}
+	}
+
+	if len(errs) == 0 {
+		// In the case of a zone being removed (decommissioned) remove the cluster
+		// modules for that CCR. Our status is the only source of the CMs that were
+		// created for this CCR.
+		resourcePolicy.Status.ClusterModules = slices.DeleteFunc(resourcePolicy.Status.ClusterModules,
+			func(cm vmopv1.VSphereClusterModuleStatus) bool {
+				if cm.ClusterMoID == "" || clusterMoIDs.Has(cm.ClusterMoID) {
+					return false
+				}
+
+				if err := clusterModuleProvider.DeleteModule(ctx, cm.ModuleUuid); err != nil {
+					errs = append(errs, err)
+					return false
+				}
+				return true
+			})
 	}
 
 	return apierrorsutil.NewAggregate(errs)

@@ -427,7 +427,7 @@ func testVMRequestedCapacityHandlerServeHTTP() {
 
 			body, _ := json.Marshal(ar)
 
-			req := httptest.NewRequest(http.MethodPost, "/getrequestedcapacityforvirtualmachine", bytes.NewReader(body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/getrequestedcapacityforvirtualmachine", bytes.NewReader(body))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp := httptest.NewRecorder()
@@ -1882,7 +1882,7 @@ func testVMSnapshotRequestedCapacityHandlerServeHTTP() {
 		JustBeforeEach(func() {
 			body, _ := json.Marshal(ar)
 
-			req := httptest.NewRequest(http.MethodPost, "/getrequestedcapacityforvirtualmachinesnapshot", bytes.NewReader(body))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/getrequestedcapacityforvirtualmachinesnapshot", bytes.NewReader(body))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp := httptest.NewRecorder()

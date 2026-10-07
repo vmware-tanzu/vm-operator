@@ -20,6 +20,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
@@ -58,8 +59,9 @@ var _ = Describe("TCP probe", func() {
 	It("TCP probe succeeds, with TCP host set in VM spec ", func() {
 		vm.Spec.ReadinessProbe = getVirtualMachineReadinessTCPProbe(testHost, testPort)
 		probeCtx := &context.ProbeContext{
-			VM:     vm,
-			Logger: ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
+			Context: pkgcfg.NewContext(),
+			VM:      vm,
+			Logger:  ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
 		}
 
 		res, err := testTCPProbe.Probe(probeCtx)
@@ -71,8 +73,9 @@ var _ = Describe("TCP probe", func() {
 		vm.Status.Network.PrimaryIP4 = testHost
 		vm.Spec.ReadinessProbe = getVirtualMachineReadinessTCPProbe("", testPort)
 		probeCtx := &context.ProbeContext{
-			VM:     vm,
-			Logger: ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
+			Context: pkgcfg.NewContext(),
+			VM:      vm,
+			Logger:  ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
 		}
 
 		res, err := testTCPProbe.Probe(probeCtx)
@@ -83,7 +86,8 @@ var _ = Describe("TCP probe", func() {
 	It("TCP probe fails", func() {
 		vm.Spec.ReadinessProbe = getVirtualMachineReadinessTCPProbe(testHost, 10001)
 		probeCtx := &context.ProbeContext{
-			VM: vm,
+			Context: pkgcfg.NewContext(),
+			VM:      vm,
 		}
 
 		res, err := testTCPProbe.Probe(probeCtx)

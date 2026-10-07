@@ -5,6 +5,7 @@
 package testutil
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,7 +48,7 @@ func GetRootDirOrDie() string {
 
 // FindModuleDir returns the on-disk directory for the provided Go module.
 func FindModuleDir(module string) string {
-	cmd := exec.Command("go", "mod", "download", "-json", module) //nolint:gosec // test-only helper, not reachable outside the test process.
+	cmd := exec.CommandContext(context.Background(), "go", "mod", "download", "-json", module) //nolint:gosec // test-only helper, not reachable outside the test process.
 	out, err := cmd.Output()
 	if err != nil {
 		klog.Fatalf("Failed to run go mod to find module %q directory", module)

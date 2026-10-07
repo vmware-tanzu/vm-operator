@@ -300,7 +300,7 @@ func (v validator) validateUserGroupMembership(ctx *pkgctx.WebhookRequestContext
 
 	wcpClusterConfig, err := configmap.ParseWcpClusterConfig(wcpClusterConfigConfigMap.Data)
 	if err != nil {
-		ctx.Logger.Error(err, "unable to parse wcp-cluster-config ConfigMap: %w", err)
+		ctx.Logger.Error(err, "unable to parse wcp-cluster-config ConfigMap")
 		return false
 	}
 

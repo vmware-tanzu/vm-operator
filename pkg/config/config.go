@@ -224,6 +224,7 @@ type FeatureStates struct {
 	VMNetworkUnitNumbers         bool
 	K8sWorkloadMgmtAPI           bool
 	TaggingAPI                   bool
+	VMHardAffinityDuringExecution bool
 	CSIBackupAPI                 bool
 }
 

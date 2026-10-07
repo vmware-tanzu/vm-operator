@@ -28,6 +28,14 @@ func LocalizedMessagesFromFault(lmf vimtypes.LocalizedMethodFault) []string {
 		return messages
 	}
 
+	// Include the fault's own messages, which carry the specific reason
+	// (e.g. a GenericDrsFault's incompatible candidate zone).
+	for _, fm := range lmf.Fault.GetMethodFault().FaultMessage {
+		if msg := strings.TrimRight(fm.Message, ": \n\r\t"); msg != "" {
+			messages = append(messages, msg)
+		}
+	}
+
 	// Only extract messages from the top level NoCompatibleHost fault.
 	// Placement APIs return faults from single host per ResourcePool, we won't end up with too many errors.
 	if nch, ok := lmf.Fault.(*vimtypes.NoCompatibleHost); ok {

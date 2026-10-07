@@ -165,7 +165,8 @@ const (
 
 	// CapabilityKeyVMHardAffinityDuringExecution is the name of the
 	// capability key defined in the Supervisor capabilities CRD. It gates
-	// the TaggingAPI feature, i.e. the Tag CRD, controller, and webhook.
+	// the VMHardAffinityDuringExecution and TaggingAPI features, i.e. the
+	// per-VM zone placement and the Tag CRD, controller, and webhook.
 	CapabilityKeyVMHardAffinityDuringExecution = "supports_vm_service_vm_hard_affinity_during_execution"
 
 	// CapabilityKeyCSIBackupAPI is the name of the capability key defined in
@@ -360,6 +361,7 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.K8sWorkloadMgmtAPI = capStatus.Activated
 		case CapabilityKeyVMHardAffinityDuringExecution:
 			fs.TaggingAPI = capStatus.Activated
+			fs.VMHardAffinityDuringExecution = capStatus.Activated
 		case CapabilityKeyCSIBackupAPI:
 			fs.CSIBackupAPI = capStatus.Activated
 		}

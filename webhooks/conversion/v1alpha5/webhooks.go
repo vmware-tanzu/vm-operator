@@ -35,7 +35,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 
 	if pkgcfg.FromContext(ctx).Features.ImmutableClasses {
 		if err := ctrl.NewWebhookManagedBy(mgr, &vmopv1a5.VirtualMachineClassInstance{}).
-		Complete(); err != nil {
+			Complete(); err != nil {
 
 			return err
 		}

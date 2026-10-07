@@ -316,4 +316,3 @@ func VerifyListVMClass(wcpClient wcp.WorkloadManagementAPI, expectedVMClassSpecs
 
 	Expect(expectedVMClassSpecs).To(HaveLen(len(foundClassNames)))
 }
-

@@ -21,8 +21,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgexit "github.com/vmware-tanzu/vm-operator/pkg/exit"
-	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 // AddToManager adds this package's controller to the provided manager.

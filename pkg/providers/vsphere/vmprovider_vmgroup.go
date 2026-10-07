@@ -138,7 +138,7 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 
 			vmZonePlacementMapping := placement.VMZonePlacementMapping{
 				ConfigSpec: *configSpec,
-				ZoneName: vm.Labels[corev1.LabelTopologyZone],
+				ZoneName:   vm.Labels[corev1.LabelTopologyZone],
 			}
 			placementArgs.vmToZoneMappings = append(placementArgs.vmToZoneMappings,
 				vmZonePlacementMapping)

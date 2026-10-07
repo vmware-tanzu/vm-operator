@@ -32,14 +32,14 @@ var _ = DescribeTable("IsVirtualMachineSchemaUpgraded",
 		expectErr bool,
 		expectedErr error,
 	) {
-	ctx := pkgcfg.WithConfig(pkgcfg.Config{
-		BuildVersion: buildVersion,
-		Features: pkgcfg.FeatureStates{
-			VMSharedDisks:     vmSharedDisks,
-			AllDisksArePVCs:   allDisksArePVCs,
-			TelcoVMServiceAPI: telcoVMServiceAPI,
-		},
-	})
+		ctx := pkgcfg.WithConfig(pkgcfg.Config{
+			BuildVersion: buildVersion,
+			Features: pkgcfg.FeatureStates{
+				VMSharedDisks:     vmSharedDisks,
+				AllDisksArePVCs:   allDisksArePVCs,
+				TelcoVMServiceAPI: telcoVMServiceAPI,
+			},
+		})
 
 		vm := vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -536,8 +536,8 @@ var _ = Describe("ActivatedFeatureVersion", func() {
 		func(vmSharedDisks, allDisksArePVCs, telcoVMServiceAPI bool, expected vmopv1util.FeatureVersion) {
 			ctx := pkgcfg.WithConfig(pkgcfg.Config{
 				Features: pkgcfg.FeatureStates{
-					VMSharedDisks:   vmSharedDisks,
-					AllDisksArePVCs: allDisksArePVCs,
+					VMSharedDisks:     vmSharedDisks,
+					AllDisksArePVCs:   allDisksArePVCs,
 					TelcoVMServiceAPI: telcoVMServiceAPI,
 				},
 			})

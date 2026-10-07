@@ -215,7 +215,7 @@ func GetStoragePolicyID(
 
 		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
 			return "", fmt.Errorf(
-				"%s %q object is specified but capability is not enabled", 
+				"%s %q object is specified but capability is not enabled",
 				objKind, objName,
 			)
 		}

@@ -40,6 +40,7 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -105,6 +106,7 @@ const (
 	bootstrapProviderTypeCannotBeChanged                        = "bootstrap provider type cannot be changed"
 	forbiddenRemovableVolume                                    = "cannot remove volume with removable=false"
 	requiredDuringSchedulingRequiredDuringExecutionNotSupported = "requiredDuringSchedulingRequiredDuringExecution is not supported"
+	requiredDuringExecutionPolicyRequired                       = "requiredDuringSchedulingRequiredDuringExecution requires a RequiredDuringExecutionVMPlacementPolicy in the namespace"
 
 	// ExtraConfig validation error messages.
 	extraConfigUseFirstClassFieldFmt       = "%s: use the corresponding first-class field in %s instead"
@@ -160,6 +162,7 @@ var (
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get
 // +kubebuilder:rbac:groups=netoperator.vmware.com,resources=networksettings,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=requiredduringexecutionvmplacementpolicies,verbs=get;list;watch
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
@@ -3267,6 +3270,80 @@ func (v validator) validateGroupName(
 	return allErrs
 }
 
+// hasRequiredDuringExecutionPolicy returns true if the namespace contains at
+// least one RequiredDuringExecutionVMPlacementPolicy, regardless of its name.
+func (v validator) hasRequiredDuringExecutionPolicy(
+	ctx *pkgctx.WebhookRequestContext,
+	namespace string) (bool, error) {
+
+	var list vspherepolv1.RequiredDuringExecutionVMPlacementPolicyList
+	if err := v.client.List(
+		ctx.Context,
+		&list,
+		ctrlclient.InNamespace(namespace),
+		ctrlclient.Limit(1)); err != nil {
+
+		return false, fmt.Errorf(
+			"failed to list RequiredDuringExecutionVMPlacementPolicies in %s: %w",
+			namespace, err)
+	}
+	return len(list.Items) > 0, nil
+}
+
+// validateRequiredDuringExecution validates the
+// requiredDuringSchedulingRequiredDuringExecution terms of the VM's affinity
+// and anti-affinity. The terms are only allowed when the
+// VMHardAffinityDuringExecution feature is enabled and the VM's namespace has
+// a RequiredDuringExecutionVMPlacementPolicy, which is looked up at most once.
+func (v validator) validateRequiredDuringExecution(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var (
+		allErrs field.ErrorList
+		path    = field.NewPath("spec", "affinity")
+		fields  []*field.Path
+	)
+
+	if a := vm.Spec.Affinity.VMAffinity; a != nil &&
+		len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
+
+		fields = append(fields, path.Child(
+			"vmAffinity", "requiredDuringSchedulingRequiredDuringExecution"))
+	}
+	if a := vm.Spec.Affinity.VMAntiAffinity; a != nil &&
+		len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
+
+		fields = append(fields, path.Child(
+			"vmAntiAffinity", "requiredDuringSchedulingRequiredDuringExecution"))
+	}
+
+	if len(fields) == 0 {
+		return nil
+	}
+
+	if !pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution {
+		for _, p := range fields {
+			allErrs = append(allErrs, field.Forbidden(
+				p, requiredDuringSchedulingRequiredDuringExecutionNotSupported))
+		}
+		return allErrs
+	}
+
+	found, err := v.hasRequiredDuringExecutionPolicy(ctx, vm.Namespace)
+	if err != nil {
+		return field.ErrorList{field.InternalError(fields[0], err)}
+	}
+	if !found {
+		for _, p := range fields {
+			allErrs = append(allErrs, field.Forbidden(
+				p, requiredDuringExecutionPolicyRequired))
+		}
+	}
+
+	return allErrs
+}
+
 //nolint:gocyclo
 func (v validator) validateVMAffinity(
 	ctx *pkgctx.WebhookRequestContext,
@@ -3286,14 +3363,10 @@ func (v validator) validateVMAffinity(
 
 	path := field.NewPath("spec", "affinity")
 
+	allErrs = append(allErrs, v.validateRequiredDuringExecution(ctx, vm)...)
+
 	if a := affinity.VMAffinity; a != nil {
 		p := path.Child("vmAffinity")
-
-		if len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
-			allErrs = append(allErrs, field.Forbidden(
-				p.Child("requiredDuringSchedulingRequiredDuringExecution"),
-				requiredDuringSchedulingRequiredDuringExecutionNotSupported))
-		}
 
 		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
 			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")
@@ -3388,12 +3461,6 @@ func (v validator) validateVMAffinity(
 
 	if a := affinity.VMAntiAffinity; a != nil {
 		p := path.Child("vmAntiAffinity")
-
-		if len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
-			allErrs = append(allErrs, field.Forbidden(
-				p.Child("requiredDuringSchedulingRequiredDuringExecution"),
-				requiredDuringSchedulingRequiredDuringExecutionNotSupported))
-		}
 
 		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
 			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")

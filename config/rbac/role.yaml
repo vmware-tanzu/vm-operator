@@ -399,6 +399,7 @@ rules:
   - besteffortrestartpolicies
   - computepolicies
   - controlledrebalancingpolicies
+  - requiredduringexecutionvmplacementpolicies
   - tagpolicies
   verbs:
   - get

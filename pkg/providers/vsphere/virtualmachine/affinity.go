@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
@@ -68,12 +69,18 @@ func extractAffinityLabelsFromVM(vmCtx pkgctx.VirtualMachineContext, constraints
 	if affinity.VMAffinity != nil {
 		extractFromTerms(affinity.VMAffinity.RequiredDuringSchedulingPreferredDuringExecution)
 		extractFromTerms(affinity.VMAffinity.PreferredDuringSchedulingPreferredDuringExecution)
+		if pkgcfg.FromContext(vmCtx.Context).Features.VMHardAffinityDuringExecution {
+			extractFromTerms(affinity.VMAffinity.RequiredDuringSchedulingRequiredDuringExecution)
+		}
 	}
 
 	// process VM anti-affinity rules
 	if affinity.VMAntiAffinity != nil {
 		extractFromTerms(affinity.VMAntiAffinity.RequiredDuringSchedulingPreferredDuringExecution)
 		extractFromTerms(affinity.VMAntiAffinity.PreferredDuringSchedulingPreferredDuringExecution)
+		if pkgcfg.FromContext(vmCtx.Context).Features.VMHardAffinityDuringExecution {
+			extractFromTerms(affinity.VMAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution)
+		}
 	}
 
 	return affinityLabels
@@ -173,65 +180,20 @@ func processVMAffinity(
 	var placementPols []vimtypes.BaseVmPlacementPolicy //nolint:prealloc
 
 	if constraints.ConfigureZoneRules {
-		// Process required affinity terms associated with zone topology.
-		requiredZoneTagIDs := buildTagIDsFromZoneTopology(
-			vmCtx,
-			affinity.RequiredDuringSchedulingPreferredDuringExecution,
+		addAffinityPoliciesForTopology(vmCtx,
+			affinity,
+			&placementPols,
+			vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone,
 		)
-		for _, tagID := range requiredZoneTagIDs {
-			placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-				AffinedVmsTag:    tagID,
-				PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-				PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-			})
-		}
 	}
 
 	// Process host-topology affinity terms only when VMAffinityDuringExecution is enabled.
 	if constraints.ConfigureHostRules {
-		// Process required affinity terms associated with host topology.
-		requiredHostTagIDs := buildTagIDsFromHostTopology(
-			vmCtx,
-			affinity.RequiredDuringSchedulingPreferredDuringExecution,
+		addAffinityPoliciesForTopology(vmCtx,
+			affinity,
+			&placementPols,
+			vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost,
 		)
-		for _, tagID := range requiredHostTagIDs {
-			placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-				AffinedVmsTag:    tagID,
-				PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-				PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
-			})
-		}
-	}
-
-	if constraints.ConfigureZoneRules {
-		// Process preferred affinity terms associated with zone topology.
-		preferredZoneTagIDs := buildTagIDsFromZoneTopology(
-			vmCtx,
-			affinity.PreferredDuringSchedulingPreferredDuringExecution,
-		)
-		for _, tagID := range preferredZoneTagIDs {
-			placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-				AffinedVmsTag:    tagID,
-				PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-				PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-			})
-		}
-	}
-
-	// Process host-topology affinity terms only when VMAffinityDuringExecution is enabled.
-	if constraints.ConfigureHostRules {
-		// Process preferred affinity terms associated with host topology.
-		preferredHostTagIDs := buildTagIDsFromHostTopology(
-			vmCtx,
-			affinity.PreferredDuringSchedulingPreferredDuringExecution,
-		)
-		for _, tagID := range preferredHostTagIDs {
-			placementPols = append(placementPols, &vimtypes.VmVmAffinity{
-				AffinedVmsTag:    tagID,
-				PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-				PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
-			})
-		}
 	}
 
 	return placementPols
@@ -248,66 +210,166 @@ func processVMAntiAffinity(
 	var placementPols []vimtypes.BaseVmPlacementPolicy //nolint:prealloc
 
 	if constraints.ConfigureZoneRules {
-		// Process required anti-affinity terms associated with zone topology.
-		requiredZoneTagIDs := buildTagIDsFromZoneTopology(
-			vmCtx,
-			antiAffinity.RequiredDuringSchedulingPreferredDuringExecution,
+		addAntiAffinityPoliciesForTopology(vmCtx,
+			antiAffinity,
+			&placementPols,
+			vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone,
 		)
-		if len(requiredZoneTagIDs) > 0 {
-			placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
-				AntiAffinedVmGroupTags: requiredZoneTagIDs,
-				PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-				PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-			})
-		}
 	}
 
 	// Process host-topology anti-affinity terms only when VMAffinityDuringExecution is enabled.
 	if constraints.ConfigureHostRules {
-		requiredHostTagIDs := buildTagIDsFromHostTopology(
-			vmCtx,
-			antiAffinity.RequiredDuringSchedulingPreferredDuringExecution,
+		addAntiAffinityPoliciesForTopology(vmCtx,
+			antiAffinity,
+			&placementPols,
+			vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost,
 		)
-		for _, tagID := range requiredHostTagIDs {
-			placementPols = append(placementPols, &vimtypes.VmVmAntiAffinity{
-				AntiAffinedVmsTag: tagID,
-				PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
-				PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
-			})
-		}
-	}
-
-	if constraints.ConfigureZoneRules {
-		// Process preferred anti-affinity terms associated with zone topology.
-		preferredZoneTagIDs := buildTagIDsFromZoneTopology(
-			vmCtx,
-			antiAffinity.PreferredDuringSchedulingPreferredDuringExecution,
-		)
-		if len(preferredZoneTagIDs) > 0 {
-			placementPols = append(placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
-				AntiAffinedVmGroupTags: preferredZoneTagIDs,
-				PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-				PolicyTopology:         string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
-			})
-		}
-	}
-
-	// Process host-topology anti-affinity terms only when VMAffinityDuringExecution is enabled.
-	if constraints.ConfigureHostRules {
-		preferredHostTagIDs := buildTagIDsFromHostTopology(
-			vmCtx,
-			antiAffinity.PreferredDuringSchedulingPreferredDuringExecution,
-		)
-		for _, tagID := range preferredHostTagIDs {
-			placementPols = append(placementPols, &vimtypes.VmVmAntiAffinity{
-				AntiAffinedVmsTag: tagID,
-				PolicyStrictness:  string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
-				PolicyTopology:    string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost),
-			})
-		}
 	}
 
 	return placementPols
+}
+
+func addAntiAffinityPoliciesForTopology(
+	vmCtx pkgctx.VirtualMachineContext,
+	antiAffinity *vmopv1.VMAntiAffinitySpec,
+	placementPols *[]vimtypes.BaseVmPlacementPolicy,
+	topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology) {
+
+	// Zone anti-affinity is always grouped. VMHardAffinityDuringExecution also
+	// switches host VmVmAntiAffinity to VmToVmGroupsAntiAffinity.
+	grouped := topology == vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone ||
+		pkgcfg.FromContext(vmCtx.Context).Features.VMHardAffinityDuringExecution
+	var buildTagsFunc func(pkgctx.VirtualMachineContext, []vmopv1.VMAffinityTerm) []vimtypes.TagId
+
+	switch topology {
+	case vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone:
+		buildTagsFunc = buildTagIDsFromZoneTopology
+	case vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost:
+		buildTagsFunc = buildTagIDsFromHostTopology
+	default:
+		return
+	}
+
+	// Preferred: Scheduling
+	// Preferred: Execution
+	addAntiAffinityPolicies(
+		placementPols,
+		buildTagsFunc(vmCtx, antiAffinity.PreferredDuringSchedulingPreferredDuringExecution),
+		vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution,
+		topology,
+		grouped)
+
+	// Required: Scheduling
+	// Preferred: Execution
+	addAntiAffinityPolicies(
+		placementPols,
+		buildTagsFunc(vmCtx, antiAffinity.RequiredDuringSchedulingPreferredDuringExecution),
+		vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution,
+		topology,
+		grouped)
+
+	if pkgcfg.FromContext(vmCtx.Context).Features.VMHardAffinityDuringExecution {
+		// Required: Scheduling
+		// Required: Execution
+		addAntiAffinityPolicies(
+			placementPols,
+			buildTagsFunc(vmCtx, antiAffinity.RequiredDuringSchedulingRequiredDuringExecution),
+			vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementRequiredDuringExecution,
+			topology,
+			grouped)
+	}
+}
+
+// addAntiAffinityPolicies appends anti-affinity policies for the given tags.
+// When grouped is true, a single VmToVmGroupsAntiAffinity policy holds all the
+// tags. Otherwise there is one VmVmAntiAffinity policy per tag.
+func addAntiAffinityPolicies(
+	placementPols *[]vimtypes.BaseVmPlacementPolicy,
+	tagIDs []vimtypes.TagId,
+	strictness vimtypes.VmPlacementPolicyVmPlacementPolicyStrictness,
+	topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology,
+	grouped bool) {
+
+	if len(tagIDs) == 0 {
+		return
+	}
+
+	if grouped {
+		*placementPols = append(*placementPols, &vimtypes.VmToVmGroupsAntiAffinity{
+			AntiAffinedVmGroupTags: tagIDs,
+			PolicyStrictness:       string(strictness),
+			PolicyTopology:         string(topology),
+		})
+		return
+	}
+
+	for _, tagID := range tagIDs {
+		*placementPols = append(*placementPols, &vimtypes.VmVmAntiAffinity{
+			AntiAffinedVmsTag: tagID,
+			PolicyStrictness:  string(strictness),
+			PolicyTopology:    string(topology),
+		})
+	}
+}
+
+func addAffinityPoliciesForTopology(
+	vmCtx pkgctx.VirtualMachineContext,
+	affinity *vmopv1.VMAffinitySpec,
+	placementPols *[]vimtypes.BaseVmPlacementPolicy,
+	topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology) {
+
+	var buildTagsFunc func(pkgctx.VirtualMachineContext, []vmopv1.VMAffinityTerm) []vimtypes.TagId
+
+	switch topology {
+	case vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone:
+		buildTagsFunc = buildTagIDsFromZoneTopology
+	case vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost:
+		buildTagsFunc = buildTagIDsFromHostTopology
+	default:
+		return
+	}
+
+	// Preferred: Scheduling
+	// Preferred: Execution
+	addAffinityPolicies(
+		placementPols,
+		buildTagsFunc(vmCtx, affinity.PreferredDuringSchedulingPreferredDuringExecution),
+		vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution,
+		topology)
+
+	// Required: Scheduling
+	// Preferred: Execution
+	addAffinityPolicies(
+		placementPols,
+		buildTagsFunc(vmCtx, affinity.RequiredDuringSchedulingPreferredDuringExecution),
+		vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution,
+		topology)
+
+	if pkgcfg.FromContext(vmCtx.Context).Features.VMHardAffinityDuringExecution {
+		// Required: Scheduling
+		// Required: Execution
+		addAffinityPolicies(
+			placementPols,
+			buildTagsFunc(vmCtx, affinity.RequiredDuringSchedulingRequiredDuringExecution),
+			vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementRequiredDuringExecution,
+			topology)
+	}
+}
+
+// addAffinityPolicies appends one VmVmAffinity policy per given tag.
+func addAffinityPolicies(
+	placementPols *[]vimtypes.BaseVmPlacementPolicy,
+	tagIDs []vimtypes.TagId,
+	strictness vimtypes.VmPlacementPolicyVmPlacementPolicyStrictness,
+	topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology) {
+
+	for _, tagID := range tagIDs {
+		*placementPols = append(*placementPols, &vimtypes.VmVmAffinity{
+			AffinedVmsTag:    tagID,
+			PolicyStrictness: string(strictness),
+			PolicyTopology:   string(topology),
+		})
+	}
 }
 
 // buildTagIDsFromTopology returns a list of TagIds built from the given

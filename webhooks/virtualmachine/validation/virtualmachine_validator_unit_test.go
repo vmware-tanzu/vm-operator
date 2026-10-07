@@ -36,6 +36,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -287,6 +288,18 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 		vm:                                  vm,
 		oldVM:                               oldVM,
 	}
+}
+
+func createRequiredDuringExecutionPolicy(ctx *unitValidatingWebhookContext) {
+	pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+		config.Features.VMHardAffinityDuringExecution = true
+	})
+	ExpectWithOffset(1, ctx.Client.Create(ctx, &vspherepolv1.RequiredDuringExecutionVMPlacementPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "any-name",
+			Namespace: ctx.vm.Namespace,
+		},
+	})).To(Succeed())
 }
 
 // setControllerForPVC sets controllerBusNumber and controllerType
@@ -5046,6 +5059,167 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingRequiredDuringExecution: Forbidden: requiredDuringSchedulingRequiredDuringExecution is not supported`),
+				},
+			),
+
+			Entry("disallow VM Affinity RequiredDuringSchedulingRequiredDuringExecution when VMHardAffinityDuringExecution is enabled but namespace has no placement policy",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMHardAffinityDuringExecution = true
+						})
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelHostname},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.requiredDuringSchedulingRequiredDuringExecution: Forbidden: requiredDuringSchedulingRequiredDuringExecution requires a RequiredDuringExecutionVMPlacementPolicy in the namespace`),
+				},
+			),
+
+			Entry("disallow VM Anti Affinity RequiredDuringSchedulingRequiredDuringExecution when VMHardAffinityDuringExecution is enabled but namespace has no placement policy",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMHardAffinityDuringExecution = true
+						})
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelHostname},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAntiAffinity.requiredDuringSchedulingRequiredDuringExecution: Forbidden: requiredDuringSchedulingRequiredDuringExecution requires a RequiredDuringExecutionVMPlacementPolicy in the namespace`),
+				},
+			),
+
+			Entry("disallow RequiredDuringSchedulingRequiredDuringExecution when the placement policy is in another namespace",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMHardAffinityDuringExecution = true
+						})
+						Expect(ctx.Client.Create(ctx, &vspherepolv1.RequiredDuringExecutionVMPlacementPolicy{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "any-name",
+								Namespace: "other-namespace",
+							},
+						})).To(Succeed())
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelHostname},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.requiredDuringSchedulingRequiredDuringExecution: Forbidden: requiredDuringSchedulingRequiredDuringExecution requires a RequiredDuringExecutionVMPlacementPolicy in the namespace`),
+				},
+			),
+
+			Entry("allow RequiredDuringSchedulingRequiredDuringExecution terms mixing host and zone topology",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						createRequiredDuringExecutionPolicy(ctx)
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelTopologyZone},
+								{TopologyKey: corev1.LabelHostname},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Affinity and Anti Affinity RequiredDuringSchedulingRequiredDuringExecution together with host topology",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						createRequiredDuringExecutionPolicy(ctx)
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelHostname},
+							},
+						}
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelHostname},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Affinity RequiredDuringSchedulingRequiredDuringExecution with host topology when namespace has a placement policy",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						createRequiredDuringExecutionPolicy(ctx)
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelHostname},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Anti Affinity RequiredDuringSchedulingRequiredDuringExecution with host topology when namespace has a placement policy",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						createRequiredDuringExecutionPolicy(ctx)
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelHostname},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Affinity RequiredDuringSchedulingRequiredDuringExecution with zone topology when namespace has a placement policy",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						createRequiredDuringExecutionPolicy(ctx)
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelTopologyZone},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VM Anti Affinity RequiredDuringSchedulingRequiredDuringExecution with zone topology when namespace has a placement policy",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						createRequiredDuringExecutionPolicy(ctx)
+						ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelTopologyZone},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow VM Affinity RequiredDuringSchedulingRequiredDuringExecution with zone topology when VMHardAffinityDuringExecution is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Affinity.VMAffinity = &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingRequiredDuringExecution: []vmopv1.VMAffinityTerm{
+								{TopologyKey: corev1.LabelTopologyZone},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.affinity.vmAffinity.requiredDuringSchedulingRequiredDuringExecution: Forbidden: requiredDuringSchedulingRequiredDuringExecution is not supported`),
 				},
 			),
 		)

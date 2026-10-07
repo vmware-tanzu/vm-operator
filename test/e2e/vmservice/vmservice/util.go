@@ -1500,6 +1500,36 @@ func VerifyVMTagsAndPolicyAssignment(
 	expectedPolicyNames []string) {
 	GinkgoHelper()
 
+	verifyVMTagsAndPolicyAssignment(ctx, config, client, mgr, ns, vmName, policyNameToTagID, expectedPolicyNames, true)
+}
+
+// VerifyVMTagsContainPolicyAssignment is like VerifyVMTagsAndPolicyAssignment,
+// but the VM may have additional tags attached, such as those configured by
+// zonal affinity policies.
+func VerifyVMTagsContainPolicyAssignment(
+	ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client,
+	mgr *tags.Manager,
+	ns, vmName string,
+	policyNameToTagID map[string]string,
+	expectedPolicyNames []string) {
+	GinkgoHelper()
+
+	verifyVMTagsAndPolicyAssignment(ctx, config, client, mgr, ns, vmName, policyNameToTagID, expectedPolicyNames, false)
+}
+
+func verifyVMTagsAndPolicyAssignment(
+	ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client,
+	mgr *tags.Manager,
+	ns, vmName string,
+	policyNameToTagID map[string]string,
+	expectedPolicyNames []string,
+	exactTags bool) {
+	GinkgoHelper()
+
 	expectedTagIDs := make([]string, len(expectedPolicyNames))
 	for i, policyName := range expectedPolicyNames {
 		expectedTagIDs[i] = policyNameToTagID[policyName]
@@ -1522,7 +1552,11 @@ func VerifyVMTagsAndPolicyAssignment(
 		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vm.Status.UniqueID}
 		list, err := mgr.ListAttachedTags(ctx, vmMoRef)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to list attached tags for VM %s", vmMoRef.Value)
-		g.Expect(list).To(ConsistOf(expectedTagIDs))
+		if exactTags {
+			g.Expect(list).To(ConsistOf(expectedTagIDs))
+		} else {
+			g.Expect(list).To(ContainElements(expectedTagIDs))
+		}
 	}, config.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed())
 }
 

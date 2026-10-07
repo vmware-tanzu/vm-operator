@@ -5,8 +5,10 @@
 package chaos
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -40,8 +42,13 @@ func TestTransportInjectsFaults(t *testing.T) {
 	defer srv.Close()
 
 	tr := &transport{next: http.DefaultTransport, inj: newInjector(Profile{ResetRate: 1}, 1)}
-	if _, err := tr.RoundTrip(newReq(t, srv.URL)); err == nil {
-		t.Error("expected injected reset error")
+	_, err := tr.RoundTrip(newReq(t, srv.URL))
+	if err == nil {
+		t.Fatal("expected injected reset error")
+	}
+
+	if !errors.Is(err, syscall.ECONNRESET) {
+		t.Errorf("injected reset should wrap ECONNRESET like a real one, got %T: %v", err, err)
 	}
 
 	tr = &transport{next: http.DefaultTransport, inj: newInjector(Profile{ThrottleRate: 1}, 1)}

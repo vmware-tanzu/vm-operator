@@ -69,10 +69,19 @@ func NewVimClient(vCenterHost string, username string, password string) (*vim25.
 	sc := soap.NewClient(&clientURL, true)
 	sc.Transport = chaos.WrapTransport(sc.Transport)
 
-	client, err := vim25.NewClient(ctx, sc)
+	var client *vim25.Client
+
+	err := RetryTransient(ctx, func() (err error) {
+		client, err = vim25.NewClient(ctx, sc)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
+
+	// Every later call -- login, logout and everything the tests do with
+	// this client -- rides out transient failures.
+	client.RoundTripper = WithTransientRetry(sc)
 
 	loginRequest := types.Login{
 		This:     *client.ServiceContent.SessionManager,
@@ -80,7 +89,7 @@ func NewVimClient(vCenterHost string, username string, password string) (*vim25.
 		Password: password,
 	}
 
-	_, err = methods.Login(ctx, sc, &loginRequest)
+	_, err = methods.Login(ctx, client, &loginRequest)
 	if err != nil {
 		return nil, err
 	}

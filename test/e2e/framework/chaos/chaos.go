@@ -18,14 +18,15 @@
 package chaos
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -161,7 +162,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	if reset {
-		return nil, errors.New("chaos: injected connection reset by peer")
+		return nil, newInjectedReset()
 	}
 
 	if throttle != 0 {
@@ -207,4 +208,24 @@ func (i *injector) roll() (delay time.Duration, reset bool, throttle int) {
 	}
 
 	return delay, reset, throttle
+}
+
+// injectedReset is what a real TCP reset looks like to callers (a *net.OpError
+// wrapping ECONNRESET, so Temporary() is true and generic retry logic treats
+// it like the real thing), with a "chaos:" prefix so it is recognisable in
+// logs.
+type injectedReset struct {
+	*net.OpError
+}
+
+func (e injectedReset) Error() string {
+	return "chaos: injected " + e.OpError.Error()
+}
+
+func newInjectedReset() error {
+	return injectedReset{&net.OpError{
+		Op:  "read",
+		Net: "tcp",
+		Err: os.NewSyscallError("read", syscall.ECONNRESET),
+	}}
 }

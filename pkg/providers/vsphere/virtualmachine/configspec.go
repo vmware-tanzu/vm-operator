@@ -340,7 +340,8 @@ func CreateConfigSpecForPlacement(
 //
 // ConfigureZoneRules is true when the VMPlacementPolicies capability is
 // enabled, except:
-//   - It is disabled during VM Create configspec creation, As DRS only evaluates
+//   - It is disabled during VM Create configspec creation unless
+//     VMHardAffinityDuringExecution is enabled, as DRS otherwise only evaluates
 //     zonal policies during placement. Therefore, when the VM is being created,
 //     we want to omit zonal policies from the ConfigSpec
 //   - It is disabled for a VKS node VM (CAPI labels) with a zone label set,
@@ -375,9 +376,9 @@ func CalculateAffinityConstraints(
 		constraints.ConfigureHostRules = false
 	}
 
-	// Drs interprets all persisted policies at host level, hence avoid configuring zonal policies during create.
-	// zonal policies are only considered at placement time.
-	if isCreateVM {
+	// All zonal policies are supported on create only when
+	// VMHardAffinityDuringExecution is enabled.
+	if isCreateVM && !pkgcfg.FromContext(vmCtx).Features.VMHardAffinityDuringExecution {
 		constraints.ConfigureZoneRules = false
 	}
 

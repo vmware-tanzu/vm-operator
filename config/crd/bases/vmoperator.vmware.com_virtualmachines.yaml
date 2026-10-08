@@ -16240,6 +16240,56 @@ spec:
                           - VMXNet2
                           - PCNet32
                           type: string
+                        unitNumber:
+                          description: |-
+                            UnitNumber is the slot on the virtual PCI bus for this network
+                            interface. Values 7-16 are valid: the virtual PCI bus is shared with
+                            other devices (video card, controllers, etc.) that occupy the lower
+                            slots, and ethernet cards are allocated units 7-16.
+
+                            Once set, this value is this interface's identifier for its underlying
+                            vSphere hardware device -- not merely a slot a device happens to occupy.
+
+                            This field may be left unset, including when the VM is created. An
+                            interface created without a unit number receives one from vSphere when
+                            its device is created, and that value is recorded into this field once
+                            the VM has been reconciled. From that point on, an interface added to
+                            this VM without a unit number is assigned the next available one when
+                            the request is admitted.
+
+                            This value must be unique among all network interfaces attached to
+                            this VM. The admission webhook rejects requests where two interfaces
+                            share the same unit number or where the value is outside the valid
+                            range.
+
+                            This field may remain unset even after the VM has been reconciled: the
+                            observed value is recorded only when doing so yields a valid
+                            specification. An interface whose observed slot is already claimed by
+                            another interface, or is outside the valid range, keeps an unset value.
+
+                            Once the VM is powered on this field is immutable for user-originated
+                            requests; the admission webhook rejects changing an already-set unit
+                            number, or clearing one, while the VM is in the powered-on state. An
+                            unset field may be set on a powered-on VM only by VM Operator itself,
+                            recording an observed value discovered from vSphere.
+
+                            Changing this field on an existing interface while the VM is powered
+                            off is a hardware replacement, not a relocation: the interface's
+                            current device (if no other interface claims it) is removed, and a new
+                            device is created at the newly-requested slot on the VM's next
+                            reconcile. The new device has a new identity -- a new key, and, for an
+                            automatically assigned MAC address, a new MAC address (and therefore
+                            possibly a new DHCP-assigned IP) -- and reflecting the change does not
+                            take effect while the VM stays powered on.
+
+                            Note that once this field is set, other changes to the interface --
+                            such as re-pointing it at a different network -- are likewise applied
+                            by replacing the device at this unit number rather than by modifying
+                            it in place, and so carry the same new-key/new-MAC caveat.
+                          format: int32
+                          maximum: 16
+                          minimum: 7
+                          type: integer
                         vmxnet3:
                           description: |-
                             VMXNet3 contains configuration options specific to VMXNet3 interfaces.
@@ -17917,6 +17967,19 @@ spec:
                             Please note this name is not necessarily related to the name of the
                             device as it is surfaced inside of the guest.
                           type: string
+                        unitNumber:
+                          description: |-
+                            UnitNumber describes the observed PCI unit number of this network
+                            interface's virtual device, as reported by vSphere. This is an
+                            informational counterpart to the interface's unitNumber field in the
+                            VM's desired network interface list, and reflects the slot actually
+                            observed in vSphere even when it differs from the spec value.
+
+                            Please note this field only appears for interfaces reported by VMware
+                            Tools in guest info; a VM without Tools running has no interface status
+                            entries at all.
+                          format: int32
+                          type: integer
                         vmxnet3:
                           description: |-
                             VMXNet3 reflects the observed VMXNet3-specific device properties for

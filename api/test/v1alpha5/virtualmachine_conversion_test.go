@@ -171,6 +171,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 									},
 									Type:        vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
 									VNUMANodeID: ptr.To(int32(1)),
+									UnitNumber:  ptr.To(int32(9)),
 									VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Spec{
 										UPTv2Enabled: ptr.To(true),
 									},
@@ -539,6 +540,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								{
 									Name:        "eth0",
 									VNUMANodeID: ptr.To(int32(2)),
+									UnitNumber:  ptr.To(int32(3)),
 									VMXNet3: &vmopv1.VirtualMachineNetworkInterfaceVMXNet3Status{
 										UPTv2Enabled:             ptr.To(true),
 										UPTv2Active:              ptr.To(false),
@@ -571,6 +573,50 @@ func TestVirtualMachineConversion(t *testing.T) {
 				g.Expect(apiequality.Semantic.DeepEqual(tc.hub, after)).To(BeTrue(), cmp.Diff(tc.hub, after))
 			})
 		}
+	})
+
+	t.Run("spec.network.interfaces unitNumber restored by name across interface removal and re-add", func(t *testing.T) {
+		// An old-version UPDATE that removes an interface and adds a different
+		// one reusing the same name must not wipe the hub-only unitNumber
+		// (k8s#111703): the annotation-based restore re-attaches the saved
+		// value by name. This is safe because, once set, the unit number is
+		// the interface's identity for the hardware at that slot, and the
+		// reconciler replaces the device at that slot to converge the new
+		// interface's desired state (spec G12).
+		g := NewWithT(t)
+
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Network: &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:       "eth0",
+							Type:       vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3,
+							UnitNumber: ptr.To(int32(9)),
+						},
+					},
+				},
+			},
+		}
+
+		// Down-convert hub -> spoke (stores hub data in the annotation).
+		var spoke vmopv1a5.VirtualMachine
+		g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+
+		// Simulate the old-version UPDATE: remove eth0 and add a different
+		// interface that reuses the name.
+		spoke.Spec.Network.Interfaces = []vmopv1a5.VirtualMachineNetworkInterfaceSpec{
+			{
+				Name: "eth0",
+			},
+		}
+
+		// Up-convert spoke -> hub: unitNumber must be re-attached by name.
+		var hubAfter vmopv1.VirtualMachine
+		g.Expect(spoke.ConvertTo(&hubAfter)).To(Succeed())
+		g.Expect(hubAfter.Spec.Network.Interfaces).To(HaveLen(1))
+		g.Expect(hubAfter.Spec.Network.Interfaces[0].Name).To(Equal("eth0"))
+		g.Expect(hubAfter.Spec.Network.Interfaces[0].UnitNumber).To(Equal(ptr.To(int32(9))))
 	})
 
 	t.Run("spec.network.interfaces.dhcp-spoke-override", func(t *testing.T) {

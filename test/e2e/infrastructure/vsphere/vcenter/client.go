@@ -21,6 +21,7 @@ import (
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework/chaos"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 )
 
@@ -66,11 +67,21 @@ func NewVimClient(vCenterHost string, username string, password string) (*vim25.
 	}
 	ctx := context.Background()
 	sc := soap.NewClient(&clientURL, true)
+	sc.Transport = chaos.WrapTransport(sc.Transport)
 
-	client, err := vim25.NewClient(ctx, sc)
+	var client *vim25.Client
+
+	err := RetryTransient(ctx, func() (err error) {
+		client, err = vim25.NewClient(ctx, sc)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
+
+	// Every later call -- login, logout and everything the tests do with
+	// this client -- rides out transient failures.
+	client.RoundTripper = WithTransientRetry(sc)
 
 	loginRequest := types.Login{
 		This:     *client.ServiceContent.SessionManager,
@@ -78,7 +89,7 @@ func NewVimClient(vCenterHost string, username string, password string) (*vim25.
 		Password: password,
 	}
 
-	_, err = methods.Login(ctx, sc, &loginRequest)
+	_, err = methods.Login(ctx, client, &loginRequest)
 	if err != nil {
 		return nil, err
 	}

@@ -320,7 +320,7 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 							},
 						)
 					})
-					
+
 					Context("when StoragePolicyMutability capability is enabled", func() {
 						BeforeEach(func() {
 							ctx = pkgcfg.WithContext(ctx, pkgcfg.Config{
@@ -333,7 +333,7 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 							Expect(status.VolumeAttributesClass).To(Equal("sector-format-512"))
 						})
 					})
-					
+
 					Context("when StoragePolicyMutability capability is not enabled", func() {
 						It("should return the policy status without the VAC", func() {
 							Expect(err).ToNot(HaveOccurred())

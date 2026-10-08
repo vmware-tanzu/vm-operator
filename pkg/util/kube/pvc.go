@@ -34,8 +34,8 @@ const (
 	vmKind = "VirtualMachine"
 
 	// apiGroupNamePrefix is used when matching just the API group of a VM Op
-// object.
- apiGroupNamePrefix = vmopv1.GroupName + "/"
+	// object.
+	apiGroupNamePrefix = vmopv1.GroupName + "/"
 )
 
 // VMSpecVolumesPVCsIndexerFunc returns the list of the PVC names that are referenced

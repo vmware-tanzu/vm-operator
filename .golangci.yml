@@ -3,7 +3,13 @@ version: "2"
 run:
   timeout: 5m
 
+
+issues:
+  max-same-issues: 0
+
 formatters:
+  enable:
+    - gofmt
   settings:
      goimports:
       # Put VMware imports beginning with the following prefixes after any

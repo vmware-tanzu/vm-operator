@@ -5,8 +5,8 @@
 package crd_test
 
 import (
-	goruntime "runtime"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -18,8 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
-	"github.com/vmware-tanzu/vm-operator/test/testutil"
 	_ "github.com/vmware-tanzu/vm-operator/test/builder/log"
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 var (

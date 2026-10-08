@@ -163,26 +163,26 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 			// spec.Advanced must stay nil — no empty struct created.
 			Expect(vm.Spec.Advanced).To(BeNil())
 		},
-		Entry("PreferHTEnabled auto",        "numa.vcpu.preferHT",                 "auto"),
-		Entry("PreferHTEnabled AUTO",        "numa.vcpu.preferHT",                 "AUTO"),
-		Entry("PreferHTEnabled DEFAULT",     "numa.vcpu.preferHT",                 "DEFAULT"),
-		Entry("PreferHTEnabled default",     "numa.vcpu.preferHT",                 "default"),
-		Entry("HugePages1GEnabled dontcare", "sched.mem.lpage.enable1GPage",       "dontcare"),
-		Entry("HugePages1GEnabled auto",     "sched.mem.lpage.enable1GPage",       "auto"),
-		Entry("TimeTracker auto",            "timeTracker.lowLatency",             "auto"),
-		Entry("TimeTracker DEFAULT",         "timeTracker.lowLatency",             "DEFAULT"),
-		Entry("CPUAffinity DONTCARE",        "sched.cpu.affinity.exclusiveNoStats","DONTCARE"),
-		Entry("VMXSwap default",             "sched.swap.vmxSwapEnabled",          "default"),
+		Entry("PreferHTEnabled auto", "numa.vcpu.preferHT", "auto"),
+		Entry("PreferHTEnabled AUTO", "numa.vcpu.preferHT", "AUTO"),
+		Entry("PreferHTEnabled DEFAULT", "numa.vcpu.preferHT", "DEFAULT"),
+		Entry("PreferHTEnabled default", "numa.vcpu.preferHT", "default"),
+		Entry("HugePages1GEnabled dontcare", "sched.mem.lpage.enable1GPage", "dontcare"),
+		Entry("HugePages1GEnabled auto", "sched.mem.lpage.enable1GPage", "auto"),
+		Entry("TimeTracker auto", "timeTracker.lowLatency", "auto"),
+		Entry("TimeTracker DEFAULT", "timeTracker.lowLatency", "DEFAULT"),
+		Entry("CPUAffinity DONTCARE", "sched.cpu.affinity.exclusiveNoStats", "DONTCARE"),
+		Entry("VMXSwap default", "sched.swap.vmxSwapEnabled", "default"),
 	)
 
 	When("all vmx-tagged keys carry auto sentinels", func() {
 		BeforeEach(func() {
 			moVM = moVMWithExtraConfig(
-				ov("numa.vcpu.preferHT",                  "DEFAULT"),
-				ov("sched.mem.lpage.enable1GPage",        "auto"),
-				ov("timeTracker.lowLatency",              "auto"),
+				ov("numa.vcpu.preferHT", "DEFAULT"),
+				ov("sched.mem.lpage.enable1GPage", "auto"),
+				ov("timeTracker.lowLatency", "auto"),
 				ov("sched.cpu.affinity.exclusiveNoStats", "dontcare"),
-				ov("sched.swap.vmxSwapEnabled",           "auto"),
+				ov("sched.swap.vmxSwapEnabled", "auto"),
 			)
 		})
 
@@ -203,12 +203,12 @@ var _ = Describe("BackfillExtraConfigFromMoVM", func() {
 			Expect(vm.Spec.Advanced.PreferHTEnabled).ToNot(BeNil())
 			Expect(*vm.Spec.Advanced.PreferHTEnabled).To(Equal(wantTrue))
 		},
-		Entry("yes → true",  "numa.vcpu.preferHT", "yes",  true),
-		Entry("no → false",  "numa.vcpu.preferHT", "no",   false),
-		Entry("on → true",   "numa.vcpu.preferHT", "on",   true),
-		Entry("off → false",  "numa.vcpu.preferHT", "off",  false),
-		Entry("1 → true",    "numa.vcpu.preferHT", "1",    true),
-		Entry("0 → false",   "numa.vcpu.preferHT", "0",    false),
+		Entry("yes → true", "numa.vcpu.preferHT", "yes", true),
+		Entry("no → false", "numa.vcpu.preferHT", "no", false),
+		Entry("on → true", "numa.vcpu.preferHT", "on", true),
+		Entry("off → false", "numa.vcpu.preferHT", "off", false),
+		Entry("1 → true", "numa.vcpu.preferHT", "1", true),
+		Entry("0 → false", "numa.vcpu.preferHT", "0", false),
 	)
 
 	DescribeTable("unknown / bookkeeping keys are silently dropped",

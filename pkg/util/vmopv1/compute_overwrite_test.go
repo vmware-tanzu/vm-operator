@@ -23,7 +23,7 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		liveCI    vimtypes.VirtualMachineConfigInfo
 		poweredOn bool
 		cs        vimtypes.VirtualMachineConfigSpec
-		blocked []string
+		blocked   []string
 		blockedPO []string
 	)
 

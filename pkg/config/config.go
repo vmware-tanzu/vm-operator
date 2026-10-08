@@ -189,43 +189,43 @@ func (c Config) GetMaxDeployThreadsOnProvider() int {
 }
 
 type FeatureStates struct {
-	InstanceStorage              bool // FSS_WCP_INSTANCE_STORAGE
-	PodVMOnStretchedSupervisor   bool // FSS_PODVMONSTRETCHEDSUPERVISOR
-	TKGMultipleCL                bool // to be fetched dynamically from capability
-	VMResizeCPUMemory            bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
-	VMImportNewNet               bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
-	WorkloadDomainIsolation      bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
-	VMIncrementalRestore         bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
-	BringYourOwnEncryptionKey    bool // FSS_WCP_VMSERVICE_BYOK
-	SVAsyncUpgrade               bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
-	FastDeploy                   bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
-	MutableNetworks              bool
-	VMGroups                     bool
-	ImmutableClasses             bool
-	VMSnapshots                  bool
-	InventoryContentLibrary      bool
-	VMPlacementPolicies          bool
-	VSpherePolicies              bool
-	VMWaitForFirstConsumerPVC    bool
-	VMSharedDisks                bool
-	GuestCustomizationVCDParity  bool
-	AllDisksArePVCs              bool
-	VMAffinityDuringExecution    bool
-	StoragePolicyMutability      bool
-	VMVlanSubinterface           bool
-	TelcoVMServiceAPI            bool
-	PerNamespaceNetworkProvider  bool
-	WorkloadIPv6                 bool
-	VirtualMachineConfigPolicy   bool
-	WorkloadNetworkConfiguration bool
-	ExtensionCompatConstraint    bool
-	VMEviction                   bool
-	ControlledRebalancingPolicy  bool
-	VMNetworkUnitNumbers         bool
-	K8sWorkloadMgmtAPI           bool
-	TaggingAPI                   bool
+	InstanceStorage               bool // FSS_WCP_INSTANCE_STORAGE
+	PodVMOnStretchedSupervisor    bool // FSS_PODVMONSTRETCHEDSUPERVISOR
+	TKGMultipleCL                 bool // to be fetched dynamically from capability
+	VMResizeCPUMemory             bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
+	VMImportNewNet                bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET
+	WorkloadDomainIsolation       bool // FSS_WCP_WORKLOAD_DOMAIN_ISOLATION
+	VMIncrementalRestore          bool // FSS_WCP_VMSERVICE_INCREMENTAL_RESTORE
+	BringYourOwnEncryptionKey     bool // FSS_WCP_VMSERVICE_BYOK
+	SVAsyncUpgrade                bool // FSS_WCP_SUPERVISOR_ASYNC_UPGRADE
+	FastDeploy                    bool // FSS_WCP_VMSERVICE_FAST_DEPLOY
+	MutableNetworks               bool
+	VMGroups                      bool
+	ImmutableClasses              bool
+	VMSnapshots                   bool
+	InventoryContentLibrary       bool
+	VMPlacementPolicies           bool
+	VSpherePolicies               bool
+	VMWaitForFirstConsumerPVC     bool
+	VMSharedDisks                 bool
+	GuestCustomizationVCDParity   bool
+	AllDisksArePVCs               bool
+	VMAffinityDuringExecution     bool
+	StoragePolicyMutability       bool
+	VMVlanSubinterface            bool
+	TelcoVMServiceAPI             bool
+	PerNamespaceNetworkProvider   bool
+	WorkloadIPv6                  bool
+	VirtualMachineConfigPolicy    bool
+	WorkloadNetworkConfiguration  bool
+	ExtensionCompatConstraint     bool
+	VMEviction                    bool
+	ControlledRebalancingPolicy   bool
+	VMNetworkUnitNumbers          bool
+	K8sWorkloadMgmtAPI            bool
+	TaggingAPI                    bool
 	VMHardAffinityDuringExecution bool
-	CSIBackupAPI                 bool
+	CSIBackupAPI                  bool
 }
 
 type InstanceStorage struct {

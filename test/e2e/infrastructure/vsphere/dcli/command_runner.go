@@ -92,7 +92,7 @@ func (d *dcliCommandRunnerImpl) RunDCLICommand(cmd string) ([]byte, error) {
 
 		// Check for transient errors that should be retried
 		errStr := err.Error() + string(stdout)
-		if strings.Contains(errStr, "ServiceUnavailable") || strings.Contains(errStr, "SERVICE_UNAVAILABLE") {
+		if strings.Contains(errStr, "ServiceUnavailable") || strings.Contains(errStr, "SERVICE_UNAVAILABLE") || strings.Contains(errStr, "InternalServerError") {
 			fmt.Printf("\nTransient error detected, retrying...")
 			return false, nil // Continue polling
 		}

@@ -7,9 +7,11 @@ package vcenter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"syscall"
@@ -76,7 +78,13 @@ func IsTransientError(err error) bool {
 // vCenter client the e2e tests create instead of calling vCenter bare.
 func WithTransientRetry(rt soap.RoundTripper) soap.RoundTripper {
 	return vim25.Retry(rt, func(err error) (bool, time.Duration) {
-		return IsTransientError(err), transientRetryDelay
+		if !IsTransientError(err) {
+			return false, 0
+		}
+
+		fmt.Fprintf(os.Stderr, "vcenter: retrying SOAP call after transient error: %v\n", err)
+
+		return true, transientRetryDelay
 	}, transientRetryAttempts)
 }
 
@@ -90,6 +98,8 @@ func RetryTransient(ctx context.Context, fn func() error) error {
 		if err = fn(); err == nil || !IsTransientError(err) {
 			return err
 		}
+
+		fmt.Fprintf(os.Stderr, "vcenter: retrying after transient error: %v\n", err)
 
 		select {
 		case <-ctx.Done():

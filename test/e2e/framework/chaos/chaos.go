@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -75,6 +76,29 @@ type injector struct {
 	profile Profile
 	mu      sync.Mutex
 	rng     *rand.Rand
+
+	// Counters of what was injected, reported periodically so a passing run
+	// shows how much chaos it actually absorbed.
+	requests, delayed, stalls, resets, throttles atomic.Int64
+}
+
+// statsInterval is how often the injected-fault totals are logged.
+const statsInterval = 5 * time.Minute
+
+func (i *injector) stats() string {
+	return fmt.Sprintf("requests=%d delayed=%d stalls=%d resets=%d throttles=%d",
+		i.requests.Load(), i.delayed.Load(), i.stalls.Load(), i.resets.Load(), i.throttles.Load())
+}
+
+func (i *injector) logStats() {
+	var last string
+
+	for range time.Tick(statsInterval) {
+		if cur := i.stats(); cur != last {
+			fmt.Fprintf(os.Stderr, "chaos: totals so far: %s\n", cur)
+			last = cur
+		}
+	}
 }
 
 var (
@@ -109,6 +133,8 @@ func get() *injector {
 			p.Name, seed, ProfileEnv, p.Name, SeedEnv, seed, p)
 
 		inj = newInjector(p, seed)
+
+		go inj.logStats()
 	})
 
 	return inj
@@ -151,6 +177,15 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	delay, reset, throttle := t.inj.roll()
 
+	t.inj.requests.Add(1)
+
+	if delay >= t.inj.profile.Stall && t.inj.profile.Stall > 0 {
+		t.inj.stalls.Add(1)
+		fmt.Fprintf(os.Stderr, "chaos: stalling %s %s for %s\n", req.Method, req.URL.Path, delay)
+	} else if delay > 0 {
+		t.inj.delayed.Add(1)
+	}
+
 	if delay > 0 {
 		timer := time.NewTimer(delay)
 		select {
@@ -162,10 +197,16 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	if reset {
+		t.inj.resets.Add(1)
+		fmt.Fprintf(os.Stderr, "chaos: resetting %s %s\n", req.Method, req.URL.Path)
+
 		return nil, newInjectedReset()
 	}
 
 	if throttle != 0 {
+		t.inj.throttles.Add(1)
+		fmt.Fprintf(os.Stderr, "chaos: answering %s %s with %d\n", req.Method, req.URL.Path, throttle)
+
 		return &http.Response{
 			Status:     fmt.Sprintf("%d %s", throttle, http.StatusText(throttle)),
 			StatusCode: throttle,

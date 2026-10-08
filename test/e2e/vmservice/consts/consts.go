@@ -75,4 +75,9 @@ const (
 	// VMHardAffinityDuringExecutionCapabilityName gates the Tag CRD,
 	// controller, and admission webhook (Features.TaggingAPI).
 	VMHardAffinityDuringExecutionCapabilityName = "supports_vm_service_vm_hard_affinity_during_execution"
+
+	// ScopedDNSDefaultsCapabilityName gates applying the Supervisor's default
+	// DNS configuration to only a VM's primary interface; must match
+	// pkg/config/capabilities.CapabilityKeyScopedDNSDefaults.
+	ScopedDNSDefaultsCapabilityName = "supports_vm_service_scoped_dns_defaults"
 )

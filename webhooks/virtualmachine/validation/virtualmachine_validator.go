@@ -2677,6 +2677,10 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
+	if vm.Annotations[pkgconst.DNSDefaultsAnnotationKey] != oldVM.Annotations[pkgconst.DNSDefaultsAnnotationKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.DNSDefaultsAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
 	for k := range anno2extraconfig.AnnotationsToExtraConfigKeys {
 		if vm.Annotations[k] != oldVM.Annotations[k] {
 			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(k), modifyAnnotationNotAllowedForNonAdmin))

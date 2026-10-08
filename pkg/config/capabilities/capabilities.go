@@ -172,6 +172,12 @@ const (
 	// CapabilityKeyCSIBackupAPI is the name of the capability key defined in
 	// the Supervisor capabilities CRD for exposing disk lists in VM snapshots.
 	CapabilityKeyCSIBackupAPI = "supports_CSI_Backup_API"
+
+	// CapabilityKeyScopedDNSDefaults is the name of the capability key defined
+	// in the Supervisor capabilities CRD for applying the Supervisor's default
+	// DNS configuration to a VM's guest networking only when it is required,
+	// instead of to every interface.
+	CapabilityKeyScopedDNSDefaults = "supports_vm_service_scoped_dns_defaults"
 )
 
 var (
@@ -364,6 +370,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMHardAffinityDuringExecution = capStatus.Activated
 		case CapabilityKeyCSIBackupAPI:
 			fs.CSIBackupAPI = capStatus.Activated
+		case CapabilityKeyScopedDNSDefaults:
+			fs.ScopedDNSDefaults = capStatus.Activated
 		}
 
 	}

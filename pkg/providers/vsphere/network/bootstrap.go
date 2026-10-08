@@ -21,7 +21,6 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
-	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 // Bootstrap contains the customization data for a single network interface,
@@ -64,14 +63,25 @@ type Bootstrap struct {
 	MTU int64
 
 	// Nameservers is the ordered list of DNS resolver addresses for this
-	// interface.  Populated from interfaceSpec.Nameservers, or falls back to
-	// the VM-level nameservers when CloudInit UseGlobalNameserversAsDefault is
-	// true (the default).
+	// interface.  Populated from interfaceSpec.Nameservers. The VM-level and
+	// the Supervisor's default nameservers may later be applied by the
+	// bootstrap engine; see vmlifecycle.GetBootstrapArgs.
 	Nameservers []string
 
 	// SearchDomains is the ordered list of DNS search domains for this
-	// interface.  Same fallback semantics as Nameservers.
+	// interface.  Same semantics as Nameservers.
 	SearchDomains []string
+
+	// ProviderNameservers and ProviderSearchDomains are the DNS configuration
+	// for this interface provided by the network provider, such as a VPC
+	// SubnetPort. InterfaceBootstrap clears them when the interface spec
+	// provides its own, since the interface spec takes precedence. Otherwise,
+	// they take precedence over the VM-level and the Supervisor's default DNS
+	// configuration, but are only applied by the bootstrap engine when the
+	// Supervisor's default DNS configuration is scoped; see
+	// vmlifecycle.GetBootstrapArgs.
+	ProviderNameservers   []string
+	ProviderSearchDomains []string
 
 	// Routes is the list of static routes to configure inside the guest,
 	// copied verbatim from interfaceSpec.Routes.
@@ -82,6 +92,82 @@ type Bootstrap struct {
 	// or replaced entirely by interfaceSpec.Addresses when the user supplies
 	// explicit addresses.
 	IPConfigs []NetworkInterfaceIPConfig
+}
+
+// IsStatic returns true if the interface is configured with at least one
+// static IP address and is not using DHCP for either address family, nor is
+// on a network without IP address management.
+func (b Bootstrap) IsStatic() bool {
+	return !b.NoIPAM && !b.DHCP4 && !b.DHCP6 && len(b.IPConfigs) > 0
+}
+
+// AddressFamilies returns whether the interface has an IPv4 and an IPv6
+// address. IPv4 requires a static IPv4 address. IPv6 requires a static IPv6
+// address, or accepting Router Advertisements, which provide an address.
+func (b Bootstrap) AddressFamilies() (ipv4, ipv6 bool) {
+	for _, c := range b.IPConfigs {
+		if c.IsIPv4 {
+			ipv4 = true
+		} else {
+			ipv6 = true
+		}
+	}
+	return ipv4, ipv6 || b.AcceptRA
+}
+
+// GatewayFamilies returns whether the interface has a route beyond its own
+// subnet for IPv4 and IPv6. IPv4 requires a static IPv4 address with a
+// gateway. IPv6 requires a static IPv6 address with a gateway, or accepting
+// Router Advertisements, which provide both the address and default route.
+// A gateway that was set to None is not a gateway.
+func (b Bootstrap) GatewayFamilies() (ipv4, ipv6 bool) {
+	for _, c := range b.IPConfigs {
+		if c.Gateway == "" {
+			continue
+		}
+		if c.IsIPv4 {
+			ipv4 = true
+		} else {
+			ipv6 = true
+		}
+	}
+	return ipv4, ipv6 || b.AcceptRA
+}
+
+// PrimaryInterface returns the VM's first interface if it IsStatic and has a
+// gateway for at least one IP family, otherwise nil. This matches the vSphere
+// GOSC primary adapter, which is the first adapter when it has a static IP
+// address and a static gateway. An interface without a gateway usually cannot
+// reach DNS servers that are not on its subnet, and a gateway set to None
+// indicates the interface is not the VM's route out.
+//
+// The primary interface is the only interface to which the Supervisor's
+// default DNS configuration is applied, since it is often a resolver on
+// another network.
+func PrimaryInterface(bootstraps []Bootstrap) *Bootstrap {
+	if len(bootstraps) == 0 || !bootstraps[0].IsStatic() {
+		return nil
+	}
+	if ipv4, ipv6 := bootstraps[0].GatewayFamilies(); !ipv4 && !ipv6 {
+		return nil
+	}
+	return &bootstraps[0]
+}
+
+// FilterNameserversByFamily returns the nameservers of the IP families
+// indicated by ipv4 and ipv6, preserving their order. Entries that are not IP
+// addresses are kept.
+func FilterNameserversByFamily(nameservers []string, ipv4, ipv6 bool) []string {
+	var filtered []string
+	for _, ns := range nameservers {
+		if ip := net.ParseIP(ns); ip != nil {
+			if isIPv4 := ip.To4() != nil; (isIPv4 && !ipv4) || (!isIPv4 && !ipv6) {
+				continue
+			}
+		}
+		filtered = append(filtered, ns)
+	}
+	return filtered
 }
 
 type NetworkInterfaceIPConfig struct { //nolint:revive
@@ -107,7 +193,7 @@ type NetworkInterfaceRoute struct { //nolint:revive
 //nolint:gocyclo
 func InterfaceBootstrap(
 	_ context.Context,
-	vm *vmopv1.VirtualMachine,
+	_ *vmopv1.VirtualMachine,
 	initial Bootstrap,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 ) Bootstrap {
@@ -212,25 +298,16 @@ func InterfaceBootstrap(
 		})
 	}
 
-	var defaultToGlobalNameservers, defaultToGlobalSearchDomains bool
-	if bsSpec := vm.Spec.Bootstrap; bsSpec != nil && bsSpec.CloudInit != nil {
-		ci := bsSpec.CloudInit
-		defaultToGlobalNameservers = ptr.DerefWithDefault(ci.UseGlobalNameserversAsDefault, true)
-		defaultToGlobalSearchDomains = ptr.DerefWithDefault(ci.UseGlobalSearchDomainsAsDefault, true)
-	}
-
-	networkSpec := vm.Spec.Network
-
+	// The VM-level DNS configuration is applied by the bootstrap engine; see
+	// vmlifecycle.GetBootstrapArgs.
 	if n := interfaceSpec.Nameservers; len(n) > 0 {
 		bootstrap.Nameservers = n
-	} else if defaultToGlobalNameservers && networkSpec != nil {
-		bootstrap.Nameservers = networkSpec.Nameservers
+		bootstrap.ProviderNameservers = nil
 	}
 
 	if d := interfaceSpec.SearchDomains; len(d) > 0 {
 		bootstrap.SearchDomains = d
-	} else if defaultToGlobalSearchDomains && networkSpec != nil {
-		bootstrap.SearchDomains = networkSpec.SearchDomains
+		bootstrap.ProviderSearchDomains = nil
 	}
 
 	return bootstrap
@@ -363,6 +440,9 @@ func bootstrapFromVPC(
 	subnetPort *vpcv1alpha1.SubnetPort) Bootstrap {
 
 	initial := Bootstrap{}
+
+	// TODO: Set ProviderNameservers and ProviderSearchDomains from the
+	// SubnetPort once its API reports them.
 
 	for _, ipAddr := range subnetPort.Status.NetworkInterfaceConfig.IPAddresses {
 		if ipAddr.IPAddress == "" {

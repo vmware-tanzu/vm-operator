@@ -454,7 +454,7 @@ var _ = Describe("InterfaceBootstrap", func() {
 			})
 		})
 
-		When("interfaceSpec.Nameservers is empty, CloudInit enables global nameservers, vm.Spec.Network has nameservers", func() {
+		When("interfaceSpec.Nameservers is empty and the VM specifies nameservers", func() {
 			BeforeEach(func() {
 				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 					Nameservers: []string{"149.112.112.112"},
@@ -463,47 +463,43 @@ var _ = Describe("InterfaceBootstrap", func() {
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 				}
 			})
-			It("falls back to global nameservers", func() {
-				Expect(bootstrap.Nameservers).To(HaveExactElements("149.112.112.112"))
-			})
-		})
-
-		When("interfaceSpec.Nameservers is empty, no CloudInit bootstrap", func() {
-			BeforeEach(func() {
-				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-					Nameservers: []string{"149.112.112.112"},
-				}
-			})
-			It("bootstrap.Nameservers stays empty", func() {
+			It("bootstrap.Nameservers stays empty since the bootstrap engine applies the VM's nameservers", func() {
 				Expect(bootstrap.Nameservers).To(BeEmpty())
 			})
 		})
+	})
 
-		When("interfaceSpec.Nameservers is empty, CloudInit enables global nameservers, vm.Spec.Network has no nameservers", func() {
-			BeforeEach(func() {
-				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
-				vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
-				}
-			})
-			It("bootstrap.Nameservers is empty", func() {
-				Expect(bootstrap.Nameservers).To(BeEmpty())
-			})
+	Context("DNS from the network provider", func() {
+		BeforeEach(func() {
+			initial.ProviderNameservers = []string{"10.1.1.53"}
+			initial.ProviderSearchDomains = []string{"provider.local"}
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+				Nameservers:   []string{"1.1.1.1"},
+				SearchDomains: []string{"broadcom.net"},
+			}
+			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+			}
 		})
 
-		When("interfaceSpec.Nameservers is empty, CloudInit present with UseGlobalNameserversAsDefault=false", func() {
+		It("keeps the network provider's DNS", func() {
+			Expect(bootstrap.ProviderNameservers).To(HaveExactElements("10.1.1.53"))
+			Expect(bootstrap.ProviderSearchDomains).To(HaveExactElements("provider.local"))
+			Expect(bootstrap.Nameservers).To(BeEmpty())
+			Expect(bootstrap.SearchDomains).To(BeEmpty())
+		})
+
+		When("the interface spec specifies DNS", func() {
 			BeforeEach(func() {
-				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-					Nameservers: []string{"149.112.112.112"},
-				}
-				vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-						UseGlobalNameserversAsDefault: ptr.To(false),
-					},
-				}
+				interfaceSpec.Nameservers = []string{"9.9.9.9"}
+				interfaceSpec.SearchDomains = []string{"vmware.com"}
 			})
-			It("explicit opt-out suppresses global fallback; bootstrap.Nameservers is empty", func() {
-				Expect(bootstrap.Nameservers).To(BeEmpty())
+
+			It("clears the network provider's DNS", func() {
+				Expect(bootstrap.ProviderNameservers).To(BeEmpty())
+				Expect(bootstrap.ProviderSearchDomains).To(BeEmpty())
+				Expect(bootstrap.Nameservers).To(HaveExactElements("9.9.9.9"))
+				Expect(bootstrap.SearchDomains).To(HaveExactElements("vmware.com"))
 			})
 		})
 	})
@@ -524,7 +520,7 @@ var _ = Describe("InterfaceBootstrap", func() {
 			})
 		})
 
-		When("interfaceSpec.SearchDomains is empty, CloudInit enables global search domains, vm.Spec.Network has domains", func() {
+		When("interfaceSpec.SearchDomains is empty and the VM specifies search domains", func() {
 			BeforeEach(func() {
 				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 					SearchDomains: []string{"broadcom.net"},
@@ -533,47 +529,7 @@ var _ = Describe("InterfaceBootstrap", func() {
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 				}
 			})
-			It("falls back to global search domains", func() {
-				Expect(bootstrap.SearchDomains).To(HaveExactElements("broadcom.net"))
-			})
-		})
-
-		When("interfaceSpec.SearchDomains is empty, no CloudInit bootstrap", func() {
-			BeforeEach(func() {
-				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-					SearchDomains: []string{"broadcom.net"},
-				}
-				// vm.Spec.Bootstrap is nil → defaultToGlobalSearchDomains=false
-			})
-			It("bootstrap.SearchDomains stays empty", func() {
-				Expect(bootstrap.SearchDomains).To(BeEmpty())
-			})
-		})
-
-		When("interfaceSpec.SearchDomains is empty, CloudInit enables global search domains, vm.Spec.Network has no domains", func() {
-			BeforeEach(func() {
-				vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
-				}
-				// vm.Spec.Network is nil → no global search domains to fall back to
-			})
-			It("bootstrap.SearchDomains is empty", func() {
-				Expect(bootstrap.SearchDomains).To(BeEmpty())
-			})
-		})
-
-		When("interfaceSpec.SearchDomains is empty, CloudInit present with UseGlobalSearchDomainsAsDefault=false", func() {
-			BeforeEach(func() {
-				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
-					SearchDomains: []string{"broadcom.net"},
-				}
-				vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-						UseGlobalSearchDomainsAsDefault: ptr.To(false),
-					},
-				}
-			})
-			It("explicit opt-out suppresses global fallback; bootstrap.SearchDomains is empty", func() {
+			It("bootstrap.SearchDomains stays empty since the bootstrap engine applies the VM's search domains", func() {
 				Expect(bootstrap.SearchDomains).To(BeEmpty())
 			})
 		})
@@ -1496,3 +1452,81 @@ var _ = Describe("VPCInterfaceBootstrap",
 		})
 	},
 )
+
+var _ = Describe("PrimaryInterface", func() {
+	v4 := func(gw string) network.NetworkInterfaceIPConfig {
+		return network.NetworkInterfaceIPConfig{IPCIDR: "192.168.1.10/24", IsIPv4: true, Gateway: gw}
+	}
+	v6 := func(gw string) network.NetworkInterfaceIPConfig {
+		return network.NetworkInterfaceIPConfig{IPCIDR: "fd00::10/64", Gateway: gw}
+	}
+	static := func(c ...network.NetworkInterfaceIPConfig) network.Bootstrap {
+		return network.Bootstrap{IPConfigs: c}
+	}
+	var (
+		withGW   = static(v4("192.168.1.1"))
+		noGW     = static(v4(""))
+		dhcp     = network.Bootstrap{DHCP4: true}
+		noIPAM   = network.Bootstrap{NoIPAM: true}
+		raOnlyV6 = network.Bootstrap{IPConfigs: []network.NetworkInterfaceIPConfig{v4("")}, AcceptRA: true}
+	)
+
+	DescribeTable("returns the first interface when it is static with a gateway",
+		func(bootstraps []network.Bootstrap, isPrimary bool) {
+			primary := network.PrimaryInterface(bootstraps)
+			if isPrimary {
+				Expect(primary).To(BeIdenticalTo(&bootstraps[0]))
+			} else {
+				Expect(primary).To(BeNil())
+			}
+		},
+		Entry("no interfaces", nil, false),
+		Entry("static with gateway", []network.Bootstrap{withGW}, true),
+		Entry("static with gateway, then DHCP", []network.Bootstrap{withGW, dhcp}, true),
+		Entry("static without gateway, then with gateway", []network.Bootstrap{noGW, withGW}, false),
+		Entry("no IPAM, then static with gateway", []network.Bootstrap{noIPAM, withGW}, false),
+		Entry("DHCP, then static with gateway", []network.Bootstrap{dhcp, withGW}, false),
+		Entry("IPv6 static with gateway", []network.Bootstrap{static(v6("fd00::1"))}, true),
+		Entry("Router Advertisements provide the IPv6 route", []network.Bootstrap{raOnlyV6}, true),
+	)
+
+	DescribeTable("GatewayFamilies",
+		func(b network.Bootstrap, ipv4, ipv6 bool) {
+			v4, v6 := b.GatewayFamilies()
+			Expect(v4).To(Equal(ipv4))
+			Expect(v6).To(Equal(ipv6))
+		},
+		Entry("IPv4 gateway", withGW, true, false),
+		Entry("no gateway", noGW, false, false),
+		Entry("dual-stack gateways", static(v4("192.168.1.1"), v6("fd00::1")), true, true),
+		Entry("IPv4 gateway, IPv6 gateway set to None", static(v4("192.168.1.1"), v6("")), true, false),
+		Entry("Router Advertisements", raOnlyV6, false, true),
+	)
+
+	DescribeTable("AddressFamilies",
+		func(b network.Bootstrap, ipv4, ipv6 bool) {
+			v4, v6 := b.AddressFamilies()
+			Expect(v4).To(Equal(ipv4))
+			Expect(v6).To(Equal(ipv6))
+		},
+		Entry("IPv4 without gateway", noGW, true, false),
+		Entry("IPv6", static(v6("")), false, true),
+		Entry("dual-stack", static(v4(""), v6("")), true, true),
+		Entry("IPv4 with Router Advertisements", raOnlyV6, true, true),
+		Entry("DHCP", dhcp, false, false),
+	)
+})
+
+var _ = Describe("FilterNameserversByFamily", func() {
+	nameservers := []string{"10.0.0.53", "fd00::53", "10.0.0.54", "dns.local"}
+
+	DescribeTable("filters by IP family and preserves order",
+		func(ipv4, ipv6 bool, expected []string) {
+			Expect(network.FilterNameserversByFamily(nameservers, ipv4, ipv6)).To(Equal(expected))
+		},
+		Entry("IPv4", true, false, []string{"10.0.0.53", "10.0.0.54", "dns.local"}),
+		Entry("IPv6", false, true, []string{"fd00::53", "dns.local"}),
+		Entry("both", true, true, nameservers),
+		Entry("neither", false, false, []string{"dns.local"}),
+	)
+})

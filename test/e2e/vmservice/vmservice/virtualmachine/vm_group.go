@@ -242,27 +242,29 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			for _, bootOrder := range vmGroupParameters.BootOrder {
 				for _, m := range bootOrder.Members {
-					ms, err := utils.GetVirtualMachineGroupMemberStatus(ctx, svClusterClient, input.WCPNamespaceName, vmgRootName, m.Name, m.Kind)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(ms.PowerState).ToNot(BeNil(), "member %s/%s power state status is nil", m.Name, m.Kind)
-					Expect(*ms.PowerState).To(BeEquivalentTo("PoweredOn"))
-					// Just check the placement status is not nil here.
-					// The exact placement info will be verified in affinity/anti-affinity tests.
-					Expect(ms.Placement).ToNot(BeNil(), "member %s/%s placement status is nil", m.Name, m.Kind)
+					Eventually(func(g Gomega) {
+						ms, err := utils.GetVirtualMachineGroupMemberStatus(ctx, svClusterClient, input.WCPNamespaceName, vmgRootName, m.Name, m.Kind)
+						g.Expect(err).ToNot(HaveOccurred())
+						g.Expect(ms.PowerState).ToNot(BeNil(), "member %s/%s power state status is nil", m.Name, m.Kind)
+						g.Expect(*ms.PowerState).To(BeEquivalentTo("PoweredOn"))
+						// Just check the placement status is not nil here.
+						// The exact placement info will be verified in affinity/anti-affinity tests.
+						g.Expect(ms.Placement).ToNot(BeNil(), "member %s/%s placement status is nil", m.Name, m.Kind)
 
-					// Verify all expected member conditions are set to true.
-					expectedConditionTypes := []string{
-						vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
-						vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
-						vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
-					}
+						// Verify all expected member conditions are set to true.
+						expectedConditionTypes := []string{
+							vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+							vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
+							vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+						}
 
-					Expect(ms.Conditions).To(HaveLen(3)) // GroupLinked, PowerStateSynced, PlacementReady
+						g.Expect(ms.Conditions).To(HaveLen(3)) // GroupLinked, PowerStateSynced, PlacementReady
 
-					for _, c := range ms.Conditions {
-						Expect(c.Type).To(BeElementOf(expectedConditionTypes))
-						Expect(c.Status).To(Equal(metav1.ConditionTrue))
-					}
+						for _, c := range ms.Conditions {
+							g.Expect(c.Type).To(BeElementOf(expectedConditionTypes))
+							g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+						}
+					}, config.GetIntervals("default", "wait-virtual-machine-group-member-status")...).Should(Succeed(), "Timed out waiting for Group Member Status: %s/%s on VirtualMachineGroup: %q", m.Name, m.Kind, vmgRootName)
 				}
 			}
 

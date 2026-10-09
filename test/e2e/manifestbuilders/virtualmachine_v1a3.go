@@ -21,6 +21,7 @@ func VirtualMachineA3(vmYaml VirtualMachineYaml) *vmopv1a3.VirtualMachine {
 			StorageClass: vmYaml.StorageClassName,
 			ImageName:    vmYaml.ImageName,
 			PowerState:   vmopv1a3.VirtualMachinePowerState(vmYaml.PowerState),
+			PowerOffMode: vmopv1a3.VirtualMachinePowerOpMode(vmYaml.PowerOffMode),
 			GuestID:      vmYaml.GuestID,
 		},
 	}

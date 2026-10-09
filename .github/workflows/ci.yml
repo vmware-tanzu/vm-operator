@@ -176,7 +176,7 @@ jobs:
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Setup the cache for golangci-lint
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         key: golangci-lint-${{ runner.os }}-go${{ env.GO_VERSION }}-${{ hashFiles('go.sum', 'hack/tools/go.sum') }}
         path: |
@@ -220,7 +220,7 @@ jobs:
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: Setup the cache for govulncheck
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         key: govulncheck-${{ runner.os }}-go${{ env.GO_VERSION }}-${{ hashFiles('go.sum', 'hack/tools/go.sum') }}
         path: |

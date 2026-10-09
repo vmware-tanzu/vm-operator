@@ -569,6 +569,19 @@ func getExtensionCompatConstraintCount(ctx context.Context, c *vim25.Client, vmR
 	return len(vmMO.Config.ExtensionCompatibilityConstraint.Constraint), nil
 }
 
+func getVCInstanceUUID(ctx context.Context, c *vim25.Client, vmRef types.ManagedObjectReference) (string, error) {
+	var vmMO mo.VirtualMachine
+	if err := property.DefaultCollector(c).RetrieveOne(ctx, vmRef, []string{"config.instanceUuid"}, &vmMO); err != nil {
+		return "", err
+	}
+
+	if vmMO.Config == nil {
+		return "", nil
+	}
+
+	return vmMO.Config.InstanceUuid, nil
+}
+
 // newServiceVersionVimClient returns a vim client that speaks the newest API
 // version vCenter serves, as VM Operator does. A development vCenter may only
 // expose the extension compatibility constraints in an internal version newer
@@ -604,12 +617,24 @@ func (t *testEnv) verifyProtectionRestored(ctx context.Context, vmName string, c
 
 	vmRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vm.Status.UniqueID}
 
+	By("Verifying that the ExtensionCompatibility constraints have been added by VM Operator")
 	Eventually(func(g Gomega) {
 		count, err := getExtensionCompatConstraintCount(ctx, vimClient, vmRef)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(count).To(Equal(constraints))
 	}, t.config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(),
 		"VM %s/%s does not have the extension compatibility constraints it had before the restore", ns, vmName)
+
+	By("Verifying that VM's Status reflects the InstanceUUID of the restored VM")
+	Eventually(func(g Gomega) {
+		instanceUUID, err := getVCInstanceUUID(ctx, vimClient, vmRef)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Spec is backfilled by the RegisterVM API from the restored VM.  Status reflects
+		// the observed state.  Both must match.
+		g.Expect(vm.Spec.InstanceUUID).To(Equal(instanceUUID))
+		g.Expect(vm.Status.InstanceUUID).To(Equal(instanceUUID))
+	})
 }
 
 // destroyUnregisteredVM destroys the vSphere VMs named vmName unless a

@@ -212,6 +212,15 @@ jobs:
     needs:
     - verify-go-modules
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - target: image-build
+          dir: .
+        - target: e2e-image-build
+          dir: test/e2e
+    name: ${{ matrix.target }}
     steps:
     - name: Check out code
       uses: actions/checkout@v4
@@ -219,11 +228,11 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
-        go-version-file: 'go.mod'
+        go-version-file: '${{ matrix.dir }}/go.mod'
         cache: true
-        cache-dependency-path: '**/go.sum'
-    - name: Build Image
-      run: GOOS=linux GOARCH=amd64 make image-build
+        cache-dependency-path: '${{ matrix.dir }}/**/go.sum'
+    - name: Build ${{ matrix.target }}
+      run: GOOS=linux GOARCH=amd64 make ${{ matrix.target }}
 
   test:
     needs:

@@ -494,6 +494,33 @@ func vmFastDeployTests() {
 						Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
 					})
 
+					When("a cached file no longer exists on the datastore", func() {
+						JustBeforeEach(func() {
+							// Override the location status with a file path that
+							// does not exist on vcsim so DatastoreFileExists
+							// returns os.ErrNotExist (HTTP 404), which should
+							// trigger the re-cache GenericEvent and return
+							// VMICacheNotReadyError rather than a plain error.
+							vmic.Status.Locations[0].Files = []vmopv1.VirtualMachineImageCacheFileStatus{
+								{
+									ID:       "[LocalDS_0] does-not-exist/missing.vmdk",
+									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
+									DiskType: vmopv1.VolumeTypeClassic,
+								},
+							}
+							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+						})
+
+						It("should return VMICacheNotReadyError, not a plain error", func() {
+							assertVMICNotReady(
+								createVM(),
+								"cached files not ready",
+								vmic.Name,
+								ctx.Datacenter.Reference().Value,
+								ctx.Datastore.Reference().Value)
+						})
+					})
+
 					When("global default is direct mode", func() {
 						JustBeforeEach(func() {
 							pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {

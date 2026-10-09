@@ -148,6 +148,11 @@ func getBackfilledVolumes(
 			Type:   consts.VMUnmanagedVolumesRegisteredCondition,
 			Status: metav1.ConditionTrue,
 		},
+		// Add: wait for disk promotion to complete before checking type: Managed
+		{
+			Type:   string(vmopv1.VirtualMachineDiskPromotionSynced),
+			Status: metav1.ConditionTrue,
+		},
 	}
 	for _, condition := range conditions {
 		vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, vmName, condition)

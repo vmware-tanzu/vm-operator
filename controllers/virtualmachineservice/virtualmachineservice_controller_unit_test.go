@@ -1600,35 +1600,165 @@ func nsxtLBProviderTestsReconcile() {
 			It("Should sync external-dns annotation from VirtualMachineService to Service", func() {
 				const hostnamesValue = "host1.example.com,host2.example.com"
 
-				vmService.Annotations[providers.AnnotationServiceNSXHostnamesKey] = hostnamesValue
+				vmService.Annotations[utils.AnnotationServiceExternalDNSHostnameAlphaKey] = hostnamesValue
 				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
 				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
 
 				newService := &corev1.Service{}
 				Expect(ctx.Client.Get(ctx, objKey, newService)).To(Succeed())
-				Expect(newService.Annotations).To(HaveKeyWithValue(providers.AnnotationServiceNSXHostnamesKey, hostnamesValue))
+				Expect(newService.Annotations).To(HaveKeyWithValue(utils.AnnotationServiceExternalDNSHostnameAlphaKey, hostnamesValue))
 			})
 
 			It("Should remove external-dns annotation from Service when absent from VirtualMachineService", func() {
 				const hostnamesValue = "host1.example.com"
 
-				vmService.Annotations[providers.AnnotationServiceNSXHostnamesKey] = hostnamesValue
+				vmService.Annotations[utils.AnnotationServiceExternalDNSHostnameAlphaKey] = hostnamesValue
 				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
 				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
 
 				By("Service should have external-dns.alpha.kubernetes.io/hostname annotation", func() {
 					svc := &corev1.Service{}
 					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
-					Expect(svc.Annotations).To(HaveKeyWithValue(providers.AnnotationServiceNSXHostnamesKey, hostnamesValue))
+					Expect(svc.Annotations).To(HaveKeyWithValue(utils.AnnotationServiceExternalDNSHostnameAlphaKey, hostnamesValue))
 				})
 
-				delete(vmService.Annotations, providers.AnnotationServiceNSXHostnamesKey)
+				delete(vmService.Annotations, utils.AnnotationServiceExternalDNSHostnameAlphaKey)
 				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
 
 				By("Service should not have external-dns.alpha.kubernetes.io/hostname annotation", func() {
 					svc := &corev1.Service{}
 					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
-					Expect(svc.Annotations).ToNot(HaveKey(providers.AnnotationServiceNSXHostnamesKey))
+					Expect(svc.Annotations).ToNot(HaveKey(utils.AnnotationServiceExternalDNSHostnameAlphaKey))
+				})
+			})
+
+			It("Should sync stable external-dns annotation from VirtualMachineService to Service", func() {
+				const (
+					hostnamesValue = "host1.example.com,host2.example.com"
+					stableKey      = "external-dns.kubernetes.io/hostname"
+				)
+
+				vmService.Annotations[stableKey] = hostnamesValue
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
+
+				newService := &corev1.Service{}
+				Expect(ctx.Client.Get(ctx, objKey, newService)).To(Succeed())
+				Expect(newService.Annotations).To(HaveKeyWithValue(stableKey, hostnamesValue))
+			})
+
+			It("Should remove stable external-dns annotation from Service when absent from VirtualMachineService", func() {
+				const (
+					hostnamesValue = "host1.example.com"
+					stableKey      = "external-dns.kubernetes.io/hostname"
+				)
+
+				vmService.Annotations[stableKey] = hostnamesValue
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
+
+				By("Service should have external-dns.kubernetes.io/hostname annotation", func() {
+					svc := &corev1.Service{}
+					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
+					Expect(svc.Annotations).To(HaveKeyWithValue(stableKey, hostnamesValue))
+				})
+
+				delete(vmService.Annotations, stableKey)
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+
+				By("Service should not have external-dns.kubernetes.io/hostname annotation", func() {
+					svc := &corev1.Service{}
+					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
+					Expect(svc.Annotations).ToNot(HaveKey(stableKey))
+				})
+			})
+
+			It("Should replace alpha external-dns annotation with stable annotation on Service when migrated", func() {
+				const (
+					hostnamesValue = "host1.example.com"
+					stableKey      = "external-dns.kubernetes.io/hostname"
+				)
+
+				vmService.Annotations[utils.AnnotationServiceExternalDNSHostnameAlphaKey] = hostnamesValue
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
+
+				By("Service should have external-dns.alpha.kubernetes.io/hostname annotation", func() {
+					svc := &corev1.Service{}
+					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
+					Expect(svc.Annotations).To(HaveKeyWithValue(utils.AnnotationServiceExternalDNSHostnameAlphaKey, hostnamesValue))
+				})
+
+				delete(vmService.Annotations, utils.AnnotationServiceExternalDNSHostnameAlphaKey)
+				vmService.Annotations[stableKey] = hostnamesValue
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+
+				By("Service should have external-dns.kubernetes.io/hostname annotation and not the alpha annotation", func() {
+					svc := &corev1.Service{}
+					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
+					Expect(svc.Annotations).To(HaveKeyWithValue(stableKey, hostnamesValue))
+					Expect(svc.Annotations).ToNot(HaveKey(utils.AnnotationServiceExternalDNSHostnameAlphaKey))
+				})
+			})
+
+			It("Should only remove the external-dns annotation that is absent from VirtualMachineService", func() {
+				const hostnamesValue = "host1.example.com"
+
+				vmService.Annotations[utils.AnnotationServiceExternalDNSHostnameAlphaKey] = hostnamesValue
+				vmService.Annotations[utils.AnnotationServiceExternalDNSHostnameKey] = hostnamesValue
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
+
+				By("Service should have both external-dns annotations", func() {
+					svc := &corev1.Service{}
+					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
+					Expect(svc.Annotations).To(HaveKeyWithValue(utils.AnnotationServiceExternalDNSHostnameAlphaKey, hostnamesValue))
+					Expect(svc.Annotations).To(HaveKeyWithValue(utils.AnnotationServiceExternalDNSHostnameKey, hostnamesValue))
+				})
+
+				delete(vmService.Annotations, utils.AnnotationServiceExternalDNSHostnameKey)
+				Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+
+				By("Service should only have the alpha external-dns annotation", func() {
+					svc := &corev1.Service{}
+					Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
+					Expect(svc.Annotations).To(HaveKeyWithValue(utils.AnnotationServiceExternalDNSHostnameAlphaKey, hostnamesValue))
+					Expect(svc.Annotations).ToNot(HaveKey(utils.AnnotationServiceExternalDNSHostnameKey))
+				})
+			})
+
+			When("the load balancer provider is not NSX-T", func() {
+				JustBeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.LoadBalancerProvider = "noop"
+					})
+				})
+
+				It("Should remove external-dns annotations from Service when absent from VirtualMachineService", func() {
+					const hostnamesValue = "host1.example.com"
+
+					vmService.Annotations[utils.AnnotationServiceExternalDNSHostnameAlphaKey] = hostnamesValue
+					vmService.Annotations[utils.AnnotationServiceExternalDNSHostnameKey] = hostnamesValue
+					Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+					expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
+
+					By("Service should have both external-dns annotations", func() {
+						svc := &corev1.Service{}
+						Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
+						Expect(svc.Annotations).To(HaveKeyWithValue(utils.AnnotationServiceExternalDNSHostnameAlphaKey, hostnamesValue))
+						Expect(svc.Annotations).To(HaveKeyWithValue(utils.AnnotationServiceExternalDNSHostnameKey, hostnamesValue))
+					})
+
+					delete(vmService.Annotations, utils.AnnotationServiceExternalDNSHostnameAlphaKey)
+					delete(vmService.Annotations, utils.AnnotationServiceExternalDNSHostnameKey)
+					Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+
+					By("Service should have neither external-dns annotation", func() {
+						svc := &corev1.Service{}
+						Expect(ctx.Client.Get(ctx, objKey, svc)).To(Succeed())
+						Expect(svc.Annotations).ToNot(HaveKey(utils.AnnotationServiceExternalDNSHostnameAlphaKey))
+						Expect(svc.Annotations).ToNot(HaveKey(utils.AnnotationServiceExternalDNSHostnameKey))
+					})
 				})
 			})
 		})

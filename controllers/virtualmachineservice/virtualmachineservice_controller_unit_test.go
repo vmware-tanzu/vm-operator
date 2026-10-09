@@ -1153,7 +1153,7 @@ func unitTestsReconcile() {
 					Expect(subset.Ports).To(HaveLen(1))
 					assertEPPortFromVMServicePort(subset.Ports[0], vmServicePort1)
 
-					var ips []string
+					ips := make([]string, 0, len(subset.Addresses))
 					for _, addr := range subset.Addresses {
 						ips = append(ips, addr.IP)
 					}

@@ -134,8 +134,6 @@ func GetVolumeInfoFromConfigSpec(
 }
 
 // GetVolumeInfo returns information about a VM and its volumes.
-//
-//nolint:gocyclo
 func GetVolumeInfo(
 	vm *vmopv1.VirtualMachine,
 	devices []vimtypes.BaseVirtualDevice,

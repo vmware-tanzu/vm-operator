@@ -103,7 +103,7 @@ func (c *E2EConfig) GetIntervals(spec, key string) []any {
 // GetVariable returns a variable from the e2e config file.
 func (c *E2EConfig) GetVariable(varName string) string {
 	version, ok := c.Variables[varName]
-	Expect(ok).NotTo(BeFalse(), "failed to get variable %q", varName)
+	Expect(ok).To(BeTrue(), "failed to get variable %q", varName)
 
 	return version
 }

@@ -324,7 +324,7 @@ func MatchVirtualPCIPassthroughDVXBackingInfo(
 		if len(a.ConfigParams) == len(b.ConfigParams) {
 			am := make(map[string]any, len(a.ConfigParams))
 			bm := make(map[string]any, len(b.ConfigParams))
-			for i := 0; i < len(a.ConfigParams); i++ {
+			for i := range len(a.ConfigParams) {
 				aov := a.ConfigParams[i].GetOptionValue()
 				bov := b.ConfigParams[i].GetOptionValue()
 				am[aov.Key] = aov.Value

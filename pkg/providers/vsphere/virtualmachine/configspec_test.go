@@ -573,7 +573,7 @@ var _ = Describe("CreateConfigSpec", func() {
 				})
 
 				It("should not have placement policies and tag specs", func() {
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
+					Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
 					expectedTagNames := []string{}
 					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
 				})
@@ -603,7 +603,7 @@ var _ = Describe("CreateConfigSpec", func() {
 				})
 
 				It("should have not have anti-affinity policies and tag specs", func() {
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
+					Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
 					expectedTagNames := []string{}
 					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
 				})
@@ -660,7 +660,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					}
 				})
 				It("should ignore both host affinity policies and zone affinity policies", func() {
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
+					Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
 					expectedTagNames := []string{}
 					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
 				})
@@ -718,7 +718,7 @@ var _ = Describe("CreateConfigSpec", func() {
 				})
 
 				It("should ignore both host affinity policies and zone affinity policies", func() {
-					Expect(configSpec.VmPlacementPolicies).To(HaveLen(0))
+					Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
 					expectedTagNames := []string{}
 					assertVMTags(configSpec, expectedTagNames, vmCtx.VM.Namespace)
 				})

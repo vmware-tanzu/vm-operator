@@ -539,7 +539,7 @@ func init() {
 // and then again, per object in the cache, to calculate the total size of the
 // cache.
 func CacheGetStats() []any {
-	keyValPairs := []any{}
+	keyValPairs := make([]any, 0, 12)
 
 	s := Cache.Stat()
 	keyValPairs = append(

@@ -214,7 +214,7 @@ func unitTestsReconcile() {
 
 		Context("update SPU docs", func() {
 			JustBeforeEach(func() {
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(spuForVM), spuForVM)).To(Succeed())
 			})
 

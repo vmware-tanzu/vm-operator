@@ -193,7 +193,7 @@ var _ = Describe("Reconcile", func() {
 
 			It("should succeed without any device change", func() {
 				Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-				Expect(configSpec.DeviceChange).To(HaveLen(0))
+				Expect(configSpec.DeviceChange).To(BeEmpty())
 			})
 
 			When("IDE controller is specified in spec", func() {
@@ -253,7 +253,7 @@ var _ = Describe("Reconcile", func() {
 
 					It("should not create a new IDE controller", func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(0))
+						Expect(configSpec.DeviceChange).To(BeEmpty())
 					})
 				})
 
@@ -357,7 +357,7 @@ var _ = Describe("Reconcile", func() {
 
 					It("should skip this controller", func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(0))
+						Expect(configSpec.DeviceChange).To(BeEmpty())
 					})
 				})
 
@@ -378,7 +378,7 @@ var _ = Describe("Reconcile", func() {
 
 					It("should not create a new NVME controller", func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(0))
+						Expect(configSpec.DeviceChange).To(BeEmpty())
 					})
 				})
 
@@ -542,7 +542,7 @@ var _ = Describe("Reconcile", func() {
 
 					It("should not create a new SATA controller", func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(0))
+						Expect(configSpec.DeviceChange).To(BeEmpty())
 					})
 				})
 
@@ -675,7 +675,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(vm.Spec.Hardware.SCSIControllers).To(HaveLen(1))
 						vm.Spec.Hardware.SCSIControllers[0].Type = controllerType
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(0))
+						Expect(configSpec.DeviceChange).To(BeEmpty())
 					},
 
 					Entry("ParaVirtual", &vimtypes.ParaVirtualSCSIController{
@@ -976,7 +976,7 @@ var _ = Describe("Reconcile", func() {
 
 					It("should succeed but not add the edit event to device changes", func() {
 						Expect(r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
-						Expect(configSpec.DeviceChange).To(HaveLen(0))
+						Expect(configSpec.DeviceChange).To(BeEmpty())
 					})
 				})
 			})

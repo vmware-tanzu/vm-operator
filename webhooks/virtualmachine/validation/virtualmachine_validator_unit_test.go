@@ -3372,6 +3372,8 @@ func unitTestsValidateCreate() {
 						wrongKind = "VirtualNetwork"
 						wrongAPIVersionMsg = `spec.network.interfaces[0].network.apiVersion: Unsupported value: "vmware.com/v1alpha1": supported values: "crd.nsx.vmware.com/v1alpha1"`
 						wrongKindMsg = `spec.network.interfaces[1].network.kind: Unsupported value: "VirtualNetwork": supported values: "Subnet", "SubnetSet"`
+					case pkgcfg.NetworkProviderTypeNamed:
+						// The named network provider is not tested here.
 					}
 
 					if enableCapability {
@@ -5291,7 +5293,7 @@ func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 }
 
 // Validate Update operations.
-func unitTestsValidateUpdate() { //nolint:gocyclo
+func unitTestsValidateUpdate() {
 	var (
 		ctx *unitValidatingWebhookContext
 	)

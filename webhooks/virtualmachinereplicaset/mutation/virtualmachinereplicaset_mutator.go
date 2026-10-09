@@ -63,6 +63,8 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		// TODO: VMSVC-1827
 	case admissionv1.Update:
 		// TODO: VMSVC-1827
+	case admissionv1.Delete, admissionv1.Connect:
+		// No mutation is performed for these operations.
 	}
 
 	if !wasMutated {

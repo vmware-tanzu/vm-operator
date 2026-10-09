@@ -290,6 +290,8 @@ func GetPreferredDiskFormat[T string | vimtypes.DatastoreSectorFormat](
 			supports4k = true
 		case T(vimtypes.DatastoreSectorFormatNative_512):
 			supportsNative512 = true
+		case T(vimtypes.DatastoreSectorFormatEmulated_512):
+			// Emulated 512 does not affect the preferred format.
 		}
 	}
 
@@ -460,7 +462,7 @@ type Sortable[T any] interface {
 }
 
 // GetVolumeDiskModeFromDiskMode maps a disk mode to Volume disk mode.
-// Returns the converted disk mode or an an error if not supported.
+// Returns the converted disk mode or an error if not supported.
 func GetVolumeDiskModeFromDiskMode(diskMode vimtypes.VirtualDiskMode) (vmopv1.VolumeDiskMode, error) {
 	switch diskMode {
 	case vimtypes.VirtualDiskModeIndependent_persistent:
@@ -478,7 +480,7 @@ func GetVolumeDiskModeFromDiskMode(diskMode vimtypes.VirtualDiskMode) (vmopv1.Vo
 
 // GetVolumeSharingModeFromDiskSharing maps a disk sharing mode to Volume
 // sharing mode.
-// Returns the converted sharing mode or an an error if not supported.
+// Returns the converted sharing mode or an error if not supported.
 func GetVolumeSharingModeFromDiskSharing(diskSharing vimtypes.VirtualDiskSharing) (vmopv1.VolumeSharingMode, error) {
 	switch diskSharing {
 	case vimtypes.VirtualDiskSharingSharingMultiWriter:

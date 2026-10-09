@@ -458,7 +458,7 @@ func unitTestsReconcile() {
 				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: "otherlinux64guest"}, guestOptions)).To(Succeed())
 				Expect(guestOptions.Status.HardwareVersions).To(HaveLen(2))
 
-				var hardwareVersions []string
+				hardwareVersions := make([]string, 0, len(guestOptions.Status.HardwareVersions))
 				for _, hv := range guestOptions.Status.HardwareVersions {
 					hardwareVersions = append(hardwareVersions, hv.HardwareVersion)
 				}
@@ -1088,7 +1088,7 @@ func vcsimTestsReconcile() {
 			Expect(vcsimCtx.Client.Get(vcsimCtx, client.ObjectKeyFromObject(obj), &current)).To(Succeed())
 			Expect(current.Status.HardwareVersions).To(HaveLen(2))
 
-			var versions []string
+			versions := make([]string, 0, len(current.Status.HardwareVersions))
 			for _, hv := range current.Status.HardwareVersions {
 				versions = append(versions, hv.HardwareVersion)
 			}

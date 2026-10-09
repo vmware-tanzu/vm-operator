@@ -56,7 +56,7 @@ var _ = Describe("DevicesFromConfigSpec", func() {
 			configSpec.DeviceChange = nil
 		})
 		It("will not panic", func() {
-			Expect(devOut).To(HaveLen(0))
+			Expect(devOut).To(BeEmpty())
 		})
 	})
 
@@ -65,7 +65,7 @@ var _ = Describe("DevicesFromConfigSpec", func() {
 			configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{}
 		})
 		It("will not panic", func() {
-			Expect(devOut).To(HaveLen(0))
+			Expect(devOut).To(BeEmpty())
 		})
 	})
 

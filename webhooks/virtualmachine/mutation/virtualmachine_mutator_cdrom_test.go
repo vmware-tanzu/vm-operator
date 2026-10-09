@@ -59,6 +59,8 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 			for i, busNum := range expectedBusNumbers {
 				Expect(vm.Spec.Hardware.SATAControllers[i].BusNumber).To(Equal(busNum))
 			}
+		default:
+			// Other controller types are not checked here.
 		}
 	}
 
@@ -733,10 +735,10 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 				}
 
 				// Fill all SATA slots with non-CD-ROM devices
-				sataControllers := []vmopv1.VirtualControllerStatus{}
-				for busNum := int32(0); busNum < 4; busNum++ {
-					devices := []vmopv1.VirtualDeviceStatus{}
-					for unitNum := int32(0); unitNum < 30; unitNum++ {
+				sataControllers := make([]vmopv1.VirtualControllerStatus, 0, 4)
+				for busNum := range int32(4) {
+					devices := make([]vmopv1.VirtualDeviceStatus, 0, 30)
+					for unitNum := range int32(30) {
 						devices = append(devices, vmopv1.VirtualDeviceStatus{
 							Type:       vmopv1.VirtualDeviceTypeDisk,
 							UnitNumber: unitNum,
@@ -771,8 +773,8 @@ var _ = Describe("MutateCdromControllerOnUpdate", func() {
 					setupController()
 
 					// Fill all slots with non-CD-ROM devices
-					devices := []vmopv1.VirtualDeviceStatus{}
-					for unitNum := int32(0); unitNum < maxSlots; unitNum++ {
+					devices := make([]vmopv1.VirtualDeviceStatus, 0, maxSlots)
+					for unitNum := range maxSlots {
 						devices = append(devices, vmopv1.VirtualDeviceStatus{
 							Type:       vmopv1.VirtualDeviceTypeDisk,
 							UnitNumber: unitNum,

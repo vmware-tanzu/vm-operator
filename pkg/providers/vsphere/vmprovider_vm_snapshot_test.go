@@ -296,7 +296,7 @@ func vmSnapshotTests() {
 			By("First reconcile should return ErrSnapshotRevert", func() {
 				_, createErr := vmProvider.CreateOrUpdateVirtualMachineAsync(ctx, vm)
 				Expect(createErr).To(HaveOccurred())
-				Expect(errors.Is(createErr, vsphere.ErrSnapshotRevert))
+				Expect(errors.Is(createErr, vsphere.ErrSnapshotRevert)).To(BeTrue())
 				Expect(pkgerr.IsNoRequeueError(createErr)).To(BeTrue(), "Should return NoRequeueError")
 			})
 

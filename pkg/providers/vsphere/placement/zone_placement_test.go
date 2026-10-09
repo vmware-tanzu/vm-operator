@@ -145,7 +145,7 @@ func vcSimPlacement() {
 				It("returns success even if assigned zone is being deleted", func() {
 					Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
 					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					Expect(result).NotTo(BeNil())
 				})
 			})

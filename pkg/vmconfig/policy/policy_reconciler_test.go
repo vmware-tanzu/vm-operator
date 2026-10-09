@@ -884,7 +884,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(finalTags).To(BeEmpty())
 
 						// Ensure VM status has no policies.
-						Expect(vm.Status.Policies).To(HaveLen(0))
+						Expect(vm.Status.Policies).To(BeEmpty())
 
 						// Reconcile again so the VM status is updated.
 						err = vmconfpolicy.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
@@ -892,7 +892,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(configSpec.ExtraConfig).To(BeEmpty())
 
 						// Ensure VM status still has no policies.
-						Expect(vm.Status.Policies).To(HaveLen(0))
+						Expect(vm.Status.Policies).To(BeEmpty())
 					})
 				})
 				When("the vm is subject to a single policy", func() {
@@ -955,7 +955,7 @@ var _ = Describe("Reconcile", func() {
 						Expect(strings.Split(ecTags, ",")).To(ConsistOf(policyTag1ID))
 
 						// Ensure the VM status was not updated yet.
-						Expect(vm.Status.Policies).To(HaveLen(0))
+						Expect(vm.Status.Policies).To(BeEmpty())
 
 						// Reconcile again so the VM status is updated.
 						configSpec = &vimtypes.VirtualMachineConfigSpec{}
@@ -1054,7 +1054,7 @@ var _ = Describe("Reconcile", func() {
 							policyTag1ID, policyTag2ID, policyTag3ID))
 
 						// Ensure the VM status was not updated yet.
-						Expect(vm.Status.Policies).To(HaveLen(0))
+						Expect(vm.Status.Policies).To(BeEmpty())
 
 						// Reconcile again so the VM status is updated.
 						configSpec = &vimtypes.VirtualMachineConfigSpec{}
@@ -1518,7 +1518,7 @@ var _ = Describe("Reconcile", func() {
 })
 
 func tagSpec(
-	op vimtypes.ArrayUpdateOperation, //nolint:unparam
+	op vimtypes.ArrayUpdateOperation,
 	uuid string) vimtypes.TagSpec {
 
 	return vimtypes.TagSpec{

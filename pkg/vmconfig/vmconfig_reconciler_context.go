@@ -41,6 +41,10 @@ func FromContext(ctx context.Context) []Reconciler {
 		contextKeyValue,
 		func(val contextValueType) []Reconciler {
 			var list []Reconciler
+			if len(val) > 0 {
+				// Only allocate when non-empty so an empty registry yields nil.
+				list = make([]Reconciler, 0, len(val))
+			}
 			for _, r := range val {
 				list = append(list, r)
 			}

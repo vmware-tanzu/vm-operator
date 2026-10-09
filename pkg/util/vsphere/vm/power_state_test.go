@@ -114,7 +114,7 @@ func powerStateTests() {
 			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 			vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(vmList)).To(BeNumerically(">", 0))
+			Expect(vmList).ToNot(BeEmpty())
 			mgdObj = vmutil.ManagedObjectFromMoRef(vmList[0].Reference())
 			simulator.TaskDelay.MethodDelay = map[string]int{}
 			obj = object.NewVirtualMachine(ctx.VCClient.Client, mgdObj.Self)
@@ -742,7 +742,7 @@ func powerStateTests() {
 			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 			vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(vmList)).To(BeNumerically(">", 0))
+			Expect(vmList).ToNot(BeEmpty())
 			mgdObj = vmutil.ManagedObjectFromMoRef(vmList[0].Reference())
 			simulator.TaskDelay.MethodDelay = map[string]int{}
 			obj = object.NewVirtualMachine(ctx.VCClient.Client, mgdObj.Self)

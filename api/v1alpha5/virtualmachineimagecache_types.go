@@ -75,7 +75,7 @@ type VirtualMachineImageCacheSpec struct {
 }
 
 // AddLocation adds the provided datacenterID, datastoreID, and profileID to the
-// the image cache object's spec.locations list if such a location does not
+// image cache object's spec.locations list if such a location does not
 // already exist. Calling this function for a set of datacenterID, datastoreID,
 // and profileID values that already exist in the object's spec.locations list
 // has no effect.

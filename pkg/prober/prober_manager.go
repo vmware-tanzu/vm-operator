@@ -147,7 +147,7 @@ func (m *manager) Start(ctx context.Context) error {
 
 	m.log.Info("Starting readiness workers", "count", numberOfReadinessWorkers)
 	m.workersWG.Add(numberOfReadinessWorkers)
-	for i := 0; i < numberOfReadinessWorkers; i++ {
+	for range numberOfReadinessWorkers {
 		readinessWorker := worker.NewReadinessWorker(ctx, m.readinessQueue, m.prober, m.client, m.recorder)
 		m.worker(readinessWorker)
 	}

@@ -168,7 +168,7 @@ var _ = Describe("TranslateVMXNet3NICFirstClass", func() {
 			v, _ := kv.Value.(string)
 			keys[kv.Key] = v
 		}
-		Expect(len(keys)).To(BeNumerically(">", 0))
+		Expect(keys).ToNot(BeEmpty())
 	})
 
 	It("uses the ethernet1 prefix for deviceKey 4001", func() {

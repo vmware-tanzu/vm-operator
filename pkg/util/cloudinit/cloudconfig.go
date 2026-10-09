@@ -257,7 +257,7 @@ func (ccu cloudConfigUsers) MarshalJSON() ([]byte, error) {
 	if len(ccu.users) == 0 {
 		return nil, nil
 	}
-	var result []any //nolint:prealloc
+	var result []any
 	if ccu.defaultUser {
 		result = append(result, "default")
 	}

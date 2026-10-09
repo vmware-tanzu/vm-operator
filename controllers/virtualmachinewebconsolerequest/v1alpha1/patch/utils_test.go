@@ -174,7 +174,7 @@ func unitTests() {
 
 				// Validate that the status has been copied, without conditions.
 				Expect(newObj.Object["status"]).To(HaveLen(1))
-				Expect(newObj.Object["status"].(map[string]interface{})["infrastructureReady"]).To(Equal(true))
+				Expect(newObj.Object["status"].(map[string]interface{})["infrastructureReady"]).To(BeTrue())
 				Expect(newObj.Object["status"].(map[string]interface{})["conditions"]).To(BeNil())
 
 				// When working with conditions, the inner map is going to be removed from the original object.

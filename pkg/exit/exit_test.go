@@ -104,7 +104,7 @@ var _ = DescribeTable("Restart",
 		case nilClient:
 			Expect(fn).To(PanicWith("k8sClient is nil"))
 		default:
-			for i := 0; i < numExits; i++ {
+			for range numExits {
 				Expect(fn).ToNot(Panic())
 			}
 			switch {

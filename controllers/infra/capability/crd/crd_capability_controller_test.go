@@ -103,9 +103,10 @@ var _ = Describe(
 
 		AfterEach(func() {
 			Expect(ctx.Client.Delete(ctx, obj)).To(Succeed())
-			Eventually(apierrors.IsNotFound(
-				ctx.Client.Get(ctx, capabilities.ConfigMapKey, obj),
-			), time.Second*5).Should(BeTrue())
+			Eventually(func(g Gomega) {
+				err := ctx.Client.Get(ctx, capabilities.ConfigMapKey, obj)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}, time.Second*5).Should(Succeed())
 
 			ctx.AfterEach()
 			ctx = nil

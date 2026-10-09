@@ -200,7 +200,7 @@ func buildVMXTagMaps[T any](include func(tag string) bool) vmxTagMaps {
 	t := reflect.TypeOf(*new(T))
 	keys := make(map[string]int, t.NumField())
 	modes := make(map[string]VMXMode, t.NumField())
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		tag := f.Tag.Get("vmx")
 		if !include(tag) {
@@ -402,6 +402,8 @@ func DecodeVMXFieldValue(ctx context.Context, rv reflect.Value, raw string) erro
 		return decodePtrVMXField(ctx, rv, raw)
 	case reflect.Slice:
 		return decodeSliceVMXField(ctx, rv, raw)
+	default:
+		// Other kinds fall through to the logic below.
 	}
 	return fmt.Errorf("unsupported field kind %v for vmx decode", rv.Kind())
 }
@@ -640,7 +642,7 @@ func decodePNICQueueFeatures(raw string) []string {
 	}
 
 	var elems []string
-	for bit := uint(0); bit < vmopv1.PNICFeaturesMaxItems; bit++ {
+	for bit := range uint(vmopv1.PNICFeaturesMaxItems) {
 		if n&(1<<bit) == 0 {
 			continue
 		}

@@ -81,7 +81,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 // Those are optional fields but will be set by the mutating webhook if they are omitted.
 func (v validator) validateCreateSpec(ctx *pkgctx.WebhookRequestContext,
 	groupPubReq *vmopv1.VirtualMachineGroupPublishRequest) field.ErrorList {
-	var fieldErrs field.ErrorList
+	fieldErrs := make(field.ErrorList, 0, 3)
 	specPath := field.NewPath("spec")
 
 	vmGroupSource := &vmopv1.VirtualMachineGroup{ObjectMeta: metav1.ObjectMeta{Namespace: groupPubReq.Namespace,

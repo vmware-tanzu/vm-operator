@@ -661,6 +661,8 @@ func desiredLatencySensitivity(vm vmopv1.VirtualMachine) (level vimtypes.Latency
 		case vmopv1.VirtualMachineLatencySensitivityHighWithHyperthreading:
 			level = vimtypes.LatencySensitivitySensitivityLevelHigh
 			simultaneousThreads = 2
+		case vmopv1.VirtualMachineLatencySensitivityNormal:
+			// The level already defaults to normal.
 		}
 	}
 	return

@@ -10,7 +10,7 @@ import (
 
 func GetCommandEnvVars(ctx context.Context, client ctrlclient.Client, ns, name, command string) (map[string]string, error) {
 	deployment, err := GetDeployment(ctx, client, ns, name)
-	Expect(err).To(BeNil())
+	Expect(err).ToNot(HaveOccurred())
 
 	Expect(command).ToNot(BeEmpty())
 

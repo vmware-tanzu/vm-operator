@@ -205,5 +205,5 @@ func updateSupervisorCapabilitiesCR(svSSHCommandRunner e2essh.SSHCommandRunner, 
 
 	kubeCtlExecCmd := fmt.Sprintf("cat <<EOF | kubectl apply -f -\n%s\nEOF", yamlData)
 	output, err := svSSHCommandRunner.RunCommand(kubeCtlExecCmd)
-	Expect(err).To(BeNil(), string(output))
+	Expect(err).ToNot(HaveOccurred(), string(output))
 }

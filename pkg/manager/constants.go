@@ -17,6 +17,18 @@ const (
 	// manager option.
 	DefaultSyncPeriod = time.Minute * 30
 
+	// DefaultLeaseDuration is the default value for the eponymous
+	// manager option.
+	DefaultLeaseDuration = 60 * time.Second
+
+	// DefaultRenewDeadline is the default value for the eponymous
+	// manager option.
+	DefaultRenewDeadline = 40 * time.Second
+
+	// DefaultRetryPeriod is the default value for the eponymous
+	// manager option.
+	DefaultRetryPeriod = 15 * time.Second
+
 	// DefaultMaxConcurrentReconciles is the default value for the eponymous
 	// manager option.
 	DefaultMaxConcurrentReconciles = 1

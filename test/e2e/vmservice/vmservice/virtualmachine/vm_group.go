@@ -26,6 +26,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -1351,15 +1352,28 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(vm1Zone).ToNot(Equal(vm3Zone))
 				Expect(vm2Zone).ToNot(Equal(vm3Zone))
 
+				asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
+				Expect(err).ToNot(HaveOccurred())
+				vmHardAffinityDuringExecutionEnabled := utils.IsSupervisorCapabilityEnabled(
+					ctx, svClusterClient, consts.VMHardAffinityDuringExecutionCapabilityName, asyncSupervisorFSSEnabled)
+
+				verifyTagsFunc := vmservice.VerifyVMTagsAndPolicyAssignment
+				if vmHardAffinityDuringExecutionEnabled {
+					// If VMHardAffinityDuringExecution is enabled, then zonal policies are persisted.
+					// ignore those tags and only check tags related to IaaS policies
+					verifyTagsFunc = vmservice.VerifyVMTagsContainPolicyAssignment
+				}
+
 				By("Verifying the VMs have the expected tags and policies assigned")
+				// The VMs may also have the tags used by the zonal AF/AAF policies attached.
 				// VM1 with tier=1 label should have the 1st mandatory policy applied.
-				vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm1Name, policyNameToTagID, policyNames[:1])
+				verifyTagsFunc(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm1Name, policyNameToTagID, policyNames[:1])
 				// VM2 with tier=2 label should have the 2nd mandatory policy applied.
-				vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm2Name, policyNameToTagID, policyNames[1:2])
+				verifyTagsFunc(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm2Name, policyNameToTagID, policyNames[1:2])
 				// VM3 with tier=3 label should have the 3rd mandatory policy applied.
-				vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm3Name, policyNameToTagID, policyNames[2:3])
+				verifyTagsFunc(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm3Name, policyNameToTagID, policyNames[2:3])
 				// VM4 with tier=1 label should have the 1st mandatory policy applied.
-				vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm4Name, policyNameToTagID, policyNames[:1])
+				verifyTagsFunc(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vm4Name, policyNameToTagID, policyNames[:1])
 			})
 
 		})
@@ -1368,6 +1382,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 	Context("Group placement with affinity and anti-affinity at host topology", func() {
 		const (
 			requiredDuringSchedulingPreferredDuringExecution  = "requiredDuringSchedulingPreferredDuringExecution"
+			requiredDuringSchedulingRequiredDuringExecution   = "requiredDuringSchedulingRequiredDuringExecution"
 			preferredDuringSchedulingPreferredDuringExecution = "preferredDuringSchedulingPreferredDuringExecution"
 		)
 
@@ -1375,6 +1390,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			tmpNamespaceName    string
 			tmpNamespaceCtx     wcpframework.NamespaceContext
 			tmpNamespaceVMIName string
+
+			// topologyKey is the topology key used by the affinity terms of
+			// the VMs created by createHostVMWithAffinityAndAntiAffinityFunc.
+			topologyKey string
 		)
 
 		// getVMHostFromVmodlFunc retrieves the host moref value from vSphere directly.
@@ -1454,14 +1473,19 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 								},
 							},
 						},
-						TopologyKey: "kubernetes.io/hostname",
+						TopologyKey: topologyKey,
 					},
 				}
-				if affinityType == requiredDuringSchedulingPreferredDuringExecution {
+				switch affinityType {
+				case requiredDuringSchedulingPreferredDuringExecution:
 					affinityLabelSelector = &vmopv1.VMAffinitySpec{
 						RequiredDuringSchedulingPreferredDuringExecution: terms,
 					}
-				} else if affinityType == preferredDuringSchedulingPreferredDuringExecution {
+				case requiredDuringSchedulingRequiredDuringExecution:
+					affinityLabelSelector = &vmopv1.VMAffinitySpec{
+						RequiredDuringSchedulingRequiredDuringExecution: terms,
+					}
+				case preferredDuringSchedulingPreferredDuringExecution:
 					affinityLabelSelector = &vmopv1.VMAffinitySpec{
 						PreferredDuringSchedulingPreferredDuringExecution: terms,
 					}
@@ -1481,17 +1505,23 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 								},
 							},
 						},
-						TopologyKey: "kubernetes.io/hostname",
+						TopologyKey: topologyKey,
 					},
 				}
-				if affinityType == requiredDuringSchedulingPreferredDuringExecution {
+				switch affinityType {
+				case requiredDuringSchedulingPreferredDuringExecution:
 					antiAffinityLabelSelector = &vmopv1.VMAntiAffinitySpec{
 						RequiredDuringSchedulingPreferredDuringExecution: terms,
 					}
-				} else if affinityType == preferredDuringSchedulingPreferredDuringExecution {
+				case requiredDuringSchedulingRequiredDuringExecution:
+					antiAffinityLabelSelector = &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingRequiredDuringExecution: terms,
+					}
+				case preferredDuringSchedulingPreferredDuringExecution:
 					antiAffinityLabelSelector = &vmopv1.VMAntiAffinitySpec{
 						PreferredDuringSchedulingPreferredDuringExecution: terms,
 					}
+
 				}
 			}
 
@@ -1509,7 +1539,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					VMAntiAffinity: antiAffinityLabelSelector,
 				},
 			}
-			vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+			vmYAML := manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
 			e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
 			Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
 		}
@@ -1610,6 +1640,8 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			// Check placement enforcement for requiredDuringScheduling
 			// This is skipped for preferredDuringScheduling as that is non-deterministic.
+			// For requiredDuringExecution, placement is verified below, only after
+			// the compute policy reports the VMs as compliant.
 			if affinityType == requiredDuringSchedulingPreferredDuringExecution {
 				By("Verifying all VMs are placed on different hosts before poweron, i.e. placement is as expected")
 				verifyAffinity(vmHosts, affinedVms)
@@ -1675,9 +1707,41 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				}, config.GetIntervals("default", "wait-virtual-machine-compute-policy-status-update")...).
 					Should(Or(Equal("COMPLIANT"), Equal("NOT_COMPLIANT")), "expected VM %s to have a compliance status for policy %s", vmName, policyID)
 			}
+
+			if affinityType == requiredDuringSchedulingRequiredDuringExecution {
+				By("Verifying each VM is COMPLIANT with its policy")
+				for _, vmName := range vmMemberNames {
+					policyID := vmPolicyID[vmName]
+					Eventually(func(g Gomega) string {
+						vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+						g.Expect(err).ToNot(HaveOccurred())
+						g.Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+
+						status, err := input.WCPClient.GetVMPolicyCompliance(policyID, vm.Status.UniqueID)
+						g.Expect(err).ToNot(HaveOccurred())
+
+						return status.Status
+					}, config.GetIntervals("default", "wait-virtual-machine-compute-policy-status-update")...).
+						Should(Equal("COMPLIANT"), "expected VM %s to be compliant with policy %s", vmName, policyID)
+				}
+
+				By("Verifying placement now that the policies are compliant")
+				postPowerOnLocations := make(map[string]string, len(vmMemberNames))
+				for _, vmName := range vmMemberNames {
+					if topologyKey == zoneLabelKey {
+						postPowerOnLocations[vmName] = getVMZoneFunc(vmName)
+					} else {
+						postPowerOnLocations[vmName] = getVMHostFunc(vmName)
+					}
+				}
+				verifyAffinity(postPowerOnLocations, affinedVms)
+				verifyAntiAffinity(postPowerOnLocations, antiAffinedVms)
+			}
 		}
 
 		BeforeEach(func() {
+			topologyKey = hostTopoKey
+
 			skipper.SkipUnlessStretchSupervisorIsEnabled()
 			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMPlacementPoliciesCapabilityName)
 			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMAffinityDuringExecutionCapabilityName)
@@ -1787,6 +1851,202 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingPreferredDuringExecution,
 					[]string{vm1Name, vm2Name},
 					[]string{vm3Name, vm4Name})
+			})
+
+			When("VMs specify requiredDuringSchedulingRequiredDuringExecution", Label("experimental"), func() {
+				BeforeEach(func() {
+					skipper.SkipUnlessStretchSupervisorIsEnabled()
+					skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+				})
+
+				var (
+					// adminClient is required to manage the policies, which needs
+					// more than Supervisor admin privileges.
+					adminClient ctrlclient.Client
+					policy      *vspherepolv1.RequiredDuringExecutionVMPlacementPolicy
+				)
+
+				BeforeEach(func() {
+					adminProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+					Expect(err).ToNot(HaveOccurred(), "failed to get admin cluster proxy")
+					DeferCleanup(func() { adminProxy.Dispose(ctx) })
+
+					adminClient, err = adminProxy.GetAdminClient()
+					Expect(err).ToNot(HaveOccurred(), "failed to get admin client")
+
+					policy = &vspherepolv1.RequiredDuringExecutionVMPlacementPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "e2e-required-during-execution",
+							Namespace: tmpNamespaceName,
+						},
+					}
+				})
+
+				When("the namespace has no RequiredDuringExecutionVMPlacementPolicy", func() {
+					BeforeEach(func() {
+						By("Ensuring the namespace has no RequiredDuringExecutionVMPlacementPolicy")
+						Expect(adminClient.DeleteAllOf(ctx,
+							&vspherepolv1.RequiredDuringExecutionVMPlacementPolicy{},
+							ctrlclient.InNamespace(tmpNamespaceName))).To(Succeed(),
+							"failed to delete RequiredDuringExecutionVMPlacementPolicies")
+						Eventually(func(g Gomega) {
+							var list vspherepolv1.RequiredDuringExecutionVMPlacementPolicyList
+							g.Expect(adminClient.List(ctx, &list, ctrlclient.InNamespace(tmpNamespaceName))).To(Succeed())
+							g.Expect(list.Items).To(BeEmpty())
+						}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+					})
+
+					DescribeTable("Should reject a VM with required-required terms",
+						func(topologyKey string, antiAffinity bool) {
+							vmYAML := requiredRequiredVMYaml(manifestbuilders.VirtualMachineYaml{
+								Namespace:        tmpNamespaceName,
+								Name:             vm1Name,
+								GroupName:        vmgRootName,
+								ImageName:        tmpNamespaceVMIName,
+								VMClassName:      clusterResources.VMClassName,
+								StorageClassName: clusterResources.StorageClassName,
+								PowerState:       string(vmopv1.VirtualMachinePowerStateOff),
+							}, topologyKey, antiAffinity)
+
+							err := clusterProxy.ApplyWithArgs(ctx, vmYAML)
+							Expect(err).To(HaveOccurred(), "VM creation should be rejected without a RequiredDuringExecutionVMPlacementPolicy")
+							Expect(err.Error()).To(ContainSubstring("requiredDuringSchedulingRequiredDuringExecution is not supported"))
+						},
+						Entry("host affinity", hostTopoKey, false),
+						Entry("host anti-affinity", hostTopoKey, true),
+						Entry("zone affinity", zoneLabelKey, false),
+						Entry("zone anti-affinity", zoneLabelKey, true),
+					)
+
+					It("Should allow updating the spec of a VM without required-required terms", func() {
+						By("Creating a VirtualMachineGroup and a VM without required-required terms")
+						vmMemberNames = []string{vm1Name}
+						vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(manifestbuilders.VirtualMachineGroupYaml{
+							Namespace: tmpNamespaceName,
+							Name:      vmgRootName,
+							BootOrder: []manifestbuilders.BootOrder{
+								{Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm1Name}}},
+							},
+						})
+						Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+						Expect(clusterProxy.ApplyWithArgs(ctx, manifestbuilders.GetVirtualMachineYamlA6(manifestbuilders.VirtualMachineYaml{
+							Namespace:        tmpNamespaceName,
+							Name:             vm1Name,
+							GroupName:        vmgRootName,
+							ImageName:        tmpNamespaceVMIName,
+							VMClassName:      clusterResources.VMClassName,
+							StorageClassName: clusterResources.StorageClassName,
+							PowerState:       string(vmopv1.VirtualMachinePowerStateOff),
+						}))).To(Succeed())
+						vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm1Name)
+
+						By("Powering on the VM")
+						powerOnVMFunc(vm1Name)
+						vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vm1Name, "PoweredOn")
+					})
+				})
+
+				When("the namespace has a RequiredDuringExecutionVMPlacementPolicy", func() {
+					BeforeEach(func() {
+						By("Creating a RequiredDuringExecutionVMPlacementPolicy in the temporary namespace")
+						Expect(adminClient.Create(ctx, policy)).To(Succeed(), "failed to create RequiredDuringExecutionVMPlacementPolicy")
+						DeferCleanup(func() { _ = adminClient.Delete(ctx, policy) })
+					})
+
+					It("Should reject new VMs and allow spec updates on existing VMs once the policy is deleted", func() {
+						By("Creating a VirtualMachineGroup and a VM with required-required host affinity")
+						vmMemberNames = []string{vm1Name, vm2Name}
+						vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(manifestbuilders.VirtualMachineGroupYaml{
+							Namespace: tmpNamespaceName,
+							Name:      vmgRootName,
+							BootOrder: []manifestbuilders.BootOrder{
+								{Members: []vmopv1.GroupMember{
+									{Kind: vmKind, Name: vm1Name},
+									{Kind: vmKind, Name: vm2Name},
+								}},
+							},
+						})
+						Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+
+						vmParameters := manifestbuilders.VirtualMachineYaml{
+							Namespace:        tmpNamespaceName,
+							Name:             vm1Name,
+							GroupName:        vmgRootName,
+							ImageName:        tmpNamespaceVMIName,
+							VMClassName:      clusterResources.VMClassName,
+							StorageClassName: clusterResources.StorageClassName,
+							PowerState:       string(vmopv1.VirtualMachinePowerStateOff),
+						}
+						Expect(clusterProxy.ApplyWithArgs(ctx, requiredRequiredVMYaml(vmParameters, hostTopoKey, false))).To(Succeed())
+						vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm1Name)
+
+						By("Deleting the RequiredDuringExecutionVMPlacementPolicy")
+						Expect(adminClient.Delete(ctx, policy)).To(Succeed())
+						Eventually(func(g Gomega) {
+							var list vspherepolv1.RequiredDuringExecutionVMPlacementPolicyList
+							g.Expect(adminClient.List(ctx, &list, ctrlclient.InNamespace(tmpNamespaceName))).To(Succeed())
+							g.Expect(list.Items).To(BeEmpty())
+						}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+
+						By("Verifying a new VM with required-required terms is rejected")
+						vmParameters.Name = vm2Name
+						err := clusterProxy.ApplyWithArgs(ctx, requiredRequiredVMYaml(vmParameters, hostTopoKey, false))
+						Expect(err).To(HaveOccurred(), "VM creation should be rejected once the policy is deleted")
+						Expect(err.Error()).To(ContainSubstring("requiredDuringSchedulingRequiredDuringExecution is not supported"))
+
+						By("Verifying the existing VM can still be powered on")
+						powerOnVMFunc(vm1Name)
+						vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vm1Name, "PoweredOn")
+					})
+
+					It("Should create 4 VMs with required-required zone AF with each other", func() {
+						By("Creating a VirtualMachineGroup with 4 VM-kind members")
+						topologyKey = zoneLabelKey
+						vmMemberNames = []string{vm1Name, vm2Name, vm3Name, vm4Name}
+						runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingRequiredDuringExecution,
+							[]string{vm1Name, vm2Name, vm3Name, vm4Name},
+							[]string{})
+					})
+
+					It("Should create 3 VMs with required-required zone AAF with each other", func() {
+						namespaceZones, err := utils.ListZonesByNamespace(ctx, input.ClusterProxy.GetClient(), tmpNamespaceName)
+						Expect(err).ToNot(HaveOccurred())
+						if len(namespaceZones.Items) < 3 {
+							Skip("zone anti-affinity of 3 VMs requires at least 3 zones bound to the namespace")
+						}
+
+						By("Creating a VirtualMachineGroup with 3 VM-kind members")
+						topologyKey = zoneLabelKey
+						vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+						runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingRequiredDuringExecution,
+							[]string{},
+							[]string{vm1Name, vm2Name, vm3Name})
+					})
+
+					It("Should create 4 VMs with required-required host AF with each other", func() {
+						By("Creating a VirtualMachineGroup with 4 VM-kind members")
+						vmMemberNames = []string{vm1Name, vm2Name, vm3Name, vm4Name}
+						runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingRequiredDuringExecution,
+							[]string{vm1Name, vm2Name, vm3Name, vm4Name},
+							[]string{})
+					})
+
+					It("Should create 3 VMs with required-required host AAF with each other", func() {
+						By("Creating a VirtualMachineGroup with 3 VM-kind members")
+						vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+						runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingRequiredDuringExecution,
+							[]string{},
+							[]string{vm1Name, vm2Name, vm3Name})
+					})
+
+					It("Should create VMs with required-required host AF (2vms) & AAF (2vms)", func() {
+						By("Creating a VirtualMachineGroup with 4 VM-kind members")
+						vmMemberNames = []string{vm1Name, vm2Name, vm3Name, vm4Name}
+						runVmVmAffinityAtHostTopoTest(requiredDuringSchedulingRequiredDuringExecution,
+							[]string{vm1Name, vm2Name},
+							[]string{vm3Name, vm4Name})
+					})
+				})
 			})
 
 			It("Should create VMs in the same zone with required host AF and AAF, repeated 5 times", func() {
@@ -2101,6 +2361,40 @@ const (
 	zoneLabelKey = "topology.kubernetes.io/zone"
 	hostTopoKey  = "kubernetes.io/hostname"
 )
+
+// requiredRequiredVMYaml returns the YAML for the given VM with a single
+// requiredDuringSchedulingRequiredDuringExecution term on the given topology
+// key. The term is a VM anti-affinity term when antiAffinity is true, and a VM
+// affinity term otherwise.
+func requiredRequiredVMYaml(
+	vmParameters manifestbuilders.VirtualMachineYaml,
+	topologyKey string,
+	antiAffinity bool) []byte {
+
+	terms := []vmopv1.VMAffinityTerm{
+		{
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"tier": "1"},
+			},
+			TopologyKey: topologyKey,
+		},
+	}
+	if antiAffinity {
+		vmParameters.Affinity = &vmopv1.AffinitySpec{
+			VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+				RequiredDuringSchedulingRequiredDuringExecution: terms,
+			},
+		}
+	} else {
+		vmParameters.Affinity = &vmopv1.AffinitySpec{
+			VMAffinity: &vmopv1.VMAffinitySpec{
+				RequiredDuringSchedulingRequiredDuringExecution: terms,
+			},
+		}
+	}
+
+	return manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
+}
 
 // zonePinnedVM describes a VirtualMachineGroup member VM that may be pinned to
 // a zone via the topology.kubernetes.io/zone label.

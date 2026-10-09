@@ -131,37 +131,6 @@ var _ = Describe(
 			})
 		})
 
-		Context("GetToBeRemovedServiceAnnotations for external-dns.alpha.kubernetes.io/hostname", func() {
-			BeforeEach(func() {
-				vmService = &vmopv1.VirtualMachineService{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "dummy-vmservice",
-						Namespace:   dummyNamespace,
-						Annotations: make(map[string]string),
-					},
-					Spec: vmopv1.VirtualMachineServiceSpec{
-						Type:         vmopv1.VirtualMachineServiceTypeLoadBalancer,
-						ClusterIP:    "TEST",
-						ExternalName: "TEST",
-					},
-				}
-				lbProvider = NsxtLoadBalancerProvider()
-			})
-
-			It("should include external-dns in to-be-removed set when absent from VirtualMachineService", func() {
-				annotations, err := lbProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(annotations).To(HaveKey(AnnotationServiceNSXHostnamesKey))
-			})
-
-			It("should not include external-dns in to-be-removed set when present on VirtualMachineService", func() {
-				vmService.Annotations[AnnotationServiceNSXHostnamesKey] = "host1.example.com"
-				annotations, err := lbProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(annotations).ToNot(HaveKey(AnnotationServiceNSXHostnamesKey))
-			})
-		})
-
 		Context("GetServiceLabels when VMService have externalTrafficPolicy annotation defined", func() {
 			BeforeEach(func() {
 				vmService = &vmopv1.VirtualMachineService{

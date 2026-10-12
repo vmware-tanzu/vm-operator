@@ -89,7 +89,6 @@ spec:
   className: my-vm-class
   imageName: ubuntu-22.04
   storageClass: fast-ssd
-  # Affinity rules can only be used when groupName is set
   affinity:
     vmAntiAffinity:
       preferredDuringSchedulingPreferredDuringExecution:
@@ -351,7 +350,6 @@ spec:
     - Test boot sequences in non-production first
 
 2. **Affinity Rules**:
-    - Remember: VMs must have `spec.groupName` set to use affinity
     - Design rules considering group membership changes
     - Balance between performance and availability
 
@@ -366,7 +364,6 @@ Common issues and solutions:
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| VM won't use affinity rules | Missing `spec.groupName` | Set VM's `spec.groupName` field |
 | Boot order not followed | Members not in group | Verify all VMs have correct `groupName` |
 | Power state not syncing | Conflicting individual settings | Check member conditions and remove individual power settings |
 | Placement not optimal | Missing affinity rules | Add appropriate affinity/anti-affinity rules |

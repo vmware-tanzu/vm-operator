@@ -3279,7 +3279,9 @@ func (v validator) validateVMAffinity(
 
 	var allErrs field.ErrorList
 
-	if vm.Spec.GroupName == "" {
+	if vm.Spec.GroupName == "" &&
+		!pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution {
+
 		allErrs = append(allErrs, field.Required(
 			field.NewPath("spec", "groupName"), "when setting affinity"))
 	}

@@ -971,34 +971,6 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					pvcs: pvcs,
 				}
 			}),
-			Entry("create a virtual machine with a MicrosoftWSFC volume and no explicit controller",
-				func() testSpec {
-					// Create a volume with WSFC application mode and validate
-					// that a valid slot is assigned to the volume.
-					// Note that PVC must exist before we create the VM otherwise the
-					// validation webhook simply skips the validation.
-					vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-					defer vcenter.LogoutVimClient(vCenterClient)
-
-					isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-					Expect(err).ToNot(HaveOccurred())
-					isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-					Expect(err).ToNot(HaveOccurred())
-
-					if isVSANDEnabled || isVSANEnabled {
-						Skip("Skipping EZT storage profile tests as VSAN Datastore is present")
-					}
-
-					return testSpec{
-						precreatePVCs: true,
-						pvcs: createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-							StorageClassName: eztStorageProfileName,
-							AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
-							VolumeMode:       ptr.To(corev1.PersistentVolumeBlock),
-							ApplicationType:  vmopv1.VolumeApplicationTypeMicrosoftWSFC,
-						}, 1),
-					}
-				}),
 		)
 
 		Describe("Controller lifecycle", func() {

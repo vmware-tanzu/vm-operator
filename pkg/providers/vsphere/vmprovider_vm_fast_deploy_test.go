@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"path"
 	"strconv"
@@ -46,6 +47,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 //nolint:gocyclo
 func vmFastDeployTests() {
@@ -494,30 +501,63 @@ func vmFastDeployTests() {
 						Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
 					})
 
-					When("a cached file no longer exists on the datastore", func() {
-						JustBeforeEach(func() {
-							// Override the location status with a file path that
-							// does not exist on vcsim so DatastoreFileExists
-							// returns os.ErrNotExist (HTTP 404), which should
-							// trigger the re-cache GenericEvent and return
-							// VMICacheNotReadyError rather than a plain error.
-							vmic.Status.Locations[0].Files = []vmopv1.VirtualMachineImageCacheFileStatus{
-								{
-									ID:       "[LocalDS_0] does-not-exist/missing.vmdk",
-									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
-									DiskType: vmopv1.VolumeTypeClassic,
-								},
+					When("cached file verification fails", func() {
+						interceptCachedFileHEAD := func(statusCode int) (*int, func()) {
+							vcClient, err := vmProvider.VSphereClient(ctx)
+							Expect(err).ToNot(HaveOccurred())
+
+							vimClient := vcClient.VimClient()
+							originalTransport := vimClient.Client.Transport
+							transport := originalTransport
+							if transport == nil {
+								transport = http.DefaultTransport
 							}
-							Expect(ctx.Client.Status().Update(ctx, &vmic)).To(Succeed())
+
+							requests := 0
+							vimClient.Client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								if req.Method == http.MethodHead &&
+									strings.Contains(req.URL.Path, path.Base(cachedDiskPaths[0])) {
+
+									requests++
+									return &http.Response{
+										StatusCode: statusCode,
+										Status:     fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
+										Body:       http.NoBody,
+										Header:     make(http.Header),
+										Request:    req,
+									}, nil
+								}
+								return transport.RoundTrip(req)
+							})
+
+							return &requests, func() {
+								vimClient.Client.Transport = originalTransport
+							}
+						}
+
+						It("returns HTTP 500 as a retryable error", func() {
+							requests, restore := interceptCachedFileHEAD(http.StatusInternalServerError)
+							defer restore()
+
+							err := createVM()
+							Expect(err).To(HaveOccurred())
+							Expect(err.Error()).To(ContainSubstring("500 Internal Server Error"))
+							var cacheNotReady pkgerr.VMICacheNotReadyError
+							Expect(errors.As(err, &cacheNotReady)).To(BeFalse())
+							Expect(*requests).To(Equal(1))
 						})
 
-						It("should return VMICacheNotReadyError, not a plain error", func() {
+						It("still waits for the cache when the file is missing", func() {
+							requests, restore := interceptCachedFileHEAD(http.StatusNotFound)
+							defer restore()
+
 							assertVMICNotReady(
 								createVM(),
 								"cached files not ready",
 								vmic.Name,
 								ctx.Datacenter.Reference().Value,
 								ctx.Datastore.Reference().Value)
+							Expect(*requests).To(Equal(1))
 						})
 					})
 

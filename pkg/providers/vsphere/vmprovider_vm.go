@@ -2159,19 +2159,16 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 
 					// Verify the files are still cached. If the files are
 					// found to no longer exist, a reconcile request is enqueued
-					// for the VMI cache object. Transient errors (e.g. HTTP
-					// 500) are returned as-is so the reconcile is requeued
-					// with normal exponential backoff rather than blocking
-					// indefinitely on a watch event.
-					ok, err := vs.vmCreateGetSourceFilePathsVerify(
+					// for the VMI cache object.
+					filesReady, err := vs.vmCreateGetSourceFilePathsVerify(
 						vmCtx,
 						vcClient,
 						obj,
 						l.Files)
 					if err != nil {
-						return fmt.Errorf("failed to verify cached files: %w", err)
+						return err
 					}
-					if ok {
+					if filesReady {
 
 						// The location has the cached files.
 						vmCtx.Logger.Info("got source files", "files", l.Files)
@@ -2228,13 +2225,8 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 }
 
 // vmCreateGetSourceFilePathsVerify verifies the provided file(s) are still
-// available on the datastore.
-// - Returns (true, nil) when all files are confirmed present.
-// - Returns (false, nil) when a file is definitively absent (HTTP 404); a
-//   reconcile request is enqueued for the VMI cache object so it re-caches.
-// - Returns (false, err) for transient failures (e.g. HTTP 500); the caller
-//   returns the error so the reconcile is requeued with normal exponential
-//   backoff rather than blocking on a watch event.
+// available. If a file is missing, a reconcile request is enqueued for the VMI
+// cache object. Other errors are returned so the VM reconcile can retry.
 func (vs *vSphereVMProvider) vmCreateGetSourceFilePathsVerify(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
@@ -2250,16 +2242,11 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePathsVerify(
 			vcClient.Datacenter()); err != nil {
 
 			if !errors.Is(err, os.ErrNotExist) {
-				// Transient error (e.g. vSphere returned 500, or a network
-				// hiccup). Do not treat the file as gone; return the error so
-				// the caller requeues with exponential backoff.
-				vmCtx.Logger.Error(err, "failed to verify cached file", "filePath", s.ID)
-				return false, err
+				return false, fmt.Errorf(
+					"failed to verify cached file %q: %w", s.ID, err)
 			}
 
-			// File is definitively gone (HTTP 404). Enqueue a reconcile for
-			// the VMI cache object so it re-caches the file.
-			vmCtx.Logger.Error(err, "file is invalid", "filePath", s.ID)
+			vmCtx.Logger.Info("cached file is missing", "filePath", s.ID)
 
 			chanSource := cource.FromContextWithBuffer(
 				vmCtx, "VirtualMachineImageCache", 100)

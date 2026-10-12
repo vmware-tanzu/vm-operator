@@ -69,7 +69,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'
@@ -96,7 +96,7 @@ jobs:
         cache: 'npm'
         cache-dependency-path: 'hack/quicktype/package-lock.json'
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'
@@ -119,7 +119,7 @@ jobs:
         cache: 'npm'
         cache-dependency-path: 'hack/quicktype/package-lock.json'
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'
@@ -144,7 +144,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'
@@ -169,7 +169,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'
@@ -193,7 +193,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'
@@ -213,7 +213,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'
@@ -245,7 +245,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: '${{ matrix.dir }}/go.mod'
@@ -319,7 +319,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'
@@ -350,7 +350,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: ${{ env.GO_VERSION }}
         go-version-file: 'go.mod'

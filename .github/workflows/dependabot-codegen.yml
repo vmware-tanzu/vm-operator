@@ -58,7 +58,7 @@ jobs:
         cache-dependency-path: 'hack/quicktype/package-lock.json'
 
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version-file: 'go.mod'
         cache: true

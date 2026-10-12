@@ -70,3 +70,11 @@ infrastructure-components.yaml
 /local.envvars
 /vendor
 /kind-cluster-info-dump
+
+# E2E tests
+**/test_logs
+**/test-results.xml
+**/vsphere-plugin.zip
+e2e-tests
+kubectl
+packer-plugin-vsphere-src/

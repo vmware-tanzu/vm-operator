@@ -525,8 +525,16 @@ func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
 		delete(service.Labels, k)
 	}
 
-	// Explicitly remove vm service managed annotations if needed
-	for _, k := range []string{utils.AnnotationServiceExternalTrafficPolicyKey, utils.AnnotationServiceHealthCheckNodePortKey} {
+	// Explicitly remove annotations managed by the VirtualMachineService from the
+	// Service when they are no longer present on the VirtualMachineService. Each
+	// key is checked on its own, so migrating from the alpha external-dns hostname
+	// key to the stable one does not leave the stale alpha annotation behind.
+	for _, k := range []string{
+		utils.AnnotationServiceExternalTrafficPolicyKey,
+		utils.AnnotationServiceHealthCheckNodePortKey,
+		utils.AnnotationServiceExternalDNSHostnameAlphaKey,
+		utils.AnnotationServiceExternalDNSHostnameKey,
+	} {
 		if _, exist := vmService.Annotations[k]; !exist {
 			if v, exist := service.Annotations[k]; exist {
 				ctx.Logger.V(5).Info("Removing annotation from Service", "key", k, "value", v)

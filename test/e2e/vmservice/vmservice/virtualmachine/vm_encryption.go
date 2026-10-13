@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -15,7 +16,6 @@ import (
 	"github.com/vmware/govmomi/crypto"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/types"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,7 +53,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 	const (
 		specName = "vm-encryption"
 
-		// standardKeyProviderID requires an external KMIP server (set up via hack/kms.sh).
+		// standardKeyProviderID requires an external KMIP server (set up via hack/e2e/kms.sh).
 		// nativeKeyProviderID is registered automatically by BeforeEach if not pre-configured.
 		standardKeyProviderID = "gce2e-standard"
 		nativeKeyProviderID   = "gce2e-native"
@@ -909,6 +909,21 @@ func useKeyProvider(
 
 	By(fmt.Sprintf("Use %s key provider and mark it as default", keyProviderID))
 
+	providers, err := cryptoManager.ListKmipServers(ctx, nil)
+	Expect(err).NotTo(HaveOccurred(), "failed to list key providers")
+
+	var provider *types.KmipClusterInfo
+	registeredIDs := make([]string, 0, len(providers))
+	for i := range providers {
+		registeredIDs = append(registeredIDs, providers[i].ClusterId.Id)
+		if providers[i].ClusterId.Id == keyProviderID {
+			provider = &providers[i]
+		}
+	}
+	Expect(provider).NotTo(BeNil(),
+		"key provider %q is not registered; registered providers: %v; check hack/e2e/kms.sh setup",
+		keyProviderID, registeredIDs)
+
 	// Native key providers report "red" until their first key is generated on
 	// first use — they are still functional for encryption. For external KMIP
 	// providers, poll until the server is reachable (green) before proceeding.
@@ -916,16 +931,36 @@ func useKeyProvider(
 	Expect(err).NotTo(HaveOccurred(), "error checking if key provider %s is native", keyProviderID)
 
 	if !isNative {
+		var lastSummary string
+
 		Eventually(func(g Gomega) {
 			status, err := cryptoManager.GetClusterStatus(ctx, keyProviderID)
 			g.Expect(err).NotTo(HaveOccurred(), "error fetching status of key provider %s", keyProviderID)
+
+			servers := make([]string, 0, len(status.Servers))
+			for _, server := range status.Servers {
+				servers = append(servers, fmt.Sprintf("%s: status=%s connectionStatus=%q",
+					server.Name, server.Status, server.ConnectionStatus))
+			}
+			summary := fmt.Sprintf("overall=%s servers=[%s]", status.OverallStatus, strings.Join(servers, "; "))
+
+			// Only the last polling failure is reported on timeout, so also log
+			// each change to keep the earlier history.
+			if summary != lastSummary {
+				GinkgoWriter.Printf("Key provider %s status changed: %s\n", keyProviderID, summary)
+				lastSummary = summary
+			}
+
 			g.Expect(status.OverallStatus).To(Equal(types.ManagedEntityStatusGreen),
-				"key provider %s is not green yet (status: %s)", keyProviderID, status.OverallStatus)
+				"key provider %s is not green yet: %s", keyProviderID, summary)
 		}, config.GetIntervals("default", "wait-kms-cluster-ready")...).Should(Succeed(),
-			"timed out waiting for key provider %s to become green", keyProviderID)
+			"timed out waiting for key provider %s to become green; "+
+				"check the KMIP endpoint and certificate trust configured by hack/e2e/kms.sh",
+			keyProviderID)
 	}
 
-	Expect(cryptoManager.SetDefaultKmsClusterId(ctx, keyProviderID, nil)).To(Succeed())
+	Expect(cryptoManager.SetDefaultKmsClusterId(ctx, keyProviderID, nil)).To(Succeed(),
+		"failed to set default key provider %s", keyProviderID)
 }
 
 func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client ctrlclient.Client, ns string, vmName string, reason string) *vmopv1.VirtualMachineCryptoStatus {

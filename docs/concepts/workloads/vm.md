@@ -2101,7 +2101,7 @@ The evaluation results are reflected in `status.policies`, showing all policies 
 
 The optional field `spec.affinity` that may be used to define a set of affinity/anti-affinity scheduling rules for VMs.
 
-**Important**: The `spec.affinity` field can only be used by VMs that belong to a VirtualMachineGroup. To use affinity rules, the VM must have a non-empty `spec.groupName` value that references a valid VirtualMachineGroup in the same namespace.
+When the `VMHardAffinityDuringExecution` capability is enabled, the `spec.affinity` field may be used by any VM, regardless of whether the VM belongs to a VirtualMachineGroup. Otherwise, the VM must have a non-empty `spec.groupName` value that references a valid VirtualMachineGroup in the same namespace.
 
 ### Virtual Machine Affinity/Anti-affinity
 
@@ -2146,7 +2146,7 @@ metadata:
   labels:
     app: my-app-1
 spec:
-  groupName: my-vm-group  # Required for affinity rules
+  groupName: my-vm-group  # Optional
   affinity:
     vmAffinity:
       requiredDuringSchedulingPreferredDuringExecution:
@@ -2174,7 +2174,7 @@ metadata:
   labels:
     tier: database
 spec:
-  groupName: database-group  # Required for affinity rules
+  groupName: database-group  # Optional
   affinity:
     vmAntiAffinity:
       requiredDuringSchedulingPreferredDuringExecution:
@@ -2210,7 +2210,6 @@ When a VM joins a group:
 - An owner reference to the group is automatically added to the VM
 - The VM appears in the group's `status.members` list
 - The VM inherits the group's power state management
-- The VM can use affinity rules (when `spec.groupName` is set)
 
 ### VirtualMachineGroup Resource
 
@@ -2293,7 +2292,7 @@ Groups provide coordinated power state control:
 
 Groups can influence VM placement through:
 
-- **Affinity rules**: VMs in a group can define affinity/anti-affinity rules (requires `spec.groupName` to be set)
+- **Affinity rules**: VMs in a group can define affinity/anti-affinity rules
 - **Placement status**: The group's `status.members[].placement` shows placement recommendations
 - **Datastore recommendations**: Optimal datastore placement for group members
 
@@ -2350,7 +2349,6 @@ Groups and their members report various conditions:
     - Test boot sequences to ensure dependencies are met
 
 1. **Affinity planning**:
-    - Only VMs with `spec.groupName` set can use affinity rules
     - Design affinity rules at the group level for consistency
     - Consider both zone and host-level distribution
 

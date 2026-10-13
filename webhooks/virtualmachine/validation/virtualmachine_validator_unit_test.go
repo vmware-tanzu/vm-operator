@@ -4411,10 +4411,9 @@ func unitTestsValidateCreate() {
 	Context("Affinity", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.VMGroups = true
-				ctx.vm.Spec.GroupName = dummyGroupName
-				ctx.vm.Spec.Affinity = &vmopv1.AffinitySpec{}
+				config.Features.VMHardAffinityDuringExecution = true
 			})
+			ctx.vm.Spec.Affinity = &vmopv1.AffinitySpec{}
 		})
 
 		DescribeTable("create", doTest,
@@ -4425,12 +4424,37 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("disallow Affinity without GroupName",
+			Entry("allow Affinity without GroupName when VMHardAffinityDuringExecution is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.GroupName = ""
 					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow Affinity without GroupName when VMHardAffinityDuringExecution is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMHardAffinityDuringExecution = false
+						})
+						ctx.vm.Spec.GroupName = ""
+					},
 					validate: doValidateWithMsg(`spec.groupName: Required value: when setting affinity`),
+				},
+			),
+
+			Entry("allow Affinity with GroupName when VMHardAffinityDuringExecution is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMGroups = true
+							config.Features.VMHardAffinityDuringExecution = false
+						})
+						ctx.vm.Spec.GroupName = dummyGroupName
+					},
+					expectAllowed: true,
 				},
 			),
 

@@ -921,6 +921,82 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			Expect(vm2Zone).ToNot(Equal(vm3Zone))
 		})
 
+		It("Should place VMs without a group on the same host using host affinity", Label("experimental"), func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+
+			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+			appLabels := map[string]string{"app": vmgRootName}
+
+			for _, vmName := range vmMemberNames {
+				By(fmt.Sprintf("Creating VM %s without a group, with required host affinity to VMs labeled %v", vmName, appLabels))
+
+				vmParameters := manifestbuilders.VirtualMachineYaml{
+					Namespace:        tmpNamespaceName,
+					Name:             vmName,
+					Labels:           appLabels,
+					ImageName:        tmpNamespaceVMIName,
+					VMClassName:      clusterResources.VMClassName,
+					StorageClassName: clusterResources.StorageClassName,
+					PowerState:       "PoweredOn",
+					Affinity:         requiredAffinity(hostTopoKey, appLabels),
+				}
+				vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+				e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
+				Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+
+				// Ungrouped VMs are placed independently, so wait for each VM
+				// to power on and get an IP before creating the next one that
+				// is affine to it.
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+			}
+
+			By("Verifying the VMs are on the same host")
+
+			host1 := getVMHostFromVmodl(ctx, svClusterClient, vCenterClient, tmpNamespaceName, vm1Name)
+			for _, vmName := range []string{vm2Name, vm3Name} {
+				Expect(getVMHostFromVmodl(ctx, svClusterClient, vCenterClient, tmpNamespaceName, vmName)).To(Equal(host1), "vm %s is not on the same host as %s", vmName, vm1Name)
+			}
+		})
+
+		It("Should place VMs without a group on different hosts using host anti-affinity", Label("experimental"), func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+
+			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+			appLabels := map[string]string{"app": vmgRootName}
+
+			for _, vmName := range vmMemberNames {
+				By(fmt.Sprintf("Creating VM %s without a group, with required host anti-affinity to VMs labeled %v", vmName, appLabels))
+
+				vmParameters := manifestbuilders.VirtualMachineYaml{
+					Namespace:        tmpNamespaceName,
+					Name:             vmName,
+					Labels:           appLabels,
+					ImageName:        tmpNamespaceVMIName,
+					VMClassName:      clusterResources.VMClassName,
+					StorageClassName: clusterResources.StorageClassName,
+					PowerState:       "PoweredOn",
+					Affinity:         requiredAntiAffinity(hostTopoKey, appLabels),
+				}
+				vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+				e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
+				Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+
+				// Ungrouped VMs are placed independently, so wait for each VM
+				// to power on and get an IP before creating the next one that
+				// is anti-affine to it.
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+			}
+
+			By("Verifying the VMs are on different hosts")
+
+			hosts := map[string]string{}
+			for _, vmName := range vmMemberNames {
+				host := getVMHostFromVmodl(ctx, svClusterClient, vCenterClient, tmpNamespaceName, vmName)
+				Expect(hosts).ToNot(HaveKey(host), "vms %s and %s are on the same host %s", hosts[host], vmName, host)
+				hosts[host] = vmName
+			}
+		})
+
 		When("VMs are pinned to zones via the topology zone label", Label("experimental"), func() {
 			var (
 				zones       []string
@@ -2118,6 +2194,19 @@ func preferredAntiAffinity(topologyKey string, matchLabels map[string]string) *v
 	return &vmopv1.AffinitySpec{
 		VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
 			PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+				LabelSelector: &metav1.LabelSelector{MatchLabels: matchLabels},
+				TopologyKey:   topologyKey,
+			}},
+		},
+	}
+}
+
+// requiredAffinity returns an AffinitySpec that requires the VM to be placed in
+// the same topologyKey domain as the VMs matching matchLabels.
+func requiredAffinity(topologyKey string, matchLabels map[string]string) *vmopv1.AffinitySpec {
+	return &vmopv1.AffinitySpec{
+		VMAffinity: &vmopv1.VMAffinitySpec{
+			RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
 				LabelSelector: &metav1.LabelSelector{MatchLabels: matchLabels},
 				TopologyKey:   topologyKey,
 			}},

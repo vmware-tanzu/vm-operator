@@ -16,7 +16,7 @@ jobs:
       label_names: ${{ steps.update-label.outputs.label_names }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # The pull_request_target event runs in the context of the PR's BASE.
           # We need to checkout the PR's HEAD to be able to check the diff.

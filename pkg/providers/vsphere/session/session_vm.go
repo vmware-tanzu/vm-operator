@@ -53,7 +53,7 @@ func updateVirtualDiskDeviceChanges(
 		// Once the boot disk has a PVC, the PVC is the source of truth for the
 		// size of the disk, like any other disk.
 		if pvcName != "" {
-			if newCapacityInBytes != vmDisk.CapacityInBytes {
+			if newCapacityInBytes > vmDisk.CapacityInBytes {
 				vmCtx.Logger.Info(
 					"Ignoring spec.advanced.bootDiskCapacity since the boot "+
 						"disk has a PVC, resize the PVC instead",

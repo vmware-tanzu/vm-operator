@@ -357,7 +357,7 @@ jobs:
         cache: true
         cache-dependency-path: '**/go.sum'
     - name: load-coverage
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         pattern: coverage-*
         merge-multiple: true

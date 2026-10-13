@@ -94,7 +94,7 @@ pkg/config/capabilities/capabilities.go
                                      # + CapabilityKeyLifecycleHooks,
                                      #   + case in
                                      #   updateCapabilitiesFeaturesFromCRD
-api/v1alpha6/condition_consts.go     # + four HooksReady condition types
+api/v1alpha6/virtualmachine_types.go     # + four HooksReady condition types
 controllers/virtualmachine/virtualmachine/virtualmachine_controller.go
                                      # RBAC, LifecycleState watch,
                                      # APIReader field, ResourceDelete

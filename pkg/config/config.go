@@ -226,6 +226,7 @@ type FeatureStates struct {
 	TaggingAPI                    bool
 	VMHardAffinityDuringExecution bool
 	CSIBackupAPI                  bool
+	LifecycleHooks                bool
 }
 
 type InstanceStorage struct {

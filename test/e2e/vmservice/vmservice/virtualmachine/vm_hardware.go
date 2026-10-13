@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -1866,9 +1867,13 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			// The image's boot disk must be smaller than this. With Fast Deploy
 			// the VM is a linked clone by default, which vSphere cannot extend,
-			// and the boot disk PVC must request the extended size (VMSVC-4249).
-			It("Should power on a VM whose spec.advanced.bootDiskCapacity is larger than the image", Label("experimental"), func() {
-				bootDiskCapacity := resource.MustParse("64Gi")
+			// so the boot disk is promoted first. The boot disk PVC must request
+			// the extended size (VMSVC-4249).
+			bootDiskCapacity := resource.MustParse("64Gi")
+
+			createVMWithBootDiskCapacity := func(
+				powerState vmopv1.VirtualMachinePowerState,
+				promoteDisksMode vmopv1.VirtualMachinePromoteDisksMode) {
 
 				vm := &vmopv1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1876,10 +1881,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						Namespace: vmSvcNamespace,
 					},
 					Spec: vmopv1.VirtualMachineSpec{
-						ClassName:    clusterResources.VMClassName,
-						ImageName:    linuxVMIName,
-						StorageClass: clusterResources.StorageClassName,
-						PowerState:   vmopv1.VirtualMachinePowerStateOn,
+						ClassName:        clusterResources.VMClassName,
+						ImageName:        linuxVMIName,
+						StorageClass:     clusterResources.StorageClassName,
+						PowerState:       powerState,
+						PromoteDisksMode: promoteDisksMode,
 						Advanced: &vmopv1.VirtualMachineAdvancedSpec{
 							BootDiskCapacity: &bootDiskCapacity,
 						},
@@ -1893,15 +1899,69 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						vmoperator.DeleteVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 					}
 				})
-				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+			}
 
-				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
-
+			verifyBootDiskCapacity := func() {
 				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				defer vcenter.LogoutVimClient(vCenterClient)
 
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the requested size")
 				vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, bootDiskCapacity)
+			}
+
+			DescribeTable("Should power on a VM whose spec.advanced.bootDiskCapacity is larger than the image",
+				Label("experimental"),
+				func(promoteDisksMode vmopv1.VirtualMachinePromoteDisksMode) {
+					createVMWithBootDiskCapacity(vmopv1.VirtualMachinePowerStateOn, promoteDisksMode)
+					vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+					vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
+					verifyBootDiskCapacity()
+				},
+				Entry("with the default promoteDisksMode", vmopv1.VirtualMachinePromoteDisksMode("")),
+				Entry("with promoteDisksMode Online", vmopv1.VirtualMachinePromoteDisksModeOnline),
+				Entry("with promoteDisksMode Offline", vmopv1.VirtualMachinePromoteDisksModeOffline),
+			)
+
+			It("Should extend the boot disk of a VM created powered off before it first boots", Label("experimental"), func() {
+				createVMWithBootDiskCapacity(
+					vmopv1.VirtualMachinePowerStateOff,
+					vmopv1.VirtualMachinePromoteDisksModeOnline)
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+
+				// The disk is only registered as a PVC after it is promoted and
+				// extended, so the PVC must exist while the VM is still off.
+				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
+
+				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				verifyBootDiskCapacity()
+			})
+
+			It("Should not create a VM whose spec.advanced.bootDiskCapacity is larger than the image if promoteDisksMode is Disabled", Label("experimental"), func() {
+				createVMWithBootDiskCapacity(
+					vmopv1.VirtualMachinePowerStateOn,
+					vmopv1.VirtualMachinePromoteDisksModeDisabled)
+
+				check := func(g Gomega) {
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
+					g.Expect(err).NotTo(HaveOccurred())
+
+					g.Expect(vm.Status.UniqueID).To(BeEmpty(), "the VM was created in vCenter")
+				}
+
+				By("Waiting for the create to fail with a clear message")
+				Eventually(func(g Gomega) {
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
+					g.Expect(err).NotTo(HaveOccurred())
+
+					c := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineConditionCreated)
+					g.Expect(c).NotTo(BeNil())
+					g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					g.Expect(c.Message).To(ContainSubstring("spec.promoteDisksMode is Disabled"))
+				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+
+				By("Verifying the VM is not created in vCenter")
+				Consistently(check, config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed())
 			})
 
 			It("Boot disk PVC lifecycle operations should succeed", func() {

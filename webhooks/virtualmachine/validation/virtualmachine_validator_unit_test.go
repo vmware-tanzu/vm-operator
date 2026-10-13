@@ -719,12 +719,30 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
-			Entry("when WorkloadDomainIsolation capability enabled, should allow when VM created by CAPV that specifies a zone being deleted",
+			Entry("when WorkloadDomainIsolation capability enabled, should allow when VM created by CAPV (legacy NS and SA) that specifies a zone being deleted",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 							config.Features.WorkloadDomainIsolation = true
 							ctx.UserInfo.Username = "system:serviceaccount:svc-tkg-domain-c52:default"
+						})
+						zoneName := builder.DummyZoneName
+						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName
+						zone := &topologyv1.Zone{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: zoneName, Namespace: dummyNamespaceName}, zone)).To(Succeed())
+						zone.Finalizers = []string{"test"}
+						Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("when WorkloadDomainIsolation capability enabled, should allow when VM created by CAPV (new NS and capv-manager SA) that specifies a zone being deleted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.WorkloadDomainIsolation = true
+							ctx.UserInfo.Username = "system:serviceaccount:svc-tkg-123ab:capv-manager"
 						})
 						zoneName := builder.DummyZoneName
 						ctx.vm.Labels[corev1.LabelTopologyZone] = zoneName

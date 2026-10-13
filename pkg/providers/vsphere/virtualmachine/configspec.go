@@ -269,6 +269,8 @@ func CreateConfigSpecForPlacement(
 
 	configSpec.DeviceChange = deviceChangeCopy
 
+	setPlacementBootDiskCapacity(vmCtx, &configSpec)
+
 	if !hasVirtualDisk {
 		// PlaceVmsXCluster expects there to always be at least one disk so add a dummy disk. Typically
 		// because of fast deploy, the image's disks will be present, but for like ISO there is no image
@@ -441,6 +443,38 @@ func extensionCompatibilityConstraintSet() *vimtypes.VirtualMachineExtensionComp
 			newInvariant(extensionCompatConstraintNameDevice, vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeDEVICE),
 		},
 	}
+}
+
+// setPlacementBootDiskCapacity sets the capacity of the boot disk in the
+// placement ConfigSpec to spec.advanced.bootDiskCapacity, if that is larger, so
+// that placement picks a datastore for the final size. The disk is copied so
+// the ConfigSpec used to create the VM keeps the capacity of the image.
+func setPlacementBootDiskCapacity(
+	vmCtx pkgctx.VirtualMachineContext,
+	configSpec *vimtypes.VirtualMachineConfigSpec) {
+
+	capacity := util.GetRequestedBootDiskCapacity(vmCtx.VM)
+	if capacity == 0 {
+		return
+	}
+
+	i := util.GetBootDiskDeviceChange(configSpec.DeviceChange)
+	if i < 0 {
+		return
+	}
+
+	spec := configSpec.DeviceChange[i].GetVirtualDeviceConfigSpec()
+	disk := spec.Device.(*vimtypes.VirtualDisk)
+	if capacity <= util.GetDiskCapacityInBytes(disk) {
+		return
+	}
+
+	diskCopy := *disk
+	diskCopy.CapacityInBytes = capacity
+	diskCopy.CapacityInKB = capacity / 1024
+	specCopy := *spec
+	specCopy.Device = &diskCopy
+	configSpec.DeviceChange[i] = &specCopy
 }
 
 // cleanupConfigSpecForPlacement removes fields from the placement

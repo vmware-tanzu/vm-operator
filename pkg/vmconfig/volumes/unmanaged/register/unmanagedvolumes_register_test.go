@@ -467,6 +467,28 @@ var _ = Describe("Reconcile", func() {
 				}
 			})
 
+			When("the PVC request is larger than the capacity", func() {
+				BeforeEach(func() {
+					pvcRequest = 8 * 1024 * 1024 * 1024
+					diskCapacity = 8 * 1024 * 1024 * 1024
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						BootDiskCapacity: ptr.To(resource.MustParse("5Gi")),
+					}
+				})
+
+				It("should raise the capacity to the PVC request and keep the PVC", func() {
+					// The disk is still pending registration, which is not an
+					// error here.
+					_ = unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)
+
+					Expect(vm.Spec.Advanced.BootDiskCapacity.Value()).
+						To(Equal(int64(8 * 1024 * 1024 * 1024)))
+					Expect(getPVCRequest()).To(Equal(int64(8 * 1024 * 1024 * 1024)))
+					Expect(configSpec.DeviceChange).To(BeEmpty())
+				})
+			})
+
 			When("the capacity is larger than the PVC request", func() {
 				BeforeEach(func() {
 					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{

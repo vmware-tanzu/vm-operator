@@ -738,6 +738,24 @@ func GetBootDisk(
 	return nil
 }
 
+// GetBootDiskDeviceChange returns the index of the device change that holds the
+// VM's boot disk, or -1 if none of them does. Like GetBootDisk, it assumes the
+// first disk is the boot disk.
+func GetBootDiskDeviceChange(
+	changes []vimtypes.BaseVirtualDeviceConfigSpec) int {
+
+	for i, c := range changes {
+		spec := c.GetVirtualDeviceConfigSpec()
+		if spec == nil {
+			continue
+		}
+		if _, ok := spec.Device.(*vimtypes.VirtualDisk); ok {
+			return i
+		}
+	}
+	return -1
+}
+
 // GetRequestedBootDiskCapacity returns spec.advanced.bootDiskCapacity in bytes,
 // or zero if it is not set. It also returns zero for an ISO VM with CD-ROMs,
 // since the disks of such a VM are PVCs that the user sizes.

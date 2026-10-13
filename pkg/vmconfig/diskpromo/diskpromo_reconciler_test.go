@@ -1107,6 +1107,24 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 				})
 			})
 
+			When("the boot disk is part of a snapshot", func() {
+				BeforeEach(func() {
+					bootDisk := moVM.Config.Hardware.Device[0].(*vimtypes.VirtualDisk)
+					moVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
+						Snapshot: []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+							{Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{{Key: bootDisk.Key}}},
+						},
+					}
+				})
+				It("should wait for the VM to be powered on", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(getPromoTaskRef()).To(BeNil())
+					c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
+				})
+			})
+
 			When("spec.advanced.bootDiskCapacity does not extend the boot disk", func() {
 				BeforeEach(func() {
 					vm.Spec.Advanced.BootDiskCapacity = ptr.To(resource.MustParse("10Mi"))

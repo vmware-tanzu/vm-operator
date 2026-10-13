@@ -263,7 +263,8 @@ func (r reconciler) Reconcile(
 
 // ensureBootDiskPVCCapacity raises the storage request of the boot disk's PVC to
 // spec.advanced.bootDiskCapacity if the PVC requests less. The PVC is never
-// shrunk. Raising the request extends the disk, either through
+// shrunk. If the PVC requests more, ex. it was resized from outside, it raises
+// spec.advanced.bootDiskCapacity to the PVC request instead. Raising the request extends the disk, either through
 // ensureUnmanagedDisksHaveUpdatedCapacity if the disk is not registered yet, or
 // through volume expansion by the CSI driver if it is.
 func ensureBootDiskPVCCapacity(
@@ -294,7 +295,21 @@ func ensureBootDiskPVCCapacity(
 	}
 
 	capacity := *vm.Spec.Advanced.BootDiskCapacity
-	if requested := obj.Spec.Resources.Requests[corev1.ResourceStorage]; capacity.Cmp(requested) <= 0 {
+	requested := obj.Spec.Resources.Requests[corev1.ResourceStorage]
+
+	// The PVC was resized from outside. Keep the spec at least as large as the
+	// PVC, since the disk is as large as the PVC and the boot disk resize fails
+	// if the spec is smaller than the disk.
+	if requested.Cmp(capacity) > 0 {
+		pkglog.FromContextOrDefault(ctx).Info(
+			"Raised spec.advanced.bootDiskCapacity to the boot disk PVC request",
+			"pvcName", name,
+			"capacity", requested.String())
+		vm.Spec.Advanced.BootDiskCapacity = ptr.To(requested.DeepCopy())
+		return nil
+	}
+
+	if capacity.Cmp(requested) == 0 {
 		return nil
 	}
 

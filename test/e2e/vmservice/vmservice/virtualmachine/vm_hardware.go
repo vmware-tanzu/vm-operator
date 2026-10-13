@@ -1987,6 +1987,29 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						Entry("powered off", vmopv1.VirtualMachinePowerStateOff),
 					)
 
+					// The webhook only compares the old and new spec values.
+					It("should reject lowering or removing the boot disk capacity once set", func() {
+						opts := newBootDiskVMOptions(vmSvcNamespace, vmName, linuxVMIName, clusterResources)
+						opts.PowerState = vmopv1.VirtualMachinePowerStateOff
+						createBootDiskVM(ctx, config, svClusterClient, opts, input.SkipCleanup)
+						vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+
+						setBootDiskCapacity(ctx, config, svClusterClient, vmSvcNamespace, vmName, largerCapacity)
+
+						By("Lowering spec.advanced.bootDiskCapacity")
+						vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
+						Expect(err).NotTo(HaveOccurred())
+						lower := resource.MustParse("1Gi")
+						vm.Spec.Advanced.BootDiskCapacity = &lower
+						Expect(svClusterClient.Update(ctx, vm)).To(MatchError(ContainSubstring("cannot be lower than the current value")))
+
+						By("Removing spec.advanced.bootDiskCapacity")
+						vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
+						Expect(err).NotTo(HaveOccurred())
+						vm.Spec.Advanced.BootDiskCapacity = nil
+						Expect(svClusterClient.Update(ctx, vm)).To(MatchError(ContainSubstring("cannot be removed once set")))
+					})
+
 					// Without a boot disk PVC there is nothing to resize but the disk.
 					It("should resize the boot disk of a VM that does not register its disks", func() {
 						opts := newBootDiskVMOptions(vmSvcNamespace, vmName, linuxVMIName, clusterResources)

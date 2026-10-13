@@ -968,6 +968,30 @@ var _ = Describe("Boot disk helpers", func() {
 		})
 	})
 
+	Context("GetBootDiskDeviceChange", func() {
+		change := func(d vimtypes.BaseVirtualDevice) vimtypes.BaseVirtualDeviceConfigSpec {
+			return &vimtypes.VirtualDeviceConfigSpec{Device: d}
+		}
+
+		It("should return the index of the first disk", func() {
+			changes := []vimtypes.BaseVirtualDeviceConfigSpec{
+				change(&vimtypes.VirtualLsiLogicController{}),
+				change(newDisk(1, gi, false)),
+				change(newDisk(2, gi, false)),
+			}
+			Expect(util.GetBootDiskDeviceChange(changes)).To(Equal(1))
+		})
+		It("should return -1 if there is no disk", func() {
+			changes := []vimtypes.BaseVirtualDeviceConfigSpec{
+				change(&vimtypes.VirtualLsiLogicController{}),
+			}
+			Expect(util.GetBootDiskDeviceChange(changes)).To(Equal(-1))
+		})
+		It("should return -1 if there are no changes", func() {
+			Expect(util.GetBootDiskDeviceChange(nil)).To(Equal(-1))
+		})
+	})
+
 	Context("GetBootDiskAwaitingPromotion", func() {
 		var devices []vimtypes.BaseVirtualDevice
 
@@ -984,6 +1008,15 @@ var _ = Describe("Boot disk helpers", func() {
 		It("should return nil if the disk has no parent", func() {
 			devices = []vimtypes.BaseVirtualDevice{newDisk(1, 10*gi, false)}
 			Expect(util.GetBootDiskAwaitingPromotion(vm, devices, nil)).To(BeNil())
+		})
+		It("should return nil if the boot disk is part of a snapshot", func() {
+			devices = []vimtypes.BaseVirtualDevice{newDisk(1, 10*gi, true)}
+			layout := &vimtypes.VirtualMachineFileLayoutEx{
+				Snapshot: []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+					{Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{{Key: 1}}},
+				},
+			}
+			Expect(util.GetBootDiskAwaitingPromotion(vm, devices, layout)).To(BeNil())
 		})
 		It("should return nil if there are no disks", func() {
 			Expect(util.GetBootDiskAwaitingPromotion(vm, nil, nil)).To(BeNil())

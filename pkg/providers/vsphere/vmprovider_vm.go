@@ -2702,10 +2702,6 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		}
 	}
 
-	if err := vs.vmCreateGenConfigSpecChangeBootDiskSize(vmCtx, createArgs); err != nil {
-		return err
-	}
-
 	if err := vs.vmCreateGenConfigSpecZipNetworkInterfaces(vmCtx, createArgs); err != nil {
 		return err
 	}
@@ -3177,22 +3173,6 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(
 		Append(pkgutil.OptionValuesFromMap(ecMap)...)
 
 	// Leave constants.VMOperatorV1Alpha1ExtraConfigKey for the update path (if that's still even needed)
-
-	return nil
-}
-
-func (vs *vSphereVMProvider) vmCreateGenConfigSpecChangeBootDiskSize(
-	vmCtx pkgctx.VirtualMachineContext,
-	_ *VMCreateArgs) error {
-
-	advanced := vmCtx.VM.Spec.Advanced
-	if advanced == nil || advanced.BootDiskCapacity == nil || advanced.BootDiskCapacity.IsZero() {
-		return nil
-	}
-
-	// TODO: How to we determine the DeviceKey for the DeviceChange entry? We probably have to
-	// crack the image/source, which is hard to do ATM. Punt on this for a placement consideration
-	// and we'll resize the boot (first) disk after VM create like before.
 
 	return nil
 }

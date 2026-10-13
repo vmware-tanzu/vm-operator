@@ -1865,11 +1865,25 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.AllDisksArePVCapabilityName)
 			})
 
-			// The image's boot disk must be smaller than this. With Fast Deploy
-			// the VM is a linked clone by default, which vSphere cannot extend,
-			// so the boot disk is promoted first. The boot disk PVC must request
-			// the extended size (VMSVC-4249).
-			bootDiskCapacity := resource.MustParse("64Gi")
+			// The requested boot disk size must be larger than the image's boot
+			// disk. With Fast Deploy the VM is a linked clone by default, which
+			// vSphere cannot extend, so the boot disk is promoted first. The boot
+			// disk PVC must request the extended size (VMSVC-4249).
+			var bootDiskCapacity resource.Quantity
+
+			BeforeEach(func() {
+				vmoperator.WaitForVirtualMachineImageStatusDisks(ctx, &config.Config, svClusterClient, vmSvcNamespace, linuxVMIName)
+
+				vmi := &vmopv1.VirtualMachineImage{}
+				Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: linuxVMIName}, vmi)).To(Succeed())
+
+				imageDiskLimit := vmi.Status.Disks[0].Limit
+				Expect(imageDiskLimit).ToNot(BeNil(), "image %s boot disk has no limit", linuxVMIName)
+
+				// Request 1Gi more than the image's boot disk.
+				bootDiskCapacity = imageDiskLimit.DeepCopy()
+				bootDiskCapacity.Add(resource.MustParse("1Gi"))
+			})
 
 			createVMWithBootDiskCapacity := func(
 				powerState vmopv1.VirtualMachinePowerState,

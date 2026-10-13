@@ -33,7 +33,7 @@ Split the DNS defaulting in `vmlifecycle.GetBootstrapArgs` into two paths: an un
 - If the capability is off, the result is legacy and the VM is not touched, even when it carries the annotation.
 - Otherwise, if `vmoperator.vmware.com/dns-defaults` is set, it selects the mode.
 - Otherwise, the function sets the annotation:
-  - to `legacy` if the VM carries any annotation in `existingGuestAnnotationKeys`: `bootstrap-hash-configspec`, `bootstrap-hash-customspec`, `first-boot-done`, `restored-vm`, `imported-vm` or `failed-over-vm`;
+  - to `legacy` if the VM is already powered on in vSphere or carries any annotation in `existingGuestAnnotationKeys`: `bootstrap-hash-configspec`, `bootstrap-hash-customspec`, `first-boot-done`, `restored-vm`, `imported-vm` or `failed-over-vm`;
   - to `scoped` otherwise.
 
   The annotation is persisted by the controller's deferred patch, like the bootstrap hash annotations. `first-boot-done` is only set when a VM is first powered on, and that happens after the VM's first bootstrap. A new VM is therefore already annotated `scoped` before it acquires `first-boot-done`.
@@ -126,7 +126,7 @@ In scoped mode, `status.network.config.dns` reports the global DNS described abo
 
 ## Controller / webhook impact
 
-- The VM validation webhook allows users to add, change, or remove `vmoperator.vmware.com/dns-defaults` without privileged-account status. Removing or clearing it causes normal mode selection to run again on the next reconcile, using the existing-guest markers.
+- The VM validation webhook allows users to add, change, or remove `vmoperator.vmware.com/dns-defaults` without privileged-account status. Removing or clearing it causes normal mode selection to run again on the next reconcile, using the vSphere power state and existing-guest markers.
 - There are no RBAC or watch changes.
 
 ## Test strategy
@@ -134,7 +134,7 @@ In scoped mode, `status.network.config.dns` reports the global DNS described abo
 - Unit tests (`network/bootstrap_test.go`): `InterfaceBootstrap` no longer copies VM-level DNS; `PrimaryInterface`, `AddressFamilies`, `GatewayFamilies`, `FilterNameserversByFamily`.
 - Unit tests (`vmlifecycle/bootstrap_test.go`, `GetBootstrapArgs`):
   - legacy with the capability off, including the unfiltered VM-level copy to every interface and the knobs;
-  - pinning for each existing-guest annotation;
+  - pinning for each existing-guest annotation and a running VM without markers, including cleared annotations, explicit overrides, and a disabled capability;
   - `legacy` and unknown annotation values;
   - scoped Cloud-Init: multiple static interfaces, static then DHCP, a first interface that is DHCP, NoIPAM, NoIPAM with addresses, or static without a gateway (no defaults anywhere, ConfigMap not read), IPv6-only, dual-stack, dual-stack with `gateway6: None`, IPv4 with Router Advertisements, DHCP-only VM does not read the ConfigMap, interface-level nameservers on another interface (default still applied) and on the first interface, VM-level DNS on static interfaces only, interface-level nameservers on a DHCP interface, VM-level nameservers filtered per interface family, VM-level nameservers of another family (neither they nor the defaults applied), each knob false, VM-level search domains, TKG (defaults on the first interface only; not when it is DHCP or the VM sets search domains), non-TKG (no default search domains), status versus template values;
   - scoped LinuxPrep, explicit and implicit: DHCP first, static then DHCP (defaults applied), first interface without a gateway, VM-level DNS;
@@ -143,10 +143,34 @@ In scoped mode, `status.network.config.dns` reports the global DNS described abo
   - provider nameservers: Cloud-Init (instead of default/VM nameservers, while VM-level and VKS default search domains remain independent), LinuxPrep (merged in interface order without duplicates, including DHCP; only VM-level search suffixes), Sysprep (per adapter, including DHCP; only VM-level search suffixes), vAppConfig templates.
 - Capability tests extended for the new key.
 - Webhook annotation tests verify non-privileged create with either mode, addition, changes in both directions, and removal. Other admin-only annotations remain covered by their rejection tests.
-- E2E (`Label("experimental")` until run on a real Supervisor): with the capability activated,
-  - a new Cloud-Init VM is annotated `scoped`; in `guestinfo.metadata`, only a static first interface with a gateway carries the filtered default nameservers, no interface carries the default search domains (the VM is not TKG), and the global status block has no nameservers or search domains;
-  - a non-admin user can patch a Cloud-Init VM between `legacy` and `scoped` and remove the mode annotation; removal on the configured VM is followed by automatic `legacy` selection;
-  - a new LinuxPrep VM is annotated `scoped`, the global status block has no search domains, and reports the filtered default nameservers only when the first interface is static with a gateway, and otherwise reports none.
+
+### E2E coverage
+
+All E2E cases are capability-gated and `experimental` until validated on a real Supervisor. The non-admin mode-edit/removal test retains automatic legacy reselection.
+
+The cases in `vm_scopeddns.go` assert on what VM Operator renders: the Cloud-Init metadata in guestinfo, the VM's network status, the `dns-defaults` annotation, and the bootstrap hash. They make no guest-side assertions and need no fixture.
+
+The Sysprep case creates its own Windows VM inside the spec instead of using the VMs the suite precreates, and omits `consts.WindowsSysprepLabel` so the suite does not precreate more. It waits for the Windows image and for the vSphere VM to exist, then asserts on VM status, which reflects the applied configuration without waiting for the guest to boot. It carries the `windows` label so it can be filtered out, and skips when no Windows image is configured.
+
+Most cases run on every network provider. Their static interfaces use the namespace's default network, with two interfaces on it for multi-NIC cases, so IPAM supplies static addresses and a gateway. On VPC each static interface gets its own CIDR Subnet instead, created with the existing `createSubnetOrSubnetSet` helper. Because address families vary by provider and testbed, the cases read each interface's addresses and gateways from VM status and compute the expected family filtering from them. A case skips when the network doesn't provide the layout it needs, such as a static first interface with a gateway. Cases that depend on Supervisor defaults read `vmoperator-network-config` and skip when it has no IPv4 nameserver. VM-level and interface-level DNS use fixed documentation addresses.
+
+| Scenario | Providers | Setup and essential assertions |
+|---|---|---|
+| Legacy and scoped VMs coexist | All | Cloud-Init VMs with two static interfaces: one annotated `legacy`, one unannotated. The legacy VM gets the unfiltered defaults on both interfaces. The unannotated VM selects `scoped`, and gets defaults filtered to its first interface's gateway families, plus the Supervisor search suffixes, on that interface only. After a metadata-neutral reconcile, each VM keeps its mode, bootstrap hash, and metadata. |
+| VM-level DNS on static interfaces | All | Two static interfaces with mixed-family VM-level nameservers and search domains. Each interface gets the nameservers filtered to its address families and the search domains. No Supervisor defaults appear, even if filtering empties an interface's list. |
+| Interface-level DNS precedence | All | Interface-level nameservers and search domains on the first of two static interfaces. It keeps them unfiltered. The second interface falls back to the filtered VM-level nameservers and the VM-level search domains. |
+| VM-level DNS with a DHCP interface | VPC | One static and one DHCP interface with VM-level DNS. Only the static interface gets DNS, and the DHCP interface gets none from VM Operator. |
+| LinuxPrep global DNS | All, except as noted | Implicit LinuxPrep with a static first interface has the gateway-family-filtered defaults in the global status. Explicit LinuxPrep with VM-level nameservers has exactly those, unfiltered, and no defaults. Neither has search domains. Explicit LinuxPrep with a DHCP first interface has an empty global list (VPC only). |
+| Sysprep per-adapter DNS | All, if a Windows image is configured | A Windows VM with two static adapters, VM-level nameservers and search domains, and explicit nameservers on the second adapter. The first adapter gets the VM-level nameservers filtered by family. The second keeps its own, unfiltered. The global nameserver list is empty, the only search domains are the global VM-level ones, and no adapter has search domains. |
+
+Out of scope for E2E:
+
+- **Sysprep defaults and guest state.** The Windows case does not cover Supervisor defaults on the first adapter, which are unit coverage, and it does not wait for the guest to boot or finish customization.
+- **DHCP and NoIPAM on VDS and NSX-T.** Only VPC lets the test control a Subnet's DHCP behavior.
+- **Guest resolver state.** Lease contents and resolver files depend on the image and the DHCP server, which these tests do not control. Guest verification belongs to upgrade or manual testing.
+- **Existing-guest selection and the full precedence, family, RA, NoIPAM, and marker combinations.** These are unit coverage. Capability activation against existing VMs can be exercised in upgrade testing.
+
+When SubnetPort ingestion lands, add a provider-path E2E proving that real `status.dnsResolverIPs` values reach a scoped Cloud-Init VM's metadata while VM-level search domains remain intact.
 
 ## Rollout / migration
 

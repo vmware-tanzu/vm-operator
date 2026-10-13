@@ -30,5 +30,9 @@
 
 - [x] T010 Document the behavior (`docs/concepts/services-networking/guest-net-config.md`)
 - [x] T010a Document the first-interface rule, the static-only VM-level DNS, and the per-adapter Sysprep VM-level nameservers in the API field docs, and regenerate the CRDs (`api/v1alpha6/virtualmachine_bootstrap_types.go`, `api/v1alpha6/virtualmachine_network_types.go`, `config/crd/bases/`)
-- [ ] T011 Resolve the spec's `[NEEDS CLARIFICATION]` items: epic, VM-level DNS on DHCP-only VKS nodes, NoIPAM with addresses, pinning of powered-on VMs without the G3 annotations
-- [ ] T012 [vmop-TBD] E2E: multi-NIC Cloud-Init (DHCP + static) and Sysprep, including that Windows uses the per-adapter VM-level nameservers, once a testbed with a second workload network and Windows images is available
+- [ ] T011 Resolve the spec's `[NEEDS CLARIFICATION]` items: epic, VM-level DNS on DHCP-only VKS nodes, NoIPAM with addresses
+- [x] T012 [vmop-TBD] Extend E2E with scoped DNS cases in `plan.md`: legacy/scoped coexistence with stable reconciles, VM-level and interface-level Cloud-Init DNS, LinuxPrep global DNS, and Sysprep per-adapter DNS run on every network provider using the default network (VPC creates its own Subnets); Cloud-Init VM-level DNS with a DHCP interface and DHCP-first LinuxPrep run on VPC only. The cases assert on Cloud-Init metadata and VM status and need no fixture; retain the non-admin mode-edit/removal test (`test/e2e/vmservice/vmservice/virtualmachine/vm_scopeddns.go`, `vm_vpcnetworking.go`, `vm_guestcustomization.go`)
+
+- [x] T013 [vmop-TBD] Preserve legacy DNS for automatically selected, already-powered-on VMs without existing-guest markers; retain explicit overrides and capability-off behavior (`pkg/providers/vsphere/vmlifecycle/bootstrap.go`, `bootstrap_test.go`)
+
+- [ ] T014 Validate the scoped DNS E2E cases on VPC, VDS, and NSX-T Supervisors and remove their `experimental` label. Local compilation does not establish Supervisor behavior. DHCP on VDS/NSX-T and guest resolver checks have no E2E coverage, and the Windows case does not wait for guest customization (see `plan.md`).

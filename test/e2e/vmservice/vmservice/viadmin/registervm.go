@@ -802,7 +802,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			alarmEvents, err := latestEvents()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(alarmEvents).To(HaveLen(0))
+			Expect(alarmEvents).To(BeEmpty())
 			By("Checking triggered alarms before registervm")
 			Expect(triggeredAlarm()).To(BeNil())
 
@@ -812,7 +812,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			taskInfo, err := vmservice.InvokeRegisterVM(ctx, vmMoID, existingVM.Namespace, clusterProxy, wcpClient)
 
 			By("Verify task state is error")
-			Expect(err).NotTo(BeNil())
+			Expect(err).To(HaveOccurred())
 			Expect(taskInfo.Error).NotTo(BeNil())
 			Expect(taskInfo.State).To(Equal(types.TaskInfoStateError))
 
@@ -1219,7 +1219,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			e2eframework.Logf("VM has been restored: %v", restoredVM)
 
-			Expect(len(restoredVM.Spec.Volumes)).To(Equal(2)) // one base disk and one PVC
+			Expect(restoredVM.Spec.Volumes).To(HaveLen(2)) // one base disk and one PVC
 
 			var restoredVol *vmopv1.VirtualMachineVolume
 

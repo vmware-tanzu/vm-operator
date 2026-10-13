@@ -24,12 +24,15 @@ func compareHardwareDevices(
 	// The VM's desired virtual devices.
 	csDeviceList := pkgutil.DevicesFromConfigSpec(&cs)
 
-	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
-
 	pciDeviceChanges := ComparePCIDevices(csDeviceList, deviceList)
-	deviceChanges = append(deviceChanges, pciDeviceChanges...)
-
 	moreDeviceChanges := compareDevicesByZipping(csDeviceList, deviceList)
+
+	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
+	if n := len(pciDeviceChanges) + len(moreDeviceChanges); n > 0 {
+		// Only allocate when non-empty so DeviceChange stays nil otherwise.
+		deviceChanges = make([]vimtypes.BaseVirtualDeviceConfigSpec, 0, n)
+	}
+	deviceChanges = append(deviceChanges, pciDeviceChanges...)
 	deviceChanges = append(deviceChanges, moreDeviceChanges...)
 
 	outCS.DeviceChange = deviceChanges
@@ -182,7 +185,7 @@ func zipVirtualDevicesOfType[T vimtypes.BaseVirtualDevice](
 	matchDevFn func(expectedDev, curDev T) vimtypes.BaseVirtualDevice,
 	expectedDevs, curDevs []T, defaultDevice bool) []vimtypes.BaseVirtualDeviceConfigSpec {
 
-	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec //nolint:prealloc
+	var deviceChanges []vimtypes.BaseVirtualDeviceConfigSpec
 
 	// For the expected and current devices of a type, zip the devices together to determine
 	// what, if any, edits need to be done. Then add and remove what is leftover.

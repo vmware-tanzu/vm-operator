@@ -603,7 +603,7 @@ func VerifyVMInZone(ctx context.Context, config *config.E2EConfig, svClusterClie
 func CreateLocalContentLibrary(clName string, wcpClient wcp.WorkloadManagementAPI) string {
 	datastores, err := wcpClient.ListDatastores()
 	Expect(err).NotTo(HaveOccurred(), "failed to list datastores")
-	Expect(len(datastores)).NotTo(BeZero(), "no datastores found")
+	Expect(datastores).NotTo(BeEmpty(), "no datastores found")
 
 	// Choose the first datastore we see.
 	dsForCL := datastores[0]
@@ -708,7 +708,7 @@ func VerifyLoginAndRunCmdsInNSXSetup(ctx context.Context, config *config.E2EConf
 	}, config.GetIntervals("default", "login-retry-timeout")...).Should(BeTrue(), "timeout SSH into VM or 'ip addr' command output does not contain VM IP %q", vmIP)
 
 	framework.Logf("ssh login verified; running requested commands on VM")
-	Expect(len(cmds)).To(Equal(len(expectedOutput)), "number of commands and expected outputs must be the same")
+	Expect(cmds).To(HaveLen(len(expectedOutput)), "number of commands and expected outputs must be the same")
 
 	for i, cmd := range cmds {
 		framework.Logf("running cmd %q via jumpbox PodVM", cmd)

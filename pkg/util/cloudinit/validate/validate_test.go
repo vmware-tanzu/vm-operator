@@ -61,7 +61,7 @@ var _ = Describe("Validate CloudConfigJSONRawMessage", func() {
 
 	When("The CloudConfig is valid", func() {
 		It("Should not return any errors", func() {
-			Expect(errs).To(HaveLen(0))
+			Expect(errs).To(BeEmpty())
 		})
 	})
 
@@ -104,7 +104,7 @@ var _ = Describe("Validate CloudConfigJSONRawMessage", func() {
 			cloudConfig.WriteFiles[0].Content = nil
 		})
 		It("Should not return any errors", func() {
-			Expect(errs).To(HaveLen(0))
+			Expect(errs).To(BeEmpty())
 		})
 	})
 
@@ -113,7 +113,7 @@ var _ = Describe("Validate CloudConfigJSONRawMessage", func() {
 			cloudConfig.WriteFiles[0].Content = []byte(``)
 		})
 		It("Should not return any errors", func() {
-			Expect(errs).To(HaveLen(0))
+			Expect(errs).To(BeEmpty())
 		})
 	})
 })
@@ -132,7 +132,7 @@ var _ = Describe("Validate CloudConfigYAML", func() {
 		BeforeEach(func() {
 			data, err := os.ReadFile("./testdata/valid-cloud-config-1.yaml")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(data).ToNot(HaveLen(0))
+			Expect(data).ToNot(BeEmpty())
 			cloudConfigYAML = string(data)
 		})
 		It("Should not return an error", func() {
@@ -144,7 +144,7 @@ var _ = Describe("Validate CloudConfigYAML", func() {
 		BeforeEach(func() {
 			data, err := os.ReadFile("./testdata/invalid-cloud-config-1.yaml")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(data).ToNot(HaveLen(0))
+			Expect(data).ToNot(BeEmpty())
 			cloudConfigYAML = string(data)
 		})
 		It("Should return an error", func() {

@@ -244,7 +244,7 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 
 					moVM.Config = &vimtypes.VirtualMachineConfigInfo{}
 
-					for i := 0; i < diskCount; i++ {
+					for i := range diskCount {
 						moVM.Config.Hardware.Device = append(
 							moVM.Config.Hardware.Device,
 							&vimtypes.VirtualDisk{
@@ -385,7 +385,7 @@ var _ = Describe("GetVolumeInfoFromVM", func() {
 					Expect(info.Controllers[106].SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeNone))
 
 					Expect(info.Disks).To(HaveLen(diskCount))
-					for i := 0; i < diskCount; i++ {
+					for i := range diskCount {
 						Expect(info.Disks[i].UUID).To(Equal(fmt.Sprintf("disk-uuid-%d", i)))
 						Expect(info.Disks[i].FileName).To(Equal(fmt.Sprintf("[LocalDS_0] vm1/disk%d.vmdk", i)))
 						Expect(info.Disks[i].ControllerKey).To(Equal(int32(100 + i)))
@@ -1190,7 +1190,7 @@ var _ = Describe("GetVolumeInfoFromConfigSpec", func() {
 
 		BeforeEach(func() {
 
-			for i := 0; i < diskCount; i++ {
+			for i := range diskCount {
 				configSpec.DeviceChange = append(
 					configSpec.DeviceChange,
 					&vimtypes.VirtualDeviceConfigSpec{
@@ -1348,7 +1348,7 @@ var _ = Describe("GetVolumeInfoFromConfigSpec", func() {
 			Expect(info.Controllers[106].SharingMode).To(Equal(vmopv1.VirtualControllerSharingModeNone))
 
 			Expect(info.Disks).To(HaveLen(diskCount))
-			for i := 0; i < diskCount; i++ {
+			for i := range diskCount {
 				Expect(info.Disks[i].UUID).To(Equal(fmt.Sprintf("disk-uuid-%d", i)))
 				Expect(info.Disks[i].FileName).To(Equal(fmt.Sprintf("[LocalDS_0] vm1/disk%d.vmdk", i)))
 				Expect(info.Disks[i].ControllerKey).To(Equal(int32(100 + i)))

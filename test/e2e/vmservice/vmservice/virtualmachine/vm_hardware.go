@@ -823,9 +823,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				defer vcenter.LogoutVimClient(vCenterClient)
 
 				isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 
 				if isVSANDEnabled || isVSANEnabled {
 					Skip("Skipping EZT storage profile tests as VSAN Datastore is present")
@@ -1236,9 +1236,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				defer vcenter.LogoutVimClient(vCenterClient)
 
 				isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 
 				if isVSANDEnabled || isVSANEnabled {
 					Skip("Skipping EZT storage profile tests as VSAN Datastore is present")
@@ -1947,9 +1947,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				defer vcenter.LogoutVimClient(vCenterClient)
 
 				isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 
 				if isVSANDEnabled || isVSANEnabled {
 					Skip("Skipping boot disk storage class replacement: EZT storage profile requires non-VSAN datastore")
@@ -2007,7 +2007,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 							verifiedInStatus = true
 
 							g.Expect(volStatus.Attached).To(BeTrue())
-							g.Expect(volStatus.Limit.Cmp(newBootDiskPVCSize) >= 0).To(BeTrue())
+							g.Expect(volStatus.Limit.Cmp(newBootDiskPVCSize)).To(BeNumerically(">=", 0))
 						}
 					}
 
@@ -2533,9 +2533,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				defer vcenter.LogoutVimClient(vCenterClient)
 
 				isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 
 				if isVSANDEnabled || isVSANEnabled {
 					Skip("Skipping EZT storage profile tests as VSAN Datastore is present")
@@ -2806,9 +2806,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				defer vcenter.LogoutVimClient(vCenterClient)
 
 				isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 
 				if isVSANDEnabled || isVSANEnabled {
 					Skip("Skipping EZT storage profile tests as VSAN Datastore is present")

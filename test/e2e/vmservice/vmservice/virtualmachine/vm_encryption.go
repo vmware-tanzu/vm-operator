@@ -369,7 +369,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		By("Create Encryption Class with invalid key")
 
 		keyID, err := cryptoManager.GenerateKey(ctx, standardKeyProviderID)
-		Expect(err).To(BeNil())
+		Expect(err).ToNot(HaveOccurred())
 
 		class := manifestbuilders.EncryptionClass{
 			Namespace:   tmpNamespaceName,
@@ -837,7 +837,7 @@ func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client 
 	By("Checking VirtualMachine.Status.Crypto")
 
 	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
-	Expect(err).To(BeNil())
+	Expect(err).ToNot(HaveOccurred())
 
 	if expectedCondition.Status == metav1.ConditionTrue {
 		Expect(vm.Status.Crypto.KeyID).NotTo(BeEmpty())

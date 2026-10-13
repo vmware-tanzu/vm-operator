@@ -50,7 +50,7 @@ func LocalizedMessagesFromFault(lmf vimtypes.LocalizedMethodFault) []string {
 // LocalizedMessagesFromFaults extracts all localized messages from a slice of LocalizedMethodFault.
 // Returns an empty slice if the input faults slice is empty.
 func LocalizedMessagesFromFaults(faults []vimtypes.LocalizedMethodFault) []string {
-	var allMessages []string
+	var allMessages []string //nolint:prealloc // per-fault message count unknown; nil result preserved
 	for _, f := range faults {
 		allMessages = append(allMessages, LocalizedMessagesFromFault(f)...)
 	}

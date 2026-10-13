@@ -25,7 +25,7 @@ func ApplyYAML(ctx context.Context, c client.Client, data []byte) error {
 // The data may be a single YAML document or multidoc YAML
 // This function is idempotent.
 // When a non-empty namespace is provided then all objects are assigned the
-// the namespace prior to being created.
+// namespace prior to being created.
 func ApplyYAMLWithNamespace(ctx context.Context, c client.Client, data []byte, namespace string) error {
 	return ForEachObjectInYAML(ctx, c, data, namespace, func(ctx context.Context, c client.Client, obj *unstructured.Unstructured) error {
 		// Create the object on the API server.
@@ -53,7 +53,7 @@ func DeleteYAML(ctx context.Context, c client.Client, data []byte) error {
 // the given client.
 // The data may be a single YAML document or multidoc YAML.
 // When a non-empty namespace is provided then all objects are assigned the
-// the namespace prior to any other actions being performed with or to the
+// namespace prior to any other actions being performed with or to the
 // object.
 func DeleteYAMLWithNamespace(ctx context.Context, c client.Client, data []byte, namespace string) error {
 	return ForEachObjectInYAML(ctx, c, data, namespace, func(ctx context.Context, c client.Client, obj *unstructured.Unstructured) error {
@@ -83,7 +83,7 @@ func ExistsYAML(ctx context.Context, c client.Client, data []byte) error {
 // the API server.
 // The data may be a single YAML document or multidoc YAML.
 // When a non-empty namespace is provided then all objects are assigned the
-// the namespace prior to any other actions being performed with or to the
+// namespace prior to any other actions being performed with or to the
 // object.
 // A nil error is returned if all objects exist.
 func ExistsYAMLWithNamespace(ctx context.Context, c client.Client, data []byte, namespace string) error {
@@ -111,7 +111,7 @@ func DoesNotExistYAML(ctx context.Context, c client.Client, data []byte) (bool, 
 // longer exists on the API server.
 // The data may be a single YAML document or multidoc YAML.
 // When a non-empty namespace is provided then all objects are assigned the
-// the namespace prior to any other actions being performed with or to the
+// namespace prior to any other actions being performed with or to the
 // object.
 // A boolean true is returned if none of the objects exist.
 // An error is returned if the Get call returns an error other than
@@ -148,7 +148,7 @@ type ForEachObjectInYAMLActionFunc func(context.Context, client.Client, *unstruc
 // If an error is returned then no further objects are processed.
 // The data may be a single YAML document or multidoc YAML.
 // When a non-empty namespace is provided then all objects are assigned the
-// the namespace prior to any other actions being performed with or to the
+// namespace prior to any other actions being performed with or to the
 // object.
 func ForEachObjectInYAML(
 	ctx context.Context,

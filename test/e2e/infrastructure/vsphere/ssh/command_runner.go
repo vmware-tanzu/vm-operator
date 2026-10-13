@@ -62,7 +62,6 @@ func NewSSHCommandRunnerFromHTTPProxy() (SSHCommandRunner, error) {
 func newSSHDialerWithRetries(hostname string, port int, config *ssh.ClientConfig, interval time.Duration, timeout time.Duration) (*ssh.Client, error) {
 	var newClient *ssh.Client
 
-	//nolint:staticcheck // E2E SSH dial retries; migration to PollUntilContextTimeout is tracked separately.
 	err := wait.PollWithContext(context.Background(), interval, timeout, func(ctx context.Context) (bool, error) {
 		var err error
 		if newClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), config); err != nil {
@@ -80,7 +79,7 @@ func NewSSHCommandRunner(hostname string, port int, user string, authMethods []s
 	config := &ssh.ClientConfig{
 		User:            user,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // G106: E2E test clusters use host key validation disabled.
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
 	newClient, err := newSSHDialerWithRetries(hostname, port, config, sshRetryInterval, sshRetryDuration)
@@ -98,7 +97,7 @@ func NewSSHCommandRunnerWithinGateway(hostname string, port int, user string, au
 	gwConfig := &ssh.ClientConfig{
 		User:            gw.Username,
 		Auth:            gw.AuthMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // G106: E2E test clusters use host key validation disabled.
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
 	gatewayClient, err := newSSHDialerWithRetries(gw.Hostname, gw.Port, gwConfig, sshRetryInterval, sshRetryDuration)
@@ -116,7 +115,7 @@ func NewSSHCommandRunnerWithinGateway(hostname string, port int, user string, au
 	config := &ssh.ClientConfig{
 		User:            user,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // G106: E2E test clusters use host key validation disabled.
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
 	ncc, chans, reqs, err := ssh.NewClientConn(conn, targetHost, config)

@@ -117,7 +117,7 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 				// the Veeam appliance.
 				Proxy: nil,
 				// The appliance uses a self-signed certificate.
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Test-only client.
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
 		},
 	}

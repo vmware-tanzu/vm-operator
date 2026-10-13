@@ -316,6 +316,8 @@ func (r *Reconciler) reconcileMembers(
 				if bootOrder.PowerOffDelay != nil {
 					applyPowerStateTime = applyPowerStateTime.Add(bootOrder.PowerOffDelay.Duration)
 				}
+			case vmopv1.VirtualMachinePowerStateSuspended:
+				// No boot order delay applies when suspending.
 			}
 		}
 
@@ -737,7 +739,7 @@ func (r *Reconciler) getVMForPlacement(
 	// VMG doesn't have a PlacementReady condition true for this VM (UID).
 	// VM is not already placed, and either has no zone label override or is a
 	// non-VKS zone-labeled VM participating in group placement for VM-VM
-	// Affinity/Anti-Affinity at host host level within the zone.
+	// Affinity/Anti-Affinity at host level within the zone.
 	// Return this VM to get it placed by the group.
 	return vm, nil
 }

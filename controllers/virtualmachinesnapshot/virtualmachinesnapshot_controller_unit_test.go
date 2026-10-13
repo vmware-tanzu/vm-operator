@@ -160,8 +160,7 @@ func unitTestsReconcile() {
 			BeforeEach(func() {
 				vm.Status.UniqueID = dummyVMUUID
 				conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
-				initObjects = nil
-				initObjects = append(initObjects, vm, vmSnapshot)
+				initObjects = []client.Object{vm, vmSnapshot}
 				skipReconcile = true
 			})
 
@@ -291,8 +290,7 @@ func unitTestsReconcile() {
 		When("object does not have finalizer set", func() {
 			BeforeEach(func() {
 				vmSnapshot.Finalizers = nil
-				initObjects = nil
-				initObjects = append(initObjects, vmSnapshot)
+				initObjects = []client.Object{vmSnapshot}
 			})
 
 			It("will set finalizer", func() {
@@ -307,8 +305,7 @@ func unitTestsReconcile() {
 			BeforeEach(func() {
 				vmSnapshot.Labels = nil
 				vm.Status.UniqueID = dummyVMUUID
-				initObjects = nil
-				initObjects = append(initObjects, vm, vmSnapshot)
+				initObjects = []client.Object{vm, vmSnapshot}
 			})
 
 			It("backfills the label and continues reconciling in the same pass", func() {
@@ -325,8 +322,7 @@ func unitTestsReconcile() {
 		When("snapshot's created condition is not set", func() {
 			BeforeEach(func() {
 				vm.Status.UniqueID = dummyVMUUID
-				initObjects = nil
-				initObjects = append(initObjects, vm, vmSnapshot)
+				initObjects = []client.Object{vm, vmSnapshot}
 			})
 
 			It("returns success, not set created condition and csi volume sync", func() {
@@ -353,8 +349,7 @@ func unitTestsReconcile() {
 					vmopv1.VirtualMachineSnapshotWaitingForDiskRegistrationReason,
 					"waiting for disk registration")
 				vm.Status.UniqueID = dummyVMUUID
-				initObjects = nil
-				initObjects = append(initObjects, vm, vmSnapshot)
+				initObjects = []client.Object{vm, vmSnapshot}
 			})
 
 			It("sets ready condition to WaitingForDiskRegistration", func() {
@@ -374,8 +369,7 @@ func unitTestsReconcile() {
 			BeforeEach(func() {
 				conditions.MarkTrue(vmSnapshot, vmopv1.VirtualMachineSnapshotCreatedCondition)
 				vm.Status.UniqueID = dummyVMUUID
-				initObjects = nil
-				initObjects = append(initObjects, vm, vmSnapshot)
+				initObjects = []client.Object{vm, vmSnapshot}
 			})
 
 			It("returns success, and set the CSI sync annotation to requested", func() {
@@ -399,8 +393,7 @@ func unitTestsReconcile() {
 			When("CSI sync annotation is already set to completed", func() {
 				BeforeEach(func() {
 					vmSnapshot.Annotations = map[string]string{constants.CSIVSphereVolumeSyncAnnotationKey: constants.CSIVSphereVolumeSyncAnnotationValueCompleted}
-					initObjects = nil
-					initObjects = append(initObjects, vmSnapshot, vm)
+					initObjects = []client.Object{vmSnapshot, vm}
 				})
 				It("returns success, and does not change the annotation, set snapshot as ready", func() {
 					Expect(err).ToNot(HaveOccurred())
@@ -418,8 +411,7 @@ func unitTestsReconcile() {
 			When("CSI sync annotation is set to something unknown", func() {
 				BeforeEach(func() {
 					vmSnapshot.ObjectMeta.Annotations[constants.CSIVSphereVolumeSyncAnnotationKey] = "whatever"
-					initObjects = nil
-					initObjects = append(initObjects, vmSnapshot, vm)
+					initObjects = []client.Object{vmSnapshot, vm}
 				})
 				It("returns success, and set the annotation to requested", func() {
 					Expect(err).ToNot(HaveOccurred())
@@ -528,8 +520,7 @@ func unitTestsReconcile() {
 			When("VirtualMachine CR is not present", func() {
 				BeforeEach(func() {
 					// Remove vm from initObjects
-					initObjects = nil
-					initObjects = append(initObjects, vmSnapshot)
+					initObjects = []client.Object{vmSnapshot}
 				})
 				It("returns success", func() {
 					Expect(err).ToNot(HaveOccurred())
@@ -539,8 +530,7 @@ func unitTestsReconcile() {
 			When("VirtualMachineSnapshot VMName is empty", func() {
 				BeforeEach(func() {
 					vmSnapshot.Spec.VMName = ""
-					initObjects = nil
-					initObjects = append(initObjects, vmSnapshot, vm)
+					initObjects = []client.Object{vmSnapshot, vm}
 				})
 				It("returns error", func() {
 					Expect(err).To(HaveOccurred())

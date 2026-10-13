@@ -42,7 +42,7 @@ func NextAvailableUnitNumber(
 		return -1
 	}
 
-	for unitNumber := int32(0); unitNumber < controller.MaxSlots(); unitNumber++ {
+	for unitNumber := range controller.MaxSlots() {
 		if _, exists := occupiedSlots[unitNumber]; !exists &&
 			unitNumber != controller.ReservedUnitNumber() {
 			return unitNumber

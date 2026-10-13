@@ -410,6 +410,8 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 		if rangeErr != nil {
 			return admission.Denied(rangeErr.Error())
 		}
+	case admissionv1.Delete, admissionv1.Connect:
+		// No mutation is performed for these operations.
 	}
 
 	if !wasMutated {
@@ -820,7 +822,7 @@ func SetDefaultControllers(
 	}
 
 	if len(vm.Spec.Hardware.IDEControllers) == 0 {
-		for i := int32(0); i < vmopv1.VirtualControllerTypeIDE.MaxCount(); i++ {
+		for i := range vmopv1.VirtualControllerTypeIDE.MaxCount() {
 			vm.Spec.Hardware.IDEControllers = append(
 				vm.Spec.Hardware.IDEControllers,
 				vmopv1.IDEControllerSpec{BusNumber: i},

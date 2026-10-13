@@ -232,6 +232,8 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 					mgr.GetRESTMapper(),
 					&vmopv1.VirtualMachine{}),
 			)
+		case pkgcfg.NetworkProviderTypeNamed:
+			// The named network provider has no network interface CR to watch.
 		}
 	}
 

@@ -221,7 +221,7 @@ func fillControllerToCapacity(
 	maxSlots int32,
 	reservedUnit int32,
 ) {
-	for i := int32(0); i < maxSlots; i++ {
+	for i := range maxSlots {
 		if i == reservedUnit {
 			continue
 		}
@@ -635,7 +635,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				}
 
 				// Add volumes.
-				for i := 0; i < numVolumes; i++ {
+				for i := range numVolumes {
 					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
 						Name: "vol" + string(rune('1'+i)),
 						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -662,7 +662,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				}
 
 				// All volumes should have sequential unit numbers.
-				for i := 0; i < numVolumes; i++ {
+				for i := range numVolumes {
 					vol := ctx.vm.Spec.Volumes[i]
 					Expect(vol.UnitNumber).ToNot(BeNil())
 					Expect(*vol.UnitNumber).To(Equal(expectedUnits[i]))
@@ -692,7 +692,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 
 				// Add volumes to fill slots around the reserved unit.
 				numVolumes := 3
-				for i := 0; i < numVolumes; i++ {
+				for i := range numVolumes {
 					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
 						Name: "vol" + string(rune('1'+i)),
 						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
@@ -711,7 +711,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				Expect(mutated).To(BeTrue())
 
 				// Verify no volume is assigned to the reserved unit.
-				for i := 0; i < numVolumes; i++ {
+				for i := range numVolumes {
 					vol := ctx.vm.Spec.Volumes[i]
 					Expect(vol.UnitNumber).ToNot(BeNil())
 					Expect(*vol.UnitNumber).ToNot(Equal(reservedUnit))
@@ -834,7 +834,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				reservedUnit := controller.ReservedUnitNumber()
 
 				// First, add volumes without controller or unit number set.
-				for i := int32(0); i < maxSlots; i++ {
+				for i := range maxSlots {
 					if i == reservedUnit {
 						continue
 					}
@@ -856,7 +856,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				// Then, add a full bus number of volumes with explicit
 				// bus number one and unit numbers.
 				explicitVolBusNumber := int32(1)
-				for i := int32(0); i < maxSlots; i++ {
+				for i := range maxSlots {
 					if i == reservedUnit {
 						continue
 					}
@@ -884,7 +884,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				// on bus number not equal to explicitBusNumber because that will be fully
 				// occupied by the explicit volumes.
 				volumeIndex := 0
-				for unit := int32(0); unit < maxSlots; unit++ {
+				for unit := range maxSlots {
 					if unit == reservedUnit {
 						continue
 					}
@@ -901,7 +901,7 @@ func testControllerTypeAgnostic(getCtx func() *unitMutationWebhookContext) {
 				}
 
 				// the last set of volumes should have continued to be placed explicitly.
-				for unit := int32(0); unit < maxSlots; unit++ {
+				for unit := range maxSlots {
 					if unit == reservedUnit {
 						continue
 					}
@@ -1059,6 +1059,8 @@ func testSCSISharingMode(getCtx func() *unitMutationWebhookContext) {
 						noneController = controller
 					case vmopv1.VirtualControllerSharingModePhysical:
 						physicalController = controller
+					case vmopv1.VirtualControllerSharingModeVirtual:
+						// Virtual sharing mode is not checked here.
 					}
 				}
 
@@ -1199,7 +1201,7 @@ func testMultipleControllerTypes(getCtx func() *unitMutationWebhookContext) {
 		When("multiple volumes of each controller type", func() {
 			BeforeEach(func() {
 				// Add 2 volumes for each controller type.
-				for i := 0; i < 2; i++ {
+				for i := range 2 {
 					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes,
 						vmopv1.VirtualMachineVolume{
 							Name: "scsi-vol-" + string(rune('1'+i)),
@@ -1259,7 +1261,7 @@ func testMultipleControllerTypes(getCtx func() *unitMutationWebhookContext) {
 				}
 
 				// Add volumes that use the existing SATA controllers.
-				for i := int32(0); i < 3; i++ {
+				for i := range int32(3) {
 					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
 						Name: fmt.Sprintf("sata-vol-%d", i),
 						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{

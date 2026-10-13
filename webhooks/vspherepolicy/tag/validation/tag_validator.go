@@ -92,7 +92,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	fieldErrs := make(field.ErrorList, 0)
+	var fieldErrs field.ErrorList
 
 	fieldErrs = append(fieldErrs, v.validatePrivileged(ctx, admissionv1.Create)...)
 	fieldErrs = append(fieldErrs, validateLabelKey(tag.Spec.Key)...)
@@ -111,7 +111,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	fieldErrs := make(field.ErrorList, 0)
+	var fieldErrs field.ErrorList
 
 	fieldErrs = append(fieldErrs, v.validatePrivileged(ctx, admissionv1.Update)...)
 	fieldErrs = append(fieldErrs, validateLabelKey(tag.Spec.Key)...)

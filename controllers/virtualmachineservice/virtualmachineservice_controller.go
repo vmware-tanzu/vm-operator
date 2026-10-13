@@ -212,6 +212,8 @@ func (r *ReconcileVirtualMachineService) getLoadBalancerProvider(
 			// based on network provider, but this is hack ideally this would be expressed
 			// in another way like a LoadBalancerClass.
 			lbProviderType = providers.NSXTLoadBalancer
+		default:
+			// Other network providers do not use the NSX-T load balancer.
 		}
 	}
 
@@ -658,6 +660,8 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *pkgctx.Virtu
 		r.recorder.EmitEvent(ctx.VMService, OpCreate, nil, false)
 	case controllerutil.OperationResultUpdated:
 		r.recorder.EmitEvent(ctx.VMService, OpUpdate, nil, false)
+	default:
+		// No event is emitted for other results.
 	}
 
 	return service, nil
@@ -741,6 +745,8 @@ func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *pkgctx.Vir
 		ctx.Logger.Info("Creating Service Endpoints", "endpoints", endpoints)
 	case controllerutil.OperationResultUpdated:
 		ctx.Logger.Info("Updating Service Endpoints", "endpoints", endpoints)
+	default:
+		// Other results require no logging.
 	}
 
 	return nil

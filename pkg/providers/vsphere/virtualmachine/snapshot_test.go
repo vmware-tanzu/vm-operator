@@ -50,7 +50,7 @@ func snapShotTests() {
 
 		vm = builder.DummyVirtualMachine()
 		timeout, err := time.ParseDuration("1h35m")
-		Expect(err).To(BeNil())
+		Expect(err).ToNot(HaveOccurred())
 		vmSnapshot = *builder.DummyVirtualMachineSnapshot(vm.Namespace, "snap-1", vm.Name)
 		vmSnapshot.Spec.Quiesce = &vmopv1.QuiesceSpec{
 			Timeout: &metav1.Duration{Duration: timeout},
@@ -114,7 +114,7 @@ func snapShotTests() {
 			Expect(mo.Snapshot.RootSnapshotList).To(HaveLen(1))
 			Expect(mo.Snapshot.RootSnapshotList[0].Name).To(Equal(args.VMSnapshot.Name))
 			// zero child snapshots
-			Expect(mo.Snapshot.RootSnapshotList[0].ChildSnapshotList).To(HaveLen(0))
+			Expect(mo.Snapshot.RootSnapshotList[0].ChildSnapshotList).To(BeEmpty())
 
 			// Create a new snapshot with a different name, child snapshot created.
 			args.VMSnapshot.Name = "snap-2"
@@ -198,7 +198,7 @@ func snapShotTests() {
 			}
 
 			snapNode, err := virtualmachine.CreateSnapshot(args)
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
 			Expect(snapNode).ToNot(BeNil())
 			moVM := mo.VirtualMachine{}
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
@@ -218,7 +218,7 @@ func snapShotTests() {
 				VcVM:       vcVM,
 			}
 			snapMo, err := virtualmachine.CreateSnapshot(args)
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
 			Expect(snapMo).ToNot(BeNil())
 			moVM := mo.VirtualMachine{}
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
@@ -268,7 +268,7 @@ func snapShotTests() {
 					VcVM:       vcVM,
 				}
 				snapMo, err := virtualmachine.CreateSnapshot(args)
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(snapMo).ToNot(BeNil())
 				moVM := mo.VirtualMachine{}
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"snapshot"}, &moVM)).To(Succeed())
@@ -311,7 +311,7 @@ func snapShotTests() {
 					VcVM:       vcVM,
 				}
 				snapMo, err := virtualmachine.CreateSnapshot(args)
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(snapMo).ToNot(BeNil())
 				Expect(vcVM.Properties(
 					ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM)).
@@ -427,7 +427,7 @@ func snapShotTests() {
 					VcVM:       vcVM,
 				}
 				snapMo, err := virtualmachine.CreateSnapshot(args)
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(snapMo).ToNot(BeNil())
 				Expect(vcVM.Properties(
 					ctx, vcVM.Reference(), []string{"snapshot", "layoutEx", "config.hardware.device"}, &moVM)).

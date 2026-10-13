@@ -1626,6 +1626,8 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 		case vmopv1.VirtualMachinePowerStateSuspended:
 			setPowerState = vmCtx.VM.Spec.PowerOffMode == hard ||
 				vmCtx.VM.Spec.PowerOffMode == trySoft
+		case vmopv1.VirtualMachinePowerStateOff:
+			// The VM is already powered off.
 		}
 
 	case vmopv1.VirtualMachinePowerStateSuspended:
@@ -2200,6 +2202,8 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 				case metav1.ConditionFalse:
 					// The files could not be cached at that location.
 					return fmt.Errorf("failed to cache files: %s", c.Message)
+				case metav1.ConditionUnknown:
+					// The files are not cached yet at this location.
 				}
 			}
 		}

@@ -1508,7 +1508,7 @@ func testVMRequestedCapacityHandlerHandleUpdate() {
 					Expect(resp.Allowed).To(BeTrue())
 					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
 
-					Expect(resp.RequestedCapacities).To(HaveLen(0))
+					Expect(resp.RequestedCapacities).To(BeEmpty())
 				})
 			})
 		})
@@ -1559,7 +1559,7 @@ func testVMRequestedCapacityHandlerHandleUpdate() {
 				Expect(resp.Allowed).To(BeTrue())
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
 
-				Expect(resp.RequestedCapacities).To(HaveLen(0))
+				Expect(resp.RequestedCapacities).To(BeEmpty())
 			})
 		})
 
@@ -1577,7 +1577,7 @@ func testVMRequestedCapacityHandlerHandleUpdate() {
 				Expect(resp.Allowed).To(BeTrue())
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
 
-				Expect(resp.RequestedCapacities).To(HaveLen(0))
+				Expect(resp.RequestedCapacities).To(BeEmpty())
 			})
 		})
 
@@ -1596,7 +1596,7 @@ func testVMRequestedCapacityHandlerHandleUpdate() {
 				Expect(resp.Allowed).To(BeFalse())
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
 
-				Expect(resp.RequestedCapacities).To(HaveLen(0))
+				Expect(resp.RequestedCapacities).To(BeEmpty())
 			})
 		})
 
@@ -2072,7 +2072,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				Expect(resp.Allowed).To(BeFalse())
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusBadRequest))
 
-				Expect(resp.RequestedCapacities).To(HaveLen(0))
+				Expect(resp.RequestedCapacities).To(BeEmpty())
 				Expect(resp.Result.Message).To(ContainSubstring("fake error"))
 			})
 		})
@@ -2086,7 +2086,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 			It("should write StatusInternalServerError code to the response object", func() {
 				Expect(resp.Allowed).To(BeFalse())
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
-				Expect(resp.RequestedCapacities).To(HaveLen(0))
+				Expect(resp.RequestedCapacities).To(BeEmpty())
 				Expect(resp.Result.Message).To(ContainSubstring("vmName is not set"))
 			})
 		})
@@ -2099,7 +2099,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 			It("should write StatusInternalServerError code to the response object", func() {
 				Expect(resp.Allowed).To(BeFalse())
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
-				Expect(resp.RequestedCapacities).To(HaveLen(0))
+				Expect(resp.RequestedCapacities).To(BeEmpty())
 				Expect(resp.Result.Message).To(ContainSubstring("failed to get VM"))
 			})
 		})
@@ -2117,7 +2117,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				It("should write StatusInternalServerError code to the response object", func() {
 					Expect(resp.Allowed).To(BeFalse())
 					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
-					Expect(resp.RequestedCapacities).To(HaveLen(0))
+					Expect(resp.RequestedCapacities).To(BeEmpty())
 					Expect(resp.Result.Message).To(ContainSubstring("failed to calculate reserved storage capacity for snapshot since VM does not have memory usage set"))
 				})
 			})
@@ -2131,7 +2131,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				It("should write StatusInternalServerError code to the response object", func() {
 					Expect(resp.Allowed).To(BeFalse())
 					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
-					Expect(resp.RequestedCapacities).To(HaveLen(0))
+					Expect(resp.RequestedCapacities).To(BeEmpty())
 					Expect(resp.Result.Message).To(ContainSubstring("failed to calculate reserved storage capacity for snapshot since VM does not have memory usage set"))
 				})
 			})
@@ -2146,7 +2146,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				Expect(resp.Allowed).To(BeFalse())
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
 
-				Expect(resp.RequestedCapacities).To(HaveLen(0))
+				Expect(resp.RequestedCapacities).To(BeEmpty())
 				Expect(resp.Result.Message).To(ContainSubstring("storageclasses.storage.k8s.io \"dummy-storage-class\" not found"))
 			})
 		})
@@ -2177,7 +2177,7 @@ func testVMSnapshotRequestedCapacityHandlerHandleCreate() {
 				It("should write StatusInternalServerError code to the response object", func() {
 					Expect(resp.Allowed).To(BeFalse())
 					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
-					Expect(resp.RequestedCapacities).To(HaveLen(0))
+					Expect(resp.RequestedCapacities).To(BeEmpty())
 					Expect(resp.Result.Message).To(ContainSubstring("failed to get pvc"))
 				})
 			})

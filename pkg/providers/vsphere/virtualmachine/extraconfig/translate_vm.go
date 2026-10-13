@@ -106,6 +106,8 @@ func TranslateFieldValue(fv reflect.Value) (val string, ok bool) {
 			return vmopv1util.EncodeVMXBoolField(elem.Type(), elem.Bool()), true
 		case reflect.String:
 			return vmopv1util.EncodeVMXStringField(elem.Type(), elem.String()), true
+		default:
+			// Other element kinds are not encoded here.
 		}
 	case reflect.Slice:
 		if fv.IsNil() || fv.Len() == 0 {
@@ -125,7 +127,11 @@ func TranslateFieldValue(fv reflect.Value) (val string, ok bool) {
 				strs[i] = fv.Index(i).String()
 			}
 			return vmopv1util.EncodeVMXSliceStringField(elem, strs), true
+		default:
+			// Other element kinds are not encoded here.
 		}
+	default:
+		// Other kinds are not encoded here.
 	}
 	return "", false
 }

@@ -178,7 +178,7 @@ var _ = Describe("Reconcile", func() {
 
 		assertEmptyExtraConfig := func() {
 			ExpectWithOffset(1, err).ToNot(HaveOccurred())
-			ExpectWithOffset(1, configSpec.ExtraConfig).To(HaveLen(0))
+			ExpectWithOffset(1, configSpec.ExtraConfig).To(BeEmpty())
 		}
 
 		assertExtraConfig := func(expectedKey, expectedValue string) {

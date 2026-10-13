@@ -385,7 +385,7 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 				It("should return the policy status", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(status).ToNot(BeZero())
-					Expect(status.StorageClasses).To(HaveLen(0))
+					Expect(status.StorageClasses).To(BeEmpty())
 					Expect(status.VolumeAttributesClass).To(BeEmpty())
 					Expect(status.Datastores).To(HaveLen(1))
 					Expect(status.Datastores[0].ID.ObjectID).To(Equal(datastore1Ref.Value))
@@ -416,7 +416,7 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					It("should return the policy status without the VAC", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(status).ToNot(BeZero())
-						Expect(status.StorageClasses).To(HaveLen(0))
+						Expect(status.StorageClasses).To(BeEmpty())
 						Expect(status.VolumeAttributesClass).To(BeEmpty())
 						Expect(status.Datastores).To(HaveLen(1))
 						Expect(status.Datastores[0].ID.ObjectID).To(Equal(datastore1Ref.Value))
@@ -437,7 +437,7 @@ var _ = Describe("GetStoragePolicyStatus", func() {
 					It("should return the policy status with the VAC", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(status).ToNot(BeZero())
-						Expect(status.StorageClasses).To(HaveLen(0))
+						Expect(status.StorageClasses).To(BeEmpty())
 						Expect(status.VolumeAttributesClass).To(Equal("sector-format-512"))
 						Expect(status.Datastores).To(HaveLen(1))
 						Expect(status.Datastores[0].ID.ObjectID).To(Equal(datastore1Ref.Value))

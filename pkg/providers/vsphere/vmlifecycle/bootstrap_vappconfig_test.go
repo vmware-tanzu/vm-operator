@@ -222,10 +222,10 @@ var _ = Describe("GetMergedvAppConfigSpec", func() {
 				Expect(err).To(MatchError(expectedErr))
 				Expect(baseVAppConfigSpec).To(BeNil())
 			} else if expected == nil {
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(baseVAppConfigSpec).To(BeNil())
 			} else {
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(baseVAppConfigSpec).ToNot(BeNil())
 				vAppConfigSpec := baseVAppConfigSpec.GetVmConfigSpec()
 				Expect(vAppConfigSpec.Property).To(HaveLen(len(expected.Property)))

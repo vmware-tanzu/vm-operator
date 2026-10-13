@@ -330,8 +330,8 @@ func cdromTests() {
 
 					// Create a SATA controller with 29 devices already assigned.
 					// This ensures only one more device can be assigned to this controller.
-					assigned := []int32{}
-					for i := 0; i < 29; i++ {
+					assigned := make([]int32, 0, 29)
+					for i := range 29 {
 						assigned = append(assigned, int32(i))
 					}
 					curDevices = object.VirtualDeviceList{
@@ -1019,8 +1019,8 @@ func cdromTests() {
 
 					// Create 4 SATA controllers (max supported) with full devices assigned to each.
 					// This would cause CD-ROM assignment to create a new SATA and fail due to exceeding SATA limits.
-					assigned := []int32{}
-					for i := 0; i < 30; i++ {
+					assigned := make([]int32, 0, 30)
+					for i := range 30 {
 						assigned = append(assigned, int32(i))
 					}
 					curDevices = object.VirtualDeviceList{

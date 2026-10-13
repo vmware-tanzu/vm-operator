@@ -846,6 +846,8 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(t.Wait(ctx)).To(Succeed())
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+			case vimtypes.VirtualMachinePowerStatePoweredOff:
+				// The VM is already powered off.
 			}
 			Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOff))
 		})
@@ -1580,13 +1582,13 @@ var _ = Describe("UpdateVirtualMachine", func() {
 							}
 						}
 
-						Expect(len(ideControllers)).To(Equal(1))
+						Expect(ideControllers).To(HaveLen(1))
 						Expect(ideControllers[0].BusNumber).To(Equal(int32(1)))
-						Expect(len(nvmeControllers)).To(Equal(1))
+						Expect(nvmeControllers).To(HaveLen(1))
 						Expect(nvmeControllers[0].BusNumber).To(Equal(int32(1)))
-						Expect(len(sataControllers)).To(Equal(1))
+						Expect(sataControllers).To(HaveLen(1))
 						Expect(sataControllers[0].BusNumber).To(Equal(int32(1)))
-						Expect(len(scsiControllers)).To(Equal(1))
+						Expect(scsiControllers).To(HaveLen(1))
 						Expect(scsiControllers[0].GetVirtualSCSIController().BusNumber).To(Equal(int32(1)))
 						_, ok := scsiControllers[0].(*vimtypes.VirtualLsiLogicController)
 						Expect(ok).To(BeTrue())
@@ -1953,6 +1955,8 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(t.Wait(ctx)).To(Succeed())
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+			case vimtypes.VirtualMachinePowerStatePoweredOff:
+				// The VM is already powered off.
 			}
 			Expect(vmCtx.MoVM.Summary.Runtime.PowerState).To(
 				Equal(vimtypes.VirtualMachinePowerStatePoweredOff))

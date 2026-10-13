@@ -131,7 +131,7 @@ var _ = Describe("NextAvailableUnitNumber", func() {
 			occupiedSlots := sets.New[int32]()
 
 			// Fill all slots except reserved.
-			for i := int32(0); i < params.maxSlots; i++ {
+			for i := range params.maxSlots {
 				if i != params.reservedUnit {
 					occupiedSlots.Insert(i)
 				}
@@ -174,7 +174,7 @@ var _ = Describe("NextAvailableUnitNumber", func() {
 		})
 
 		It("should skip reserved slot 7 when slots 0-6 are occupied", func() {
-			for i := int32(0); i < controller.ReservedUnitNumber(); i++ {
+			for i := range controller.ReservedUnitNumber() {
 				occupiedSlots.Insert(i)
 			}
 
@@ -183,7 +183,7 @@ var _ = Describe("NextAvailableUnitNumber", func() {
 		})
 
 		It("should return -1 when all slots except 7 are occupied", func() {
-			for i := int32(0); i < controller.MaxSlots(); i++ {
+			for i := range controller.MaxSlots() {
 				if i != controller.ReservedUnitNumber() {
 					occupiedSlots.Insert(i)
 				}
@@ -199,7 +199,7 @@ var _ = Describe("NextAvailableUnitNumber", func() {
 			})
 
 			It("should respect the 16 slot limit", func() {
-				for i := int32(0); i < controller.MaxSlots(); i++ {
+				for i := range controller.MaxSlots() {
 					if i != controller.ReservedUnitNumber() {
 						occupiedSlots.Insert(i)
 					}

@@ -125,7 +125,7 @@ var _ = Describe("AddContentLibRefToAnnotation", func() {
 			It("should have expected result", func() {
 				obj.SetAnnotations(map[string]string{"bar": "baz"})
 				Expect(utils.AddContentLibraryRefToAnnotation(obj, ref)).To(Succeed())
-				Expect(len(obj.GetAnnotations())).To(BeNumerically(">=", 1))
+				Expect(obj.GetAnnotations()).ToNot(BeEmpty())
 				assertAnnotation(obj)
 			})
 		})

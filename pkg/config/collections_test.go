@@ -131,7 +131,7 @@ var _ = Describe("Collections", func() {
 					})
 					Context("and white-space in between non-white-space characters", func() {
 						BeforeEach(func() {
-							in = " a\v,\t\vb\r b    ,c    \n"
+							in = " a\v,\t\vb\r b    ,c    \n" //nolint:dupword // intentional test input
 						})
 						It("Should return the correct value", func() {
 							Expect(out).To(Equal([]string{"a", "b\r b", "c"}))

@@ -151,7 +151,7 @@ func createDeleteExistResourcePoolChild() {
 			})
 		})
 
-		It("returns error when when parent ResourcePool MoID does not exist", func() {
+		It("returns error when parent ResourcePool MoID does not exist", func() {
 			childMoID, err := vcenter.CreateOrUpdateChildResourcePool(ctx, ctx.VCClient.Client, "bogus", &resourcePolicy.Spec.ResourcePool)
 			Expect(err).To(HaveOccurred())
 			Expect(childMoID).To(BeEmpty())

@@ -73,7 +73,7 @@ func vmUpgradeTests() {
 	})
 
 	It("should return ErrUpgradeSchema, then ErrUpgradeObject, then ErrBackup, then success", func() {
-		Expect(vm.Annotations).To(HaveLen(0))
+		Expect(vm.Annotations).To(BeEmpty())
 
 		// Update the VM and expect ErrUpgradeSchema.
 		Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(

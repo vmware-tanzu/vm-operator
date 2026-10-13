@@ -335,6 +335,8 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 				return err
 			}
 		}
+	case vimtypes.VirtualMachinePowerStateSuspended:
+		// A suspended VM is not reconfigured.
 	}
 
 	// Moved down below doReconfigure because this function returns error
@@ -589,7 +591,7 @@ func UpdateConfigSpecExtraConfig(
 			// For the special V1Alpha1Compatible images, set the
 			// VMOperatorV1Alpha1ExtraConfigKey to "Ready" to fix configuration
 			// races between cloud-init, vApp, and GOSC. This is addressed by
-			// by deferring cloud-init to run on second boot and preventing
+			// deferring cloud-init to run on second boot and preventing
 			// cloud-init from configuring the network. This only matters for
 			// two, legacy marketplace images. The check below is what the v1a1
 			// OvfEnv transport converts to in v1a2 bootstrap. The v1a1
@@ -907,7 +909,7 @@ func (s *Session) fixupMacAddresses(
 	}
 
 	// Just zip these together until we can do interface identification.
-	for i := 0; i < min(len(networkDevices), len(networkResults.Devices)); i++ {
+	for i := range min(len(networkDevices), len(networkResults.Devices)) {
 		dev := &networkResults.Devices[i]
 
 		if dev.MacAddress == "" {

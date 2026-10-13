@@ -102,7 +102,7 @@ func GetMergedvAppConfigSpec(
 	keyVals map[string]string,
 	inProps []vimtypes.VAppPropertyInfo) (vimtypes.BaseVmConfigSpec, error) {
 
-	var outProps []vimtypes.VAppPropertySpec //nolint:prealloc
+	var outProps []vimtypes.VAppPropertySpec
 
 	for i := range inProps {
 		p := inProps[i]

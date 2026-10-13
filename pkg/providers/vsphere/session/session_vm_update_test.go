@@ -895,6 +895,134 @@ var _ = Describe("UpdateVirtualMachine", func() {
 			})
 		})
 
+		When("the boot disk size is changed and the boot disk has a parent", func() {
+			JustBeforeEach(func() {
+				ds, err := ctx.Finder.Datastore(ctx, "LocalDS_0")
+				Expect(err).ToNot(HaveOccurred())
+
+				baseName := "[LocalDS_0] base-" + vcVM.Name() + "-parent.vmdk"
+				task, err := object.NewVirtualDiskManager(ctx.VCClient.Client).CreateVirtualDisk(
+					ctx,
+					baseName,
+					ctx.Datacenter,
+					&vimtypes.FileBackedVirtualDiskSpec{
+						CapacityKb: oldDiskSizeBytes / 1024,
+					})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(task.Wait(ctx)).To(Succeed())
+
+				// Replace the boot disk with a linked clone.
+				devs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+				disks := devs.SelectByType(&vimtypes.VirtualDisk{})
+				Expect(disks).To(HaveLen(1))
+				oldDisk := disks[0].(*vimtypes.VirtualDisk)
+
+				reconfigTask, err := vcVM.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+					DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationRemove,
+							Device:    oldDisk,
+						},
+						&vimtypes.VirtualDeviceConfigSpec{
+							FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+							Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key:           -100,
+									ControllerKey: oldDisk.ControllerKey,
+									UnitNumber:    oldDisk.UnitNumber,
+									Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName:  "boot-child.vmdk",
+											Datastore: ptr.To(ds.Reference()),
+										},
+										Parent: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+											VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+												FileName:  baseName,
+												Datastore: ptr.To(ds.Reference()),
+											},
+										},
+										DiskMode: string(vimtypes.VirtualDiskModePersistent),
+									},
+								},
+								CapacityInBytes: oldDiskSizeBytes,
+							},
+						},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(reconfigTask.Wait(ctx)).To(Succeed())
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+				q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: &q,
+				}
+				if vm.Spec.Hardware == nil {
+					vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+				}
+				vm.Spec.Hardware.Cdrom = nil
+			})
+
+			It("should not resize the boot disk until it is promoted", func() {
+				// There is nothing to reconfigure since the resize is skipped.
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+				devs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+				disks := devs.SelectByType(&vimtypes.VirtualDisk{})
+				Expect(disks).To(HaveLen(1))
+				disk := disks[0].(*vimtypes.VirtualDisk)
+				Expect(disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).Parent).ToNot(BeNil())
+				Expect(disk.CapacityInBytes).To(Equal(oldDiskSizeBytes))
+			})
+		})
+
+		When("the boot disk size is changed and the boot disk has a PVC", func() {
+			JustBeforeEach(func() {
+				devs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+				disk := devs.SelectByType(&vimtypes.VirtualDisk{})[0].(*vimtypes.VirtualDisk)
+				controller := devs.FindByKey(disk.ControllerKey).(vimtypes.BaseVirtualController)
+
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name:                "boot",
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(controller.GetVirtualController().BusNumber),
+						UnitNumber:          disk.UnitNumber,
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "boot-pvc",
+								},
+							},
+						},
+					},
+				}
+
+				q := resource.MustParse(fmt.Sprintf("%dGi", newDiskSizeGi))
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: &q,
+				}
+				if vm.Spec.Hardware == nil {
+					vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+				}
+				vm.Spec.Hardware.Cdrom = nil
+			})
+
+			It("should ignore the boot disk capacity", func() {
+				// There is no reconfigure since the resize is skipped. The PVC
+				// is not attached since there is no volume controller here.
+				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(ContainSubstring("persistent volumes is pending")))
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+				devs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+				disks := devs.SelectByType(&vimtypes.VirtualDisk{})
+				Expect(disks).To(HaveLen(1))
+				Expect(disks[0].(*vimtypes.VirtualDisk).CapacityInBytes).To(Equal(oldDiskSizeBytes))
+			})
+		})
+
 		When("there are no NICs", func() {
 			BeforeEach(func() {
 				vm.Spec.Network.Interfaces = nil

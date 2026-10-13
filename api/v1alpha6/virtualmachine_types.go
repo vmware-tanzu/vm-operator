@@ -1275,6 +1275,9 @@ type VirtualMachineAdvancedSpec struct {
 	//
 	// Please note this field is ignored if the VM is deployed from an ISO with
 	// CD-ROM devices attached.
+	//
+	// Please note changes to this field are ignored once the boot disk has a
+	// PersistentVolumeClaim. Resize the PersistentVolumeClaim instead.
 	BootDiskCapacity *resource.Quantity `json:"bootDiskCapacity,omitempty"`
 
 	// +optional

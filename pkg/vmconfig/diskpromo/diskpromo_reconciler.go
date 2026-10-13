@@ -300,7 +300,21 @@ func (r reconciler) Reconcile(
 			return nil
 		}
 
-		if moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
+		// Exception: a linked clone boot disk that spec.advanced.bootDiskCapacity
+		// extends cannot be extended until it is promoted. Promote just the
+		// boot disk while the VM is off, instead of waiting for it to be
+		// powered on, so the disk is extended before the first boot.
+		promoteBootDisk := false
+		if moVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOff {
+			if d := extendedBootDisk(vm, moVM, childDisks); d != nil {
+				childDisks = []vimtypes.VirtualDisk{*d}
+				promoteBootDisk = true
+			}
+		}
+
+		if !promoteBootDisk &&
+			moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
+
 			pkgcond.MarkFalse(
 				vm,
 				vmopv1.VirtualMachineDiskPromotionSynced,
@@ -370,4 +384,38 @@ func (r reconciler) Reconcile(
 		"Promotion is running")
 
 	return ErrPromoteDisks
+}
+
+// extendedBootDisk returns the VM's boot disk if it is one of the child disks
+// and spec.advanced.bootDiskCapacity extends it. Like the boot disk resize, it
+// assumes the first disk is the boot disk.
+func extendedBootDisk(
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine,
+	childDisks []vimtypes.VirtualDisk) *vimtypes.VirtualDisk {
+
+	if vm.Spec.Advanced == nil ||
+		vm.Spec.Advanced.BootDiskCapacity == nil ||
+		moVM.Config == nil {
+
+		return nil
+	}
+
+	for _, device := range moVM.Config.Hardware.Device {
+		bootDisk, ok := device.(*vimtypes.VirtualDisk)
+		if !ok {
+			continue
+		}
+		if vm.Spec.Advanced.BootDiskCapacity.Value() <= bootDisk.CapacityInBytes {
+			return nil
+		}
+		for i := range childDisks {
+			if childDisks[i].Key == bootDisk.Key {
+				return &childDisks[i]
+			}
+		}
+		return nil
+	}
+
+	return nil
 }

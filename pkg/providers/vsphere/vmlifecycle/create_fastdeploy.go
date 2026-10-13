@@ -23,6 +23,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -339,11 +340,6 @@ func fastDeploy(
 	case !pkgutil.IsOnlinePromoteDisksSupported(createArgs.ConfigSpec):
 		fastDeployMode = pkgconst.FastDeployModeDirect
 		fastDeployModeReason = "online promote disks not supported"
-	case isBootDiskExtended(vmCtx.VM, disks):
-		// vSphere cannot extend a disk that has a parent, so a linked clone's
-		// boot disk cannot be resized before power on.
-		fastDeployMode = pkgconst.FastDeployModeDirect
-		fastDeployModeReason = "boot disk capacity larger than image"
 	default:
 		fastDeployMode = vmCtx.VM.Annotations[pkgconst.FastDeployAnnotationKey]
 		if fastDeployMode == "" {
@@ -352,6 +348,17 @@ func fastDeploy(
 		} else {
 			fastDeployModeReason = "from annotation"
 		}
+	}
+
+	// A linked clone's boot disk cannot be extended until it is promoted, and
+	// promotion is disabled, so the requested capacity can never be applied.
+	if strings.EqualFold(fastDeployMode, pkgconst.FastDeployModeLinked) &&
+		vmCtx.VM.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled &&
+		isBootDiskExtended(vmCtx.VM, disks) {
+
+		return nil, pkgerr.NoRequeueError{Message: "spec.advanced.bootDiskCapacity " +
+			"is larger than the boot disk of the image, which requires promoting " +
+			"the boot disk, but spec.promoteDisksMode is Disabled"}
 	}
 
 	logger.Info(

@@ -567,23 +567,35 @@ func vmFastDeployTests() {
 								}
 							})
 
-							It("should succeed by falling back to direct mode", func() {
+							It("should succeed with linked mode", func() {
 								Expect(createVM()).To(Succeed())
-								By("Assert no kept disks", assertNoKeptDisks)
+								By("Assert kept disks", assertKeptDisks)
 								By("Assert disk names", assertFileNames)
 							})
 
-							When("vm specifies linked mode via annotation", func() {
-								BeforeEach(func() {
-									vm.SetAnnotation(
-										pkgconst.FastDeployAnnotationKey,
-										pkgconst.FastDeployModeLinked)
+							When("vm disables disk promotion", func() {
+								JustBeforeEach(func() {
+									vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
 								})
 
-								It("should still fall back to direct mode", func() {
-									Expect(createVM()).To(Succeed())
-									By("Assert no kept disks", assertNoKeptDisks)
-									By("Assert disk names", assertFileNames)
+								It("should fail since the boot disk cannot be extended", func() {
+									err := createVM()
+									Expect(err).To(MatchError(ContainSubstring(
+										"spec.promoteDisksMode is Disabled")))
+									Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+								})
+
+								When("vm specifies direct mode via annotation", func() {
+									BeforeEach(func() {
+										vm.SetAnnotation(
+											pkgconst.FastDeployAnnotationKey,
+											pkgconst.FastDeployModeDirect)
+									})
+
+									It("should succeed with direct mode", func() {
+										Expect(createVM()).To(Succeed())
+										By("Assert no kept disks", assertNoKeptDisks)
+									})
 								})
 							})
 						})

@@ -964,7 +964,7 @@ VM advanced settings can be configured using optional fields under `spec.advance
 
 | Field | Description | Change applies on |
 |-------|-------------|:----:|
-| `bootDiskCapacity` | Desired capacity of the boot disk from the VM image. Ignored when deploying from an ISO with CD-ROM devices. Resizing has guest and risk implications. | _NA_ |
+| `bootDiskCapacity` | Desired capacity of the boot disk from the VM image. Ignored when deploying from an ISO with CD-ROM devices, and ignored once the boot disk has a PVC, resize the PVC instead. Resizing has guest and risk implications. | _NA_ |
 | `defaultVolumeProvisioningMode` | Default provisioning mode for PVCs owned by this VM. | _NA_ |
 | `changeBlockTracking` | Enables change block tracking for backup integrations. | _NA_ |
 | `preferHtEnabled` | Prefer scheduling vCPUs on hyperthreads of the same core for locality. | PowerCycle |

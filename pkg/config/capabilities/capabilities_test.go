@@ -205,6 +205,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyLifecycleHooks: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyScopedDNSDefaults: {
+							Activated: true,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -235,6 +238,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.ControlledRebalancingPolicy = true
 							config.Features.CSIBackupAPI = true
 							config.Features.LifecycleHooks = true
+							config.Features.ScopedDNSDefaults = true
 						})
 					})
 					Specify("capabilities did not change", func() {
@@ -311,6 +315,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyLifecycleHooks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.LifecycleHooks).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyScopedDNSDefaults, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.ScopedDNSDefaults).To(BeTrue())
 					})
 				})
 
@@ -389,6 +396,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyLifecycleHooks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.LifecycleHooks).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyScopedDNSDefaults, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.ScopedDNSDefaults).To(BeTrue())
 					})
 				})
 			})
@@ -476,6 +486,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyLifecycleHooks: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyScopedDNSDefaults: {
+							Activated: false,
+						},
 					}
 					Expect(client.Status().Patch(ctx, &obj, objPatch)).To(Succeed())
 				})
@@ -554,6 +567,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyLifecycleHooks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.LifecycleHooks).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyScopedDNSDefaults, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.ScopedDNSDefaults).To(BeFalse())
 					})
 				})
 
@@ -647,6 +663,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyLifecycleHooks, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.LifecycleHooks).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyScopedDNSDefaults, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.ScopedDNSDefaults).To(BeFalse())
 					})
 				})
 			})
@@ -1113,6 +1132,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.LifecycleHooks).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyScopedDNSDefaults, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.ScopedDNSDefaults).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyScopedDNSDefaults] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("ScopedDNSDefaults=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.ScopedDNSDefaults).To(BeTrue())
+			})
+		})
 	})
 })
 
@@ -1210,6 +1242,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyLifecycleHooks: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyScopedDNSDefaults: {
+				Activated: true,
+			},
 		}
 
 		ok, diff = false, ""
@@ -1251,6 +1286,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMHardAffinityDuringExecution = true
 					config.Features.CSIBackupAPI = true
 					config.Features.LifecycleHooks = true
+					config.Features.ScopedDNSDefaults = true
 				})
 			})
 			Specify("capabilities did not change", func() {
@@ -1339,6 +1375,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyLifecycleHooks, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.LifecycleHooks).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyScopedDNSDefaults, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.ScopedDNSDefaults).To(BeTrue())
+			})
 		})
 
 		When("the capabilities are different", func() {
@@ -1373,7 +1412,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,LifecycleHooks=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMHardAffinityDuringExecution=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMServiceClasslessVM=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,LifecycleHooks=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,ScopedDNSDefaults=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMHardAffinityDuringExecution=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMServiceClasslessVM=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -1456,6 +1495,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyLifecycleHooks, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.LifecycleHooks).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyScopedDNSDefaults, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.ScopedDNSDefaults).To(BeFalse())
 			})
 		})
 	})

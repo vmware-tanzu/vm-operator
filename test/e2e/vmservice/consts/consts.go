@@ -102,4 +102,9 @@ const (
 
 	// BringYourOwnNetworkInterfaceCapabilityName gates externally managed NICs.
 	BringYourOwnNetworkInterfaceCapabilityName = "supports_vm_service_byo_network_interface"
+
+	// ScopedDNSDefaultsCapabilityName gates applying the Supervisor's default
+	// DNS configuration to only a VM's primary interface; must match
+	// pkg/config/capabilities.CapabilityKeyScopedDNSDefaults.
+	ScopedDNSDefaultsCapabilityName = "supports_vm_service_scoped_dns_defaults"
 )

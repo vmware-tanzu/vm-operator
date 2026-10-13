@@ -39,6 +39,24 @@ type VMVPCSpecInput struct {
 	WCPNamespaceName string
 }
 
+// createSubnetOrSubnetSet creates a Subnet or SubnetSet, retrying on a real
+// (non-transient) validation error while its dependencies finish realizing;
+// see the VMVPCSpec doc comment.
+func createSubnetOrSubnetSet(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	clusterProxy *common.VMServiceClusterProxy,
+	kind, name, ns, networkConfigType string,
+	private bool) {
+
+	GinkgoHelper()
+
+	subnetYaml := utils.CreateSubnetOrSubnetSetYaml(kind, name, ns, networkConfigType, private)
+	Eventually(func(g Gomega) {
+		g.Expect(clusterProxy.ApplyWithArgs(ctx, subnetYaml)).To(Succeed(), "failed to create the %s %s/%s: %s", kind, ns, name, string(subnetYaml))
+	}, config.GetIntervals("default", "wait-subnet-creation")...).Should(Succeed(), "Timed out in creating %s %s/%s", kind, ns, name)
+}
+
 // VMVPCSpec exercises VPC Subnet/SubnetSet-backed VM networking.
 //
 // VM creates use the shared typed-client helper, which retries transient
@@ -74,18 +92,6 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		secretName            string
 		linuxImageDisplayName string
 	)
-
-	// createSubnetOrSubnetSet creates a Subnet or SubnetSet, retrying on a
-	// real (non-transient) validation error while its dependencies finish
-	// realizing; see the VMVPCSpec doc comment.
-	createSubnetOrSubnetSet := func(kind, name, ns, networkConfigType string, private bool) {
-		GinkgoHelper()
-
-		subnetYaml := utils.CreateSubnetOrSubnetSetYaml(kind, name, ns, networkConfigType, private)
-		Eventually(func(g Gomega) {
-			g.Expect(clusterProxy.ApplyWithArgs(ctx, subnetYaml)).To(Succeed(), "failed to create the %s %s/%s: %s", kind, ns, name, string(subnetYaml))
-		}, config.GetIntervals("default", "wait-subnet-creation")...).Should(Succeed(), "Timed out in creating %s %s/%s", kind, ns, name)
-	}
 
 	BeforeEach(func() {
 		input = inputGetter()
@@ -143,10 +149,10 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 	Context("VPC DHCP should successfully create VMs", func() {
 		It("using customized DHCP Subnet/SubnetSet to assign valid ip addresses and ping each other", Label("smoke"), func() {
 			By("Creating a DHCP Private Subnet for VM1 and a DHCP Private SubnetSet for VM2")
-			createSubnetOrSubnetSet(utils.SubnetKind, subnetDHCPName, input.WCPNamespaceName, utils.DHCPConfig, true)
+			createSubnetOrSubnetSet(ctx, config, clusterProxy, utils.SubnetKind, subnetDHCPName, input.WCPNamespaceName, utils.DHCPConfig, true)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, subnetDHCPName, utils.SubnetKind)
 
-			createSubnetOrSubnetSet(utils.SubnetSetKind, subnetSetDHCPName, input.WCPNamespaceName, utils.DHCPConfig, true)
+			createSubnetOrSubnetSet(ctx, config, clusterProxy, utils.SubnetSetKind, subnetSetDHCPName, input.WCPNamespaceName, utils.DHCPConfig, true)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetDHCPName, utils.SubnetSetKind)
 
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, subnetDHCPName, utils.SubnetKind)
@@ -198,10 +204,10 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 	Context("VPC CIDR should successfully create VM", func() {
 		It("using customized CIDR Subnet to assign valid ip address", func() {
 			By("Creating a CIDR Private Subnet for VM1 and a CIDR Public SubnetSet for VM2")
-			createSubnetOrSubnetSet(utils.SubnetKind, subnetCIDRName, input.WCPNamespaceName, utils.CIDRConfig, true)
+			createSubnetOrSubnetSet(ctx, config, clusterProxy, utils.SubnetKind, subnetCIDRName, input.WCPNamespaceName, utils.CIDRConfig, true)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, subnetCIDRName, utils.SubnetKind)
 
-			createSubnetOrSubnetSet(utils.SubnetSetKind, subnetSetCIDRName, input.WCPNamespaceName, utils.CIDRConfig, false)
+			createSubnetOrSubnetSet(ctx, config, clusterProxy, utils.SubnetSetKind, subnetSetCIDRName, input.WCPNamespaceName, utils.CIDRConfig, false)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetCIDRName, utils.SubnetSetKind)
 
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, subnetCIDRName, utils.SubnetKind)
@@ -252,11 +258,11 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 	Context("VPC supports multiple NICs", func() {
 		It("VM deployment should succeed with 2 NICs", func() {
 			By("Creating VM with 2 NICs")
-			createSubnetOrSubnetSet(utils.SubnetKind, nic1Name, input.WCPNamespaceName, utils.DHCPConfig, true)
+			createSubnetOrSubnetSet(ctx, config, clusterProxy, utils.SubnetKind, nic1Name, input.WCPNamespaceName, utils.DHCPConfig, true)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, nic1Name, utils.SubnetKind)
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, nic1Name, utils.SubnetKind)
 
-			createSubnetOrSubnetSet(utils.SubnetSetKind, nic2Name, input.WCPNamespaceName, utils.CIDRConfig, true)
+			createSubnetOrSubnetSet(ctx, config, clusterProxy, utils.SubnetSetKind, nic2Name, input.WCPNamespaceName, utils.CIDRConfig, true)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, nic2Name, utils.SubnetSetKind)
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, nic2Name, utils.SubnetSetKind)
 
@@ -288,7 +294,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 	Context("Across namespaces, VPC Public and Private accessMode", func() {
 		It("one VirtualMachine within Private Subnet can communicate to another VM in another ns within Public Subnet", func() {
 			By("Create VM1 using Private Subnet")
-			createSubnetOrSubnetSet(utils.SubnetKind, subnetName, input.WCPNamespaceName, utils.CIDRConfig, true)
+			createSubnetOrSubnetSet(ctx, config, clusterProxy, utils.SubnetKind, subnetName, input.WCPNamespaceName, utils.CIDRConfig, true)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, subnetName, utils.SubnetKind)
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, subnetName, utils.SubnetKind)
 
@@ -344,7 +350,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 
 			By("Create VM2 with a Public Subnet in the second ns")
 			// Create a Public subnet with the same name but in a different ns
-			createSubnetOrSubnetSet(utils.SubnetKind, subnetName, secondNamespaceName, utils.CIDRConfig, false)
+			createSubnetOrSubnetSet(ctx, config, clusterProxy, utils.SubnetKind, subnetName, secondNamespaceName, utils.CIDRConfig, false)
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, secondNamespaceName, subnetName, utils.SubnetKind)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, secondNamespaceName, subnetName, utils.SubnetKind)
 

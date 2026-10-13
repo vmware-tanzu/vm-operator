@@ -14,6 +14,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	gomegatypes "github.com/onsi/gomega/types"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -23,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -31,7 +33,10 @@ import (
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	vspherecfg "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -398,6 +403,86 @@ func verifyV1alpha6RemainingTemplateFunctionsRoundC(ctx context.Context, vCenter
 	Expect(formatIPValue).To(Equal("192.168.1.10/16"), "%s should have rendered 192.168.1.10/16, got %q", constants.V1alpha6FormatIP, formatIPValue)
 }
 
+// cloudInitNetplan is the subset of the Cloud-Init metadata VM Operator
+// writes to guestinfo.metadata that describes each interface's addressing
+// and DNS configuration.
+type cloudInitNetplan struct {
+	Network struct {
+		Ethernets map[string]struct {
+			Addresses   []any  `json:"addresses"`
+			DHCP4       bool   `json:"dhcp4"`
+			DHCP6       bool   `json:"dhcp6"`
+			AcceptRA    bool   `json:"accept-ra"`
+			Gateway4    string `json:"gateway4"`
+			Gateway6    string `json:"gateway6"`
+			Nameservers struct {
+				Addresses []string `json:"addresses"`
+				Search    []string `json:"search"`
+			} `json:"nameservers"`
+		} `json:"ethernets"`
+	} `json:"network"`
+}
+
+// filterNameserversByFamily returns the nameservers of the IP families
+// indicated by ipv4 and ipv6, preserving their order. Entries that are not IP
+// addresses are kept.
+func filterNameserversByFamily(nameservers []string, ipv4, ipv6 bool) []string {
+	var filtered []string
+	for _, ns := range nameservers {
+		if ip := net.ParseIP(ns); ip != nil {
+			if isIPv4 := ip.To4() != nil; (isIPv4 && !ipv4) || (!isIPv4 && !ipv6) {
+				continue
+			}
+		}
+		filtered = append(filtered, ns)
+	}
+	return filtered
+}
+
+// equalOrEmpty matches expected, treating nil and empty slices as equal.
+func equalOrEmpty(expected []string) gomegatypes.GomegaMatcher {
+	if len(expected) == 0 {
+		return BeEmpty()
+	}
+	return Equal(expected)
+}
+
+// getCloudInitNetplan returns the netplan from the Cloud-Init metadata in the
+// ExtraConfig of the vSphere VM with the provided managed object ID.
+func getCloudInitNetplan(
+	ctx context.Context,
+	vimClient *vim25.Client,
+	moID string) (cloudInitNetplan, error) {
+
+	var (
+		np   cloudInitNetplan
+		moVM mo.VirtualMachine
+		ref  = types.ManagedObjectReference{Type: "VirtualMachine", Value: moID}
+	)
+
+	if err := property.DefaultCollector(vimClient).RetrieveOne(
+		ctx, ref, []string{"config.extraConfig"}, &moVM); err != nil {
+		return np, err
+	}
+	if moVM.Config == nil {
+		return np, fmt.Errorf("vm %s has no config", moID)
+	}
+
+	for _, bov := range moVM.Config.ExtraConfig {
+		ov := bov.GetOptionValue()
+		if ov.Key != constants.CloudInitGuestInfoMetadata {
+			continue
+		}
+		data, err := pkgutil.TryToDecodeBase64Gzip([]byte(ov.Value.(string)))
+		if err != nil {
+			return np, err
+		}
+		return np, yaml.Unmarshal([]byte(data), &np)
+	}
+
+	return np, fmt.Errorf("vm %s has no %s", moID, constants.CloudInitGuestInfoMetadata)
+}
+
 func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 	const (
 		specName            = "vm-guest-customization"
@@ -693,6 +778,191 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				createAndVerifyVM(ctx, vm)
 				vmoperator.WaitForLinuxPrepCustomizeNextPowerOnFalse(ctx, config, svClusterClient, input.WCPNamespaceName, vm.Name)
 			})
+		})
+	})
+
+	Context("Scoped DNS defaults", Label("experimental"), func() {
+		var vimClient *vim25.Client
+
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.ScopedDNSDefaultsCapabilityName)
+
+			vimClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			DeferCleanup(func() {
+				vcenter.LogoutVimClient(vimClient)
+			})
+
+			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+			v1a2VM.Spec.ImageName = imageName
+		})
+
+		waitForScopedAnnotation := func() {
+			By("Verifying the new VM is annotated to use the scoped DNS defaults")
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm.Annotations).To(HaveKeyWithValue(
+					pkgconst.DNSDefaultsAnnotationKey, pkgconst.DNSDefaultsScoped))
+				g.Expect(vm.Status.UniqueID).NotTo(BeEmpty())
+			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+		}
+
+		It("should allow a non-admin user to change and remove the DNS defaults annotation", func() {
+			v1a2VM.Spec.Bootstrap = &vmopv1a2.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{},
+			}
+			createAndVerifyVM(ctx, v1a2VM.DeepCopy())
+			waitForScopedAnnotation()
+
+			user, nonAdminClient := setupNonAdminUserForTests(ctx, vimClient, clusterProxy)
+			DeferCleanup(func() { vcenter.DeleteUserOrFail(user) })
+
+			patchMode := func(mode *string) {
+				Eventually(func(g Gomega) {
+					vm, err := utils.GetVirtualMachine(ctx, nonAdminClient, input.WCPNamespaceName, vmName)
+					g.Expect(err).NotTo(HaveOccurred())
+					base := vm.DeepCopy()
+					if mode == nil {
+						delete(vm.Annotations, pkgconst.DNSDefaultsAnnotationKey)
+					} else {
+						metav1.SetMetaDataAnnotation(&vm.ObjectMeta, pkgconst.DNSDefaultsAnnotationKey, *mode)
+					}
+					g.Expect(nonAdminClient.Patch(ctx, vm, ctrlclient.MergeFromWithOptions(
+						base, ctrlclient.MergeFromWithOptimisticLock{}))).To(Succeed())
+				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+			}
+			waitForMode := func(mode string) {
+				Eventually(func(g Gomega) {
+					vm, err := utils.GetVirtualMachine(ctx, nonAdminClient, input.WCPNamespaceName, vmName)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(vm.Annotations).To(HaveKeyWithValue(pkgconst.DNSDefaultsAnnotationKey, mode))
+				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+			}
+
+			By("Selecting legacy DNS as a non-admin user")
+			patchMode(ptr.To(pkgconst.DNSDefaultsLegacy))
+			waitForMode(pkgconst.DNSDefaultsLegacy)
+			By("Selecting scoped DNS as a non-admin user")
+			patchMode(ptr.To(pkgconst.DNSDefaultsScoped))
+			waitForMode(pkgconst.DNSDefaultsScoped)
+			By("Removing the annotation and letting the configured guest select legacy automatically")
+			patchMode(nil)
+			waitForMode(pkgconst.DNSDefaultsLegacy)
+		})
+
+		It("should apply the default nameservers to only the first interface with CloudInit", func() {
+			v1a2VM.Spec.Bootstrap = &vmopv1a2.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{},
+			}
+			createAndVerifyVM(ctx, v1a2VM.DeepCopy())
+
+			waitForScopedAnnotation()
+
+			By("Reading the Supervisor's default nameservers")
+			cm := &corev1.ConfigMap{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+				Namespace: config.GetVariable("VMOPNamespace"),
+				Name:      vspherecfg.NetworkConfigMapName,
+			}, cm)).To(Succeed())
+			defaultNameservers := strings.Fields(cm.Data[vspherecfg.NameserversKey])
+
+			// The default search domains are only applied to TKG VMs.
+			By("Verifying only the primary interface has nameservers, and no interface has search domains, in the Cloud-Init metadata")
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm.Spec.Network).NotTo(BeNil())
+				g.Expect(vm.Spec.Network.Interfaces).NotTo(BeEmpty())
+
+				np, err := getCloudInitNetplan(ctx, vimClient, vm.Status.UniqueID)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// The primary interface is the first interface when it is
+				// static and has a gateway. Only the default nameservers of the
+				// IP families it has a gateway for are applied to it.
+				primaryFound := false
+				for i, iface := range vm.Spec.Network.Interfaces {
+					eth, ok := np.Network.Ethernets[iface.Name]
+					g.Expect(ok).To(BeTrue(), "no netplan ethernet for interface %q", iface.Name)
+
+					ipv4, ipv6 := eth.Gateway4 != "", eth.Gateway6 != "" || eth.AcceptRA
+					isStatic := !eth.DHCP4 && !eth.DHCP6 && len(eth.Addresses) > 0
+					if i == 0 && isStatic && (ipv4 || ipv6) {
+						primaryFound = true
+						g.Expect(eth.Nameservers.Addresses).To(equalOrEmpty(filterNameserversByFamily(defaultNameservers, ipv4, ipv6)),
+							"primary interface %q should have the default nameservers of its IP families", iface.Name)
+						g.Expect(eth.Nameservers.Search).To(BeEmpty(),
+							"primary interface %q should not have search domains", iface.Name)
+						continue
+					}
+
+					g.Expect(eth.Nameservers.Addresses).To(BeEmpty(),
+						"interface %q should not have nameservers", iface.Name)
+					g.Expect(eth.Nameservers.Search).To(BeEmpty(),
+						"interface %q should not have search domains", iface.Name)
+				}
+				GinkgoWriter.Printf("VM %s has a primary interface: %t\n", vmName, primaryFound)
+
+				By("Verifying status reports no global nameservers or search domains since Cloud-Init has no global DNS")
+				if c := vm.Status.Network; c != nil && c.Config != nil && c.Config.DNS != nil {
+					g.Expect(c.Config.DNS.Nameservers).To(BeEmpty())
+					g.Expect(c.Config.DNS.SearchDomains).To(BeEmpty())
+				}
+			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+		})
+
+		It("should apply the default nameservers to GOSC with LinuxPrep based on the first interface", func() {
+			v1a2VM.Spec.Bootstrap = &vmopv1a2.VirtualMachineBootstrapSpec{
+				LinuxPrep: &vmopv1a2.VirtualMachineBootstrapLinuxPrepSpec{
+					HardwareClockIsUTC: new(true),
+					TimeZone:           "US/Pacific",
+				},
+			}
+			createAndVerifyVM(ctx, v1a2VM.DeepCopy())
+
+			waitForScopedAnnotation()
+
+			cm := &corev1.ConfigMap{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+				Namespace: config.GetVariable("VMOPNamespace"),
+				Name:      vspherecfg.NetworkConfigMapName,
+			}, cm)).To(Succeed())
+			defaultNameservers := strings.Fields(cm.Data[vspherecfg.NameserversKey])
+
+			// The default search domains are never applied by LinuxPrep.
+			// Only the first interface is considered, even when another
+			// interface uses DHCP.
+			By("Verifying the global nameservers are the defaults only when the first interface is static with a gateway")
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm.Status.Network).NotTo(BeNil())
+				g.Expect(vm.Status.Network.Config).NotTo(BeNil())
+				nc := vm.Status.Network.Config
+
+				// The primary interface is the first interface when it is
+				// static and has a gateway.
+				primaryFound := false
+				var ipv4, ipv6 bool
+				if len(nc.Interfaces) > 0 {
+					if ip := nc.Interfaces[0].IP; ip != nil && ip.DHCP == nil &&
+						len(ip.Addresses) > 0 && (ip.Gateway4 != "" || ip.Gateway6 != "") {
+						primaryFound = true
+						ipv4, ipv6 = ip.Gateway4 != "", ip.Gateway6 != ""
+					}
+				}
+
+				var actualNS, actualSD []string
+				if nc.DNS != nil {
+					actualNS, actualSD = nc.DNS.Nameservers, nc.DNS.SearchDomains
+				}
+				g.Expect(actualSD).To(BeEmpty())
+				if !primaryFound {
+					g.Expect(actualNS).To(BeEmpty())
+				} else {
+					g.Expect(actualNS).To(equalOrEmpty(filterNameserversByFamily(defaultNameservers, ipv4, ipv6)))
+				}
+			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
 		})
 	})
 

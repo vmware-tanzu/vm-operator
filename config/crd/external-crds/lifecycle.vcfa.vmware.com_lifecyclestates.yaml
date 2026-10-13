@@ -1,0 +1,249 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: lifecyclestates.lifecycle.vcfa.vmware.com
+spec:
+  group: lifecycle.vcfa.vmware.com
+  names:
+    kind: LifecycleState
+    listKind: LifecycleStateList
+    plural: lifecyclestates
+    shortNames:
+    - lstate
+    singular: lifecyclestate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Target kind from labels
+      jsonPath: .metadata.labels['lifecycle\.vcfa\.vmware\.com/target-kind']
+      name: Target
+      type: string
+    - description: Number of stages tracked in status
+      jsonPath: .status.stages[*].name
+      name: Stages
+      priority: 1
+      type: integer
+    - description: Time since creation
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          LifecycleState is the Schema for the lifecyclestates API.
+
+          Target identity is expressed via metadata: the owning workload is
+          referenced by metadata.ownerReferences (binding) and by the
+          metadata.labels[lifecycle.vcfa.vmware.com/target-group|target-kind]
+          selectors (indexing). LifecycleState has no spec.target field.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              LifecycleStateSpec is the desired stage-level configuration of a
+              LifecycleState. It carries no target identity; see the type comment
+              on LifecycleState for how the target is referenced.
+            properties:
+              stages:
+                items:
+                  description: |-
+                    StageSpec captures user-controlled intent for a single stage in the
+                    workflow: the hook set (indirectly, via LifecycleHook resources that
+                    target this stage) and the pause/resume switches honored by the
+                    LifecycleState controller.
+
+                    WorkflowPaused and WorkflowResumed encode a two-step handshake that
+                    allows a user to resume a paused workflow without racing the
+                    controller. Legal steady-state combinations are:
+
+                      - {Paused=false, Resumed=false}: default; the stage is advancing or
+                        has not yet been reached. This is the ONLY legal combination at
+                        the moment a stage is introduced into spec.stages (CREATE of the
+                        LifecycleState, or a stage added to spec.stages at UPDATE).
+                        WorkflowPaused is controller-managed; WorkflowResumed is only
+                        meaningful as an acknowledgement of an existing pause, so neither
+                        may be pre-set at introduction.
+                      - {Paused=true,  Resumed=false}: controller has paused at this
+                        stage; the user has not yet acknowledged.
+                      - {Paused=false, Resumed=true}:  user requests resume. This is the
+                        handshake step: the user clears Paused and sets Resumed. It is
+                        only valid as a transition from {Paused=true, Resumed=false} (or
+                        idempotent re-apply from the same {false, true}); introducing a
+                        stage in this combination is rejected.
+                      - {Paused=true,  Resumed=true}:  invalid and rejected by the
+                        validating webhook.
+
+                    Clearing Paused=true -> false directly (without also setting
+                    Resumed=true) is only allowed when HooksReady=True; otherwise the
+                    pause-cancel guard rejects the transition to prevent silent unblock.
+                    The full validation lives in v1alpha1.ValidateStageHandshake.
+                  properties:
+                    name:
+                      type: string
+                    workflowPaused:
+                      type: boolean
+                    workflowResumed:
+                      type: boolean
+                  required:
+                  - name
+                  - workflowPaused
+                  - workflowResumed
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            type: object
+          status:
+            description: |-
+              LifecycleStateStatus is the controller-maintained view of the
+              workflow. It is written exclusively by the LifecycleState controller
+              via the status subresource.
+            properties:
+              stages:
+                items:
+                  description: |-
+                    StageStatus summarizes progress for a single stage: the aggregate
+                    Conditions (WorkflowPaused, HooksReady) and the per-hook state map.
+                  properties:
+                    conditions:
+                      items:
+                        description: Condition contains details for one aspect of
+                          the current state of this API Resource.
+                        properties:
+                          lastTransitionTime:
+                            description: |-
+                              lastTransitionTime is the last time the condition transitioned from one status to another.
+                              This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                            format: date-time
+                            type: string
+                          message:
+                            description: |-
+                              message is a human readable message indicating details about the transition.
+                              This may be an empty string.
+                            maxLength: 32768
+                            type: string
+                          observedGeneration:
+                            description: |-
+                              observedGeneration represents the .metadata.generation that the condition was set based upon.
+                              For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                              with respect to the current state of the instance.
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          reason:
+                            description: |-
+                              reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                              Producers of specific condition types may define expected values and meanings for this field,
+                              and whether the values are considered a guaranteed API.
+                              The value should be a CamelCase string.
+                              This field may not be empty.
+                            maxLength: 1024
+                            minLength: 1
+                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                            type: string
+                          status:
+                            description: status of the condition, one of True, False,
+                              Unknown.
+                            enum:
+                            - "True"
+                            - "False"
+                            - Unknown
+                            type: string
+                          type:
+                            description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                            maxLength: 316
+                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                            type: string
+                        required:
+                        - lastTransitionTime
+                        - message
+                        - reason
+                        - status
+                        - type
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - type
+                      x-kubernetes-list-type: map
+                    hooks:
+                      items:
+                        description: |-
+                          HookStatus is the controller-maintained status of a single hook
+                          entry within a stage.
+                        properties:
+                          lastTransitionTime:
+                            format: date-time
+                            type: string
+                          lifecycleHookRef:
+                            type: string
+                          lifecycleHookUID:
+                            description: |-
+                              UID is a type that holds unique ID values, including UUIDs.  Because we
+                              don't ONLY use UUIDs, this is an alias to string.  Being a type captures
+                              intent and helps make sure that UIDs and names do not get conflated.
+                            type: string
+                          message:
+                            type: string
+                          ownedBy:
+                            description: |-
+                              OwnedBy is the identity of the hook creator (copied from the
+                              LifecycleHook's created-by annotation at initialization time).
+                              Immutable after set.
+                            type: string
+                          state:
+                            description: |-
+                              HookState is the lifecycle state of a single hook entry within a
+                              stage. The state machine is Pending -> InProgress -> (Succeeded|Failed).
+                            enum:
+                            - Pending
+                            - InProgress
+                            - Succeeded
+                            - Failed
+                            type: string
+                        required:
+                        - lastTransitionTime
+                        - lifecycleHookRef
+                        - lifecycleHookUID
+                        - ownedBy
+                        - state
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - lifecycleHookRef
+                      x-kubernetes-list-type: map
+                    name:
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

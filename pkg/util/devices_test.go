@@ -9,6 +9,8 @@ import (
 	. "github.com/onsi/gomega"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -895,4 +897,129 @@ var _ = Describe("GetVolumeSharingModeFromDiskSharing", func() {
 			true,
 		),
 	)
+})
+
+var _ = Describe("Boot disk helpers", func() {
+	const gi = int64(1024 * 1024 * 1024)
+
+	newDisk := func(key int32, capacity int64, hasParent bool) *vimtypes.VirtualDisk {
+		b := &vimtypes.VirtualDiskFlatVer2BackingInfo{}
+		if hasParent {
+			b.Parent = &vimtypes.VirtualDiskFlatVer2BackingInfo{}
+		}
+		return &vimtypes.VirtualDisk{
+			VirtualDevice:   vimtypes.VirtualDevice{Key: key, Backing: b},
+			CapacityInBytes: capacity,
+		}
+	}
+
+	var vm *vmopv1.VirtualMachine
+
+	BeforeEach(func() {
+		q := resource.MustParse("20Gi")
+		vm = &vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Advanced: &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: &q,
+				},
+			},
+		}
+	})
+
+	Context("GetRequestedBootDiskCapacity", func() {
+		It("should return the capacity", func() {
+			Expect(util.GetRequestedBootDiskCapacity(vm)).To(Equal(20 * gi))
+		})
+		It("should return zero if not set", func() {
+			vm.Spec.Advanced.BootDiskCapacity = nil
+			Expect(util.GetRequestedBootDiskCapacity(vm)).To(BeZero())
+			vm.Spec.Advanced = nil
+			Expect(util.GetRequestedBootDiskCapacity(vm)).To(BeZero())
+		})
+		It("should return zero for a VM with CD-ROMs", func() {
+			vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				Cdrom: []vmopv1.VirtualMachineCdromSpec{{Name: "cdrom1"}},
+			}
+			Expect(util.GetRequestedBootDiskCapacity(vm)).To(BeZero())
+		})
+	})
+
+	Context("GetDiskCapacityInBytes", func() {
+		It("should fall back to the capacity in KB", func() {
+			Expect(util.GetDiskCapacityInBytes(
+				&vimtypes.VirtualDisk{CapacityInKB: 1024})).To(Equal(int64(1024 * 1024)))
+		})
+	})
+
+	Context("IsLinkedCloneDisk", func() {
+		It("should be false for a disk without a parent", func() {
+			Expect(util.IsLinkedCloneDisk(newDisk(1, gi, false), nil)).To(BeFalse())
+		})
+		It("should be true for a disk with a parent", func() {
+			Expect(util.IsLinkedCloneDisk(newDisk(1, gi, true), nil)).To(BeTrue())
+		})
+		It("should be false for a disk that is part of a snapshot", func() {
+			layout := &vimtypes.VirtualMachineFileLayoutEx{
+				Snapshot: []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+					{Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{{Key: 1}}},
+				},
+			}
+			Expect(util.IsLinkedCloneDisk(newDisk(1, gi, true), layout)).To(BeFalse())
+		})
+	})
+
+	Context("GetBootDiskDeviceChange", func() {
+		change := func(d vimtypes.BaseVirtualDevice) vimtypes.BaseVirtualDeviceConfigSpec {
+			return &vimtypes.VirtualDeviceConfigSpec{Device: d}
+		}
+
+		It("should return the index of the first disk", func() {
+			changes := []vimtypes.BaseVirtualDeviceConfigSpec{
+				change(&vimtypes.VirtualLsiLogicController{}),
+				change(newDisk(1, gi, false)),
+				change(newDisk(2, gi, false)),
+			}
+			Expect(util.GetBootDiskDeviceChange(changes)).To(Equal(1))
+		})
+		It("should return -1 if there is no disk", func() {
+			changes := []vimtypes.BaseVirtualDeviceConfigSpec{
+				change(&vimtypes.VirtualLsiLogicController{}),
+			}
+			Expect(util.GetBootDiskDeviceChange(changes)).To(Equal(-1))
+		})
+		It("should return -1 if there are no changes", func() {
+			Expect(util.GetBootDiskDeviceChange(nil)).To(Equal(-1))
+		})
+	})
+
+	Context("GetBootDiskAwaitingPromotion", func() {
+		var devices []vimtypes.BaseVirtualDevice
+
+		It("should return the first disk if it is a linked clone to extend", func() {
+			boot := newDisk(1, 10*gi, true)
+			devices = []vimtypes.BaseVirtualDevice{
+				&vimtypes.VirtualLsiLogicController{}, boot, newDisk(2, gi, true)}
+			Expect(util.GetBootDiskAwaitingPromotion(vm, devices, nil)).To(BeIdenticalTo(boot))
+		})
+		It("should return nil if the capacity is not larger", func() {
+			devices = []vimtypes.BaseVirtualDevice{newDisk(1, 20*gi, true)}
+			Expect(util.GetBootDiskAwaitingPromotion(vm, devices, nil)).To(BeNil())
+		})
+		It("should return nil if the disk has no parent", func() {
+			devices = []vimtypes.BaseVirtualDevice{newDisk(1, 10*gi, false)}
+			Expect(util.GetBootDiskAwaitingPromotion(vm, devices, nil)).To(BeNil())
+		})
+		It("should return nil if the boot disk is part of a snapshot", func() {
+			devices = []vimtypes.BaseVirtualDevice{newDisk(1, 10*gi, true)}
+			layout := &vimtypes.VirtualMachineFileLayoutEx{
+				Snapshot: []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+					{Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{{Key: 1}}},
+				},
+			}
+			Expect(util.GetBootDiskAwaitingPromotion(vm, devices, layout)).To(BeNil())
+		})
+		It("should return nil if there are no disks", func() {
+			Expect(util.GetBootDiskAwaitingPromotion(vm, nil, nil)).To(BeNil())
+		})
+	})
 })

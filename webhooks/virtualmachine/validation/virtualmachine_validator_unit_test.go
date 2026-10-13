@@ -8517,6 +8517,60 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
+		Entry("allow spec.advanced.bootDiskCapacity to be raised",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{BootDiskCapacity: ptr.To(resource.MustParse("10Gi"))}
+					ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{BootDiskCapacity: ptr.To(resource.MustParse("20Gi"))}
+				},
+				expectAllowed: true,
+			},
+		),
+
+		Entry("allow spec.advanced.bootDiskCapacity to be set",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{BootDiskCapacity: ptr.To(resource.MustParse("20Gi"))}
+				},
+				expectAllowed: true,
+			},
+		),
+
+		Entry("allow spec.advanced.bootDiskCapacity to stay the same",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{BootDiskCapacity: ptr.To(resource.MustParse("20Gi"))}
+					ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{BootDiskCapacity: ptr.To(resource.MustParse("20Gi"))}
+				},
+				expectAllowed: true,
+			},
+		),
+
+		Entry("disallow spec.advanced.bootDiskCapacity to be lowered",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{BootDiskCapacity: ptr.To(resource.MustParse("20Gi"))}
+					ctx.vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{BootDiskCapacity: ptr.To(resource.MustParse("10Gi"))}
+				},
+				expectAllowed: false,
+				validate: doValidateWithMsg(
+					`spec.advanced.bootDiskCapacity: Invalid value: "10Gi": cannot be lower than the current value 20Gi`,
+				),
+			},
+		),
+
+		Entry("disallow spec.advanced.bootDiskCapacity to be removed",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{BootDiskCapacity: ptr.To(resource.MustParse("20Gi"))}
+				},
+				expectAllowed: false,
+				validate: doValidateWithMsg(
+					`spec.advanced.bootDiskCapacity: Forbidden: cannot be removed once set`,
+				),
+			},
+		),
+
 		Entry("disallow spec.advanced slice vmx field change when TelcoVMServiceAPI and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {

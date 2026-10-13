@@ -355,6 +355,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, probeFieldErrs...)
 
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateBootDiskCapacityOnUpdate(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateComputeConfig(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnUpdate(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, oldVM)...)
@@ -2180,6 +2181,40 @@ func (v validator) validateAdvanced(
 	}
 
 	return allErrs
+}
+
+// validateBootDiskCapacityOnUpdate rejects an update that lowers or removes
+// spec.advanced.bootDiskCapacity once it is set. The controller can raise the
+// value to the size of the boot disk PVC, so the field means "at least this
+// size".
+func (v validator) validateBootDiskCapacityOnUpdate(
+	_ *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	if oldVM.Spec.Advanced == nil ||
+		oldVM.Spec.Advanced.BootDiskCapacity == nil ||
+		oldVM.Spec.Advanced.BootDiskCapacity.IsZero() {
+
+		return nil
+	}
+
+	var (
+		oldCapacity = oldVM.Spec.Advanced.BootDiskCapacity
+		path        = field.NewPath("spec", "advanced", "bootDiskCapacity")
+	)
+
+	if vm.Spec.Advanced == nil || vm.Spec.Advanced.BootDiskCapacity == nil {
+		return field.ErrorList{field.Forbidden(path,
+			"cannot be removed once set")}
+	}
+
+	if vm.Spec.Advanced.BootDiskCapacity.Cmp(*oldCapacity) < 0 {
+		return field.ErrorList{field.Invalid(path,
+			vm.Spec.Advanced.BootDiskCapacity.String(),
+			fmt.Sprintf("cannot be lower than the current value %s", oldCapacity.String()))}
+	}
+
+	return nil
 }
 
 // validateAdvancedExtraConfig validates spec.advanced.extraConfig keys.

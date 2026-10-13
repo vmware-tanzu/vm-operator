@@ -5,17 +5,24 @@
 package validation_test
 
 import (
+	"os"
+	"path/filepath"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	rbacvalidation "k8s.io/component-helpers/auth/rbac/validation"
+	"sigs.k8s.io/yaml"
 
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	testlabels "github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 const (
@@ -23,19 +30,19 @@ const (
 	dummyKey       = "team"
 	dummyValue     = "blue"
 
-	// devOpsUser is an arbitrary, non-privileged, non-allow-listed username
-	// used to exercise the "must be denied" side of the privileged check.
+	// devOpsUser is an arbitrary non-privileged username used to verify
+	// that admission leaves authorization to RBAC.
 	devOpsUser = "sso:devops-user"
 
-	// otherKubeSystemServiceAccount is a kube-system service account that is
-	// NOT on the allow-list. It must still be denied.
+	// otherKubeSystemServiceAccount is an arbitrary control-plane identity.
 	otherKubeSystemServiceAccount = "system:serviceaccount:kube-system:some-other-controller"
 
-	allowListedGC        = "system:serviceaccount:kube-system:generic-garbage-collector"
-	allowListedNamespace = "system:serviceaccount:kube-system:namespace-controller"
+	garbageCollector    = "system:serviceaccount:kube-system:generic-garbage-collector"
+	namespaceController = "system:serviceaccount:kube-system:namespace-controller"
 )
 
 func unitTests() {
+	Describe("RBAC manifests", Label(testlabels.API), unitTestsTagRBAC)
 	Describe(
 		"Create",
 		Label(
@@ -173,25 +180,30 @@ func unitTestsValidateTagCreate() {
 	})
 
 	DescribeTable("create table", validateCreate,
-		Entry("privileged account, valid label key/value/derived-name should allow",
+		Entry("valid label key/value/derived-name should allow",
 			createArgs{isPrivileged: true}, true, ""),
-		Entry("privileged account, empty value is permitted should allow",
+		Entry("empty value is permitted should allow",
 			createArgs{isPrivileged: true, emptyValue: true}, true, ""),
-		Entry("privileged account, empty/invalid label key should deny",
+		Entry("empty/invalid label key should deny",
 			createArgs{isPrivileged: true, invalidKey: true}, false,
 			"spec.key"),
-		Entry("privileged account, invalid label value should deny",
+		Entry("invalid label value should deny",
 			createArgs{isPrivileged: true, invalidValue: true}, false,
 			"spec.value"),
-		Entry("privileged account, name not matching derived name should deny",
+		Entry("name not matching derived name should deny",
 			createArgs{isPrivileged: true, wrongName: true}, false,
 			"metadata.name"),
-		Entry("DevOps user, otherwise-valid spec should deny",
-			createArgs{username: devOpsUser}, false,
-			"only privileged users may CREATE a Tag"),
-		Entry("DevOps user, invalid spec should still deny as unprivileged",
+		Entry("generic-garbage-collector, valid spec is allowed by admission",
+			createArgs{username: garbageCollector}, true, ""),
+		Entry("namespace-controller, valid spec is allowed by admission",
+			createArgs{username: namespaceController}, true, ""),
+		Entry("other kube-system service account is allowed by admission",
+			createArgs{username: otherKubeSystemServiceAccount}, true, ""),
+		Entry("DevOps user, valid spec is allowed by admission",
+			createArgs{username: devOpsUser}, true, ""),
+		Entry("non-privileged account with an invalid spec is denied",
 			createArgs{username: devOpsUser, invalidKey: true}, false,
-			"only privileged users may CREATE a Tag"),
+			"spec.key"),
 	)
 }
 
@@ -248,24 +260,22 @@ func unitTestsValidateTagUpdate() {
 	})
 
 	DescribeTable("update table", validateUpdate,
-		Entry("privileged account, label key/value unchanged should allow",
+		Entry("label key/value unchanged should allow",
 			updateArgs{isPrivileged: true}, true, ""),
-		Entry("privileged account, invalid label key on update should deny",
+		Entry("invalid label key on update should deny",
 			updateArgs{isPrivileged: true, invalidKey: true}, false,
 			"spec.key"),
-		Entry("privileged account, invalid value on update should deny",
+		Entry("invalid value on update should deny",
 			updateArgs{isPrivileged: true, invalidValue: true}, false,
 			"spec.value"),
-		Entry("DevOps user, otherwise-valid update should deny",
-			updateArgs{username: devOpsUser}, false,
-			"only privileged users may UPDATE a Tag"),
-		Entry("generic-garbage-collector, otherwise-valid update should allow (allow-listed)",
-			updateArgs{username: allowListedGC}, true, ""),
-		Entry("namespace-controller, otherwise-valid update should allow (allow-listed)",
-			updateArgs{username: allowListedNamespace}, true, ""),
-		Entry("arbitrary other kube-system service account should still deny",
-			updateArgs{username: otherKubeSystemServiceAccount}, false,
-			"only privileged users may UPDATE a Tag"),
+		Entry("DevOps user, valid update is allowed by admission",
+			updateArgs{username: devOpsUser}, true, ""),
+		Entry("generic-garbage-collector, valid update is allowed by admission",
+			updateArgs{username: garbageCollector}, true, ""),
+		Entry("namespace-controller, valid update is allowed by admission",
+			updateArgs{username: namespaceController}, true, ""),
+		Entry("other kube-system service account is allowed by admission",
+			updateArgs{username: otherKubeSystemServiceAccount}, true, ""),
 	)
 }
 
@@ -311,15 +321,70 @@ func unitTestsValidateTagDelete() {
 	DescribeTable("delete table", validateDelete,
 		Entry("privileged account should allow",
 			deleteArgs{isPrivileged: true}, true, ""),
-		Entry("DevOps user should deny",
-			deleteArgs{username: devOpsUser}, false,
-			"only privileged users may DELETE a Tag"),
-		Entry("generic-garbage-collector should allow (allow-listed)",
-			deleteArgs{username: allowListedGC}, true, ""),
-		Entry("namespace-controller should allow (allow-listed)",
-			deleteArgs{username: allowListedNamespace}, true, ""),
-		Entry("arbitrary other kube-system service account should still deny",
-			deleteArgs{username: otherKubeSystemServiceAccount}, false,
-			"only privileged users may DELETE a Tag"),
+		Entry("DevOps user is allowed by admission",
+			deleteArgs{username: devOpsUser}, true, ""),
+		Entry("generic-garbage-collector is allowed by admission",
+			deleteArgs{username: garbageCollector}, true, ""),
+		Entry("namespace-controller is allowed by admission",
+			deleteArgs{username: namespaceController}, true, ""),
+		Entry("other kube-system service account is allowed by admission",
+			deleteArgs{username: otherKubeSystemServiceAccount}, true, ""),
 	)
+}
+
+func unitTestsTagRBAC() {
+	It("grants Tag access to the bound manager role and excludes tenant roles", func() {
+		rbacDir := filepath.Join(testutil.GetRootDirOrDie(), "config", "rbac")
+		readRole := func(name string) rbacv1.ClusterRole {
+			data, err := os.ReadFile(filepath.Join(rbacDir, name))
+			Expect(err).ToNot(HaveOccurred())
+			var role rbacv1.ClusterRole
+			Expect(yaml.Unmarshal(data, &role)).To(Succeed())
+			return role
+		}
+
+		managerRole := readRole("role.yaml")
+		data, err := os.ReadFile(filepath.Join(rbacDir, "role_binding.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+		var binding rbacv1.ClusterRoleBinding
+		Expect(yaml.Unmarshal(data, &binding)).To(Succeed())
+		Expect(binding.RoleRef).To(Equal(rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     managerRole.Name,
+		}))
+		Expect(binding.Subjects).To(ContainElement(rbacv1.Subject{
+			Kind: "ServiceAccount", Name: "vmoperator-service-account", Namespace: "system",
+		}))
+
+		tenantPaths, err := filepath.Glob(filepath.Join(rbacDir, "*_editor_role.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+		viewerPaths, err := filepath.Glob(filepath.Join(rbacDir, "*_viewer_role.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+		tenantPaths = append(tenantPaths, viewerPaths...)
+		Expect(tenantPaths).ToNot(BeEmpty())
+		var tenantRules []rbacv1.PolicyRule
+		for _, path := range tenantPaths {
+			role := readRole(filepath.Base(path))
+			tenantRules = append(tenantRules, role.Rules...)
+		}
+
+		for _, resource := range []string{"tags", "tags/status"} {
+			for _, verb := range []string{"create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"} {
+				rules := []rbacv1.PolicyRule{{
+					APIGroups: []string{vspherepolv1.GroupVersion.Group},
+					Resources: []string{resource},
+					Verbs:     []string{verb},
+				}}
+				allowed, _ := rbacvalidation.Covers(tenantRules, rules)
+				Expect(allowed).To(BeFalse(), "tenant roles must not grant %s on %s", verb, resource)
+
+				if resource == "tags" && verb != "deletecollection" ||
+					resource == "tags/status" && (verb == "get" || verb == "patch" || verb == "update") {
+					allowed, _ = rbacvalidation.Covers(managerRole.Rules, rules)
+					Expect(allowed).To(BeTrue(), "manager role must grant %s on %s", verb, resource)
+				}
+			}
+		}
+	})
 }

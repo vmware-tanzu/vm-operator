@@ -22,6 +22,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -51,6 +52,7 @@ import (
 	vmconfnetworkextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/networkextraconfig"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	vmconfvirtualcontroller "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
+	vmconfvmtags "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/vmtags"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
 
@@ -1386,6 +1388,22 @@ func reconcileVSpherePolicies(
 	return nil
 }
 
+// reconcileVMTagCRs ensures a Tag resource exists for every label
+// key/value pair this VM's own spec.affinity references, whether or not
+// the VM itself carries that label, and reconciles this VM's owner
+// reference on those Tags. It returns the owned Tag objects for
+// reconcileVMTagSpecs, since this pass's cached client cannot yet observe
+// a Create issued here.
+func reconcileVMTagCRs(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) ([]vspherepolv1.Tag, error) {
+
+	pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling VM Tag CRs")
+
+	return vmconfvmtags.ReconcileTagCRs(ctx, k8sClient, vm)
+}
+
 // reconcileVirtualControllers check if VM need virtual controller changes,
 // If yes, update configSpec.DeviceChange.
 func reconcileVirtualControllers(
@@ -1569,6 +1587,16 @@ func doReconfigure(
 			vcVM,
 			moVM,
 			&configSpec); err != nil {
+
+			return err
+		}
+	}
+
+	if pkgcfg.FromContext(ctx).Features.TaggingAPI {
+		if _, err := reconcileVMTagCRs(
+			ctx,
+			k8sClient,
+			vm); err != nil {
 
 			return err
 		}

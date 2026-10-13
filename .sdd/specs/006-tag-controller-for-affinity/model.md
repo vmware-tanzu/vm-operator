@@ -187,7 +187,7 @@ Neither predicate is a subset or superset of the other in general: a VM can own 
 2. **Ownership add**: a VM adds **only its own** owner-reference entry, for every pair its own `spec.affinity` references — carriage is not required.
 3. **Ownership remove**: a VM removes **only its own** entry when it is being deleted (before its finalizer is released). Because `spec.affinity` is immutable, this is the only trigger: a live VM's set of referenced pairs cannot shrink, so its ownership cannot be lost by relabeling.
 4. **Concurrent ownership writes**: every ownership write is a patch built with `client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})`, skipped entirely when `apiequality.Semantic.DeepEqual` reports no change to `ownerReferences`. A conflict is returned and retried by the next reconcile. A plain merge patch is **not** acceptable: `ownerReferences` is a list field and a merge patch would replace it wholesale, silently dropping a concurrent writer's entry.
-5. **Deletion at zero owners**: the `Tag` controller `Delete`s the `Tag` when it observes an empty `ownerReferences` list, preconditioned on the `ResourceVersion` it read. `Tag` carries no finalizer (D10), so this delete is atomic — there is no persisted `deletionTimestamp` state to observe, only the resulting delete event (invariant 6). The precondition is what keeps this safe: if a VM concurrently added an owner reference after this reconcile's `Get`, the `Delete` fails with a conflict instead of destroying the newly-owned object, and the next reconcile re-reads the fresh state and skips deletion. Ordinary owner-reference garbage collection is a backstop that covers only the "all owner VMs deleted" case — it does **not** delete an object whose owner list was emptied while those owners still exist. See [`research.md`](./research.md) "Owner-reference garbage collection", and V6's allow-list above for what that backstop needs from admission.
+5. **Deletion at zero owners**: the `Tag` controller `Delete`s the `Tag` when it observes an empty `ownerReferences` list, preconditioned on the `ResourceVersion` it read. `Tag` carries no finalizer (D10), so this delete is atomic — there is no persisted `deletionTimestamp` state to observe, only the resulting delete event (invariant 6). The precondition is what keeps this safe: if a VM concurrently added an owner reference after this reconcile's `Get`, the `Delete` fails with a conflict instead of destroying the newly-owned object, and the next reconcile re-reads the fresh state and skips deletion. Ordinary owner-reference garbage collection is a backstop that covers only the "all owner VMs deleted" case — it does **not** delete an object whose owner list was emptied while those owners still exist. See [`research.md`](./research.md) "Owner-reference garbage collection", and the RBAC requirements below for cleanup authorization.
 6. **Deletion fan-out**: every VM in the namespace carrying `spec.key=spec.value` is enqueued by the VM controller's `Tag` watch — via the `metadata.labels.keyValue` index, not a namespace scan — so label-only VMs drop the vCenter tag (spec G5). The single delete event is sufficient: a woken VM's desired-set computation no longer finds a matching `Tag` (`Get` returns `NotFound`), so it emits `TagSpec{remove}`. The `Tag` controller itself enqueues nothing on any path (D16, D19).
 7. **Re-create after deletion**: while a `Tag` with the derived name does not exist — because it was just deleted, or has not yet been created — a VM that needs it creates a fresh one rather than silently skipping tagging; the create is retried until it succeeds (spec G12).
 8. **Status ownership**: only the `Tag` controller writes `status`, via the status subresource, with the same optimistic-lock-and-skip-if-unchanged discipline.
@@ -210,34 +210,15 @@ There is no condition for a label-mirror failure. Mirror correction writes `meta
 
 ## Admission rules (validating webhook)
 
-Located at `webhooks/vspherepolicy/tag/validation/tag_validator.go` (D8). Verbs: `CREATE`, `UPDATE`, `DELETE`.
+Located at `webhooks/vspherepolicy/tag/validation/tag_validator.go` (D8). Verbs: `CREATE`, `UPDATE`. Authorization for all operations is enforced by RBAC.
 
 | # | Rule | Operation | Error |
 |---|------|-----------|-------|
 | V1 | `spec.key` MUST be non-empty and a valid Kubernetes label key | CREATE, UPDATE | `field.Invalid(spec.key, …)` |
 | V2 | `spec.value` MUST be a valid Kubernetes label value (empty permitted) | CREATE, UPDATE | `field.Invalid(spec.value, …)` |
 | V5 | `metadata.name` MUST equal the derived name for `spec.key`/`spec.value` | CREATE | `field.Invalid(metadata.name, …)` |
-| V6 | Only privileged accounts, or the system service accounts allow-listed below, may create, update, or delete a `Tag` | CREATE, UPDATE, DELETE | `field.Forbidden(…, "only privileged users may …")` |
 
-V6 uses the existing `pkgctx.WebhookRequestContext.IsPrivilegedAccount` mechanism, which is what admits the VM Operator service account and CSP admins while rejecting DevOps users (spec G9, US4 scenarios 3-4).
-
-#### V6's system-account allow-list
-
-`IsPrivilegedAccount` (`pkg/builder/auth.go:42`) matches the VM Operator service account, `system:masters`, `kubernetes-admin`, and `PRIVILEGED_USERS`. Two Kubernetes control-plane clients match none of them and **must** be allow-listed, checked before the privileged test:
-
-```go
-var allowedSystemAccountsForTag = map[string]struct{}{
-    "system:serviceaccount:kube-system:generic-garbage-collector": {},
-    "system:serviceaccount:kube-system:namespace-controller":      {},
-}
-```
-
-- `generic-garbage-collector` needs **UPDATE** to prune a dangling owner reference left by a deleted VM, and **DELETE** for the all-owners-deleted backstop. Blocking the UPDATE is the more damaging of the two: a stale owner reference makes the `Tag` look owned forever, so the `Tag` controller's delete-at-zero-owners never fires either, leaving an orphaned `Tag` and a permanently stale vCenter tag on every label-only VM.
-- `namespace-controller` needs **DELETE** to tear down namespaced resources. Denying it leaves the namespace in `Terminating` indefinitely.
-
-This mirrors `webhooks/persistentvolumeclaim/validation/persistentvolumeclaim_validator.go:36-43`, the only other webhook in this repository that intercepts DELETE, which keeps an equivalent allow-list containing both of these accounts.
-
-The allow-list does not weaken spec G9 or US4 scenarios 3-4: a DevOps user is still rejected on CREATE, UPDATE and DELETE, and cannot impersonate a `kube-system` service account.
+The webhook validates object contents only. It performs no identity checks and is not registered for DELETE. See "RBAC" below for access control (spec G9, US4 scenario 3).
 
 Note on V3/V4: the fan-out predicate depends on them. Because `spec` cannot change and the mapper's `List` key is derived from `spec` alone, no UPDATE can change the answer — `Tag` carries no finalizer (D10), so deletion is a plain, atomic `Delete` rather than a `deletionTimestamp` transition, and the predicate accordingly admits only create and delete, filtering out the `Tag` controller's own status/label-mirror writes and the VM path's owner-reference patches (`plan.md` "Fan-out — the VM controller's `Tag` watch"). If V3/V4 were ever relaxed, that predicate must be revisited in the same change.
 
@@ -260,7 +241,9 @@ The VM controller's role needs write access to `Tag` (it creates them and patche
 
 No new `virtualmachines` marker is needed. The fan-out `List` runs in the VM controller's mapper, and that controller already holds `virtualmachines` read; the `Tag` controller reads only its own object. `make generate-manifests` regenerates `config/rbac/role.yaml`.
 
-DevOps-user-facing RBAC is deliberately **not** extended: no role in `config/` grants `Tag` access to namespace users, and admission rule V6 backs that up.
+RBAC is the authorization boundary. `config/rbac/role.yaml` grants Tag access to the manager role, bound to the VM Operator service account by `config/rbac/role_binding.yaml`. DevOps-user-facing roles are deliberately **not** extended: no tenant editor/viewer role in `config/rbac/` grants access to `tags` or `tags/status`.
+
+Supervisor roles and bindings managed outside this repository must preserve this boundary: tenant roles must not grant Tag writes through explicit or wildcard rules. Administrators may grant Tag access through RBAC; `PRIVILEGED_USERS` is not an authorization mechanism for this API. Kubernetes-managed cleanup roles must retain the garbage collector's UPDATE/PATCH/DELETE permissions and the namespace controller's DELETE permissions. No webhook allow-list or additional service-account bindings are needed in this repository.
 
 ---
 

@@ -94,6 +94,12 @@ func (r *Reconciler) Reconcile(
 		return ctrl.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
 
+	if !obj.DeletionTimestamp.IsZero() {
+		// This controller owns no finalizer. Leave terminating Tags untouched
+		// while garbage collection or another finalizer owner completes deletion.
+		return ctrl.Result{}, nil
+	}
+
 	patchHelper, err := patch.NewHelper(&obj, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf(
@@ -139,6 +145,7 @@ func (r *Reconciler) ReconcileNormal(
 		if obj.Labels == nil {
 			obj.Labels = make(map[string]string, 1)
 		}
+		// Overwrite any stale label value for this key with the value from spec.
 		obj.Labels[obj.Spec.Key] = obj.Spec.Value
 	}
 

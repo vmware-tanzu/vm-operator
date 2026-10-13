@@ -143,10 +143,26 @@ In scoped mode, `status.network.config.dns` reports the global DNS described abo
   - provider nameservers: Cloud-Init (instead of default/VM nameservers, while VM-level and VKS default search domains remain independent), LinuxPrep (merged in interface order without duplicates, including DHCP; only VM-level search suffixes), Sysprep (per adapter, including DHCP; only VM-level search suffixes), vAppConfig templates.
 - Capability tests extended for the new key.
 - Webhook annotation tests verify non-privileged create with either mode, addition, changes in both directions, and removal. Other admin-only annotations remain covered by their rejection tests.
-- E2E (`Label("experimental")` until run on a real Supervisor): with the capability activated,
-  - a new Cloud-Init VM is annotated `scoped`; in `guestinfo.metadata`, only a static first interface with a gateway carries the filtered default nameservers, no interface carries the default search domains (the VM is not TKG), and the global status block has no nameservers or search domains;
-  - a non-admin user can patch a Cloud-Init VM between `legacy` and `scoped` and remove the mode annotation; removal on the configured VM is followed by automatic `legacy` selection;
-  - a new LinuxPrep VM is annotated `scoped`, the global status block has no search domains, and reports the filtered default nameservers only when the first interface is static with a gateway, and otherwise reports none.
+
+### E2E coverage
+
+The existing capability-gated tests check Cloud-Init metadata/global status, LinuxPrep global status, and non-admin mode changes/removal with automatic legacy reselection. They use the available workload network and do not establish multi-NIC behavior or verify DNS inside the guest. Keep `Label("experimental")` on new or extended tests until validated on a real Supervisor.
+
+Prioritize these five scenarios with the capability already enabled:
+
+| Scenario | Setup and essential assertions |
+|---|---|
+| Legacy and scoped VMs coexist | Create a Cloud-Init VM with `vmoperator.vmware.com/dns-defaults: legacy` and an equivalent VM without the annotation. Verify legacy output for the first VM and automatic `scoped` selection with scoped output for the second. Subsequent unchanged reconciles preserve each VM's mode, metadata, bootstrap hash, and guest DNS. |
+| Cloud-Init defaults on a multi-NIC VKS node | Two static interfaces, the first with an IPv4 gateway, no VM/interface/provider DNS, and mixed IPv4/IPv6 Supervisor nameservers. Only the first interface receives Supervisor nameservers and search domains, and only IPv4 nameservers survive filtering. |
+| Cloud-Init VM-level DNS preserves DHCP DNS | One IPv4 static interface and one DHCP interface; VM-level IPv4/IPv6 nameservers and search domains supplied. Only the static interface receives VM-level DNS, with nameservers filtered to IPv4. The DHCP interface retains its leased DNS, and neither interface receives Supervisor defaults. |
+| LinuxPrep respects the first interface | With DHCP first and static second, explicit LinuxPrep supplies no Supervisor nameservers and preserves DHCP DNS. With static first and DHCP second, implicit LinuxPrep applies Supervisor nameservers filtered to the first interface's gateway families globally, overriding DHCP DNS as expected. Neither variant receives Supervisor search domains. Both omit VM-level and provider DNS. |
+| Windows receives VM-level DNS | Sysprep with an IPv4 static adapter, a DHCP adapter, VM-level IPv4/IPv6 nameservers, and VM-level search domains. Windows uses only the IPv4 VM-level nameservers on the static adapter; the DHCP adapter retains its leased DNS. The GOSC global nameserver list is empty, and the global suffix list contains only the VM-level search domains. |
+
+Use fixed two-interface fixtures with known, non-empty Supervisor and DHCP DNS values that can be distinguished from VM-level DNS. The coexistence pair should use two static interfaces so legacy and scoped outputs differ. An IPv4 workload network with mixed-family DNS inputs is sufficient for the family-filter assertions. Verify guest resolver settings and resolution of a known name, the generated Cloud-Init/GOSC configuration, and the corresponding global/interface DNS status. Cloud-Init status reports interface DNS and no global nameservers/search domains; LinuxPrep reports applied global DNS; Sysprep reports adapter nameservers and global search domains.
+
+Retain the non-admin mode-edit/removal test. Automatic legacy selection for already-configured VMs and the full precedence, family, RA, NoIPAM, and existing-guest marker combinations remain unit coverage. Capability activation against existing VMs can be exercised separately in upgrade testing.
+
+When SubnetPort ingestion lands, add a provider-path E2E proving that real `status.dnsResolverIPs` values reach a scoped Cloud-Init guest while VM-level search domains remain intact. The multi-NIC cases require a second workload network; Windows coverage also requires a suitable image and guest access.
 
 ## Rollout / migration
 

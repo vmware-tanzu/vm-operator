@@ -1022,6 +1022,68 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				tinyVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, "tiny-core-linux-complex-hw")
 			})
 
+			It("Should persist placement errors on root and child group members with conflicting zone affinity", func() {
+				By("Creating root and child groups with one VM each")
+				vmMemberNames = []string{vm1Name, vm2Name}
+				rootYAML := manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(
+					manifestbuilders.VirtualMachineGroupYaml{
+						Namespace: tmpNamespaceName,
+						Name:      vmgRootName,
+						BootOrder: []manifestbuilders.BootOrder{{Members: []vmopv1.GroupMember{
+							{Kind: vmKind, Name: vm1Name},
+							{Kind: vmgKind, Name: vmgChildName},
+						}}},
+					})
+				Expect(clusterProxy.CreateWithArgs(ctx, rootYAML)).To(Succeed())
+				childYAML := manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(
+					manifestbuilders.VirtualMachineGroupYaml{
+						Namespace: tmpNamespaceName,
+						Name:      vmgChildName,
+						GroupName: vmgRootName,
+						BootOrder: []manifestbuilders.BootOrder{{Members: []vmopv1.GroupMember{
+							{Kind: vmKind, Name: vm2Name},
+						}}},
+					})
+				Expect(clusterProxy.CreateWithArgs(ctx, childYAML)).To(Succeed())
+
+				By("Pinning the VMs to different zones while requiring zone affinity to each other")
+				appLabels := map[string]string{"app": vmgRootName}
+				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName,
+					[]zonePinnedVM{{Name: vm1Name, Zone: zones[0], Labels: appLabels, Affinity: requiredAffinity(zoneLabelKey, appLabels)}})
+				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgChildName, tinyVMIName,
+					[]zonePinnedVM{{Name: vm2Name, Zone: zones[1], Labels: appLabels, Affinity: requiredAffinity(zoneLabelKey, appLabels)}})
+
+				By("Verifying both groups persist member-specific placement failures")
+				Eventually(func(g Gomega) {
+					var membersWithFaults int
+					for _, member := range []struct{ groupName, vmName string }{
+						{vmgRootName, vm1Name},
+						{vmgChildName, vm2Name},
+					} {
+						ms, err := utils.GetVirtualMachineGroupMemberStatus(ctx, svClusterClient,
+							tmpNamespaceName, member.groupName, member.vmName, vmKind)
+						g.Expect(err).ToNot(HaveOccurred())
+						var placementCondition *metav1.Condition
+						for i := range ms.Conditions {
+							if ms.Conditions[i].Type == vmopv1.VirtualMachineGroupMemberConditionPlacementReady {
+								placementCondition = &ms.Conditions[i]
+							}
+						}
+						g.Expect(placementCondition).ToNot(BeNil())
+						g.Expect(placementCondition.Status).To(Equal(metav1.ConditionFalse))
+						g.Expect(placementCondition.Message).ToNot(BeEmpty())
+						if placementCondition.Reason == "PlacementFailed" {
+							membersWithFaults++
+							g.Expect(placementCondition.Message).To(ContainSubstring("VM " + member.vmName + ","))
+						} else {
+							g.Expect(placementCondition.Reason).To(Equal("GroupPlacementFailed"))
+							g.Expect(placementCondition.Message).To(Equal("group placement failed because another member could not be placed"))
+						}
+					}
+					g.Expect(membersWithFaults).To(BeNumerically(">", 0))
+				}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+			})
+
 			It("Should place group members in the distinct zones pinned via the topology zone label", func() {
 				vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
 				pinnedZones := make(map[string]string, len(vmMemberNames))

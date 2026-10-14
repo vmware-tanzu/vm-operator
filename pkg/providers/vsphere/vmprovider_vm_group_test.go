@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
@@ -384,6 +385,63 @@ func vmGroupTests() {
 					// Verify VM was created
 					Expect(vm.Status.UniqueID).ToNot(BeEmpty())
 				})
+			})
+
+			When("a VKS worker is pinned to a deleting zone", func() {
+				DescribeTable("preserves ordinary placement and group linkage",
+					func(fastDeploy, linked, hasPools bool) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.FastDeploy = fastDeploy
+						})
+						vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
+						Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+						if !linked {
+							vmGroup.Spec.BootOrder = nil
+							Expect(ctx.Client.Update(ctx, vmGroup)).To(Succeed())
+						}
+
+						zone := &topologyv1.Zone{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: zoneName}, zone)).To(Succeed())
+						Expect(zone.Spec.ManagedVMs.PoolMoIDs).ToNot(BeEmpty())
+						if !hasPools {
+							zone.Spec.ManagedVMs.PoolMoIDs = nil
+						}
+						zone.Finalizers = append(zone.Finalizers, "test")
+						Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
+						Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(zone), zone)).To(Succeed())
+						Expect(zone.DeletionTimestamp.IsZero()).To(BeFalse())
+
+						err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+						if !linked {
+							Expect(err).To(MatchError(ContainSubstring("VM is not linked to its group")))
+							Expect(vm.Status.UniqueID).To(BeEmpty())
+							return
+						}
+						if !hasPools {
+							Expect(err).To(HaveOccurred())
+							Expect(err).ToNot(MatchError(vsphere.ErrCreate))
+							Expect(vm.Status.UniqueID).To(BeEmpty())
+							return
+						}
+						Expect(err).To(MatchError(vsphere.ErrCreate))
+						Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+						Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+						Expect(vm.Labels[corev1.LabelTopologyZone]).To(Equal(zoneName))
+						vcVM, err := ctx.Finder.VirtualMachine(ctx, vm.Name)
+						Expect(err).ToNot(HaveOccurred())
+						pool, err := vcVM.ResourcePool(ctx)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(zone.Spec.ManagedVMs.PoolMoIDs).To(ContainElement(pool.Reference().Value))
+						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+					},
+					Entry("creates in the assigned zone without Fast Deploy", false, true, true),
+					Entry("creates in the assigned zone with Fast Deploy", true, true, true),
+					Entry("requires linkage without Fast Deploy", false, false, true),
+					Entry("requires linkage with Fast Deploy", true, false, true),
+					Entry("rejects a pool-less zone without Fast Deploy", false, true, false),
+					Entry("rejects a pool-less zone with Fast Deploy", true, true, false),
+				)
 			})
 
 			When("VM is not a VKS node", func() {

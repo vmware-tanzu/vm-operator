@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/simulator"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,6 +24,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -110,6 +112,63 @@ func vcSimPlacement() {
 	})
 
 	Describe("When WorkloadDomainIsolation capability enabled", func() {
+		It("should send pinned pools and zonal rules for standalone VM placement without CandidateVsphereZone", func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.FastDeploy = true
+				config.Features.VMPlacementPolicies = true
+				config.Features.VMAffinityDuringExecution = true
+				config.Features.VMHardAffinityDuringExecution = true
+			})
+			Expect(len(ctx.ZoneNames)).To(BeNumerically(">", 1))
+			zoneName := ctx.ZoneNames[0]
+			vm.Spec.GroupName = ""
+			vm.Labels[corev1.LabelTopologyZone] = zoneName
+			vm.Spec.Affinity = &vmopv1.AffinitySpec{
+				VMAffinity: &vmopv1.VMAffinitySpec{
+					RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+						TopologyKey:   corev1.LabelTopologyZone,
+						LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "db"}},
+					}},
+				},
+			}
+			placementSpec, err := virtualmachine.CreateConfigSpecForPlacement(vmCtx, configSpec, nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			zone := &topologyv1.Zone{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: zoneName}, zone)).To(Succeed())
+			Expect(zone.Spec.ManagedVMs.PoolMoIDs).ToNot(BeEmpty())
+			var expectedPools []vimtypes.ManagedObjectReference
+			for _, pool := range zone.Spec.ManagedVMs.PoolMoIDs {
+				expectedPools = append(expectedPools, vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: pool})
+			}
+
+			requests := make(chan vimtypes.PlaceVmsXClusterSpec, 1)
+			ctx.SimulatorContext().Map.Handler = func(
+				_ *simulator.Context,
+				m *simulator.Method) (mo.Reference, vimtypes.BaseMethodFault) {
+
+				if m.Name == "PlaceVmsXCluster" {
+					requests <- m.Body.(*vimtypes.PlaceVmsXCluster).PlacementSpec
+				}
+				return nil, nil
+			}
+			_, err = placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, placementSpec, constraints)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(requests).To(HaveLen(1), "standalone Fast Deploy must call PlaceVmsXCluster")
+			request := <-requests
+			Expect(request.ResourcePools).To(ConsistOf(expectedPools))
+			Expect(request.VmPlacementSpecs).To(HaveLen(1))
+			Expect(request.VmPlacementSpecs[0].CandidateVsphereZone).To(BeEmpty())
+			Expect(request.VmPlacementSpecs[0].ConfigSpec.Name).To(Equal(vm.Name))
+			Expect(request.VmPlacementSpecs[0].ConfigSpec.VmPlacementPolicies).To(ConsistOf(&vimtypes.VmVmAffinity{
+				PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+				PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+				AffinedVmsTag: vimtypes.TagId{NameId: &vimtypes.TagIdNameId{
+					Tag: "app:db", Category: vm.Namespace,
+				}},
+			}))
+		})
+
 		Context("Zone placement", func() {
 
 			Context("zone already assigned", func() {

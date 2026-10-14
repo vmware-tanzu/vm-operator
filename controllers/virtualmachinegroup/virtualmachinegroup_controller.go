@@ -552,15 +552,16 @@ func (r *Reconciler) reconcilePlacement(
 		return fmt.Errorf("failed to get all placement members: %w", err)
 	}
 
+	var errs []error
 	if len(groupPlacements) == 0 {
 		pkglog.FromContextOrDefault(ctx).V(4).Info("No group members need placement")
 	} else if err := r.VMProvider.PlaceVirtualMachineGroup(ctx, ctx.VMGroup, groupPlacements); err != nil {
-		return fmt.Errorf("failed to place group members: %w", err)
+		errs = append(errs, fmt.Errorf("failed to place group members: %w", err))
 	}
 
 	// Patch all child groups regardless of whether they have members that need
-	// placement to ensure their member placement conditions are always updated.
-	var errs []error
+	// placement or placement failed to ensure their member placement conditions
+	// are always updated.
 	for group, patch := range groupPatches {
 		if ctx.VMGroup.Name == group.Name {
 			// Let the outer patch helper update the root group.

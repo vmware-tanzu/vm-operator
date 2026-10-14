@@ -22,9 +22,11 @@ import (
 // Each mapping's ZoneName holds the VM's topology.kubernetes.io/zone label. An
 // empty ZoneName means the VM has no pinned zone.
 //
-// When VMHardAffinityDuringExecution feature is disabled, placement candidates are
-// constrained to a zone only when every VM has the same, non-empty zone as
-// PlaceVmsXCluster does not vsphereZones Per VM.
+// Deleting zones are excluded, including explicitly pinned zones.
+//
+// When the VMHardAffinityDuringExecution feature is disabled, placement candidates
+// are constrained to a zone only when every VM has the same, non-empty zone.
+// Per-VM candidate zones are omitted when the feature is disabled.
 //
 // When the VMHardAffinityDuringExecution feature is enabled, each VM's zone is also
 // sent as its CandidateVsphereZone. Placement fails for the entire group if any
@@ -38,22 +40,27 @@ func GroupPlacement(
 	namespace, childRPName string,
 	vmToZoneMappings []VMZonePlacementMapping) (map[string]Result, error) {
 
-	// If all vms share the same zone, set it as preferredZoneNameForGroup.
-	preferredZoneNameForGroup := sharedZoneName(vmToZoneMappings)
-
-	candidates, err := getPlacementCandidates(ctx, client, vcClient, preferredZoneNameForGroup, namespace, childRPName)
+	// Enumerate candidates without an assigned-zone override so deleting zones
+	// remain excluded for every group member, including pinned members.
+	candidates, err := getPlacementCandidates(ctx, client, vcClient, "", namespace, childRPName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get placement candidates: %w", err)
 	}
 
-	if len(candidates) == 0 {
-		return nil, ErrNoPlacementCandidates
+	// Preserve the shared-zone restriction using only eligible candidates.
+	if zoneName := sharedZoneName(vmToZoneMappings); zoneName != "" {
+		for candidateZone := range candidates {
+			if candidateZone != zoneName {
+				delete(candidates, candidateZone)
+			}
+		}
 	}
+
+	perVMZones := pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution
 
 	// Build the mappings sent to PlaceVmsXCluster, where ZoneName is the VM's
 	// candidate zone. A VM's zone must be a key in candidates (zone name to RP
 	// MoIDs).
-	perVMZones := pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution
 	candidateMappings := make([]VMZonePlacementMapping, len(vmToZoneMappings))
 	vmNameToZoneName := make(map[string]string, len(vmToZoneMappings))
 	for i, m := range vmToZoneMappings {
@@ -70,6 +77,9 @@ func GroupPlacement(
 		}
 		candidateMappings[i].ZoneName = m.ZoneName
 		vmNameToZoneName[m.ConfigSpec.Name] = m.ZoneName
+	}
+	if len(candidates) == 0 {
+		return nil, ErrNoPlacementCandidates
 	}
 
 	needDatastorePlacement := pkgcfg.FromContext(ctx).Features.FastDeploy
@@ -93,7 +103,7 @@ func GroupPlacement(
 		}
 	}
 
-	vmNameToRecZoneName := make(map[string]string, len(recommendations))
+	results := make(map[string]Result, len(recommendations))
 	for vmName, recommendation := range recommendations {
 		zoneName, ok := resourcePoolToZoneName[recommendation.PoolMoRef.Value]
 		if !ok {
@@ -109,11 +119,6 @@ func GroupPlacement(
 				ErrGroupPlacementZoneMismatch, vmName, want, zoneName)
 		}
 
-		vmNameToRecZoneName[vmName] = zoneName
-	}
-
-	results := make(map[string]Result, len(recommendations))
-	for vmName, recommendation := range recommendations {
 		if needDatastorePlacement {
 			// Get the name and type of the datastores.
 			if err := getDatastoreProperties(ctx, vcClient, &recommendation); err != nil {
@@ -122,7 +127,7 @@ func GroupPlacement(
 		}
 
 		result := Result{
-			ZoneName:   vmNameToRecZoneName[vmName],
+			ZoneName:   zoneName,
 			PoolMoRef:  recommendation.PoolMoRef,
 			HostMoRef:  recommendation.HostMoRef,
 			Datastores: recommendation.Datastores,

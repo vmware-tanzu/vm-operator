@@ -1846,7 +1846,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 			vmCtx.VM,
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 		) {
-			return fmt.Errorf("VM is not linked to its group")
+			return ErrVMNotLinkedToGroup
 		}
 
 		// Place the VM via its group when it has no zone label, or (with

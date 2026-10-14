@@ -15,6 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -95,7 +97,7 @@ func vmGroupTests() {
 			Specify("it should return an error creating VM", func() {
 				err := createOrUpdateVM(ctx, vmProvider, vm)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
+				Expect(err).To(MatchError(vsphere.ErrVMNotLinkedToGroup))
 			})
 		})
 
@@ -106,7 +108,7 @@ func vmGroupTests() {
 			Specify("it should return an error creating VM", func() {
 				err := createOrUpdateVM(ctx, vmProvider, vm)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
+				Expect(err).To(MatchError(vsphere.ErrVMNotLinkedToGroup))
 			})
 		})
 
@@ -358,7 +360,7 @@ func vmGroupTests() {
 			It("should fail to create VM", func() {
 				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("VM is not linked to its group"))
+				Expect(err).To(MatchError(vsphere.ErrVMNotLinkedToGroup))
 			})
 		})
 
@@ -383,6 +385,61 @@ func vmGroupTests() {
 
 					// Verify VM was created
 					Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+				})
+
+				When("the node is pinned to a deleting zone", func() {
+					DescribeTable("preserves ordinary placement and group linkage",
+						func(fastDeploy, linked, hasPools bool) {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.FastDeploy = fastDeploy
+							})
+							if !linked {
+								vmGroup.Spec.BootOrder = nil
+								Expect(ctx.Client.Update(ctx, vmGroup)).To(Succeed())
+							}
+
+							zone := &topologyv1.Zone{}
+							Expect(ctx.Client.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: zoneName}, zone)).To(Succeed())
+							Expect(zone.Spec.ManagedVMs.PoolMoIDs).ToNot(BeEmpty())
+							if !hasPools {
+								zone.Spec.ManagedVMs.PoolMoIDs = nil
+							}
+							zone.Finalizers = append(zone.Finalizers, "test")
+							Expect(ctx.Client.Update(ctx, zone)).To(Succeed())
+							Expect(ctx.Client.Delete(ctx, zone)).To(Succeed())
+							Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(zone), zone)).To(Succeed())
+							Expect(zone.DeletionTimestamp.IsZero()).To(BeFalse())
+
+							err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+							if !linked {
+								Expect(err).To(MatchError(vsphere.ErrVMNotLinkedToGroup))
+								Expect(vm.Status.UniqueID).To(BeEmpty())
+								return
+							}
+							if !hasPools {
+								Expect(err).To(HaveOccurred())
+								Expect(err).ToNot(MatchError(vsphere.ErrCreate))
+								Expect(vm.Status.UniqueID).To(BeEmpty())
+								return
+							}
+							Expect(err).To(MatchError(vsphere.ErrCreate))
+							Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+							Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+							Expect(vm.Labels[corev1.LabelTopologyZone]).To(Equal(zoneName))
+							vcVM, err := ctx.Finder.VirtualMachine(ctx, vm.Name)
+							Expect(err).ToNot(HaveOccurred())
+							pool, err := vcVM.ResourcePool(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(zone.Spec.ManagedVMs.PoolMoIDs).To(ContainElement(pool.Reference().Value))
+							Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)).To(BeTrue())
+						},
+						Entry("creates in the assigned zone without Fast Deploy", false, true, true),
+						Entry("creates in the assigned zone with Fast Deploy", true, true, true),
+						Entry("requires linkage without Fast Deploy", false, false, true),
+						Entry("requires linkage with Fast Deploy", true, false, true),
+						Entry("rejects a pool-less zone without Fast Deploy", false, true, false),
+						Entry("rejects a pool-less zone with Fast Deploy", true, true, false),
+					)
 				})
 			})
 

@@ -112,7 +112,6 @@ func unitTestsReconcile() {
 				func(config *pkgcfg.Config) {
 					config.AsyncCreateEnabled = false
 					config.AsyncSignalEnabled = false
-					config.Features.PodVMOnStretchedSupervisor = true
 				},
 			),
 		)

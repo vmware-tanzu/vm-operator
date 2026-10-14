@@ -15,13 +15,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
-	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
 )
 
 const (
-	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
-
 	// StoragePolicyQuotaKind is the name of the StoragePolicyQuota kind.
 	StoragePolicyQuotaKind = "StoragePolicyQuota"
 
@@ -86,12 +83,7 @@ func GetStorageClassesForPolicy(
 	for i := range obj.Items {
 		o := obj.Items[i]
 		if id == o.Parameters[internal.StoragePolicyIDParameter] {
-			ok, err := IsStoragePolicyInNamespace(
-				ctx,
-				k8sClient,
-				o.Name,
-				id,
-				namespace)
+			ok, err := IsStoragePolicyInNamespace(ctx, k8sClient, id, namespace)
 			if err != nil {
 				return nil, err
 			}
@@ -163,7 +155,7 @@ func GetStorageClassInNamespace(
 
 	policyID := sc.Parameters[internal.StoragePolicyIDParameter]
 
-	ok, err := IsStoragePolicyInNamespace(ctx, k8sClient, sc.Name, policyID, namespace)
+	ok, err := IsStoragePolicyInNamespace(ctx, k8sClient, policyID, namespace)
 	if err != nil {
 		return storagev1.StorageClass{}, err
 	}
@@ -183,50 +175,25 @@ func GetStorageClassInNamespace(
 func IsStoragePolicyInNamespace(
 	ctx context.Context,
 	k8sClient client.Client,
-	objName string,
 	policyID string,
 	namespace string) (bool, error) {
 
-	if pkgcfg.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
-		if policyID == "" {
-			return false, fmt.Errorf("storage object does not have policy ID")
-		}
+	if policyID == "" {
+		return false, fmt.Errorf("storage object does not have policy ID")
+	}
 
-		var obj spqv1.StoragePolicyQuotaList
-		if err := k8sClient.List(
-			ctx,
-			&obj,
-			client.InNamespace(namespace)); err != nil {
+	var obj spqv1.StoragePolicyQuotaList
+	if err := k8sClient.List(
+		ctx,
+		&obj,
+		client.InNamespace(namespace)); err != nil {
 
-			return false, err
-		}
+		return false, err
+	}
 
-		for i := range obj.Items {
-			if obj.Items[i].Spec.StoragePolicyId == policyID {
-				return true, nil
-			}
-		}
-
-	} else {
-		// For backwards compatibility, validation
-		// over ResourceQuota will consider policyID only coming
-		// from StorageClasses
-		var obj corev1.ResourceQuotaList
-		if err := k8sClient.List(
-			ctx,
-			&obj,
-			client.InNamespace(namespace)); err != nil {
-
-			return false, err
-		}
-
-		prefix := objName + storageResourceQuotaStrPattern
-		for i := range obj.Items {
-			for name := range obj.Items[i].Spec.Hard {
-				if strings.HasPrefix(name.String(), prefix) {
-					return true, nil
-				}
-			}
+	for i := range obj.Items {
+		if obj.Items[i].Spec.StoragePolicyId == policyID {
+			return true, nil
 		}
 	}
 

@@ -18,12 +18,7 @@ import (
 
 var suite = builder.NewTestSuiteForControllerWithContext(
 	cource.WithContext(
-		pkgcfg.UpdateContext(
-			pkgcfg.NewContextWithDefaultConfig(),
-			func(config *pkgcfg.Config) {
-				config.Features.PodVMOnStretchedSupervisor = true
-			},
-		),
+		pkgcfg.NewContextWithDefaultConfig(),
 	),
 	storagepolicyquota.AddToManager,
 	manager.InitializeProvidersNoopFn)

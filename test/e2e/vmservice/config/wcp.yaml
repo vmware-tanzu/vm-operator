@@ -43,7 +43,6 @@ variables:
   EnvFSSVMResizeCPUMemory: "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
   EnvFSSIsoSupport: "FSS_WCP_VMSERVICE_ISO_SUPPORT"
   EnvNetworkProvider: "NETWORK_PROVIDER"
-  EnvFSSPodVMOnStretchedSupervisor: "FSS_PODVMONSTRETCHEDSUPERVISOR"
   EnvFSSBYOK: "FSS_WCP_VMSERVICE_BYOK"
   EnvWorkloadIsolation: "FSS_WCP_WORKLOAD_DOMAIN_ISOLATION"
   # E2E Namespace used for the VM service tests. If not set, a random namespace will be created.

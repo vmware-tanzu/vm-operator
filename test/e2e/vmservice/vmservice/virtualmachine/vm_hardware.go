@@ -435,13 +435,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			By("Ensure EZT storage class is available in namespace")
 
-			podVMOnStretchedSupervisorEnabled := utils.IsFssEnabled(ctx, svClusterClient,
-				config.GetVariable("VMOPNamespace"),
-				config.GetVariable("VMOPDeploymentName"),
-				config.GetVariable("VMOPManagerCommand"),
-				config.GetVariable("EnvFSSPodVMOnStretchedSupervisor"))
 			utils.EnsureStorageClassInNamespace(ctx, svClusterClient, vmSvcNamespace,
-				eztStorageProfileName, podVMOnStretchedSupervisorEnabled, *config)
+				eztStorageProfileName, *config)
 			e2eframework.Logf(
 				"EZT storage class %s is available in namespace %s",
 				eztStorageProfileName, vmSvcNamespace,
@@ -2897,13 +2892,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}
 
 				By("Ensuring the WFFC storage class is associated with the test namespace")
-				podVMOnStretchedSupervisorEnabled := utils.IsFssEnabled(ctx, svClusterClient,
-					config.GetVariable("VMOPNamespace"),
-					config.GetVariable("VMOPDeploymentName"),
-					config.GetVariable("VMOPManagerCommand"),
-					config.GetVariable("EnvFSSPodVMOnStretchedSupervisor"))
 				utils.EnsureStorageClassInNamespace(ctx, svClusterClient, vmSvcNamespace,
-					wffcSCName, podVMOnStretchedSupervisorEnabled, *config)
+					wffcSCName, *config)
 			})
 
 			BeforeEach(func() {

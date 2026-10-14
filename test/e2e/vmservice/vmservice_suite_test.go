@@ -191,17 +191,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Ensure the storage class is available in the WCP namespace")
 
-	podVMOnStretchedSupervisorEnabled := utils.IsFssEnabled(
-		ctx,
-		svClusterProxy.GetClient(),
-		config.GetVariable("VMOPNamespace"),
-		config.GetVariable("VMOPDeploymentName"),
-		config.GetVariable("VMOPManagerCommand"),
-		config.GetVariable("EnvFSSPodVMOnStretchedSupervisor"),
-	)
 	utils.EnsureStorageClassInNamespace(ctx, svClusterProxy.GetClient(),
-		wcpNamespaceName, storageClassName, podVMOnStretchedSupervisorEnabled,
-		*config)
+		wcpNamespaceName, storageClassName, *config)
 
 	By("Ensure the VM Class is available in the WCP namespace")
 	Expect(vmservice.EnsureVMClassPresent(wcpClient, vmClassName)).To(Succeed())

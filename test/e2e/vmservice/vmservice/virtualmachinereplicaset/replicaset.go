@@ -93,16 +93,18 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		rsName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		replicaSet = nil
-	})
-
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, rsName, "vmreplicaset")
-		}
-
-		if replicaSet != nil {
-			vmoperator.DeleteVirtualMachineReplicaSetAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, rsName)
-		}
+		vmoperator.DeferCleanupWithDumpOnFailure(
+			func(ctx context.Context) {
+				if replicaSet != nil {
+					vmoperator.DeleteVirtualMachineReplicaSetAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, rsName)
+				}
+			},
+			func(ctx context.Context) {
+				if replicaSet != nil {
+					vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "vmreplicaset", input.WCPNamespaceName, rsName)(ctx)
+				}
+			},
+		)
 	})
 
 	// newReplicaSet builds (but does not create) a VirtualMachineReplicaSet

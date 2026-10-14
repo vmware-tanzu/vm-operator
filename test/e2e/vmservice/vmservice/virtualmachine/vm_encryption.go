@@ -67,7 +67,6 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		clusterResources                     *e2eConfig.Resources
 		tmpNamespaceCtx                      wcpframework.NamespaceContext
 		tmpNamespaceName                     string
-		vmYaml                               []byte
 		vmName                               string
 		vmiName                              string
 		createSpecE2eTestBestEffortSmallVTPM wcp.VMClassSpec
@@ -97,19 +96,25 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		svClusterConfig = config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = clusterProxy.GetClient()
-		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-		cryptoManager = crypto.NewManagerKmip(vCenterClient)
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
+		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+		DeferCleanup(func(context.Context) {
+			vcenter.LogoutVimClient(vCenterClient)
+		})
+
+		cryptoManager = crypto.NewManagerKmip(vCenterClient)
+		defaultKeyProviderID, err = cryptoManager.GetDefaultKmsClusterID(ctx, nil, true)
+		Expect(err).NotTo(HaveOccurred(), "failed to get default Key Provider ID")
+
 		By("Ensure native key provider exists (create via WCP if not pre-configured)")
-		var nativeKPErr error
-		cleanupNativeKeyProvider, nativeKPErr = vcenter.EnsureNativeKeyProvider(ctx, vCenterClient, wcpClient, nativeKeyProviderID)
-		Expect(nativeKPErr).NotTo(HaveOccurred(), "failed to ensure native key provider %q", nativeKeyProviderID)
-		DeferCleanup(func() {
-			if cleanupNativeKeyProvider != nil {
-				cleanupNativeKeyProvider()
-				cleanupNativeKeyProvider = nil
+		cleanupNativeKeyProvider, err = vcenter.EnsureNativeKeyProvider(ctx, vCenterClient, wcpClient, nativeKeyProviderID)
+		Expect(err).NotTo(HaveOccurred(), "failed to ensure native key provider %q", nativeKeyProviderID)
+		DeferCleanup(cleanupNativeKeyProvider)
+		DeferCleanup(func(ctx context.Context) {
+			if defaultKeyProviderID != "" {
+				_ = cryptoManager.SetDefaultKmsClusterId(ctx, defaultKeyProviderID, nil)
 			}
 		})
 
@@ -117,7 +122,6 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 
-		vmYaml = nil
 		vmName = fmt.Sprintf("%s-vm-%s", specName, capiutil.RandomString(4))
 
 		By("Create a new namespace")
@@ -130,6 +134,13 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		tmpNamespaceName = fmt.Sprintf("%s-ns-%s", specName, capiutil.RandomString(4))
 		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
 		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace %s", tmpNamespaceName)
+		DeferCleanup(func() {
+			if tmpNamespaceCtx.GetNamespace() != nil {
+				tmpNamespaceName := tmpNamespaceCtx.GetNamespace().Name
+				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
+				wcp.WaitForNamespaceDeleted(wcpClient, tmpNamespaceName)
+			}
+		})
 
 		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
 
@@ -141,36 +152,6 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			tmpNamespaceName, clusterResources.StorageClassName)).
 			To(Succeed(), "failed to ensure encryption storage in namespace %s",
 				tmpNamespaceName)
-
-		defaultKeyProviderID, err = cryptoManager.GetDefaultKmsClusterID(ctx, nil, true)
-		Expect(err).NotTo(HaveOccurred(), "failed to get default Key Provider ID")
-	})
-
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), tmpNamespaceName, vmName, "vm")
-		}
-		// Delete the virtual machine if it was created.
-		if len(vmYaml) > 0 {
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
-			// Verify that virtual machine does not exist.
-			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, vmName)
-		}
-
-		// Delete vTPM class if it was created
-		if createSpecE2eTestBestEffortSmallVTPM.ID != "" {
-			vmservice.VerifyVMClassDeletion(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID)
-			createSpecE2eTestBestEffortSmallVTPM.ID = ""
-		}
-		// Delete the temporary namespace if it was created.
-		if tmpNamespaceCtx.GetNamespace() != nil {
-			clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
-			wcp.WaitForNamespaceDeleted(wcpClient, tmpNamespaceCtx.GetNamespace().Name)
-		}
-
-		_ = cryptoManager.SetDefaultKmsClusterId(ctx, defaultKeyProviderID, nil)
-
-		vcenter.LogoutVimClient(vCenterClient)
 	})
 
 	It("Should verify boot disk storage policy matches VM spec.storageClass for an encrypted VM", Label("experimental"), func() {
@@ -186,8 +167,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
@@ -209,8 +191,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
@@ -225,6 +208,12 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		By("Create VM Class with vTPM and ensure namespace has access")
 
 		createSpecE2eTestBestEffortSmallVTPM = vmservice.CreateSpecE2eVMClassVTPMConfigSpec()
+		DeferCleanup(func() {
+			if createSpecE2eTestBestEffortSmallVTPM.ID != "" {
+				vmservice.VerifyVMClassDeletion(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID)
+				createSpecE2eTestBestEffortSmallVTPM.ID = ""
+			}
+		})
 		vmservice.VerifyVMClassCreate(wcpClient, createSpecE2eTestBestEffortSmallVTPM, createSpecE2eTestBestEffortSmallVTPM)
 		vmservice.EnsureVMClassAccess(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID, tmpNamespaceName)
 
@@ -240,8 +229,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			PowerState:       "PoweredOn",
 			Annotations:      map[string]string{"vmoperator.vmware.com/firmware": "efi"},
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
@@ -275,6 +265,12 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		By("Create VM Class with vTPM and ensure namespace has access")
 
 		createSpecE2eTestBestEffortSmallVTPM = vmservice.CreateSpecE2eVMClassVTPMConfigSpec()
+		DeferCleanup(func() {
+			if createSpecE2eTestBestEffortSmallVTPM.ID != "" {
+				vmservice.VerifyVMClassDeletion(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID)
+				createSpecE2eTestBestEffortSmallVTPM.ID = ""
+			}
+		})
 		vmservice.VerifyVMClassCreate(wcpClient, createSpecE2eTestBestEffortSmallVTPM, createSpecE2eTestBestEffortSmallVTPM)
 		vmservice.EnsureVMClassAccess(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID, tmpNamespaceName)
 
@@ -293,8 +289,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
@@ -337,8 +334,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: "invalid",
 			},
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 		waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "EncryptionClassNotFound")
@@ -406,8 +404,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 		waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "EncryptionClassInvalid")
 
 		By("Update encryption class using valid key")
@@ -459,8 +458,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
@@ -517,8 +517,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
@@ -589,8 +590,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
@@ -660,8 +662,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
@@ -760,8 +763,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
 
 		By("Verify the encryption synced condition reports an error due to mixed provider types")
 		Eventually(func(g Gomega) {

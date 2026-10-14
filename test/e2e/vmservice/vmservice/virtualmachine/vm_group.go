@@ -97,6 +97,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		svClusterClient = clusterProxy.GetClient()
 		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+		DeferCleanup(func() { vcenter.LogoutVimClient(vCenterClient) })
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 
@@ -110,35 +111,20 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		vm2Name = fmt.Sprintf("%s-vm2", vmgRootName)
 		vm3Name = fmt.Sprintf("%s-vm3", vmgRootName)
 		vm4Name = fmt.Sprintf("%s-vm4", vmgRootName)
-	})
 
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmgRootName, vmgKind)
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmgChildName, vmgKind)
-
-			for _, vmName := range vmMemberNames {
-				vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, vmKind)
-			}
-		}
-
-		// Delete the root VirtualMachineGroup if created.
-		if len(vmgRootYaml) > 0 {
-			By("Deleting the root VirtualMachineGroup")
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to delete VirtualMachineGroup")
-			vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName)
-
-			By("Waiting for all group members to be deleted automatically due to owner reference to the root group")
-			vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmgChildName)
-
-			for _, vmName := range vmMemberNames {
-				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			}
-		}
-
-		if vCenterClient != nil {
-			vcenter.LogoutVimClient(vCenterClient)
-		}
+		deferCleanupVirtualMachineGroup(
+			config,
+			clusterProxy,
+			svClusterClient,
+			clusterProxy.GetKubeconfigPath(),
+			input.WCPNamespaceName,
+			vmgRootName,
+			vmgChildName,
+			vmgKind,
+			vmKind,
+			&vmgRootYaml,
+			&vmMemberNames,
+		)
 	})
 
 	Context("Flat group", func() {
@@ -820,7 +806,24 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
 			Expect(tmpNamespaceCtx.GetNamespace()).ToNot(BeNil(), "namespace should not be nil")
 			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
+			DeferCleanup(func() {
+				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
+			})
+
 			wcp.WaitForNamespaceReady(input.WCPClient, tmpNamespaceName)
+			deferCleanupVirtualMachineGroup(
+				config,
+				clusterProxy,
+				svClusterClient,
+				clusterProxy.GetKubeconfigPath(),
+				tmpNamespaceName,
+				vmgRootName,
+				vmgChildName,
+				vmgKind,
+				vmKind,
+				&vmgRootYaml,
+				&vmMemberNames,
+			)
 
 			By("Ensuring the Linux image is available in the temp namespace")
 
@@ -847,13 +850,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			if len(unboundZones) > 0 {
 				_, err = clusterProxy.UpdateNamespaceWithZones(ctx, tmpNamespaceName, unboundZones, svClusterClient)
 				Expect(err).ToNot(HaveOccurred(), "failed to update namespace with Zones")
-			}
-		})
-
-		AfterEach(func() {
-			if tmpNamespaceName != "" {
-				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
-				tmpNamespaceName = ""
 			}
 		})
 
@@ -1838,7 +1834,26 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
 			Expect(tmpNamespaceCtx.GetNamespace()).ToNot(BeNil(), "namespace should not be nil")
 			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
+			DeferCleanup(func() {
+				if tmpNamespaceName != "" {
+					clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
+					tmpNamespaceName = ""
+				}
+			})
 			wcp.WaitForNamespaceReady(input.WCPClient, tmpNamespaceName)
+			deferCleanupVirtualMachineGroup(
+				config,
+				clusterProxy,
+				svClusterClient,
+				clusterProxy.GetKubeconfigPath(),
+				tmpNamespaceName,
+				vmgRootName,
+				vmgChildName,
+				vmgKind,
+				vmKind,
+				&vmgRootYaml,
+				&vmMemberNames,
+			)
 
 			By("Ensuring the Linux image is available in the temp namespace")
 
@@ -1867,13 +1882,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(err).ToNot(HaveOccurred(), "failed to update namespace with Zones")
 			}
 
-		})
-
-		AfterEach(func() {
-			if tmpNamespaceName != "" {
-				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
-				tmpNamespaceName = ""
-			}
 		})
 
 		When("Group placement with affinity and anti-affinity at host topology", func() {
@@ -2666,4 +2674,45 @@ func getVMHostFromVmodl(
 	Expect(vmMO.Runtime.Host).ToNot(BeNil())
 
 	return vmMO.Runtime.Host.Value
+}
+
+func deferCleanupVirtualMachineGroup(
+	config *e2eConfig.E2EConfig,
+	clusterProxy *common.VMServiceClusterProxy,
+	client ctrlclient.Client,
+	kubeconfigPath, namespace, rootName, childName, groupKind, vmKind string,
+	rootYaml *[]byte,
+	vmMemberNames *[]string) {
+
+	vmoperator.DeferCleanupWithDumpOnFailure(
+		func(ctx context.Context) {
+			if len(*rootYaml) == 0 {
+				return
+			}
+
+			By("Deleting the root VirtualMachineGroup")
+			Expect(clusterProxy.DeleteWithArgs(ctx, *rootYaml)).To(Succeed(), "failed to delete VirtualMachineGroup")
+			vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, client, namespace, rootName)
+
+			By("Waiting for all group members to be deleted automatically due to owner reference to the root group")
+			vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, client, namespace, childName)
+
+			for _, vmName := range *vmMemberNames {
+				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, client, namespace, vmName)
+			}
+
+			*rootYaml = nil
+		},
+		func(ctx context.Context) {
+			if len(*rootYaml) == 0 {
+				return
+			}
+
+			vmoperator.DescribeResource(kubeconfigPath, groupKind, namespace, rootName)(ctx)
+			vmoperator.DescribeResource(kubeconfigPath, groupKind, namespace, childName)(ctx)
+			for _, vmName := range *vmMemberNames {
+				vmoperator.DescribeResource(kubeconfigPath, vmKind, namespace, vmName)(ctx)
+			}
+		},
+	)
 }

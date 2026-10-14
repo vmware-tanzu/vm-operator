@@ -282,6 +282,7 @@ rules:
   resources:
   - configtargets
   - virtualmachineconfigoptions
+  - virtualmachineconfigpolicies
   - virtualmachineguestoptions
   verbs:
   - create
@@ -296,22 +297,12 @@ rules:
   resources:
   - configtargets/status
   - virtualmachineconfigoptions/status
+  - virtualmachineconfigpolicies/status
   - virtualmachineguestoptions/status
   verbs:
   - get
   - patch
   - update
-- apiGroups:
-  - vim.vmware.com
-  resources:
-  - virtualmachineconfigpolicies
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
 - apiGroups:
   - vmoperator.vmware.com
   resources:

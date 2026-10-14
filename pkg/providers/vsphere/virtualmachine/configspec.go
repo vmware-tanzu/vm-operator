@@ -356,16 +356,10 @@ func CalculateAffinityConstraints(
 	vmCtx pkgctx.VirtualMachineContext,
 	isCreateVM bool,
 ) AffinityRuleConstraints {
-	constraints := AffinityRuleConstraints{}
-
-	// set base condition for zonal rules based on capability.
-	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
-		constraints.ConfigureZoneRules = true
-	}
-
-	// set base condition for host rules based on capability.
-	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
-		constraints.ConfigureHostRules = true
+	features := pkgcfg.FromContext(vmCtx.Context).Features
+	constraints := AffinityRuleConstraints{
+		ConfigureZoneRules: features.VMPlacementPolicies,
+		ConfigureHostRules: features.VMAffinityDuringExecution,
 	}
 
 	// conditionals are broken down for readability.
@@ -375,23 +369,23 @@ func CalculateAffinityConstraints(
 		constraints.ConfigureHostRules = false
 	}
 
-	// Drs interprets all persisted policies at host level, hence avoid configuring zonal policies during create.
-	// zonal policies are only considered at placement time.
+	// DRS interprets persisted policies at host level, so zonal policies are only
+	// configured at placement time, not during create.
 	if isCreateVM {
 		constraints.ConfigureZoneRules = false
 	}
 
-	// for vks nodes with zone labels or failure domains set, do not configure zonal affinity rules.
-	// zones are assigned from the zone label.
-	if isVksNodeVM && kubeutil.HasZoneLabel(vmCtx.VM.Labels) {
+	// VKS node zones are assigned from the zone label.
+	if constraints.ConfigureZoneRules &&
+		isVksNodeVM && kubeutil.HasZoneLabel(vmCtx.VM.Labels) {
 		constraints.ConfigureZoneRules = false
 	}
 
-	// for vms with preferred zones, & VMAffinityDuringExecution capability, do not configure zonal rules.
-	// zones are assigned from the zone label. This does not apply when VMHardAffinityDuringExecution is
-	// enabled, since zonal rules are still evaluated alongside the candidate zone.
-	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution &&
-		!pkgcfg.FromContext(vmCtx).Features.VMHardAffinityDuringExecution &&
+	// With a preferred zone, host affinity replaces zonal affinity unless
+	// hard affinity is enabled.
+	if constraints.ConfigureZoneRules &&
+		features.VMAffinityDuringExecution &&
+		!features.VMHardAffinityDuringExecution &&
 		kubeutil.HasZoneLabel(vmCtx.VM.Labels) {
 		constraints.ConfigureZoneRules = false
 	}

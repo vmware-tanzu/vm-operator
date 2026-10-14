@@ -19,17 +19,14 @@ package framework
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
@@ -71,23 +68,16 @@ type ClusterProxyInterface interface {
 	// Delete to delete YAML to the Kubernetes cluster, `kubectl delete`.
 	Delete(context.Context, []byte) error
 
-	// GetWorkloadCluster returns a workload cluster proxy interface provisioned by the management cluster
-	GetWorkloadCluster(ctx context.Context, namespace, name string) WorkloadClusterProxy
-
-	// Dispose proxy's internal resources (the operation does not affects the Kubernetes cluster).
+	// Dispose proxy's internal resources (the operation does not affect the Kubernetes cluster).
 	// This should be implemented as a synchronous function.
 	Dispose(context.Context)
 }
 
 // clusterProxy provides a base implementation of the ClusterProxy interface.
 type clusterProxy struct {
-	name                    string
-	kubeconfigPath          string
-	shouldCleanupKubeconfig bool
-	scheme                  *runtime.Scheme
-	// TODO:
-	//   for collecting logs in namespace of a cluster
-	// logCollector            ClusterLogCollector
+	name           string
+	kubeconfigPath string
+	scheme         *runtime.Scheme
 }
 
 // NewClusterProxy returns a clusterProxy given a KubeconfigPath and the scheme defining the types hosted in the cluster.
@@ -100,10 +90,9 @@ func NewClusterProxy(name string, kubeconfigPath string, scheme *runtime.Scheme)
 	}
 
 	proxy := &clusterProxy{
-		name:                    name,
-		kubeconfigPath:          kubeconfigPath,
-		scheme:                  scheme,
-		shouldCleanupKubeconfig: false,
+		name:           name,
+		kubeconfigPath: kubeconfigPath,
+		scheme:         scheme,
 	}
 
 	return proxy
@@ -184,14 +173,6 @@ func (p *clusterProxy) Apply(ctx context.Context, resources []byte, noRetryPatte
 	})
 }
 
-// ApplyWithArgs wraps `kubectl apply ...` and prints the output so we can see what gets applied to the cluster.
-func (p *clusterProxy) ApplyWithArgs(ctx context.Context, resources []byte, args ...string) error {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Apply")
-	Expect(resources).NotTo(BeNil(), "resources is required for Apply")
-
-	return KubectlApplyWithArgs(ctx, p.kubeconfigPath, resources, args...)
-}
-
 // Delete wraps `kubectl delete` and prints the output so we can see what gets deleted.
 func (p *clusterProxy) Delete(ctx context.Context, resources []byte) error {
 	Expect(ctx).NotTo(BeNil(), "ctx is required for Delete")
@@ -213,187 +194,7 @@ func (p *clusterProxy) GetRESTConfig() *rest.Config {
 	return restConfig
 }
 
-// newFromAPIConfig returns a clusterProxy given a api.Config and the scheme defining the types hosted in the cluster.
-func newFromAPIConfig(name string, config *api.Config, scheme *runtime.Scheme) WorkloadClusterProxy {
-	// NB. the ClusterProvider is responsible for the cleanup of this file
-	f, err := os.CreateTemp("", "e2e-kubeconfig")
-	Expect(err).ToNot(HaveOccurred(), "Failed to create kubeconfig file for the kind cluster %q")
-
-	kubeconfigPath := f.Name()
-
-	err = clientcmd.WriteToFile(*config, kubeconfigPath)
-	Expect(err).ToNot(HaveOccurred(), "Failed to write kubeconfig for the kind cluster to a file %q")
-
-	return newWorkloadClusterProxy(name, kubeconfigPath, scheme)
-}
-
-// getKubeconfig retrieves kubeconfig values from the secret of a workload cluster.
-func (p *clusterProxy) getKubeconfig(ctx context.Context, namespace string, name string) *api.Config {
-	cl := p.GetClient()
-
-	secret := &corev1.Secret{}
-	key := client.ObjectKey{
-		Name:      fmt.Sprintf("%s-kubeconfig", name),
-		Namespace: namespace,
-	}
-	Expect(cl.Get(ctx, key, secret)).To(Succeed(), "Failed to get %s", key)
-	Expect(secret.Data).To(HaveKey("value"), "Invalid secret %s", key)
-
-	config, err := clientcmd.Load(secret.Data["value"])
-	Expect(err).ToNot(HaveOccurred(), "Failed to convert %s into a kubeconfig file", key)
-
-	return config
-}
-
-// GetWorkloadCluster returns ClusterProxy for the workload cluster.
-func (p *clusterProxy) GetWorkloadCluster(ctx context.Context, namespace, name string) WorkloadClusterProxy {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for GetWorkloadCluster")
-	Expect(namespace).NotTo(BeEmpty(), "namespace is required for GetWorkloadCluster")
-	Expect(name).NotTo(BeEmpty(), "name is required for GetWorkloadCluster")
-
-	// gets the kubeconfig from the cluster
-	config := p.getKubeconfig(ctx, namespace, name)
-
-	return newFromAPIConfig(name, config, p.GetScheme())
-}
-
-// CollectWorkloadClusterLogs collects machines logs from the workload cluster.
-func (p *clusterProxy) CollectWorkloadClusterLogs(ctx context.Context, namespace, name, outputPath string) {
-}
-
-// Dispose clean up the kubeconfig path in os environment.
+// Dispose releases proxy resources.
 func (p *clusterProxy) Dispose(ctx context.Context) {
 	Expect(ctx).NotTo(BeNil(), "ctx is required for Dispose")
-
-	if p.shouldCleanupKubeconfig {
-		err := os.Remove(p.kubeconfigPath)
-		if err != nil {
-			fmt.Printf("deleting the kubeconfig file %q file. You may need to remove this by hand.\n", p.kubeconfigPath)
-		}
-	}
-}
-
-// TODO: Shrink the behavior of workload cluster proxy interface after the new E2E tests
-//
-//	has been re-written
-type WorkloadClusterProxy interface {
-	ClusterProxyInterface
-	Get(ctx context.Context, args ...string) ([]byte, error)
-	GetClientNoExpect(timeoutMins int) (client.Client, error)
-	ApplyWithArgs(ctx context.Context, resources []byte, args ...string) error
-	Create(ctx context.Context, resources []byte) error
-	CreateWithArgs(ctx context.Context, resources []byte, args ...string) error
-	Delete(ctx context.Context, resources []byte) error
-	DeleteWithArgs(ctx context.Context, resources []byte, args ...string) error
-	DeleteWithNamespacedName(ctx context.Context, resource, ns, name string) error
-	Exec(ctx context.Context, args ...string) ([]byte, error)
-	Config(ctx context.Context, args ...string) ([]byte, error)
-}
-
-type workloadClusterProxy struct {
-	*clusterProxy
-}
-
-// NewClusterProxy returns a workloadClusterProxy given a KubeconfigPath and the scheme defining the types hosted in the cluster.
-// If a kubeconfig file isn't provided, standard kubeconfig locations will be used (kubectl loading rules apply).
-func newWorkloadClusterProxy(name string, kubeconfigPath string, scheme *runtime.Scheme) *workloadClusterProxy {
-	Expect(scheme).NotTo(BeNil(), "scheme is required for NewWorkloadClusterProxy")
-
-	if kubeconfigPath == "" {
-		kubeconfigPath = clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
-	}
-
-	proxy := &clusterProxy{
-		name:                    name,
-		kubeconfigPath:          kubeconfigPath,
-		scheme:                  scheme,
-		shouldCleanupKubeconfig: false,
-	}
-
-	return &workloadClusterProxy{
-		clusterProxy: proxy,
-	}
-}
-
-// Get retrieves the status of a resource, `kubectl get`.
-func (w *workloadClusterProxy) Get(ctx context.Context, args ...string) ([]byte, error) {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Get")
-
-	return KubectlGet(ctx, w.GetKubeconfigPath(), args...)
-}
-
-// GetClientNoExpect returns a controller-runtime client for the cluster.
-// This function was made for retrying to work (when a client takes too long to load).
-func (w *workloadClusterProxy) GetClientNoExpect(timeoutMins int) (client.Client, error) {
-	var (
-		err error
-		c   client.Client
-	)
-
-	config := w.GetRESTConfig()
-
-	c, err = client.New(config, client.Options{Scheme: w.scheme})
-
-	return c, err
-}
-
-// Apply wraps `kubectl apply ...` and prints the output so we can see what gets applied to the cluster.
-func (w *workloadClusterProxy) ApplyWithArgs(ctx context.Context, resources []byte, args ...string) error {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Apply")
-	Expect(resources).NotTo(BeNil(), "resources is required for Apply")
-
-	return KubectlApplyWithArgs(ctx, w.GetKubeconfigPath(), resources, args...)
-}
-
-// Create wraps `kubectl create` and prints the output so we can see what gets applied to the cluster.
-func (w *workloadClusterProxy) Create(ctx context.Context, resources []byte) error {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Create")
-	Expect(resources).NotTo(BeNil(), "resources is required for Create")
-
-	return KubectlCreate(ctx, w.GetKubeconfigPath(), resources)
-}
-
-// Create wraps `kubectl create ...` and prints the output so we can see what gets applied to the cluster.
-func (w *workloadClusterProxy) CreateWithArgs(ctx context.Context, resources []byte, args ...string) error {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Create")
-	Expect(resources).NotTo(BeNil(), "resources is required for Create")
-
-	return KubectlCreateWithArgs(ctx, w.GetKubeconfigPath(), resources, args...)
-}
-
-// Delete wraps `kubectl delete` and prints the output so we can see what gets deleted.
-func (w *workloadClusterProxy) Delete(ctx context.Context, resources []byte) error {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Delete")
-	Expect(resources).NotTo(BeNil(), "resources is required for Delete")
-
-	return KubectlDelete(ctx, w.GetKubeconfigPath(), resources)
-}
-
-// DeleteWithArgs wraps `kubectl delete ...` and prints the output so we can see what gets deleted.
-func (w *workloadClusterProxy) DeleteWithArgs(ctx context.Context, resources []byte, args ...string) error {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Delete")
-	Expect(resources).NotTo(BeNil(), "resources is required for Delete")
-
-	return KubectlDeleteWithArgs(ctx, w.GetKubeconfigPath(), resources, args...)
-}
-
-// DeleteWithNamespacedName delete a manifestbuilders from the cluster by its namespace and name.
-func (w *workloadClusterProxy) DeleteWithNamespacedName(ctx context.Context, resource, ns, name string) error {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Delete")
-
-	return KubectlDeleteWithNamespacedName(ctx, w.GetKubeconfigPath(), resource, ns, name)
-}
-
-// Exec performs kubectl exec with following flags.
-func (w *workloadClusterProxy) Exec(ctx context.Context, args ...string) ([]byte, error) {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Exec")
-
-	return KubectlExec(ctx, w.GetKubeconfigPath(), args...)
-}
-
-// Config performs kubectl exec with following flags.
-func (w *workloadClusterProxy) Config(ctx context.Context, args ...string) ([]byte, error) {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Config")
-
-	return KubectlConfig(ctx, w.GetKubeconfigPath(), args...)
 }

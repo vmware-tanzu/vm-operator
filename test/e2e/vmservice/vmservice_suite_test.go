@@ -147,7 +147,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Setting up supervisor cluster proxy")
 
 	kubeconfigPath := config.InfraConfig.KubeconfigPath
-	svClusterProxy = setupSupervisorClusterProxy(kubeconfigPath, scheme, config)
+	svClusterProxy = setupSupervisorClusterProxy(kubeconfigPath, scheme)
 	Expect(svClusterProxy).ToNot(BeNil(), "svClusterProxy can't be nil when calling %s test suite", testSuiteName)
 
 	By("Setting up cluster role bindings for e2e tests")
@@ -336,17 +336,12 @@ var _ = SynchronizedAfterSuite(func() {
 })
 
 // setupSupervisorClusterProxy creates a WCPClusterProxyInterface instance with kubeconfig and runtime scheme.
-func setupSupervisorClusterProxy(kubeconfigPath string, sc *runtime.Scheme, config *e2eConfig.E2EConfig) wcpframework.WCPClusterProxyInterface {
-	var supervisorClusterProxy wcpframework.WCPClusterProxyInterface
-	if framework.InfraIs(config.InfraConfig.InfraName, consts.KIND) {
-		supervisorClusterProxy = wcpframework.NewSimulatedWCPClusterProxy("supervisor", kubeconfigPath, sc)
-	} else {
-		supervisorClusterProxy = common.NewVMServiceClusterProxy("supervisor", kubeconfigPath, sc)
-		wcpClient = supervisorClusterProxy.(*common.VMServiceClusterProxy).GetWorkloadManagementAPI()
-		Expect(wcpClient).ToNot(BeNil(), "wcpClient can't be nil when calling %s test suite", testSuiteName)
-	}
-
+func setupSupervisorClusterProxy(kubeconfigPath string, sc *runtime.Scheme) wcpframework.WCPClusterProxyInterface {
+	supervisorClusterProxy := common.NewVMServiceClusterProxy("supervisor", kubeconfigPath, sc)
 	Expect(supervisorClusterProxy).ToNot(BeNil(), "failed to get a supervisor cluster proxy")
+
+	wcpClient = supervisorClusterProxy.GetWorkloadManagementAPI()
+	Expect(wcpClient).ToNot(BeNil(), "wcpClient can't be nil when calling %s test suite", testSuiteName)
 
 	return supervisorClusterProxy
 }

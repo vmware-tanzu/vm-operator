@@ -23,10 +23,6 @@ import (
 )
 
 const (
-	clusterMoIDKey              = "vc_cluster"
-	fullClusterID               = "cluster_id_full"
-	supervisorID                = "supervisor_id"
-	vCenterPNIDKey              = "vc_pnid"
 	vCenterIPKey                = "VCSA_IP"
 	clusterConfigMapName        = "wcp-cluster-config"
 	kubeSystemNamespace         = "kube-system"
@@ -34,28 +30,35 @@ const (
 	VCSSHPort                   = 22
 )
 
+// wcpClusterConfig holds the fields of the WCP cluster config that the E2E
+// tests consume. Other keys in the config, including non-string values such as
+// lists, are ignored.
+type wcpClusterConfig struct {
+	ClusterMoID   string `yaml:"vc_cluster"`
+	FullClusterID string `yaml:"cluster_id_full"`
+	SupervisorID  string `yaml:"supervisor_id"`
+	VCPNID        string `yaml:"vc_pnid"`
+}
+
 // GetClusterMoIDFromKubeconfig uses the framework's current kubeconfig context to determine the MoID of the WCP enabled cluster.
 // This relies on the present of the wcp-cluster-config ConfigMap in kube-system
 // Only users in the Administrators@<domain> group can access this.
 func GetClusterMoIDFromKubeconfig(ctx context.Context, path string) string {
-	yamlData := getWCPClusterConfig(ctx, path)
-	return yamlData[clusterMoIDKey]
+	return getWCPClusterConfig(ctx, path).ClusterMoID
 }
 
 // GetSupervisorIDFromKubeconfig uses the framework's current kubeconfig context to determine the supervisor ID.
 // This relies on the presence of the wcp-cluster-config ConfigMap in kube-system
 // Only users in the Administrators@<domain> group can access this.
 func GetSupervisorIDFromKubeconfig(ctx context.Context, path string) string {
-	yamlData := getWCPClusterConfig(ctx, path)
-	return yamlData[supervisorID]
+	return getWCPClusterConfig(ctx, path).SupervisorID
 }
 
 // GetFullClusterIDFromKubeConfig uses the framework's current kubeconfig context to determine the full ID of the WCP enabled cluster.
 // This relies on the presence of the wcp-cluster-config ConfigMap in kube-system
 // Only users in the Administrators@<domain> group can access this.
 func GetFullClusterIDFromKubeConfig(ctx context.Context, path string) string {
-	yamlData := getWCPClusterConfig(ctx, path)
-	return yamlData[fullClusterID]
+	return getWCPClusterConfig(ctx, path).FullClusterID
 }
 
 // GetVCPNIDFromKubeconfig uses the framework's current kubeconfig context to determine the PNID of the VC that the WCP enabled cluster was deployed by.
@@ -66,8 +69,7 @@ func GetVCPNIDFromKubeconfig(ctx context.Context, path string) string {
 	val, ok := os.LookupEnv(vCenterIPKey)
 	if !ok {
 		// Useful when the current context does not point to a kubeconfig, eg. during GC app tests.
-		yamlData := getWCPClusterConfig(ctx, path)
-		return yamlData[vCenterPNIDKey]
+		return getWCPClusterConfig(ctx, path).VCPNID
 	}
 
 	return val
@@ -81,8 +83,7 @@ func GetVCPNIDFromKubeconfigFile(ctx context.Context, path string) string {
 // GetClusterMoIDFromKubeconfigFile returns the clusterMoID from a kubeconfig file currently pointing to a supervisor cluster.
 func GetClusterMoIDFromKubeconfigFile(ctx context.Context, path string) string {
 	// Useful when the current context does not point to a kubeconfig, eg. during GC app tests.
-	yamlData := getWCPClusterConfig(ctx, path)
-	return yamlData[clusterMoIDKey]
+	return getWCPClusterConfig(ctx, path).ClusterMoID
 }
 
 // CreateUserAndAssignToGrp creates user with given username and password, and assigns it to the given group.
@@ -107,7 +108,7 @@ func CreateUserAndAssignToGrp(ctx context.Context, vimClient *vim25.Client, sshC
 }
 
 // getWCPClusterConfig is helper method to get the WCP cluster config.
-func getWCPClusterConfig(ctx context.Context, path string) map[string]string {
+func getWCPClusterConfig(ctx context.Context, path string) wcpClusterConfig {
 	applyCmd := framework.NewCommand(
 		framework.WithCommand("cat"),
 		framework.WithArgs(path),
@@ -126,11 +127,11 @@ func getWCPClusterConfig(ctx context.Context, path string) map[string]string {
 		return err
 	}, 5*time.Minute, 10*time.Second).ShouldNot(HaveOccurred(), "failed to get configmap %q/%q with jsonpath=%q. Kubeconfig file: %s", kubeSystemNamespace, clusterConfigMapName, clusterConfigJSONPathFilter, string(stdout))
 
-	yamlData := map[string]string{}
-	err = yaml.Unmarshal(configYAML, yamlData)
+	var cfg wcpClusterConfig
+	err = yaml.Unmarshal(configYAML, &cfg)
 	Expect(err).NotTo(HaveOccurred(), "should be able to parse the WCP cluster config as YAML: %s", string(configYAML))
 
-	return yamlData
+	return cfg
 }
 
 // NewVcsimFinder returns a vcsim finder.

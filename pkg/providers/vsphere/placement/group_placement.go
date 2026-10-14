@@ -22,57 +22,57 @@ import (
 // Each mapping's ZoneName holds the VM's topology.kubernetes.io/zone label. An
 // empty ZoneName means the VM has no pinned zone.
 //
-// When VMHardAffinityDuringExecution feature is disabled, placement candidates are
-// constrained to a zone only when every VM has the same, non-empty zone as
-// PlaceVmsXCluster does not vsphereZones Per VM.
+// Deleting zones are excluded unless every VM is pinned to the same zone.
+// Admission restricts new VMs pinned to deleting zones to privileged accounts
+// and CAPV service accounts, regardless of the VM's labels identifying its owner.
 //
-// When the VMHardAffinityDuringExecution feature is enabled, each VM's zone is also
-// sent as its CandidateVsphereZone. Placement fails for the entire group if any
-// VM's zone is not a placement candidate, since group placement is
-// all-or-nothing.
+// Placement candidates are constrained to a single zone only when every VM has
+// the same, non-empty zone. Each pinned zone must be a placement candidate, and
+// each recommendation must honor the VM's pinned zone, regardless of feature flags.
+// A violation fails placement for the entire group.
+//
+// When VMHardAffinityDuringExecution is enabled, each VM's zone is also sent as
+// its CandidateVsphereZone. The field is omitted when the feature is disabled.
 func GroupPlacement(
 	ctx context.Context,
 	client ctrlclient.Client,
 	vcClient *vim25.Client,
 	finder *find.Finder,
 	namespace, childRPName string,
-	vmToZoneMappings []VMZonePlacementMapping) (map[string]Result, error) {
+	vmPlacementInputs []VMPlacementInput) (map[string]Result, error) {
 
-	// If all vms share the same zone, set it as preferredZoneNameForGroup.
-	preferredZoneNameForGroup := sharedZoneName(vmToZoneMappings)
+	// Honor a shared, admitted zone override, including a deleting zone.
+	sharedZone := sharedZoneName(vmPlacementInputs)
 
-	candidates, err := getPlacementCandidates(ctx, client, vcClient, preferredZoneNameForGroup, namespace, childRPName)
+	candidates, err := getPlacementCandidates(ctx, client, vcClient, sharedZone, namespace, childRPName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get placement candidates: %w", err)
 	}
-
 	if len(candidates) == 0 {
 		return nil, ErrNoPlacementCandidates
 	}
 
+	needDatastorePlacement := pkgcfg.FromContext(ctx).Features.FastDeploy
+
 	// Build the mappings sent to PlaceVmsXCluster, where ZoneName is the VM's
 	// candidate zone. A VM's zone must be a key in candidates (zone name to RP
 	// MoIDs).
-	perVMZones := pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution
-	candidateMappings := make([]VMZonePlacementMapping, len(vmToZoneMappings))
-	vmNameToZoneName := make(map[string]string, len(vmToZoneMappings))
-	for i, m := range vmToZoneMappings {
+	candidateMappings := make([]VMPlacementInput, len(vmPlacementInputs))
+	vmPinnedZoneMap := make(map[string]string, len(vmPlacementInputs))
+	for i, m := range vmPlacementInputs {
 		candidateMappings[i].ConfigSpec = m.ConfigSpec
 
-		// Do not set candidateZone if capability is disabled or if vm does not have
-		// preferred zone.
-		if !perVMZones || m.ZoneName == "" {
+		// Only VMs with a pinned zone require zone validation.
+		if m.ZoneName == "" {
 			continue
 		}
 		if _, ok := candidates[m.ZoneName]; !ok {
-			return nil, fmt.Errorf("VM %s zone %s is not a placement candidate: %w",
+			return nil, fmt.Errorf("for VM %s zone %s is not a placement candidate: %w",
 				m.ConfigSpec.Name, m.ZoneName, ErrNoPlacementCandidates)
 		}
 		candidateMappings[i].ZoneName = m.ZoneName
-		vmNameToZoneName[m.ConfigSpec.Name] = m.ZoneName
+		vmPinnedZoneMap[m.ConfigSpec.Name] = m.ZoneName
 	}
-
-	needDatastorePlacement := pkgcfg.FromContext(ctx).Features.FastDeploy
 	recommendations, err := getGroupPlacementRecommendations(
 		ctx,
 		vcClient,
@@ -93,7 +93,7 @@ func GroupPlacement(
 		}
 	}
 
-	vmNameToRecZoneName := make(map[string]string, len(recommendations))
+	results := make(map[string]Result, len(recommendations))
 	for vmName, recommendation := range recommendations {
 		zoneName, ok := resourcePoolToZoneName[recommendation.PoolMoRef.Value]
 		if !ok {
@@ -102,18 +102,13 @@ func GroupPlacement(
 				recommendation.PoolMoRef.Value)
 		}
 
-		// PlaceVmsXCluster should honor the VM's candidate zone. Fail if it
-		// recommended an RP in a different zone.
-		if want := vmNameToZoneName[vmName]; want != "" && want != zoneName {
+		// Reject recommendations outside the pinned zone, even when the feature
+		// flag prevents sending CandidateVsphereZone to PlaceVmsXCluster.
+		if want := vmPinnedZoneMap[vmName]; want != "" && want != zoneName {
 			return nil, fmt.Errorf("%w: VM %s requested zone %s, recommended zone %s",
 				ErrGroupPlacementZoneMismatch, vmName, want, zoneName)
 		}
 
-		vmNameToRecZoneName[vmName] = zoneName
-	}
-
-	results := make(map[string]Result, len(recommendations))
-	for vmName, recommendation := range recommendations {
 		if needDatastorePlacement {
 			// Get the name and type of the datastores.
 			if err := getDatastoreProperties(ctx, vcClient, &recommendation); err != nil {
@@ -122,7 +117,7 @@ func GroupPlacement(
 		}
 
 		result := Result{
-			ZoneName:   vmNameToRecZoneName[vmName],
+			ZoneName:   zoneName,
 			PoolMoRef:  recommendation.PoolMoRef,
 			HostMoRef:  recommendation.HostMoRef,
 			Datastores: recommendation.Datastores,
@@ -134,18 +129,18 @@ func GroupPlacement(
 	return results, nil
 }
 
-// sharedZoneName returns the zone name if every mapping has the same,
+// sharedZoneName returns the zone name if every input has the same,
 // non-empty zone. Otherwise, it returns an empty string.
-func sharedZoneName(vmToZoneMappings []VMZonePlacementMapping) string {
-	if len(vmToZoneMappings) == 0 || vmToZoneMappings[0].ZoneName == "" {
+func sharedZoneName(vmPlacementInputs []VMPlacementInput) string {
+	if len(vmPlacementInputs) == 0 || vmPlacementInputs[0].ZoneName == "" {
 		return ""
 	}
-	for _, m := range vmToZoneMappings[1:] {
-		if m.ZoneName != vmToZoneMappings[0].ZoneName {
+	for _, m := range vmPlacementInputs[1:] {
+		if m.ZoneName != vmPlacementInputs[0].ZoneName {
 			return ""
 		}
 	}
-	return vmToZoneMappings[0].ZoneName
+	return vmPlacementInputs[0].ZoneName
 }
 
 func getGroupPlacementRecommendations(
@@ -153,7 +148,7 @@ func getGroupPlacementRecommendations(
 	vcClient *vim25.Client,
 	finder *find.Finder,
 	candidates map[string][]string,
-	vmToZoneMappings []VMZonePlacementMapping,
+	vmPlacementInputs []VMPlacementInput,
 	needDatastorePlacement bool) (map[string]Recommendation, error) {
 
 	var candidateRPMoRefs []vimtypes.ManagedObjectReference
@@ -173,7 +168,7 @@ func getGroupPlacementRecommendations(
 		vcClient,
 		finder,
 		candidateRPMoRefs,
-		vmToZoneMappings,
+		vmPlacementInputs,
 		true,
 		needDatastorePlacement)
 }

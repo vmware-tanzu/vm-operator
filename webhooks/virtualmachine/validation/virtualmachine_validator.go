@@ -2626,7 +2626,8 @@ func (v validator) validateAvailabilityZone(
 			if err != nil {
 				return append(allErrs, field.Invalid(zoneLabelPath, zoneName, err.Error()))
 			}
-			// Prevent new VirtualMachines created on marked zone by SSO users.
+			// Only privileged accounts and CAPV service accounts may create VMs
+			// in a deleting zone. CAPV labels on the VM do not grant this access.
 			if !zone.DeletionTimestamp.IsZero() {
 				if !ctx.IsPrivilegedAccount && !isCAPVServiceAccount(ctx.UserInfo.Username) {
 					return append(allErrs, field.Invalid(zoneLabelPath, zoneName, invalidZone))

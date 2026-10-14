@@ -118,7 +118,6 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		JustBeforeEach(func() {
 			session.UpdateConfigSpecExtraConfig(
-				ctx,
 				config,
 				configSpec,
 				vm,
@@ -245,7 +244,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		It("cbt and status cbt unset", func() {
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
@@ -255,7 +254,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				ChangeBlockTracking: ptr.To(false),
 			}
 
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeFalse())
 		})
@@ -264,7 +263,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			config.ChangeTrackingEnabled = ptr.To(true)
 			vmSpec.Advanced = nil
 
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
@@ -274,7 +273,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				ChangeBlockTracking: ptr.To(true),
 			}
 
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
 		})
@@ -285,7 +284,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				ChangeBlockTracking: ptr.To(true),
 			}
 
-			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 	})

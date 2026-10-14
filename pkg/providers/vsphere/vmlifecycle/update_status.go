@@ -79,25 +79,27 @@ func ReconcileStatus(
 	errs = append(errs, reconcileStatusNodeName(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusController(vmCtx, k8sClient, vcVM, data)...)
 
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	cfg := pkgcfg.FromContext(vmCtx.Context)
+
+	if cfg.Features.TelcoVMServiceAPI {
 		errs = append(errs, reconcileStatusExtraConfig(vmCtx, k8sClient, vcVM, data)...)
 		errs = append(errs, reconcileComputeConfigSynced(vmCtx, k8sClient, vcVM, data)...)
 		errs = append(errs, reconcileStatusNetworkExtraConfig(vmCtx, k8sClient, vcVM, data)...)
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+	if cfg.Features.VMSharedDisks {
 		errs = append(errs, reconcileHardwareCondition(vmCtx, k8sClient, vcVM, data)...)
 	}
 
-	if pkgcfg.FromContext(vmCtx).AsyncSignalEnabled {
+	if cfg.AsyncSignalEnabled {
 		errs = append(errs, reconcileStatusProbe(vmCtx, k8sClient, vcVM, data)...)
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.VMGroups {
+	if cfg.Features.VMGroups {
 		errs = append(errs, reconcileStatusGroup(vmCtx, k8sClient, vcVM, data)...)
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
+	if cfg.Features.VMSnapshots {
 		errs = append(errs, reconcileStatusSnapshot(vmCtx, k8sClient, vcVM, data)...)
 	}
 
@@ -166,7 +168,7 @@ func reconcileStatusClass(
 		// since we don't know if the class has been applied to the VM.
 		// When resize is enabled, this field is updated after a successful
 		// resize.
-		if !pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory {
+		if !pkgcfg.FromContext(vmCtx.Context).Features.VMResizeCPUMemory {
 			vmCtx.VM.Status.Class = &common.LocalObjectRef{
 				APIVersion: vmopv1.GroupVersion.String(),
 				Kind:       "VirtualMachineClass",
@@ -175,7 +177,7 @@ func reconcileStatusClass(
 		}
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory {
+	if pkgcfg.FromContext(vmCtx.Context).Features.VMResizeCPUMemory {
 		MarkVMClassConfigurationSynced(vmCtx, vmCtx.VM, k8sClient)
 	}
 
@@ -229,7 +231,7 @@ func reconcileStatusHardware(
 			}
 		}
 
-		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		if pkgcfg.FromContext(vmCtx.Context).Features.TelcoVMServiceAPI {
 			if a := config.CpuAllocation; a != nil {
 				// Nil or -1 Limit means unlimited in vSphere; only surface explicit positive limits.
 				if lim := a.Limit; lim != nil && *lim >= 0 {
@@ -288,7 +290,7 @@ func reconcileStatusHardware(
 			}
 		}
 
-		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		if pkgcfg.FromContext(vmCtx.Context).Features.TelcoVMServiceAPI {
 			if a := config.MemoryAllocation; a != nil {
 				// Nil or -1 Limit means unlimited in vSphere; only surface explicit positive limits.
 				if lim := a.Limit; lim != nil && *lim >= 0 {
@@ -568,7 +570,7 @@ func reconcileStatusNodeName(
 	var errs []error
 
 	nodeName, err := getRuntimeHostHostname(
-		vmCtx, vcVM, vmCtx.MoVM.Summary.Runtime.Host)
+		vmCtx.Context, vcVM, vmCtx.MoVM.Summary.Runtime.Host)
 	if err != nil {
 		errs = append(errs, err)
 	} else {
@@ -623,7 +625,7 @@ func reconcileStatusProbe(
 
 	// Emit event when the condition is added or its status changes.
 	if c := conditions.Get(vmCtx.VM, cond.Type); c == nil || c.Status != cond.Status {
-		recorder := vmoprecord.FromContext(vmCtx)
+		recorder := vmoprecord.FromContext(vmCtx.Context)
 		if cond.Status == metav1.ConditionTrue {
 			recorder.Eventf(vmCtx.VM, probeReasonReady, "")
 		} else {
@@ -1384,7 +1386,7 @@ func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) []error {
 
 		moVM        = vmCtx.MoVM
 		vm          = vmCtx.VM
-		snapEnabled = pkgcfg.FromContext(vmCtx).Features.VMSnapshots
+		snapEnabled = pkgcfg.FromContext(vmCtx.Context).Features.VMSnapshots
 
 		errs []error
 	)
@@ -1434,7 +1436,7 @@ func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) []error {
 	// Get the storage consumed by snapshots.
 	if snapEnabled {
 		var err error
-		vmSnapshotUsed, volSnapshotUsed, err = virtualmachine.GetAllSnapshotSize(vmCtx, moVM)
+		vmSnapshotUsed, volSnapshotUsed, err = virtualmachine.GetAllSnapshotSize(vmCtx.Context, moVM)
 		if err != nil {
 			errs = append(errs,
 				fmt.Errorf("failed to compute snapshot size of VM: %w", err),
@@ -1499,9 +1501,12 @@ func updateStorageUsage(vmCtx pkgctx.VirtualMachineContext) []error {
 
 func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 	var (
-		moVM        = vmCtx.MoVM
-		vm          = vmCtx.VM
-		snapEnabled = pkgcfg.FromContext(vmCtx).Features.VMSnapshots
+		moVM         = vmCtx.MoVM
+		vm           = vmCtx.VM
+		features     = pkgcfg.FromContext(vmCtx.Context).Features
+		snapEnabled  = features.VMSnapshots
+		allDisksPVCs = features.AllDisksArePVCs
+		sharedDisks  = features.VMSharedDisks
 	)
 	if moVM.Config == nil ||
 		moVM.LayoutEx == nil ||
@@ -1512,7 +1517,7 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 		return
 	}
 
-	info, ok := pkgvol.FromContext(vmCtx)
+	info, ok := pkgvol.FromContext(vmCtx.Context)
 	if !ok {
 		info = pkgvol.GetVolumeInfoFromVM(vm, moVM)
 	}
@@ -1569,7 +1574,7 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 			// The disk is already in the list of volume statuses, so update the
 			// existing status with the usage information.
 			ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
-				vmCtx,
+				vmCtx.Context,
 				nil,         /* no client since props aren't re-fetched */
 				moVM,        /* use props from this object */
 				false,       /* do not refetch props */
@@ -1593,8 +1598,7 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				vm.Status.Volumes[diskIndex].Requested = kubeutil.BytesToResource(di.CapacityInBytes)
 			}
 
-			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs ||
-				pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+			if allDisksPVCs || sharedDisks {
 
 				// Update target ID info.
 				vm.Status.Volumes[diskIndex].UnitNumber = di.UnitNumber
@@ -1611,7 +1615,7 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 			}
 
 			// Classic disk should be converted to PVC in the end.
-			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+			if allDisksPVCs {
 				if di.FCD && vm.Status.Volumes[diskIndex].Type == vmopv1.VolumeTypeClassic {
 					vm.Status.Volumes[diskIndex].Type = vmopv1.VolumeTypeManaged
 				}
@@ -1629,7 +1633,7 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 			// The disk is a classic, non-FCD that must be added to the list
 			// of volume statuses.
 			ddi, _ := vmdk.GetVirtualDiskInfoByUUID(
-				vmCtx,
+				vmCtx.Context,
 				nil,         /* no client since props aren't re-fetched */
 				moVM,        /* use props from this object */
 				false,       /* do not refetch props */
@@ -1646,8 +1650,7 @@ func updateVolumeStatus(vmCtx pkgctx.VirtualMachineContext) {
 				Used:      kubeutil.BytesToResource(ddi.UniqueSize),
 			}
 
-			if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs ||
-				pkgcfg.FromContext(vmCtx).Features.VMSharedDisks {
+			if allDisksPVCs || sharedDisks {
 
 				volStatus.UnitNumber = di.UnitNumber
 				if c, ok := info.Controllers[di.ControllerKey]; ok {
@@ -2454,7 +2457,7 @@ func reconcileStatusNetworkExtraConfigInterfaces(
 
 	vm := vmCtx.VM
 	sortedNICKeys := vmopv1util.SortedVMXNet3NICKeys()
-	log := pkglog.FromContextOrDefault(vmCtx)
+	log := pkglog.FromContextOrDefault(vmCtx.Context)
 
 	for i, iface := range vm.Spec.Network.Interfaces {
 		matchedDev := matcher(iface, i)

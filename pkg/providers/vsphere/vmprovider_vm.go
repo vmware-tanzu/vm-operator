@@ -214,7 +214,7 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 
 	if foundVM != nil {
 		// Mark that this is an update operation.
-		ctxop.MarkUpdate(vmCtx)
+		ctxop.MarkUpdate(vmCtx.Context)
 
 		vmCtx.Logger.V(4).Info("found VM and updating")
 		return nil, vs.updateVirtualMachine(vmCtx, foundVM, client)
@@ -989,7 +989,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	// 1. Fetch properties
 	//
 	if err := vcVM.Properties(
-		vmCtx,
+		vmCtx.Context,
 		vcVM.Reference(),
 		VMUpdatePropertiesSelector,
 		&vmCtx.MoVM); err != nil {
@@ -1068,10 +1068,12 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		reconcileErr = getReconcileErr("backup state", reconcileErr, err)
 	}
 
+	features := pkgcfg.FromContext(vmCtx.Context).Features
+
 	//
 	// 9. Reconcile snapshot revert
 	//
-	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
+	if features.VMSnapshots {
 		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
 			if pkgerr.IsNoRequeueError(err) {
 				return errOrReconcileErr(reconcileErr, err)
@@ -1089,8 +1091,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			// annotate any queued snapshots so they don't appear stuck with
 			// empty conditions. ReconcileCurrentSnapshot is skipped on this
 			// path, so we set the condition here before exiting early.
-			if pkgcfg.FromContext(vmCtx).Features.VMSnapshots &&
-				pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs &&
+			if features.VMSnapshots && features.AllDisksArePVCs &&
 				!pkgcond.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
 				if setErr := ReconcileSnapshotWaitForCRVCondition(
 					vmCtx, vs.k8sClient); setErr != nil {
@@ -1123,7 +1124,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	//
 	// 12. Reconcile snapshot create
 	//
-	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
+	if features.VMSnapshots {
 		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
 			if pkgerr.IsNoRequeueError(err) {
 				return errOrReconcileErr(reconcileErr, err)
@@ -1289,15 +1290,15 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 	ctx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (context.Context, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx)
+	logger := pkglog.FromContextOrDefault(ctx.Context)
 	pc := property.DefaultCollector(vcClient.VimClient())
 
 	// Check if the VM has any recent tasks.
 	var rt []vimtypes.TaskInfo
-	for _, taskRef := range ctx.MoVM.RecentTask {
+	for i, taskRef := range ctx.MoVM.RecentTask {
 		var t mo.Task
 		if err := pc.RetrieveOne(
-			ctx,
+			ctx.Context,
 			taskRef,
 			[]string{"info"},
 			&t); err != nil {
@@ -1314,40 +1315,46 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				logLevel = 2
 			}
 
-			var descMsg string
-			if t.Info.Description != nil {
-				descMsg = t.Info.Description.Message
-			}
+			taskLogger := logger.V(logLevel)
+			if taskLogger.Enabled() {
+				var descMsg string
+				if t.Info.Description != nil {
+					descMsg = t.Info.Description.Message
+				}
 
-			var completedTime string
-			if t.Info.CompleteTime != nil {
-				completedTime = t.Info.CompleteTime.String()
-			}
+				var completedTime string
+				if t.Info.CompleteTime != nil {
+					completedTime = t.Info.CompleteTime.String()
+				}
 
-			logger.V(logLevel).Info("VM has task",
-				"activationId", t.Info.ActivationId,
-				"descriptionId", t.Info.DescriptionId,
-				"description", descMsg,
-				"cancelable", t.Info.Cancelable,
-				"cancelled", t.Info.Cancelled,
-				"changeTag", t.Info.ChangeTag,
-				"completeTime", completedTime,
-				"entity", t.Info.Entity,
-				"entityName", t.Info.EntityName,
-				"error", t.Info.Error,
-				"eventChainId", t.Info.EventChainId,
-				"key", t.Info.Key,
-				"locked", vimtypes.ToString(t.Info.Locked),
-				"name", t.Info.Name,
-				"parentTaskKey", t.Info.ParentTaskKey,
-				"progress", t.Info.Progress,
-				"queueTime", t.Info.QueueTime,
-				"reason", t.Info.Reason,
-				"result", t.Info.Result,
-				"rootTaskKey", t.Info.RootTaskKey,
-				"startTime", t.Info.StartTime,
-				"state", t.Info.State,
-				"task", t.Info.Task)
+				taskLogger.Info("VM has task",
+					"activationId", t.Info.ActivationId,
+					"descriptionId", t.Info.DescriptionId,
+					"description", descMsg,
+					"cancelable", t.Info.Cancelable,
+					"cancelled", t.Info.Cancelled,
+					"changeTag", t.Info.ChangeTag,
+					"completeTime", completedTime,
+					"entity", t.Info.Entity,
+					"entityName", t.Info.EntityName,
+					"error", t.Info.Error,
+					"eventChainId", t.Info.EventChainId,
+					"key", t.Info.Key,
+					"locked", vimtypes.ToString(t.Info.Locked),
+					"name", t.Info.Name,
+					"parentTaskKey", t.Info.ParentTaskKey,
+					"progress", t.Info.Progress,
+					"queueTime", t.Info.QueueTime,
+					"reason", t.Info.Reason,
+					"result", t.Info.Result,
+					"rootTaskKey", t.Info.RootTaskKey,
+					"startTime", t.Info.StartTime,
+					"state", t.Info.State,
+					"task", t.Info.Task)
+			}
+			if rt == nil {
+				rt = make([]vimtypes.TaskInfo, 0, len(ctx.MoVM.RecentTask)-i)
+			}
 			rt = append(rt, t.Info)
 		}
 	}
@@ -1364,11 +1371,11 @@ func (vs *vSphereVMProvider) getTags(
 	vcClient *vcclient.Client) (context.Context, error) {
 
 	var (
-		logger = pkglog.FromContextOrDefault(ctx)
+		logger = pkglog.FromContextOrDefault(ctx.Context)
 		mgr    = tags.NewManager(vcClient.RestClient())
 	)
 
-	list, err := mgr.ListAttachedTags(ctx, ctx.MoVM.Reference())
+	list, err := mgr.ListAttachedTags(ctx.Context, ctx.MoVM.Reference())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list vm's attached tags: %w", err)
 	}
@@ -1421,7 +1428,7 @@ func (vs *vSphereVMProvider) reconcileConfig(
 	}
 
 	clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(
-		vmCtx,
+		vmCtx.Context,
 		vcVM.Client(),
 		vmCtx.MoVM.ResourcePool.Value)
 	if err != nil {

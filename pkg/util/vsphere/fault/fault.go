@@ -1,3 +1,7 @@
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package fault
 
 import (
@@ -6,15 +10,14 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 )
 
-// LocalizedMessagesFromFault extracts all localized messages from a LocalizedMethodFault,
-// recursively traversing nested faults.
-//
-// This function handles the special case of NoCompatibleHost hierarchies by:
-//   - Extracting the top-level LocalizedMessage only
-//   - Recursively unwrapping Error field chains (e.g., NoCompatibleHost.Error)
-//
-// Returns an empty slice if both the LocalizedMessage and Fault are nil/empty.
+// LocalizedMessagesFromFault extracts unique localized and FaultMessage details,
+// including nested NoCompatibleHost errors. Messages are trimmed of trailing
+// colons and whitespace and returned in first-seen order.
 func LocalizedMessagesFromFault(lmf vimtypes.LocalizedMethodFault) []string {
+	return LocalizedMessagesFromFaults([]vimtypes.LocalizedMethodFault{lmf})
+}
+
+func localizedMessagesFromFault(lmf vimtypes.LocalizedMethodFault) []string {
 	var messages []string
 
 	if lmf.LocalizedMessage != "" {
@@ -36,23 +39,30 @@ func LocalizedMessagesFromFault(lmf vimtypes.LocalizedMethodFault) []string {
 		}
 	}
 
-	// Only extract messages from the top level NoCompatibleHost fault.
-	// Placement APIs return faults from single host per ResourcePool, we won't end up with too many errors.
+	// Include localized and FaultMessage details from nested host faults.
 	if nch, ok := lmf.Fault.(*vimtypes.NoCompatibleHost); ok {
 		for _, nestedLmf := range nch.Error {
-			messages = append(messages, LocalizedMessagesFromFault(nestedLmf)...)
+			messages = append(messages, localizedMessagesFromFault(nestedLmf)...)
 		}
 	}
 
 	return messages
 }
 
-// LocalizedMessagesFromFaults extracts all localized messages from a slice of LocalizedMethodFault.
-// Returns an empty slice if the input faults slice is empty.
+// LocalizedMessagesFromFaults extracts unique messages across all supplied faults
+// and their nested NoCompatibleHost errors, preserving first-seen order after
+// trimming trailing colons and whitespace. It returns nil when no messages exist.
 func LocalizedMessagesFromFaults(faults []vimtypes.LocalizedMethodFault) []string {
 	var allMessages []string //nolint:prealloc // per-fault message count unknown; nil result preserved
+	seen := make(map[string]struct{})
 	for _, f := range faults {
-		allMessages = append(allMessages, LocalizedMessagesFromFault(f)...)
+		for _, message := range localizedMessagesFromFault(f) {
+			if _, ok := seen[message]; ok {
+				continue
+			}
+			seen[message] = struct{}{}
+			allMessages = append(allMessages, message)
+		}
 	}
 	return allMessages
 }

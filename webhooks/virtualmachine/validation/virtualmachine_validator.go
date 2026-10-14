@@ -2433,11 +2433,13 @@ func (v validator) validateCdromWhenPoweredOn(
 	return allErrs
 }
 
-var capvDefaultServiceAccount = regexp.MustCompile("^system:serviceaccount:svc-tkg-domain-[^:]+:default$")
+var capvDefaultServiceAccount = regexp.MustCompile(`^system:serviceaccount:svc-tkg-[^:]+:(?:default|capv-manager)$`)
 
 // isCAPVServiceAccount checks if the username matches that of the CAPV service account.
+// It supports both legacy (svc-tkg-domain-*) and new (svc-tkg-<random>) supervisor service
+// namespaces, and both "default" and "capv-manager" service account names.
 func isCAPVServiceAccount(username string) bool {
-	return capvDefaultServiceAccount.Match([]byte(username))
+	return capvDefaultServiceAccount.MatchString(username)
 }
 
 func (v validator) validateChecks(

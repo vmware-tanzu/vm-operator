@@ -42,6 +42,7 @@ var _ = Describe("VirtualMachine", Label(testlabels.VCSim), func() {
 	Describe("PCI", vmPCITests)
 	Describe("Policy", vmPolicyTests)
 	Describe("Power", vmPowerStateTests)
+	Describe("RecentTasks", vmRecentTasksTests)
 	Describe("Resize", vmResizeTests)
 	Describe("SetResourcePolicy", vmSetResourcePolicyTests)
 	Describe("Snapshot", Label(testlabels.Snapshot), vmSnapshotTests)

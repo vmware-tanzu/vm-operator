@@ -138,7 +138,7 @@ func getBackfilledVolumes(
 		return []string{}
 	}
 
-	// Wait for both conditions
+	// Wait for volume backfill, registration, and disk promotion to complete.
 	conditions := []metav1.Condition{
 		{
 			Type:   consts.VMUnmanagedVolumesBackfilledCondition,
@@ -148,7 +148,8 @@ func getBackfilledVolumes(
 			Type:   consts.VMUnmanagedVolumesRegisteredCondition,
 			Status: metav1.ConditionTrue,
 		},
-		// Add: wait for disk promotion to complete before checking type: Managed
+		// Registration can precede promotion; wait before checking Managed status.
+		// Requires the default Online mode; Disabled removes this condition.
 		{
 			Type:   string(vmopv1.VirtualMachineDiskPromotionSynced),
 			Status: metav1.ConditionTrue,
@@ -2195,6 +2196,12 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					},
 					{
 						Type:   consts.VMUnmanagedVolumesRegisteredCondition,
+						Status: metav1.ConditionTrue,
+					},
+					// Volumes are asserted to be Managed below, which requires
+					// disk promotion to have completed.
+					{
+						Type:   string(vmopv1.VirtualMachineDiskPromotionSynced),
 						Status: metav1.ConditionTrue,
 					},
 				}

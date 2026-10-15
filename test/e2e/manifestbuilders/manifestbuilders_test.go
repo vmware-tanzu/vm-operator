@@ -320,12 +320,36 @@ var _ = Describe("Manifest builders", func() {
 			filler.Fill(p.Hardware)
 			filler.Fill(&p.Policies)
 
+			// requiredDuringSchedulingRequiredDuringExecution does not
+			// exist in v1alpha5.
+			p.Affinity.VMAffinity.RequiredDuringSchedulingRequiredDuringExecution = nil
+			p.Affinity.VMAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution = nil
+
 			vm, err := mb.VirtualMachineA5(p)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(toJSON(vm.Spec.Affinity)).To(MatchJSON(toJSON(p.Affinity)))
 			Expect(toJSON(vm.Spec.Hardware)).To(MatchJSON(toJSON(p.Hardware)))
 			Expect(toJSON(vm.Spec.Policies)).To(MatchJSON(toJSON(p.Policies)))
+		}
+	})
+
+	// Unlike v1alpha5, v1alpha6 has requiredDuringSchedulingRequiredDuringExecution,
+	// so every Affinity field must round-trip, including that one.
+	It("VirtualMachineA6 copies every v1alpha6 Affinity field", func() {
+		filler := randfill.New().NilChance(0).NumElements(1, 3)
+
+		for range 50 {
+			p := minimalVM()
+			p.Affinity = &vmopv1.AffinitySpec{}
+			filler.Fill(p.Affinity)
+
+			vm, err := mb.VirtualMachineA6(p)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(p.Affinity.VMAffinity.RequiredDuringSchedulingRequiredDuringExecution).ToNot(BeEmpty())
+			Expect(p.Affinity.VMAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution).ToNot(BeEmpty())
+			Expect(toJSON(vm.Spec.Affinity)).To(MatchJSON(toJSON(p.Affinity)))
 		}
 	})
 

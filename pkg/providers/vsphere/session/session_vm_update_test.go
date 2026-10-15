@@ -976,6 +976,24 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				Expect(disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).Parent).ToNot(BeNil())
 				Expect(disk.CapacityInBytes).To(Equal(oldDiskSizeBytes))
 			})
+
+			When("promoteDisksMode is Disabled", func() {
+				BeforeEach(func() {
+					vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
+				})
+
+				It("should not resize the boot disk since it is never promoted", func() {
+					Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(MatchError(vmlifecycle.ErrBootstrapCustomize))
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+
+					devs := object.VirtualDeviceList(vmCtx.MoVM.Config.Hardware.Device)
+					disks := devs.SelectByType(&vimtypes.VirtualDisk{})
+					Expect(disks).To(HaveLen(1))
+					disk := disks[0].(*vimtypes.VirtualDisk)
+					Expect(disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).Parent).ToNot(BeNil())
+					Expect(disk.CapacityInBytes).To(Equal(oldDiskSizeBytes))
+				})
+			})
 		})
 
 		When("the boot disk size is changed and the boot disk has a PVC", func() {

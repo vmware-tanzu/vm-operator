@@ -1018,6 +1018,22 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 					Expect(getPromoTaskRef()).ToNot(BeNil())
 					Expect(promotedKeys).To(ConsistOf(bootKey))
 				})
+
+				When("the VM has CD-ROMs", func() {
+					BeforeEach(func() {
+						vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{{Name: "cdrom1"}},
+						}
+					})
+					It("should not promote the boot disk before the VM is powered on", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(getPromoTaskRef()).To(BeNil())
+						Expect(promotedKeys).To(BeEmpty())
+						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
+					})
+				})
 			})
 
 			When("the VM is powered on", func() {
@@ -1028,6 +1044,44 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 				It("should promote all of the disks online", func() {
 					Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
 					Expect(getPromoTaskRef()).ToNot(BeNil())
+				})
+
+				When("a task that promoted only the boot disk succeeded", func() {
+					BeforeEach(func() {
+						ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+							{
+								State:         vimtypes.TaskInfoStateSuccess,
+								DescriptionId: diskpromo.PromoteDisksTaskKey,
+								ActivationId: pkgctx.WithVCOpID(
+									context.Background(),
+									vm,
+									diskpromo.PromoteBootDiskOpName).
+									Value(vimtypes.ID{}).(string),
+							},
+						})
+					})
+					It("should promote the other disks", func() {
+						Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+						Expect(getPromoTaskRef()).ToNot(BeNil())
+					})
+				})
+
+				When("a task that promoted all of the disks succeeded", func() {
+					BeforeEach(func() {
+						ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+							{
+								State:         vimtypes.TaskInfoStateSuccess,
+								DescriptionId: diskpromo.PromoteDisksTaskKey,
+							},
+						})
+					})
+					It("should mark disk promotion synced and not promote", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(getPromoTaskRef()).To(BeNil())
+						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionTrue))
+					})
 				})
 			})
 

@@ -15,6 +15,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -27,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
@@ -43,16 +45,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
 
 //nolint:gocyclo
 func vmFastDeployTests() {
@@ -502,54 +499,49 @@ func vmFastDeployTests() {
 					})
 
 					When("cached file verification fails", func() {
-						interceptCachedFileHEAD := func(statusCode int) (*int, func()) {
-							vcClient, err := vmProvider.VSphereClient(ctx)
-							Expect(err).ToNot(HaveOccurred())
+						// serveCachedFileHEAD makes vcsim answer HEAD requests for
+						// the cached disk with the given status code, and returns
+						// the number of such requests served.
+						serveCachedFileHEAD := func(statusCode int) *atomic.Int32 {
+							var diskPath object.DatastorePath
+							Expect(diskPath.FromString(cachedDiskPaths[0])).To(BeTrue())
+							fileURL := object.NewDatastoreURL(
+								*ctx.VCClient.Client.URL(),
+								ctx.Datacenter.InventoryPath,
+								diskPath.Datastore,
+								diskPath.Path)
 
-							vimClient := vcClient.VimClient()
-							originalTransport := vimClient.Client.Transport
-							transport := originalTransport
-							if transport == nil {
-								transport = http.DefaultTransport
-							}
+							// The handler runs on the server's goroutine, so the
+							// counter must be safe for concurrent access.
+							var requests atomic.Int32
+							ctx.SimulatorService().ServeMux.HandleFunc(
+								"HEAD "+fileURL.Path,
+								func(w http.ResponseWriter, _ *http.Request) {
+									requests.Add(1)
+									w.WriteHeader(statusCode)
+								})
 
-							requests := 0
-							vimClient.Client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
-								if req.Method == http.MethodHead &&
-									strings.Contains(req.URL.Path, path.Base(cachedDiskPaths[0])) {
-
-									requests++
-									return &http.Response{
-										StatusCode: statusCode,
-										Status:     fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
-										Body:       http.NoBody,
-										Header:     make(http.Header),
-										Request:    req,
-									}, nil
-								}
-								return transport.RoundTrip(req)
-							})
-
-							return &requests, func() {
-								vimClient.Client.Transport = originalTransport
-							}
+							return &requests
 						}
 
-						It("returns HTTP 500 as a retryable error", func() {
-							requests, restore := interceptCachedFileHEAD(http.StatusInternalServerError)
-							defer restore()
+						It("returns HTTP 500 as an error instead of waiting for the cache", func() {
+							requests := serveCachedFileHEAD(http.StatusInternalServerError)
 
 							err := createVM()
 							Expect(err).To(HaveOccurred())
+							Expect(err.Error()).To(ContainSubstring("failed to verify cached file"))
 							Expect(err.Error()).To(ContainSubstring("500 Internal Server Error"))
 							var cacheNotReady pkgerr.VMICacheNotReadyError
 							Expect(errors.As(err, &cacheNotReady)).To(BeFalse())
-							Expect(*requests).To(Equal(1))
+							Expect(requests.Load()).To(Equal(int32(1)))
+
+							chanSource := cource.FromContextWithBuffer(
+								ctx, "VirtualMachineImageCache", 100)
+							Consistently(chanSource).ShouldNot(Receive())
 						})
 
 						It("still waits for the cache when the file is missing", func() {
-							requests, restore := interceptCachedFileHEAD(http.StatusNotFound)
-							defer restore()
+							requests := serveCachedFileHEAD(http.StatusNotFound)
 
 							assertVMICNotReady(
 								createVM(),
@@ -557,7 +549,14 @@ func vmFastDeployTests() {
 								vmic.Name,
 								ctx.Datacenter.Reference().Value,
 								ctx.Datastore.Reference().Value)
-							Expect(*requests).To(Equal(1))
+							Expect(requests.Load()).To(Equal(int32(1)))
+
+							chanSource := cource.FromContextWithBuffer(
+								ctx, "VirtualMachineImageCache", 100)
+							var e event.GenericEvent
+							Eventually(chanSource).Should(Receive(&e))
+							Expect(e.Object.GetNamespace()).To(Equal(vmic.Namespace))
+							Expect(e.Object.GetName()).To(Equal(vmic.Name))
 						})
 					})
 

@@ -201,6 +201,72 @@ var _ = Describe("Install", func() {
 		Expect(pkgcrd.Install(ctx, client, nil)).To(Succeed())
 	})
 
+	When("CRDs are installed again", func() {
+		var patchedNames []string
+		var recordingClient *patchRecordingClient
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.CRDCleanupEnabled = true
+			})
+		})
+
+		JustBeforeEach(func() {
+			patchedNames = nil
+			recordingClient = &patchRecordingClient{Client: client, patchedNames: &patchedNames}
+		})
+
+		It("should skip patches when specs are unchanged", func() {
+			Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
+			Expect(patchedNames).To(BeEmpty())
+		})
+
+		It("should preserve conversion configuration without patching", func() {
+			key := ctrlclient.ObjectKey{Name: "virtualmachines.vmoperator.vmware.com"}
+			var obj apiextensionsv1.CustomResourceDefinition
+			Expect(client.Get(ctx, key, &obj)).To(Succeed())
+			conversion := &apiextensionsv1.CustomResourceConversion{
+				Strategy: apiextensionsv1.WebhookConverter,
+				Webhook: &apiextensionsv1.WebhookConversion{
+					ConversionReviewVersions: []string{"v1"},
+					ClientConfig: &apiextensionsv1.WebhookClientConfig{
+						Service: &apiextensionsv1.ServiceReference{
+							Name: "webhook", Namespace: "default",
+							Path: ptr.To("/convert"), Port: ptr.To(int32(443)),
+						},
+					},
+				},
+			}
+			obj.Spec.Conversion = conversion
+			obj.Labels = map[string]string{"test": "preserved"}
+			Expect(client.Update(ctx, &obj)).To(Succeed())
+
+			Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
+			Expect(patchedNames).To(BeEmpty())
+			Expect(client.Get(ctx, key, &obj)).To(Succeed())
+			Expect(obj.Spec.Conversion).To(Equal(conversion))
+			Expect(obj.Labels).To(HaveKeyWithValue("test", "preserved"))
+		})
+
+		It("should patch a changed spec and skip it on the next installation", func() {
+			key := ctrlclient.ObjectKey{Name: "virtualmachines.vmoperator.vmware.com"}
+			var expected apiextensionsv1.CustomResourceDefinition
+			Expect(client.Get(ctx, key, &expected)).To(Succeed())
+			obj := expected.DeepCopy()
+			obj.Spec.Names.ShortNames = []string{"changed"}
+			Expect(client.Update(ctx, obj)).To(Succeed())
+
+			Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
+			Expect(patchedNames).To(Equal([]string{key.Name}))
+			Expect(client.Get(ctx, key, obj)).To(Succeed())
+			Expect(obj.Spec).To(Equal(expected.Spec))
+
+			patchedNames = nil
+			Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
+			Expect(patchedNames).To(BeEmpty())
+		})
+	})
+
 	AfterEach(func() {
 		ctx = nil
 		client = nil
@@ -1431,6 +1497,22 @@ var _ = Describe(
 	"Install against real API server",
 	Label(testlabels.EnvTest),
 	func() {
+		DescribeTable("should skip patches after API server defaulting",
+			func(enabled bool) {
+				ctx := pkgcfg.WithConfig(pkgcfg.Config{
+					CRDCleanupEnabled: true,
+					Features:          featureStates(enabled),
+				})
+				Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+				var patchedNames []string
+				client := &patchRecordingClient{Client: envTestClient, patchedNames: &patchedNames}
+				Expect(pkgcrd.Install(ctx, client, nil)).To(Succeed())
+				Expect(patchedNames).To(BeEmpty())
+			},
+			Entry("with capabilities enabled", true),
+			Entry("with capabilities disabled", false),
+		)
+
 		It("should accept CRDs with all capabilities disabled", func() {
 			ctx := pkgcfg.WithConfig(pkgcfg.Config{
 				CRDCleanupEnabled: true,
@@ -1552,4 +1634,20 @@ func featureStates(enabled bool) pkgcfg.FeatureStates {
 	}
 	fs.VirtualMachineConfigPolicy = true
 	return fs
+}
+
+// patchRecordingClient records writes while preserving the underlying client's behavior.
+type patchRecordingClient struct {
+	ctrlclient.Client
+	patchedNames *[]string
+}
+
+func (c *patchRecordingClient) Patch(
+	ctx context.Context,
+	obj ctrlclient.Object,
+	patch ctrlclient.Patch,
+	opts ...ctrlclient.PatchOption,
+) error {
+	*c.patchedNames = append(*c.patchedNames, obj.GetName())
+	return c.Client.Patch(ctx, obj, patch, opts...)
 }

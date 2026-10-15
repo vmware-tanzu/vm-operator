@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -676,9 +677,9 @@ func updateOrDeleteUnstructured(
 	// Update the CRD
 	//
 
-	// Create the patch to update the object.
-	objPatch := ctrlclient.MergeFrom(
-		obj.DeepCopyObject().(ctrlclient.Object))
+	// Preserve the current object for comparison and patch generation.
+	original := obj.DeepCopy()
+	objPatch := ctrlclient.MergeFrom(original)
 
 	// Get a possible CustomResourceConversion field value.
 	crc, hasCRC, err := unstructured.NestedMap(
@@ -721,6 +722,13 @@ func updateOrDeleteUnstructured(
 			return fmt.Errorf(
 				"failed to mutate crd %q on update: %w", k, err)
 		}
+	}
+
+	// Avoid a write when the spec is unchanged after applying mutations and
+	// preserving the existing conversion configuration.
+	if equality.Semantic.DeepEqual(original.Object["spec"], obj.Object["spec"]) {
+		logger.V(4).Info("Skipped patch of unchanged CRD", "kind", k)
+		return nil
 	}
 
 	// Patch the CRD with the change.

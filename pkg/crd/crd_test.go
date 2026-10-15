@@ -201,9 +201,25 @@ var _ = Describe("Install", func() {
 		Expect(pkgcrd.Install(ctx, client, nil)).To(Succeed())
 	})
 
+	It("should stop writing after one update with cleanup disabled", func() {
+		// Creation removes disabled feature fields, while updates with cleanup
+		// disabled retain fields from the embedded schema. Allow that first update.
+		recordingClient := &writeRecordingClient{Client: client}
+		Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
+		Expect(recordingClient.writes).To(ConsistOf(
+			"patch/virtualmachines.vmoperator.vmware.com",
+			"patch/virtualmachineservices.vmoperator.vmware.com",
+		))
+
+		for range 2 {
+			recordingClient.writes = nil
+			Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
+			Expect(recordingClient.writes).To(BeEmpty())
+		}
+	})
+
 	When("CRDs are installed again", func() {
-		var patchedNames []string
-		var recordingClient *patchRecordingClient
+		var recordingClient *writeRecordingClient
 
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -212,13 +228,12 @@ var _ = Describe("Install", func() {
 		})
 
 		JustBeforeEach(func() {
-			patchedNames = nil
-			recordingClient = &patchRecordingClient{Client: client, patchedNames: &patchedNames}
+			recordingClient = &writeRecordingClient{Client: client}
 		})
 
-		It("should skip patches when specs are unchanged", func() {
+		It("should skip writes when CRDs are unchanged", func() {
 			Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
-			Expect(patchedNames).To(BeEmpty())
+			Expect(recordingClient.writes).To(BeEmpty())
 		})
 
 		It("should preserve conversion configuration without patching", func() {
@@ -242,7 +257,7 @@ var _ = Describe("Install", func() {
 			Expect(client.Update(ctx, &obj)).To(Succeed())
 
 			Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
-			Expect(patchedNames).To(BeEmpty())
+			Expect(recordingClient.writes).To(BeEmpty())
 			Expect(client.Get(ctx, key, &obj)).To(Succeed())
 			Expect(obj.Spec.Conversion).To(Equal(conversion))
 			Expect(obj.Labels).To(HaveKeyWithValue("test", "preserved"))
@@ -257,13 +272,13 @@ var _ = Describe("Install", func() {
 			Expect(client.Update(ctx, obj)).To(Succeed())
 
 			Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
-			Expect(patchedNames).To(Equal([]string{key.Name}))
+			Expect(recordingClient.writes).To(Equal([]string{"patch/" + key.Name}))
 			Expect(client.Get(ctx, key, obj)).To(Succeed())
 			Expect(obj.Spec).To(Equal(expected.Spec))
 
-			patchedNames = nil
+			recordingClient.writes = nil
 			Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
-			Expect(patchedNames).To(BeEmpty())
+			Expect(recordingClient.writes).To(BeEmpty())
 		})
 	})
 
@@ -1497,20 +1512,29 @@ var _ = Describe(
 	"Install against real API server",
 	Label(testlabels.EnvTest),
 	func() {
-		DescribeTable("should skip patches after API server defaulting",
-			func(enabled bool) {
+		DescribeTable("should skip writes after API server defaulting and convergence",
+			func(cleanup, enabled bool) {
 				ctx := pkgcfg.WithConfig(pkgcfg.Config{
-					CRDCleanupEnabled: true,
+					CRDCleanupEnabled: cleanup,
 					Features:          featureStates(enabled),
 				})
 				Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
-				var patchedNames []string
-				client := &patchRecordingClient{Client: envTestClient, patchedNames: &patchedNames}
-				Expect(pkgcrd.Install(ctx, client, nil)).To(Succeed())
-				Expect(patchedNames).To(BeEmpty())
+				if !cleanup {
+					// Creation always removes disabled feature fields, so allow
+					// one update to converge when cleanup is disabled.
+					Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+				}
+				recordingClient := &writeRecordingClient{Client: envTestClient}
+				for range 2 {
+					recordingClient.writes = nil
+					Expect(pkgcrd.Install(ctx, recordingClient, nil)).To(Succeed())
+					Expect(recordingClient.writes).To(BeEmpty())
+				}
 			},
-			Entry("with capabilities enabled", true),
-			Entry("with capabilities disabled", false),
+			Entry("with cleanup and capabilities enabled", true, true),
+			Entry("with cleanup enabled and capabilities disabled", true, false),
+			Entry("with cleanup disabled and capabilities enabled", false, true),
+			Entry("with cleanup and capabilities disabled", false, false),
 		)
 
 		It("should accept CRDs with all capabilities disabled", func() {
@@ -1636,18 +1660,45 @@ func featureStates(enabled bool) pkgcfg.FeatureStates {
 	return fs
 }
 
-// patchRecordingClient records writes while preserving the underlying client's behavior.
-type patchRecordingClient struct {
+// writeRecordingClient records write attempts while preserving the underlying client's behavior.
+type writeRecordingClient struct {
 	ctrlclient.Client
-	patchedNames *[]string
+	writes []string
 }
 
-func (c *patchRecordingClient) Patch(
+func (c *writeRecordingClient) Create(
+	ctx context.Context,
+	obj ctrlclient.Object,
+	opts ...ctrlclient.CreateOption,
+) error {
+	c.writes = append(c.writes, "create/"+obj.GetName())
+	return c.Client.Create(ctx, obj, opts...)
+}
+
+func (c *writeRecordingClient) Update(
+	ctx context.Context,
+	obj ctrlclient.Object,
+	opts ...ctrlclient.UpdateOption,
+) error {
+	c.writes = append(c.writes, "update/"+obj.GetName())
+	return c.Client.Update(ctx, obj, opts...)
+}
+
+func (c *writeRecordingClient) Delete(
+	ctx context.Context,
+	obj ctrlclient.Object,
+	opts ...ctrlclient.DeleteOption,
+) error {
+	c.writes = append(c.writes, "delete/"+obj.GetName())
+	return c.Client.Delete(ctx, obj, opts...)
+}
+
+func (c *writeRecordingClient) Patch(
 	ctx context.Context,
 	obj ctrlclient.Object,
 	patch ctrlclient.Patch,
 	opts ...ctrlclient.PatchOption,
 ) error {
-	*c.patchedNames = append(*c.patchedNames, obj.GetName())
+	c.writes = append(c.writes, "patch/"+obj.GetName())
 	return c.Client.Patch(ctx, obj, patch, opts...)
 }

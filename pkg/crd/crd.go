@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -724,17 +723,22 @@ func updateOrDeleteUnstructured(
 		}
 	}
 
-	// Avoid a write when the spec is unchanged after applying mutations and
-	// preserving the existing conversion configuration.
-	if equality.Semantic.DeepEqual(original.Object["spec"], obj.Object["spec"]) {
-		logger.V(4).Info("Skipped patch of unchanged CRD", "kind", k)
+	// Avoid a write when the entire merge patch is empty after applying
+	// mutations and preserving the existing conversion configuration.
+	patchData, err := objPatch.Data(&obj)
+	if err != nil {
+		return fmt.Errorf("failed to generate patch for crd %q: %w", k, err)
+	}
+	if string(patchData) == "{}" {
+		logger.Info("Skipped patch of unchanged CRD", "kind", k)
 		return nil
 	}
 
 	// Patch the CRD with the change.
-	if err := k8sClient.Patch(ctx, &obj, objPatch); err != nil {
+	if err := k8sClient.Patch(ctx, &obj, ctrlclient.RawPatch(objPatch.Type(), patchData)); err != nil {
 		return fmt.Errorf("failed to patch crd %q: %w", k, err)
 	}
+	logger.Info("Patched CRD", "kind", k)
 
 	return nil
 }

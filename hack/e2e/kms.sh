@@ -3,7 +3,19 @@
 # This script installs and configures a Native and Standard (PyKMIP) Key Provider for use by vCenter.
 # To run directly:
 # % export GOVC_URL="Administrator@vsphere.local:${vc_pass}@${vc_host}"
-# % GATEWAY_VM_PASSWORD=vmware ./hack/kms.sh install
+# % GATEWAY_VM_PASSWORD=vmware ./hack/e2e/kms.sh install
+#
+# The "install" command configures both providers. The "setup" command
+# configures only the Native provider (gce2e-native), which needs no PyKMIP
+# server or gateway VM.
+#
+# After the Standard provider (gce2e-standard) is configured, the script waits
+# for vCenter to report it green. If a step fails or the provider does not
+# become green in time, the provider is torn down (removed from vCenter) and
+# the deployment is attempted again, up to KMS_MAX_ATTEMPTS times in total. The
+# wait before each new attempt doubles, starting at KMS_RETRY_DELAY seconds.
+# Every failure and every retry is logged, and the script exits non-zero when
+# the last attempt fails.
 
 set -o errexit
 set -o nounset
@@ -22,12 +34,23 @@ GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-}"
 PYKMIP_HOST_IP="${PYKMIP_HOST_IP:-}"
 PYKMIP_HOST_USERNAME="${PYKMIP_HOST_USERNAME:-root}"
 PYKMIP_HOST_PASSWORD="${PYKMIP_HOST_PASSWORD:-}"
+# Total number of times a KMS deployment is attempted before giving up.
+KMS_MAX_ATTEMPTS="${KMS_MAX_ATTEMPTS:-4}"
+# Seconds to wait for gce2e-standard to become green after it is configured.
+KMS_GREEN_TIMEOUT="${KMS_GREEN_TIMEOUT:-120}"
+# Seconds to wait after the first failed attempt before the next one. The wait
+# doubles after each further failure, e.g. 30s, 60s and then 120s with 4
+# attempts.
+KMS_RETRY_DELAY="${KMS_RETRY_DELAY:-30}"
+# Seconds to wait for each SSH connection, so that an unreachable host fails an
+# attempt in seconds instead of after the kernel's TCP connect timeout.
+SSH_CONNECT_TIMEOUT="${SSH_CONNECT_TIMEOUT:-30}"
 script_dir="$(dirname "$0")"
 
 # Common SSH/SCP options for all connections to the gateway VM.
 # -T: no PTY (avoids "Too many authentication failures" from the SSH agent)
 # PubkeyAuthentication=no: force password auth, don't offer agent keys
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password"
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=${SSH_CONNECT_TIMEOUT}"
 #crt_dir="$script_dir/tools/bin"
 crt_dir=$(mktemp -d)
 
@@ -62,7 +85,7 @@ install() {
   # cert, so it skips install-pykmip.sh entirely (see the dedicated branch
   # below); the gateway VM still gets the full install + generated cert.
   local target_user="$1" target_ip="$2" target_password="$3"
-  local dedicated=false
+  local dedicated=false pykmip_down=false
   if [ -n "${PYKMIP_HOST_IP:-}" ]; then
     target_user="${PYKMIP_HOST_USERNAME:-root}"
     target_ip="${PYKMIP_HOST_IP}"
@@ -96,9 +119,26 @@ install() {
     password="$target_password"
 
     sshpass -p "$password" scp $SSH_OPTS "$crt_dir"/pykmip-*.pem "$script_dir"/install-pykmip.sh "$target":
-    sshpass -p "$password" ssh -T $SSH_OPTS "$target" \
-      "PIP_INDEX_URL=${PIP_INDEX_URL:-} /bin/bash ./install-pykmip.sh" \
-      || echo "⚠ pykmip install failed — gce2e-standard KMS will not be available"
+    if ! sshpass -p "$password" ssh -T $SSH_OPTS "$target" \
+      "PIP_INDEX_URL=${PIP_INDEX_URL:-} /bin/bash ./install-pykmip.sh"; then
+      echo "⚠ pykmip install failed — gce2e-standard KMS will not be available"
+      # install-pykmip.sh can also fail after it has started the service, for
+      # example while adding the iptables rules, so only give up on
+      # gce2e-standard if the service is not running either.
+      if ! sshpass -p "$password" ssh -T $SSH_OPTS "$target" 'systemctl is-active --quiet pykmip'; then
+        pykmip_down=true
+      fi
+    fi
+  fi
+
+  if [ "$pykmip_down" = true ]; then
+    # gce2e-standard cannot become green without a running PyKMIP server, so
+    # don't register it and wait for it. Configure gce2e-native, which doesn't
+    # depend on it, and fail the attempt so that deploy_with_retries tears down
+    # and tries again.
+    log "✗ PyKMIP is not running on ${target_ip}, not configuring gce2e-standard"
+    setup ""
+    return 1
   fi
 
   # setup() configures vCenter key providers; kms_is_green checks inside
@@ -138,16 +178,109 @@ fetch_pykmip_certs() {
   sshpass -p "$password" ssh -T $SSH_OPTS "${user}@${ip}" "cat '$key_path'" > "$crt_dir/pykmip-key.pem"
 }
 
+# log prints a timestamped message so that failures and retries can be located
+# in the (usually much longer) testbed setup output.
+log() {
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) kms.sh: $*"
+}
+
 # kms_is_green returns 0 if the named provider already exists and has
-# OverallStatus == "green", 1 otherwise.  Safe to call from multiple parallel
-# containers because it is read-only.
+# status.overallStatus == "green", 1 otherwise.  Safe to call from multiple
+# parallel containers because it is read-only.
+#
+# "govc kms.ls -json NAME" nests the cluster status under a top-level "status"
+# key, i.e. {"info": {...}, "status": {"overallStatus": "green", ...}}.
 kms_is_green() {
   local name="$1"
   local status
   status=$(govc kms.ls -json "$name" 2>/dev/null \
-    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('OverallStatus',''))" \
-    2>/dev/null || true)
+    | jq -r '.status.overallStatus // ""' 2>/dev/null || true)
   [ "${status}" = "green" ]
+}
+
+# kms_describe prints the overall status of the named provider and, for each of
+# its KMIP servers, the status and the connection error reported by vCenter.
+kms_describe() {
+  local name="$1" out
+  out=$(govc kms.ls -json "$name" 2>&1) || {
+    echo "  govc kms.ls ${name} failed: ${out}"
+    return 0
+  }
+  jq -r '(.status // {}) as $s
+    | ("  overallStatus=\($s.overallStatus // "")"),
+      (($s.servers // [])[]
+        | "  server \(.name): status=\(.status) connectionStatus=\(.connectionStatus | tojson)")' \
+    <<< "$out" || echo "  unexpected govc kms.ls output: ${out}"
+}
+
+# kms_wait_green polls until the named provider is green or KMS_GREEN_TIMEOUT
+# seconds have passed, in which case it returns 1.
+kms_wait_green() {
+  local name="$1" deadline=$((SECONDS + KMS_GREEN_TIMEOUT))
+  until kms_is_green "$name"; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      return 1
+    fi
+    sleep 5
+  done
+}
+
+# teardown removes the gce2e-standard provider from vCenter so that the next
+# attempt registers and trusts it from scratch. A provider that is green is
+# kept, because another runner sharing this vCenter may have fixed it, or may
+# be using it. gce2e-native has no external dependency and setup() is
+# idempotent for it, so it is left alone.
+teardown() {
+  local name=gce2e-standard
+  if ! govc kms.ls "$name" > /dev/null 2>&1; then
+    log "KMS provider ${name} is not registered, nothing to tear down"
+  elif kms_is_green "$name"; then
+    log "KMS provider ${name} is green, keeping it"
+  else
+    log "Tearing down KMS provider ${name}"
+    govc kms.rm "$name" || log "⚠ could not remove KMS provider ${name}"
+  fi
+}
+
+# deploy_with_retries runs the given kms.sh command (install or setup). If it
+# fails, which includes the gce2e-standard provider not becoming green, the
+# failed attempt is torn down and the command is run again, up to
+# KMS_MAX_ATTEMPTS times in total. Returns 1 if the last attempt fails.
+deploy_with_retries() {
+  local attempt=1 delay="$KMS_RETRY_DELAY" rc
+
+  while true; do
+    log "KMS deployment attempt ${attempt}/${KMS_MAX_ATTEMPTS}: $1"
+
+    # errexit is ignored for everything that runs as part of an "if", "&&" or
+    # "||" command, even in a subshell, so a failed step would not stop the
+    # attempt. Run the attempt as a plain subshell command with errexit enabled
+    # inside it, and disable errexit here to read its exit status.
+    set +o errexit
+    (
+      set -o errexit
+      "$@"
+    )
+    rc=$?
+    set -o errexit
+
+    if [ "$rc" -eq 0 ]; then
+      log "✓ KMS deployment succeeded on attempt ${attempt}/${KMS_MAX_ATTEMPTS}"
+      return 0
+    fi
+
+    log "⚠ KMS deployment attempt ${attempt}/${KMS_MAX_ATTEMPTS} failed (exit status ${rc})"
+    if [ "$attempt" -ge "$KMS_MAX_ATTEMPTS" ]; then
+      log "✗ KMS deployment failed after ${attempt} attempt(s), giving up"
+      return 1
+    fi
+
+    teardown
+    log "Retrying KMS deployment in ${delay}s"
+    sleep "$delay"
+    delay=$((delay * 2))
+    attempt=$((attempt + 1))
+  done
 }
 
 # See also: vCenter -> Configure -> Security -> Key Providers
@@ -171,6 +304,17 @@ setup() {
 
       # Note: using the same key pair for the server (pykmip) and client (vCenter)
       govc kms.trust -server-cert "$crt" -client-cert "$crt" -client-key "$key" "$name"
+
+      # Registering and trusting the provider does not prove that vCenter can
+      # reach the KMIP server. Fail the attempt, so that deploy_with_retries
+      # tears it down and tries again, if it does not become green.
+      log "Waiting up to ${KMS_GREEN_TIMEOUT}s for KMS provider ${name} to become green"
+      if ! kms_wait_green "$name"; then
+        log "✗ KMS provider ${name} is not green after ${KMS_GREEN_TIMEOUT}s:"
+        kms_describe "$name"
+        return 1
+      fi
+      log "✓ KMS provider ${name} is green"
     fi
     govc kms.ls "$name"
   else
@@ -194,6 +338,17 @@ setup() {
 }
 
 main() {
+  # Fail loudly, and before the retry loop, if a tool that the status checks
+  # depend on is missing. Their errors are otherwise swallowed, so a missing
+  # tool would only show up as a provider that is never reported green.
+  local tool
+  for tool in govc jq; do
+    if ! command -v "$tool" > /dev/null 2>&1; then
+      log "✗ required tool not found in PATH: ${tool}"
+      return 1
+    fi
+  done
+
   if [ "$#" -ge 2 ]; then
     GOVC_URL="$2"
   fi
@@ -204,10 +359,13 @@ main() {
 
   case $1 in
     "install")
-      install "$GATEWAY_VM_USERNAME" "$(find_gateway_ip "$mgmtCidr")" "$GATEWAY_VM_PASSWORD"
+      deploy_with_retries install "$GATEWAY_VM_USERNAME" "$(find_gateway_ip "$mgmtCidr")" "$GATEWAY_VM_PASSWORD"
       ;;
     "setup")
-      setup "$(find_gateway_ip "$mgmtCidr")"
+      # Configure gce2e-native only. gce2e-standard needs the PyKMIP
+      # certificate and key that install generates or fetches, so a bare setup
+      # run, which has none, cannot configure it even when a gateway VM exists.
+      deploy_with_retries setup ""
       ;;
     *)
       echo "unknown command: $1"

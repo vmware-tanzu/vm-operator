@@ -573,16 +573,22 @@ _setup_kms_providers() {
 
     _log "Setting up KMS key providers (${mode})..."
     if [[ "${mode}" == "full" ]]; then
-        GOVC_USERNAME="${vc_vim_username}" GOVC_PASSWORD="${vc_vim_password}" \
-            GATEWAY_VM_PASSWORD="${gw_password}" \
-            "${script_dir}/kms.sh" install "${govc_url}" "${cidr}" >&2 \
-            && _log "✓ KMS: gce2e-standard (KMIP) + gce2e-native configured" \
-            || _warn "KMS install failed (may already be configured)"
+        if GOVC_USERNAME="${vc_vim_username}" GOVC_PASSWORD="${vc_vim_password}" \
+                GATEWAY_VM_PASSWORD="${gw_password}" \
+                "${script_dir}/kms.sh" install "${govc_url}" "${cidr}" >&2; then
+            _log "✓ KMS: gce2e-standard (KMIP) + gce2e-native configured"
+        else
+            _err "KMS setup failed: kms.sh install did not configure gce2e-standard and gce2e-native (see the kms.sh log lines above)"
+            return 1
+        fi
     else
-        GOVC_USERNAME="${vc_vim_username}" GOVC_PASSWORD="${vc_vim_password}" \
-            "${script_dir}/kms.sh" setup "${govc_url}" "${cidr}" >&2 \
-            && _log "✓ KMS: gce2e-native configured" \
-            || _warn "KMS setup failed"
+        if GOVC_USERNAME="${vc_vim_username}" GOVC_PASSWORD="${vc_vim_password}" \
+                "${script_dir}/kms.sh" setup "${govc_url}" "${cidr}" >&2; then
+            _log "✓ KMS: gce2e-native configured"
+        else
+            _err "KMS setup failed: kms.sh setup did not configure gce2e-native (see the kms.sh log lines above)"
+            return 1
+        fi
     fi
 }
 
@@ -631,7 +637,7 @@ _setup_gateway_and_proxy() {
 
     if [[ -z "${gateway_ip:-}" || "${gateway_ip}" == "null" ]]; then
         _warn "Could not find gateway VM (may not be a VDS testbed)"
-        _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "" "${kms_mode}"
+        _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "" "${kms_mode}" || return
         return 0
     fi
 
@@ -639,7 +645,7 @@ _setup_gateway_and_proxy() {
 
     local _gw_password=""
     if ! _probe_gateway_ssh "${gateway_ip}"; then
-        _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "" "${kms_mode}"
+        _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "" "${kms_mode}" || return
         return 0
     fi
 
@@ -703,7 +709,7 @@ _setup_e2e() {
         _err "Failed to install kubectl-vsphere after ${_KUBECTL_VSPHERE_RETRY_ATTEMPTS} attempts"
         return 1
     fi
-    _setup_gateway_and_proxy "${script_dir}"
+    _setup_gateway_and_proxy "${script_dir}" || return
     _log "=== E2E Testbed Setup Complete ==="
 }
 
@@ -782,7 +788,7 @@ EOF
         # (proxy.sh, kms.sh).
         local script_dir
         script_dir="$(_find_sibling_script_dir "proxy.sh")"
-        _setup_e2e "${script_dir}"
+        _setup_e2e "${script_dir}" || return
     fi
 
     # ------------------------------------------------------------------
@@ -821,8 +827,10 @@ EOF
 # Call _main and propagate its exit status correctly whether this script is
 # being sourced or executed directly.
 # ---------------------------------------------------------------------------
+# Capture _main's exit status before reporting the failure: $? would otherwise
+# be the status of _report_setup_failure, which is 0 even when _main failed.
 if [[ "${_SOURCED}" == "true" ]]; then
-    _main "$@" || { _report_setup_failure; return $?; }
+    _main "$@" || { _main_rc=$?; _report_setup_failure; return "${_main_rc}"; }
 else
-    _main "$@" || { _report_setup_failure; exit $?; }
+    _main "$@" || { _main_rc=$?; _report_setup_failure; exit "${_main_rc}"; }
 fi

@@ -267,6 +267,23 @@ By("Debug checkpoint: VM creation")
 framework.Logf("VM status: %+v", vm.Status)
 ```
 
+### Encryption Key Provider Setup (`hack/e2e/kms.sh`)
+
+`setup-testbed-env.sh --e2e` runs `hack/e2e/kms.sh` to register the `gce2e-native` and `gce2e-standard` key providers in vCenter. `gce2e-standard` needs an external PyKMIP server: the testbed's dedicated PyKMIP server if there is one, otherwise the gateway VM. `kms.sh install` configures both providers; `kms.sh setup` configures only `gce2e-native`, and is used when no PyKMIP server can be set up.
+
+If the last attempt fails, `kms.sh` exits non-zero and `setup-testbed-env.sh` fails too and therefore stops before any test runs, including the tests that do not use encryption. The provider is left registered so that it can be inspected.
+
+Parameters:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KMS_MAX_ATTEMPTS` | Total number of deployment attempts | `4` |
+| `KMS_GREEN_TIMEOUT` | Seconds to wait for `gce2e-standard` to become green after each attempt | `120` |
+| `KMS_RETRY_DELAY` | Seconds to wait after the first failed attempt before the next one. The wait doubles after each further failure, so the default of four attempts waits 30s, 60s, and then 120s | `30` |
+| `SSH_CONNECT_TIMEOUT` | Seconds to wait for each SSH connection to the PyKMIP host or gateway VM | `30` |
+| `PIP_INDEX_URL` | It must be a full index URL including the scheme, such as `https://packages.vcfd.broadcom.net/artifactory/api/pypi/photonos-pypi-virtual/simple` | Unset (public PyPI) |
+
+
 ## Development Workflow
 
 1. **Write tests** following established patterns

@@ -959,3 +959,11 @@ func shuffleSlice[T any](a []T) {
 		a[i], a[j] = a[j], a[i]
 	})
 }
+
+func expectCachedDiskNames(actual string, cachedDiskNames []string) {
+	actualNames := strings.Split(actual, ",")
+	Expect(actualNames).ToNot(BeEmpty())
+	for _, name := range actualNames {
+		Expect(cachedDiskNames).To(ContainElement(name))
+	}
+}

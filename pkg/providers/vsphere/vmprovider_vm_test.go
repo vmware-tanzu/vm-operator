@@ -2049,6 +2049,7 @@ func vmTests() {
 									ID:       ctx.ContentLibraryItem1Disk1Path,
 									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 									DiskType: vmopv1.VolumeTypeClassic,
+									Name:     path.Base(ctx.ContentLibraryItem1Disk1Path),
 								},
 								{
 									ID:   ctx.ContentLibraryItem1NVRAMPath,
@@ -2358,16 +2359,19 @@ func vmTests() {
 									ID:       ctx.ContentLibraryItem2Disk1Path,
 									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 									DiskType: vmopv1.VolumeTypeClassic,
+									Name:     path.Base(ctx.ContentLibraryItem2Disk1Path),
 								},
 								{
 									ID:       ctx.ContentLibraryItem2Disk2Path,
 									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 									DiskType: vmopv1.VolumeTypeClassic,
+									Name:     path.Base(ctx.ContentLibraryItem2Disk2Path),
 								},
 								{
 									ID:       ctx.ContentLibraryItem2Disk3Path,
 									Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 									DiskType: vmopv1.VolumeTypeClassic,
+									Name:     path.Base(ctx.ContentLibraryItem2Disk3Path),
 								},
 								{
 									ID:   ctx.ContentLibraryItem2NVRAMPath,
@@ -2739,6 +2743,7 @@ func vmTests() {
 										ID:       cachedDiskPaths[i],
 										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 										DiskType: vmopv1.VolumeTypeClassic,
+										Name:     path.Base(cachedDiskPaths[i]),
 									}
 								}
 
@@ -2790,7 +2795,7 @@ func vmTests() {
 								v1, _ := ec.GetString("fu")
 								Expect(v1).To(Equal("bar"))
 								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+								expectCachedDiskNames(v2, cachedDiskNames)
 							})
 
 							When("global default is direct mode", func() {
@@ -2839,7 +2844,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 
 								When("vm uses encrypted storage class", func() {
@@ -2921,7 +2926,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 							})
 						})
@@ -3028,6 +3033,7 @@ func vmTests() {
 										ID:       cachedDiskPaths[i],
 										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 										DiskType: vmopv1.VolumeTypeClassic,
+										Name:     path.Base(cachedDiskPaths[i]),
 									}
 								}
 
@@ -3079,7 +3085,7 @@ func vmTests() {
 								v1, _ := ec.GetString("fu")
 								Expect(v1).To(Equal("bar"))
 								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+								expectCachedDiskNames(v2, cachedDiskNames)
 							})
 
 							When("global default is direct mode", func() {
@@ -3128,7 +3134,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 
 								When("vm uses encrypted storage class", func() {
@@ -3210,7 +3216,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 							})
 						})
@@ -3317,6 +3323,7 @@ func vmTests() {
 										ID:       cachedDiskPaths[i],
 										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 										DiskType: vmopv1.VolumeTypeClassic,
+										Name:     path.Base(cachedDiskPaths[i]),
 									}
 								}
 
@@ -3368,7 +3375,7 @@ func vmTests() {
 								v1, _ := ec.GetString("fu")
 								Expect(v1).To(Equal("bar"))
 								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+								expectCachedDiskNames(v2, cachedDiskNames)
 							})
 
 							When("global default is direct mode", func() {
@@ -3417,7 +3424,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 
 								When("vm uses encrypted storage class", func() {
@@ -3499,7 +3506,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 							})
 						})
@@ -3607,6 +3614,7 @@ func vmTests() {
 										ID:       cachedDiskPaths[i],
 										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 										DiskType: vmopv1.VolumeTypeClassic,
+										Name:     path.Base(cachedDiskPaths[i]),
 									}
 								}
 
@@ -3658,7 +3666,7 @@ func vmTests() {
 								v1, _ := ec.GetString("fu")
 								Expect(v1).To(Equal("bar"))
 								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+								expectCachedDiskNames(v2, cachedDiskNames)
 							})
 
 							When("global default is direct mode", func() {
@@ -3707,7 +3715,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 
 								When("vm uses encrypted storage class", func() {
@@ -3789,7 +3797,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 							})
 						})
@@ -3896,6 +3904,7 @@ func vmTests() {
 										ID:       cachedDiskPaths[i],
 										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 										DiskType: vmopv1.VolumeTypeClassic,
+										Name:     path.Base(cachedDiskPaths[i]),
 									}
 								}
 
@@ -3947,7 +3956,7 @@ func vmTests() {
 								v1, _ := ec.GetString("fu")
 								Expect(v1).To(Equal("bar"))
 								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+								expectCachedDiskNames(v2, cachedDiskNames)
 							})
 
 							When("global default is direct mode", func() {
@@ -3996,7 +4005,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 
 								When("vm uses encrypted storage class", func() {
@@ -4078,7 +4087,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 							})
 						})
@@ -4186,6 +4195,7 @@ func vmTests() {
 										ID:       cachedDiskPaths[i],
 										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 										DiskType: vmopv1.VolumeTypeClassic,
+										Name:     path.Base(cachedDiskPaths[i]),
 									}
 								}
 
@@ -4237,7 +4247,7 @@ func vmTests() {
 								v1, _ := ec.GetString("fu")
 								Expect(v1).To(Equal("bar"))
 								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+								expectCachedDiskNames(v2, cachedDiskNames)
 							})
 
 							When("global default is direct mode", func() {
@@ -4286,7 +4296,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 
 								When("vm uses encrypted storage class", func() {
@@ -4368,7 +4378,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 							})
 						})
@@ -4474,6 +4484,7 @@ func vmTests() {
 										ID:       cachedDiskPaths[i],
 										Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 										DiskType: vmopv1.VolumeTypeClassic,
+										Name:     path.Base(cachedDiskPaths[i]),
 									}
 								}
 
@@ -4525,7 +4536,7 @@ func vmTests() {
 								v1, _ := ec.GetString("fu")
 								Expect(v1).To(Equal("bar"))
 								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+								expectCachedDiskNames(v2, cachedDiskNames)
 							})
 
 							When("global default is direct mode", func() {
@@ -4574,7 +4585,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present.
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 
 								When("vm uses encrypted storage class", func() {
@@ -4656,7 +4667,7 @@ func vmTests() {
 									// In linked mode, the VMProvKeepDisksExtraConfigKey should be present
 									ec := object.OptionValueList(moVM.Config.ExtraConfig)
 									v, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
-									Expect(v).To(Equal(strings.Join(cachedDiskNames, ",")))
+									expectCachedDiskNames(v, cachedDiskNames)
 								})
 							})
 						})

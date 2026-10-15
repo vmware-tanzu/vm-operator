@@ -334,6 +334,18 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
+		Context("VM-FASTDEPLOY", func() {
+			virtualmachine.VMFastDeployDisksSpec(context.TODO(), func() virtualmachine.VMFastDeployDisksSpecInput {
+				return virtualmachine.VMFastDeployDisksSpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					ArtifactFolder:   artifactFolder,
+					SkipCleanup:      skipCleanup,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
 		Context("VM-COMPUTE-CONFIG", func() {
 			virtualmachine.VMComputeConfigSpec(context.TODO(), func() virtualmachine.VMComputeConfigSpecInput {
 				return virtualmachine.VMComputeConfigSpecInput{

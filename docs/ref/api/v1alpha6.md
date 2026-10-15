@@ -900,7 +900,10 @@ the size of the VM's boot disk, even increasing it, could adversely
 affect the VM.
 
 Please note this field is ignored if the VM is deployed from an ISO with
-CD-ROM devices attached. |
+CD-ROM devices attached.
+
+Please note changes to this field are ignored once the boot disk has a
+PersistentVolumeClaim. Resize the PersistentVolumeClaim instead. |
 | `defaultVolumeProvisioningMode` _[VolumeProvisioningMode](#volumeprovisioningmode)_ | DefaultVolumeProvisioningMode specifies the default provisioning mode for
 persistent volumes managed by this VM. |
 | `changeBlockTracking` _boolean_ | ChangeBlockTracking is a flag that enables incremental backup support

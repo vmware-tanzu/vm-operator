@@ -7,6 +7,7 @@ package diskpromo
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
@@ -36,6 +37,10 @@ const (
 	ReasonRunning            = "DiskPromotionRunning"
 
 	PromoteDisksTaskKey = "VirtualMachine.promoteDisks"
+
+	// PromoteBootDiskOpName is the operation name in the activation ID of a
+	// promote disks task that promotes only the boot disk.
+	PromoteBootDiskOpName = "promoteBootDisk"
 )
 
 // New returns a new Reconciler for a VM's disk promotion state.
@@ -166,6 +171,12 @@ func (r reconciler) Reconcile(
 				return nil
 
 			case vimtypes.TaskInfoStateSuccess:
+				// A task that promoted only the boot disk does not mean the
+				// other disks are promoted, so keep looking at the disks.
+				if isBootDiskPromoteTask(vm, t) {
+					continue
+				}
+
 				pkgcond.MarkTrue(
 					vm,
 					vmopv1.VirtualMachineDiskPromotionSynced)
@@ -288,6 +299,8 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
+	promoteBootDisk := false
+
 	switch vm.Spec.PromoteDisksMode {
 	case vmopv1.VirtualMachinePromoteDisksModeOnline:
 		if moVM.Snapshot != nil && moVM.Snapshot.CurrentSnapshot != nil {
@@ -302,7 +315,21 @@ func (r reconciler) Reconcile(
 			return nil
 		}
 
-		if moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
+		// Exception: a linked clone boot disk that spec.advanced.bootDiskCapacity
+		// extends cannot be extended until it is promoted. Promote just the
+		// boot disk while the VM is off, instead of waiting for it to be
+		// powered on. This also applies after the VM has booted, ex. when the
+		// capacity is raised while the VM is off.
+		if moVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOff {
+			if d := extendedBootDisk(vm, moVM, childDisks); d != nil {
+				childDisks = []vimtypes.VirtualDisk{*d}
+				promoteBootDisk = true
+			}
+		}
+
+		if !promoteBootDisk &&
+			moVM.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
+
 			pkgcond.MarkFalse(
 				vm,
 				vmopv1.VirtualMachineDiskPromotionSynced,
@@ -355,7 +382,13 @@ func (r reconciler) Reconcile(
 	logger.Info("Promoting disks")
 
 	obj := object.NewVirtualMachine(vimClient, moVM.Self)
-	task, err := obj.PromoteDisks(ctx, true, childDisks)
+	promoteCtx := ctx
+	if promoteBootDisk {
+		// Tag the task so a later reconcile can tell it promoted only the
+		// boot disk.
+		promoteCtx = pkgctx.WithVCOpID(ctx, vm, PromoteBootDiskOpName)
+	}
+	task, err := obj.PromoteDisks(promoteCtx, true, childDisks)
 	if err != nil {
 		return fmt.Errorf("failed to call promote disks task: %w", err)
 	}
@@ -376,4 +409,58 @@ func (r reconciler) Reconcile(
 		"Promotion is running")
 
 	return ErrPromoteDisks
+}
+
+// isBootDiskPromoteTask returns true if the task was started by this
+// reconciler to promote only the boot disk of the VM. Its activation ID is
+// "vmoperator-<vm name>-promoteBootDisk-<reconcile ID>", see
+// pkgctx.WithVCOpID.
+func isBootDiskPromoteTask(
+	vm *vmopv1.VirtualMachine,
+	t vimtypes.TaskInfo) bool {
+
+	return strings.HasPrefix(
+		t.ActivationId,
+		"vmoperator-"+vm.Name+"-"+PromoteBootDiskOpName+"-")
+}
+
+// extendedBootDisk returns the VM's boot disk if it is one of the child disks
+// and spec.advanced.bootDiskCapacity extends it. Like the boot disk resize, it
+// assumes the first disk is the boot disk.
+func extendedBootDisk(
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine,
+	childDisks []vimtypes.VirtualDisk) *vimtypes.VirtualDisk {
+
+	if vm.Spec.Advanced == nil ||
+		vm.Spec.Advanced.BootDiskCapacity == nil ||
+		moVM.Config == nil {
+
+		return nil
+	}
+
+	// The boot disk resize and the placement ConfigSpec ignore
+	// spec.advanced.bootDiskCapacity for a VM with CD-ROMs, so do not promote
+	// the boot disk early for a resize that does not happen.
+	if hw := vm.Spec.Hardware; hw != nil && len(hw.Cdrom) > 0 {
+		return nil
+	}
+
+	for _, device := range moVM.Config.Hardware.Device {
+		bootDisk, ok := device.(*vimtypes.VirtualDisk)
+		if !ok {
+			continue
+		}
+		if vm.Spec.Advanced.BootDiskCapacity.Value() <= bootDisk.CapacityInBytes {
+			return nil
+		}
+		for i := range childDisks {
+			if childDisks[i].Key == bootDisk.Key {
+				return &childDisks[i]
+			}
+		}
+		return nil
+	}
+
+	return nil
 }

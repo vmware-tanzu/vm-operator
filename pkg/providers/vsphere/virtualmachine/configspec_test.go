@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/google/uuid"
@@ -980,6 +981,61 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			dSpec4 := configSpec.DeviceChange[4].GetVirtualDeviceConfigSpec()
 			_, ok = dSpec4.Device.(*vimtypes.ParaVirtualSCSIController)
 			Expect(ok).To(BeTrue())
+		})
+
+		Context("spec.advanced.bootDiskCapacity is larger than the boot disk", func() {
+			var bootDisk *vimtypes.VirtualDisk
+
+			BeforeEach(func() {
+				bootDisk = &vimtypes.VirtualDisk{CapacityInBytes: 1 << 30}
+				baseConfigSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device:    bootDisk,
+					},
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device:    &vimtypes.VirtualDisk{CapacityInBytes: 1 << 30},
+					},
+				}
+				vmCtx.VM.Spec.Hardware = nil
+				vmCtx.VM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: ptr.To(resource.MustParse("5Gi")),
+				}
+			})
+
+			It("sizes only the first disk of the placement ConfigSpec", func() {
+				d0 := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualDisk)
+				Expect(d0.CapacityInBytes).To(BeEquivalentTo(5 << 30))
+				d1 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualDisk)
+				Expect(d1.CapacityInBytes).To(BeEquivalentTo(1 << 30))
+			})
+
+			It("does not change the source ConfigSpec", func() {
+				Expect(bootDisk.CapacityInBytes).To(BeEquivalentTo(1 << 30))
+			})
+
+			When("the VM has CD-ROMs", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						Cdrom: []vmopv1.VirtualMachineCdromSpec{{Name: "cdrom1"}},
+					}
+				})
+				It("keeps the capacity of the disk", func() {
+					d0 := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualDisk)
+					Expect(d0.CapacityInBytes).To(BeEquivalentTo(1 << 30))
+				})
+			})
+
+			When("the capacity is not larger than the disk", func() {
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Advanced.BootDiskCapacity = ptr.To(resource.MustParse("1Gi"))
+				})
+				It("keeps the capacity of the disk", func() {
+					d0 := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualDisk)
+					Expect(d0.CapacityInBytes).To(BeEquivalentTo(1 << 30))
+				})
+			})
 		})
 
 		Context("VirtualDisk is already present", func() {

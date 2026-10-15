@@ -18,6 +18,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2/textlogger"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -953,6 +954,165 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						Expect(c).ToNot(BeNil())
 						Expect(c.Status).To(Equal(metav1.ConditionTrue))
 					})
+				})
+			})
+		})
+
+		When("spec.advanced.bootDiskCapacity extends a boot disk with a parent", func() {
+			BeforeEach(func() {
+				vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeOnline
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: ptr.To(resource.MustParse("1Gi")),
+				}
+
+				// Keep only the linked clone disks, so the first one is the
+				// boot disk.
+				var devices []vimtypes.BaseVirtualDevice
+				for _, d := range moVM.Config.Hardware.Device {
+					if disk, ok := d.(*vimtypes.VirtualDisk); ok {
+						if tb, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok && tb.Parent != nil {
+							devices = append(devices, d)
+						}
+						if tb, ok := disk.Backing.(*vimtypes.VirtualDiskSeSparseBackingInfo); ok && tb.Parent != nil {
+							devices = append(devices, d)
+						}
+					}
+				}
+				Expect(devices).To(HaveLen(2))
+				moVM.Config.Hardware.Device = devices
+
+				moVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+				moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+			})
+
+			When("the VM is powered off", func() {
+				var (
+					bootKey      int32
+					promotedKeys []int32
+				)
+
+				BeforeEach(func() {
+					bootKey = moVM.Config.Hardware.Device[0].(*vimtypes.VirtualDisk).Key
+					promotedKeys = nil
+					reg.Handler = func(
+						ctx *simulator.Context,
+						m *simulator.Method) (mo.Reference, vimtypes.BaseMethodFault) {
+
+						if m.Name == "PromoteDisks_Task" {
+							req := m.Body.(*vimtypes.PromoteDisks_Task)
+							for _, d := range req.Disks {
+								promotedKeys = append(promotedKeys, d.Key)
+							}
+						}
+
+						return nil, nil
+					}
+				})
+
+				It("should promote only the boot disk before the VM is powered on", func() {
+					Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+					c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+					Expect(getPromoTaskRef()).ToNot(BeNil())
+					Expect(promotedKeys).To(ConsistOf(bootKey))
+				})
+
+				When("the VM has CD-ROMs", func() {
+					BeforeEach(func() {
+						vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+							Cdrom: []vmopv1.VirtualMachineCdromSpec{{Name: "cdrom1"}},
+						}
+					})
+					It("should not promote the boot disk before the VM is powered on", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(getPromoTaskRef()).To(BeNil())
+						Expect(promotedKeys).To(BeEmpty())
+						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
+					})
+				})
+			})
+
+			When("the VM is powered on", func() {
+				BeforeEach(func() {
+					moVM.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+					moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+				})
+				It("should promote all of the disks online", func() {
+					Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+					Expect(getPromoTaskRef()).ToNot(BeNil())
+				})
+
+				When("a task that promoted only the boot disk succeeded", func() {
+					BeforeEach(func() {
+						ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+							{
+								State:         vimtypes.TaskInfoStateSuccess,
+								DescriptionId: diskpromo.PromoteDisksTaskKey,
+								ActivationId: pkgctx.WithVCOpID(
+									context.Background(),
+									vm,
+									diskpromo.PromoteBootDiskOpName).
+									Value(vimtypes.ID{}).(string),
+							},
+						})
+					})
+					It("should promote the other disks", func() {
+						Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+						Expect(getPromoTaskRef()).ToNot(BeNil())
+					})
+				})
+
+				When("a task that promoted all of the disks succeeded", func() {
+					BeforeEach(func() {
+						ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+							{
+								State:         vimtypes.TaskInfoStateSuccess,
+								DescriptionId: diskpromo.PromoteDisksTaskKey,
+							},
+						})
+					})
+					It("should mark disk promotion synced and not promote", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(getPromoTaskRef()).To(BeNil())
+						c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(metav1.ConditionTrue))
+					})
+				})
+			})
+
+			When("spec.advanced.bootDiskCapacity does not extend the boot disk", func() {
+				BeforeEach(func() {
+					vm.Spec.Advanced.BootDiskCapacity = ptr.To(resource.MustParse("10Mi"))
+				})
+				It("should wait for the VM to be powered on", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(getPromoTaskRef()).To(BeNil())
+					c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
+				})
+			})
+
+			When("the boot disk is part of a snapshot", func() {
+				BeforeEach(func() {
+					bootDisk := moVM.Config.Hardware.Device[0].(*vimtypes.VirtualDisk)
+					moVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
+						Snapshot: []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+							{Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{{Key: bootDisk.Key}}},
+						},
+					}
+				})
+				It("should wait for the VM to be powered on", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(getPromoTaskRef()).To(BeNil())
+					c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Reason).To(Equal(diskpromo.ReasonPending))
 				})
 			})
 		})

@@ -205,6 +205,20 @@ func CreateConfigSpecForPlacement(
 					if !hasVirtualDisk {
 						// Indicate the VM has at least one disk.
 						hasVirtualDisk = true
+
+						// Assume the first disk is the boot disk. Place the VM
+						// for spec.advanced.bootDiskCapacity, if that is larger,
+						// so a datastore is picked for the final size. Use a
+						// copy so the disk of the ConfigSpec used to create the
+						// VM keeps the capacity of the image.
+						if c := requestedBootDiskCapacity(vmCtx.VM); c > d.CapacityInBytes {
+							diskCopy := *d
+							diskCopy.CapacityInBytes = c
+							diskCopy.CapacityInKB = c / 1024
+							specCopy := *spec
+							specCopy.Device = &diskCopy
+							devChange, spec, d = &specCopy, &specCopy, &diskCopy
+						}
 					}
 
 					if d.VDiskId != nil && d.VDiskId.Id != "" {
@@ -442,6 +456,34 @@ func extensionCompatibilityConstraintSet() *vimtypes.VirtualMachineExtensionComp
 			newInvariant(extensionCompatConstraintNameDevice, vimtypes.VirtualMachineExtensionCompatibilityConstraintTypeDEVICE),
 		},
 	}
+}
+
+// requestedBootDiskCapacity returns spec.advanced.bootDiskCapacity in bytes, or
+// zero if it is not set or is ignored for the VM.
+//
+// A zero return means the placement ConfigSpec keeps the capacity of the disk
+// from the image.
+func requestedBootDiskCapacity(vm *vmopv1.VirtualMachine) int64 {
+	// The field is optional.
+	if vm.Spec.Advanced == nil || vm.Spec.Advanced.BootDiskCapacity == nil {
+		return 0
+	}
+
+	// Ignore the field for a VM with CD-ROMs, ex. an ISO VM. Such a VM has no
+	// image disk to extend. Its disks are PVCs, which the user sizes in
+	// spec.volumes. This is the same rule as the boot disk resize in
+	// updateVirtualDiskDeviceChanges() in the session package, so placement
+	// and the resize agree on the size. The API documents this rule on the
+	// field.
+	//
+	// Please note the rule checks for any CD-ROM, and not only for an ISO
+	// deployment.
+	if hw := vm.Spec.Hardware; hw != nil && len(hw.Cdrom) > 0 {
+		return 0
+	}
+
+	// Quantity.Value() rounds up to a whole number of bytes.
+	return vm.Spec.Advanced.BootDiskCapacity.Value()
 }
 
 // cleanupConfigSpecForPlacement removes fields from the placement

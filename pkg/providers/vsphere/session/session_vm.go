@@ -11,6 +11,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
 func updateVirtualDiskDeviceChanges(
@@ -46,10 +47,37 @@ func updateVirtualDiskDeviceChanges(
 		// TODO: De-dupe this with resizeBootDiskDeviceChange() in the clone path.
 
 		newCapacityInBytes := capacity.Value()
+
+		linkedClone, pvcName := getBootDiskInfo(vmCtx)
+
+		// Once the boot disk has a PVC, the PVC is the source of truth for the
+		// size of the disk, like any other disk.
+		if pvcName != "" {
+			if newCapacityInBytes > vmDisk.CapacityInBytes {
+				vmCtx.Logger.Info(
+					"Ignoring spec.advanced.bootDiskCapacity since the boot "+
+						"disk has a PVC, resize the PVC instead",
+					"pvcName", pvcName,
+					"requestedBytes", newCapacityInBytes,
+					"currentBytes", vmDisk.CapacityInBytes)
+			}
+			return nil, nil
+		}
+
 		if newCapacityInBytes < vmDisk.CapacityInBytes {
 			err := fmt.Errorf("cannot shrink boot disk from %d bytes to %d bytes",
 				vmDisk.CapacityInBytes, newCapacityInBytes)
 			return nil, err
+		}
+
+		// vSphere cannot extend a disk that has a parent. Wait for the disk
+		// to be promoted.
+		if linkedClone && vmDisk.CapacityInBytes < newCapacityInBytes {
+			vmCtx.Logger.V(4).Info(
+				"Skipping boot disk resize until the disk is promoted",
+				"requestedBytes", newCapacityInBytes,
+				"currentBytes", vmDisk.CapacityInBytes)
+			return nil, nil
 		}
 
 		if vmDisk.CapacityInBytes < newCapacityInBytes {
@@ -69,4 +97,25 @@ func updateVirtualDiskDeviceChanges(
 	}
 
 	return deviceChanges, nil
+}
+
+// getBootDiskInfo returns whether the boot disk is a linked clone, and the name
+// of the PVC that backs the boot disk, if any. Like the resize, it assumes the
+// first disk is the boot disk.
+func getBootDiskInfo(
+	vmCtx pkgctx.VirtualMachineContext) (linkedClone bool, pvcName string) {
+
+	info := pkgvol.GetVolumeInfoFromVM(vmCtx.VM, vmCtx.MoVM)
+	if len(info.Disks) == 0 {
+		return false, ""
+	}
+
+	bootDisk := info.Disks[0]
+	if vol := info.Volumes[bootDisk.Target.String()]; vol != nil &&
+		vol.PersistentVolumeClaim != nil {
+
+		pvcName = vol.PersistentVolumeClaim.ClaimName
+	}
+
+	return bootDisk.LinkedClone, pvcName
 }

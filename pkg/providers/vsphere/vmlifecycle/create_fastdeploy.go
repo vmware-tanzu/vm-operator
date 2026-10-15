@@ -19,9 +19,11 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -348,6 +350,17 @@ func fastDeploy(
 		}
 	}
 
+	// A linked clone's boot disk cannot be extended until it is promoted, and
+	// promotion is disabled, so the requested capacity can never be applied.
+	if strings.EqualFold(fastDeployMode, pkgconst.FastDeployModeLinked) &&
+		vmCtx.VM.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled &&
+		isBootDiskExtended(vmCtx.VM, disks) {
+
+		return nil, pkgerr.NoRequeueError{Message: "spec.advanced.bootDiskCapacity " +
+			"is larger than the boot disk of the image, which requires promoting " +
+			"the boot disk, but spec.promoteDisksMode is Disabled"}
+	}
+
 	logger.Info(
 		"Deploying VM with Fast Deploy",
 		"mode", fastDeployMode,
@@ -645,4 +658,28 @@ func fastDeployDirectCopyDisks(
 	}
 
 	return copyDiskErr
+}
+
+// isBootDiskExtended returns true if the VM requests a boot disk capacity that
+// is larger than the capacity of the image's boot disk. Like the resize in
+// updateVirtualDiskDeviceChanges(), it assumes the first disk is the boot disk.
+func isBootDiskExtended(
+	vm *vmopv1.VirtualMachine,
+	disks []*vimtypes.VirtualDisk) bool {
+
+	if len(disks) == 0 || vm.Spec.Advanced == nil {
+		return false
+	}
+
+	capacity := vm.Spec.Advanced.BootDiskCapacity
+	if capacity == nil || capacity.IsZero() {
+		return false
+	}
+
+	imageCapacity := disks[0].CapacityInBytes
+	if imageCapacity == 0 {
+		imageCapacity = disks[0].CapacityInKB * 1024
+	}
+
+	return capacity.Value() > imageCapacity
 }

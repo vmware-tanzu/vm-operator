@@ -1290,31 +1290,70 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 	ctx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (context.Context, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx)
+	if len(ctx.MoVM.RecentTask) == 0 {
+		return ctx.Context, nil
+	}
+
+	objectSet := make([]vimtypes.ObjectSpec, len(ctx.MoVM.RecentTask))
+	for i, ref := range ctx.MoVM.RecentTask {
+		objectSet[i].Obj = ref
+	}
+
+	// Tasks can expire between fetching recentTask and retrieving their info.
+	// Allow missing objects so one expired task does not fail the whole batch.
 	pc := property.DefaultCollector(vcClient.VimClient())
+	res, err := pc.RetrieveProperties(ctx, vimtypes.RetrieveProperties{
+		SpecSet: []vimtypes.PropertyFilterSpec{{
+			PropSet: []vimtypes.PropertySpec{{
+				Type:    "Task",
+				PathSet: []string{"info"},
+			}},
+			ObjectSet:                     objectSet,
+			ReportMissingObjectsInResults: new(true),
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve task info: %w", err)
+	}
 
-	// Check if the VM has any recent tasks.
-	var rt []vimtypes.TaskInfo
-	for _, taskRef := range ctx.MoVM.RecentTask {
-		var t mo.Task
-		if err := pc.RetrieveOne(
-			ctx,
-			taskRef,
-			[]string{"info"},
-			&t); err != nil {
+	logger := pkglog.FromContextOrDefault(ctx)
 
-			// Tasks go away after 10m of completion.
-			if !fault.Is(err, &vimtypes.ManagedObjectNotFound{}) {
-				return nil, fmt.Errorf("failed to retrieve task info: %w", err)
+	// Property collector results need not follow the requested object order.
+	// Preserve recentTask order because consumers may act on the first task.
+	contents := make(map[vimtypes.ManagedObjectReference]vimtypes.ObjectContent, len(res.Returnval))
+	for _, content := range res.Returnval {
+		contents[content.Obj] = content
+	}
+
+	rt := make([]vimtypes.TaskInfo, 0, len(res.Returnval))
+	for _, ref := range ctx.MoVM.RecentTask {
+		content, ok := contents[ref]
+		if !ok {
+			continue
+		}
+
+		task, err := mo.ObjectContentToType(content)
+		if err != nil {
+			if fault.Is(err, &vimtypes.ManagedObjectNotFound{}) {
+				continue
 			}
-		} else {
-			logLevel := 4
-			if t.Info.State == vimtypes.TaskInfoStateRunning ||
-				t.Info.State == vimtypes.TaskInfoStateError {
+			return nil, fmt.Errorf("failed to retrieve task info: %w", err)
+		}
 
-				logLevel = 2
-			}
+		t, ok := task.(mo.Task)
+		if !ok {
+			return nil, fmt.Errorf("failed to retrieve task info for %s: unexpected object type %T", ref, task)
+		}
+		rt = append(rt, t.Info)
 
+		logLevel := 4
+		if t.Info.State == vimtypes.TaskInfoStateRunning ||
+			t.Info.State == vimtypes.TaskInfoStateError {
+
+			logLevel = 2
+		}
+
+		if l := logger.V(logLevel); l.Enabled() {
 			var descMsg string
 			if t.Info.Description != nil {
 				descMsg = t.Info.Description.Message
@@ -1325,7 +1364,7 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				completedTime = t.Info.CompleteTime.String()
 			}
 
-			logger.V(logLevel).Info("VM has task",
+			l.Info("VM has task",
 				"activationId", t.Info.ActivationId,
 				"descriptionId", t.Info.DescriptionId,
 				"description", descMsg,
@@ -1349,7 +1388,6 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				"startTime", t.Info.StartTime,
 				"state", t.Info.State,
 				"task", t.Info.Task)
-			rt = append(rt, t.Info)
 		}
 	}
 

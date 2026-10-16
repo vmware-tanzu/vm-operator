@@ -26,6 +26,7 @@ import (
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
+	lifecyclev1 "github.com/vmware-tanzu/vm-operator/external/lifecycle/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -139,6 +140,7 @@ func KnownObjectTypes() []client.Object {
 		&vpcv1alpha1.SubnetSet{},
 		&vpcv1alpha1.SubnetPort{},
 		&byokv1.EncryptionClass{},
+		&lifecyclev1.LifecycleState{},
 		&capv1.Capabilities{},
 		&appv1a1.SupervisorProperties{},
 		&vspherepolv1.ComputePolicy{},
@@ -168,6 +170,7 @@ func NewScheme() *runtime.Scheme {
 	_ = vmopapi.AddToScheme(scheme)
 	_ = capv1.AddToScheme(scheme)
 	_ = byokv1.AddToScheme(scheme)
+	_ = lifecyclev1.AddToScheme(scheme)
 	_ = appv1a1.AddToScheme(scheme)
 	_ = ncpv1alpha1.AddToScheme(scheme)
 	_ = cnsv1alpha1.AddToScheme(scheme)

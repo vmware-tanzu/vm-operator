@@ -13557,6 +13557,10 @@ spec:
 
                       Please note this field is ignored if the VM is deployed from an ISO with
                       CD-ROM devices attached.
+
+                      Please note this field applies when the VM is deployed. After the boot
+                      disk has a PersistentVolumeClaim, changes to this field are ignored.
+                      Resize the PersistentVolumeClaim instead.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   changeBlockTracking:

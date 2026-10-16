@@ -13,7 +13,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/configmap"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/node"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/secret"
-	"github.com/vmware-tanzu/vm-operator/controllers/infra/validatingwebhookconfiguration"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/workloadnetworkconfig"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra/zone"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -33,9 +32,6 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 	if err := secret.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize infra secret controller: %w", err)
-	}
-	if err := validatingwebhookconfiguration.AddToManager(ctx, mgr); err != nil {
-		return fmt.Errorf("failed to initialize validatingwebhookconfiguration webhook controller: %w", err)
 	}
 	if pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration {
 		if err := workloadnetworkconfig.AddToManager(ctx, mgr); err != nil {

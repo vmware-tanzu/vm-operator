@@ -305,11 +305,12 @@ func (s *TestSuite) init() {
 	}
 
 	if envTestsEnabled() {
+		externalCRDs, err := LoadCRDs(filepath.Join(rootDir, "config", "crd", "external-crds"))
+		if err != nil {
+			panic(err)
+		}
 		s.envTest = envtest.Environment{
-			CRDs: s.applyFeatureStatesToCRDs(crds),
-			CRDDirectoryPaths: []string{
-				filepath.Join(rootDir, "config", "crd", "external-crds"),
-			},
+			CRDs:                  append(s.applyFeatureStatesToCRDs(crds), externalCRDs...),
 			BinaryAssetsDirectory: filepath.Join(rootDir, "hack", "tools", "bin", goruntime.GOOS+"_"+goruntime.GOARCH),
 		}
 	}
@@ -518,32 +519,18 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 	var err error
 
 	By("bootstrapping test environment", func() {
+		// Select storage versions before installation. Deleting and reinstalling
+		// CRDs can race with asynchronous deletion and retain old storedVersions.
+		for i, crd := range s.envTest.CRDs {
+			if crd.Spec.Group == "imageregistry.vmware.com" {
+				updatedCRD := updateImgRegStorageVersion(s.Context, *crd)
+				s.envTest.CRDs[i] = &updatedCRD
+			}
+		}
+
 		s.config, err = s.envTest.Start()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(s.config).ToNot(BeNil())
-	})
-
-	By("updating image registry CRD storage version", func() {
-		// Update storage version of ContentLibraryItems if necessary
-		cliCrd := s.GetInstalledCRD("contentlibraryitems.imageregistry.vmware.com")
-		Expect(cliCrd).ToNot(BeNil())
-		s.UpdateCRDStorage(cliCrd)
-		// Update storage version of ClusterContentLibraryItems if necessary
-		ccliCrd := s.GetInstalledCRD("clustercontentlibraryitems.imageregistry.vmware.com")
-		Expect(ccliCrd).ToNot(BeNil())
-		s.UpdateCRDStorage(ccliCrd)
-		// Update storage version of ContentLibraries if necessary
-		clCrd := s.GetInstalledCRD("contentlibraries.imageregistry.vmware.com")
-		Expect(clCrd).ToNot(BeNil())
-		s.UpdateCRDStorage(clCrd)
-		// Update storage version of ClusterContentLibraries if necessary
-		cclCrd := s.GetInstalledCRD("clustercontentlibraries.imageregistry.vmware.com")
-		Expect(cclCrd).ToNot(BeNil())
-		s.UpdateCRDStorage(cclCrd)
-		// Update storage version of ContentLibraryItemImportRequests if necessary
-		cliImportReqCrd := s.GetInstalledCRD("contentlibraryitemimportrequests.imageregistry.vmware.com")
-		Expect(cliImportReqCrd).ToNot(BeNil())
-		s.UpdateCRDStorage(cliImportReqCrd)
 	})
 
 	// If one or more webhooks are being tested then go ahead and generate a
@@ -643,32 +630,6 @@ func (s *TestSuite) GetInstalledCRD(crdName string) *apiextensionsv1.CustomResou
 	}
 
 	return nil
-}
-
-func (s *TestSuite) UpdateCRDStorage(oldCrd *apiextensionsv1.CustomResourceDefinition) {
-
-	err := envtest.UninstallCRDs(s.envTest.Config, envtest.CRDInstallOptions{
-		CRDs: []*apiextensionsv1.CustomResourceDefinition{oldCrd},
-	})
-	Expect(err).ToNot(HaveOccurred())
-
-	crds := make([]*apiextensionsv1.CustomResourceDefinition, 0)
-	updatedCrd := updateImgRegStorageVersion(s.Context, *oldCrd)
-
-	Eventually(func() error {
-		newCrd := &apiextensionsv1.CustomResourceDefinition{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        updatedCrd.Name,
-				Annotations: updatedCrd.Annotations,
-			},
-			Spec: updatedCrd.Spec,
-		}
-		crds, err = envtest.InstallCRDs(s.envTest.Config, envtest.CRDInstallOptions{
-			CRDs: []*apiextensionsv1.CustomResourceDefinition{newCrd},
-		})
-		return err
-	}).ShouldNot(HaveOccurred())
-	s.envTest.CRDs = append(s.envTest.CRDs, crds...)
 }
 
 func (s *TestSuite) UpdateCRDScope(oldCrd *apiextensionsv1.CustomResourceDefinition, newScope string) {

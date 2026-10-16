@@ -45,6 +45,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 012 | [lifecycle-hooks](specs/012-lifecycle-hooks/) | Blocking Lifecycle Hooks for `VirtualMachine` | Draft | vmop-3377 |
 | 013 | [spq-webhook-watch](specs/013-spq-webhook-watch/) | Consolidate storage quota webhook CA propagation | Draft | vmop-4310 |
 | 014 | [vmgroup-power-ordering](specs/014-vmgroup-power-ordering/) | VM Group Power-On and Power-Off Ordering (stateless staged release; `PowerOnDelay` and `PowerOffDelay` count from completion of the previous group) | Draft | vmop-4060 |
+| 015 | [dhcp-overrides](specs/015-dhcp-overrides/) | CloudInit DHCP DNS and Route Overrides | Draft | TBD |
 
 ### Finding the right spec
 

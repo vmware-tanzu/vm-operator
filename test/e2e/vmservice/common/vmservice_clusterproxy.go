@@ -210,14 +210,24 @@ func splitYAMLDocuments(resources []byte) ([][]byte, error) {
 	return docs, nil
 }
 
-// CreateRawWithArgs is the non-retrying counterpart to CreateWithArgs: it returns stdout/stderr/err
-// as-is from a single attempt, for callers that need to inspect an expected failure (e.g. asserting
-// on a specific admission error message) rather than have it retried away.
+// CreateRawWithArgs creates resources and returns stdout, stderr, and the error
+// for callers that need to assert an expected admission or validation failure.
+// It retries only transient connectivity errors using the shared retry policy.
+// Validation errors and unexpected successes return immediately. AlreadyExists
+// remains an error even after a retry, so an earlier successful create cannot
+// satisfy a negative assertion.
 func (p *VMServiceClusterProxy) CreateRawWithArgs(ctx context.Context, resources []byte, args ...string) ([]byte, []byte, error) {
 	Expect(ctx).NotTo(BeNil(), "ctx is required for Create")
 	Expect(resources).NotTo(BeEmpty(), "resources is required for Create")
 
-	return framework.KubectlCreateRawWithArgs(ctx, p.GetKubeconfigPath(), resources, p.args(args)...)
+	// Bound the kubectl commands as well as the wait between attempts.
+	ctx, cancel := context.WithTimeout(ctx, framework.TransientRetryTimeout)
+	defer cancel()
+
+	return retryKubectlOnTransientError(ctx, "create", nil,
+		func() ([]byte, []byte, error) {
+			return framework.KubectlCreateRawWithArgs(ctx, p.GetKubeconfigPath(), resources, p.args(args)...)
+		})
 }
 
 // Delete wraps `kubectl delete` and prints the output so we can see what gets deleted from the cluster.

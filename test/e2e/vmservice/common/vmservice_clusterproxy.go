@@ -201,17 +201,14 @@ func splitYAMLDocuments(resources []byte) ([][]byte, error) {
 	return docs, nil
 }
 
-// CreateRawWithArgs creates resources and returns stdout, stderr, and the error
-// for callers that need to assert an expected admission or validation failure.
-// It retries only transient connectivity errors using the shared retry policy.
-// Validation errors and unexpected successes return immediately. AlreadyExists
-// remains an error even after a retry, so an earlier successful create cannot
-// satisfy a negative assertion.
+// CreateRawWithArgs creates resources and returns stdout, stderr, and the error,
+// for callers asserting an expected failure. Only transient connectivity errors
+// are retried; validation errors return immediately.
 func (p *VMServiceClusterProxy) CreateRawWithArgs(ctx context.Context, resources []byte, args ...string) ([]byte, []byte, error) {
 	Expect(ctx).NotTo(BeNil(), "ctx is required for Create")
 	Expect(resources).NotTo(BeEmpty(), "resources is required for Create")
 
-	// Bound the kubectl commands as well as the wait between attempts.
+	// Bound the kubectl commands too, not just the waits between attempts.
 	ctx, cancel := context.WithTimeout(ctx, framework.TransientRetryTimeout)
 	defer cancel()
 

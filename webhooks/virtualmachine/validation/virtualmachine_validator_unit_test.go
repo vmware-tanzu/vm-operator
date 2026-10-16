@@ -2313,6 +2313,48 @@ func unitTestsValidateCreate() {
 	})
 
 	Context("Network", func() {
+		DescribeTable("DHCP route overrides",
+			func(provider string, dhcp4, dhcp6 *bool, gateway4, gateway6 string, wantErr string) {
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+						switch provider {
+						case "CloudInit":
+							ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+						case "LinuxPrep":
+							ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+						case "Sysprep":
+							ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{Sysprep: &sysprep.Sysprep{}}
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{{
+								Name: "eth0", DHCP4: dhcp4, DHCP6: dhcp6,
+								Gateway4: gateway4, Gateway6: gateway6,
+							}},
+						}
+					},
+					expectAllowed: wantErr == "",
+					validate: func(response admission.Response) {
+						if wantErr != "" {
+							Expect(string(response.Result.Reason)).To(ContainSubstring(wantErr))
+						}
+					},
+				})
+			},
+			Entry("CloudInit IPv4", "CloudInit", ptr.To(true), ptr.To(false), "None", "", ""),
+			Entry("CloudInit IPv6", "CloudInit", ptr.To(false), ptr.To(true), "", "None", ""),
+			Entry("CloudInit dual-stack", "CloudInit", ptr.To(true), ptr.To(true), "None", "None", ""),
+			Entry("CloudInit dual-stack IPv4 mismatch", "CloudInit", ptr.To(true), ptr.To(true), "None", "", "dual-stack DHCP requires identical DHCP overrides"),
+			Entry("CloudInit dual-stack IPv6 mismatch", "CloudInit", ptr.To(true), ptr.To(true), "", "None", "dual-stack DHCP requires identical DHCP overrides"),
+			Entry("CloudInit provider-derived DHCP is checked at bootstrap", "CloudInit", nil, nil, "None", "", ""),
+			Entry("LinuxPrep IPv4 gateway remains incompatible", "LinuxPrep", ptr.To(true), ptr.To(false), "None", "", "gateway4 is mutually exclusive with dhcp4"),
+			Entry("LinuxPrep IPv6 gateway remains incompatible", "LinuxPrep", ptr.To(false), ptr.To(true), "", "None", "gateway6 is mutually exclusive with dhcp6"),
+			Entry("Sysprep IPv4 gateway remains incompatible", "Sysprep", ptr.To(true), ptr.To(false), "None", "", "gateway4 is mutually exclusive with dhcp4"),
+			Entry("Sysprep IPv6 gateway remains incompatible", "Sysprep", ptr.To(false), ptr.To(true), "", "None", "gateway6 is mutually exclusive with dhcp6"),
+			Entry("LinuxPrep static gateway suppression", "LinuxPrep", ptr.To(false), ptr.To(false), "None", "None", ""),
+			Entry("Sysprep static gateway suppression", "Sysprep", ptr.To(false), ptr.To(false), "None", "None", ""),
+			Entry("concrete gateway remains incompatible", "CloudInit", ptr.To(true), ptr.To(false), "192.0.2.1", "", "gateway4 is mutually exclusive with dhcp4"),
+		)
 
 		DescribeTable("network create", doTest,
 			Entry("allow default",

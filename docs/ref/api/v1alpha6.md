@@ -2630,40 +2630,71 @@ ex. 192.168.0.10/24 or 2001:db8:101::a/64.
 
 Please note this field may not contain IP4 addresses if DHCP4 is set
 to true or IP6 addresses if DHCP6 is set to true. |
-| `dhcp4` _boolean_ | DHCP4 indicates whether or not this interface uses DHCP for IP4
-networking.
+| `dhcp4` _boolean_ | DHCP4 controls IPv4 DHCP for this interface.
+
+When set to true, the interface requests an IPv4 address via DHCP.
+When set to false, DHCP for IPv4 is explicitly disabled; the interface
+relies on static allocation.
+When omitted, the network provider determines the allocation method
+from subnet configuration.
 
 Please note this field is only supported if the network connection
 supports DHCP.
 
-Please note this field is mutually exclusive with IP4 addresses in the
-Addresses field and the Gateway4 field. |
-| `dhcp6` _boolean_ | DHCP6 indicates whether or not this interface uses DHCP for IP6
-networking.
+When true, Addresses must not contain IPv4 addresses and Gateway4 must be
+omitted. When the bootstrap provider is CloudInit, Gateway4 may instead be
+set to "None" to ignore routes supplied by DHCPv4 while still obtaining an
+IPv4 address. |
+| `dhcp6` _boolean_ | DHCP6 controls DHCPv6 for this interface.
+
+When set to true, the interface requests an IPv6 address via DHCPv6.
+When set to false, DHCPv6 is explicitly disabled; the interface relies
+on static allocation.
+When omitted, the network provider determines the allocation method
+from subnet configuration.
 
 Please note this field is only supported if the network connection
 supports DHCP.
 
-Please note this field is mutually exclusive with IP6 addresses in the
-Addresses field and the Gateway6 field. |
-| `gateway4` _string_ | Gateway4 is the default, IP4 gateway for this interface.
+When true, Addresses must not contain IPv6 addresses and Gateway6 must be
+omitted. When the bootstrap provider is CloudInit, Gateway6 may instead be
+set to "None" to ignore routes supplied by DHCPv6 while still obtaining an
+IPv6 address. |
+| `gateway4` _string_ | Gateway4 is the default IPv4 gateway for this interface.
 
-If unset, the gateway from the network provider will be used. However,
-if set to "None", the network provider gateway will be ignored.
+If omitted, the gateway from the network provider is used. Set to an
+IPv4 address to override that gateway, or to "None" to ignore it.
 
-Please note this field is only supported if the network connection
-supports manual IP allocation.
+When the bootstrap provider is CloudInit, "None" also ignores all routes
+supplied by DHCPv4, including the default route. DHCPv4 address allocation
+is unaffected, and static routes in Routes are still applied.
 
-Please note this field is mutually exclusive with DHCP4. |
-| `gateway6` _string_ | Gateway6 is the primary IP6 gateway for this interface.
+If both DHCPv4 and DHCPv6 are enabled on this interface, either
+explicitly or by the network provider, CloudInit requires Gateway4 and
+Gateway6 to both be "None" or both be omitted.
 
-If unset, the gateway from the network provider will be used. However,
-if set to "None", the network provider gateway will be ignored.
+Setting a gateway address requires a network that supports manual IP
+allocation and cannot be combined with DHCP4 set to true. When the
+bootstrap provider is not CloudInit, these restrictions also apply to
+"None". |
+| `gateway6` _string_ | Gateway6 is the default IPv6 gateway for this interface.
 
-Please note this field is only supported if the network connection
-supports manual IP allocation.
+If omitted, the gateway from the network provider is used. Set to an
+IPv6 address to override that gateway, or to "None" to ignore it.
 
-Please note this field is mutually exclusive with DHCP6. |
+When the bootstrap provider is CloudInit, "None" also ignores all routes
+supplied by DHCPv6. DHCPv6 address allocation is unaffected, and static
+routes in Routes are still applied. Routes learned from IPv6 router
+advertisements are unaffected.
+
+If both DHCPv4 and DHCPv6 are enabled on this interface, either
+explicitly or by the network provider, CloudInit requires Gateway4 and
+Gateway6 to both be "None" or both be omitted.
+
+Setting a gateway address requires a network that supports manual IP
+allocation and cannot be combined with DHCP6 set to true. When the
+bootstrap provider is not CloudInit, these restrictions also apply to
+"None". |
 | `mtu` _integer_ | MTU is the Maximum Transmission Unit size in bytes.
 
 Please note this feature is available only with the following bootstrap
@@ -2674,16 +2705,26 @@ nameservers.
 Please note this feature is available only with the following bootstrap
 providers: CloudInit and Sysprep.
 
-When using CloudInit and UseGlobalNameserversAsDefault is either unset or
-true, if nameservers is not provided, the global nameservers will be used
-instead.
+When the bootstrap provider is CloudInit, this list takes precedence over
+spec.network.nameservers. If this list is empty and
+spec.bootstrap.cloudInit.useGlobalNameserversAsDefault is true or omitted,
+spec.network.nameservers is used for this interface instead.
+
+When the bootstrap provider is CloudInit and Netplan's networkd renderer
+is used, nameservers specified here or inherited from
+spec.network.nameservers replace DNS servers supplied by both DHCPv4 and
+DHCPv6 on this interface, regardless of the nameserver address family.
 
 Please note that Linux allows only three nameservers
 (https://linux.die.net/man/5/resolv.conf). |
 | `routes` _[VirtualMachineNetworkRouteSpec](#virtualmachinenetworkroutespec) array_ | Routes is a list of optional, static routes.
 
 Please note this feature is available only with the following bootstrap
-providers: CloudInit. |
+providers: CloudInit.
+
+These routes are applied in addition to routes supplied by DHCP. To
+ignore DHCP routes, set Gateway4 or Gateway6 to "None" for that address
+family. Static routes in this list are still applied in that case. |
 | `searchDomains` _string array_ | SearchDomains is a list of search domains used when resolving IP
 addresses with DNS.
 
@@ -2800,15 +2841,19 @@ for this VM.
 
 When set to true, the VM is not configured with a default interface nor
 any specified from the Interfaces field. |
-| `nameservers` _string array_ | Nameservers is a list of IP4 and/or IP6 addresses used as DNS
-nameservers. These are applied globally.
+| `nameservers` _string array_ | Nameservers is a list of IPv4 and/or IPv6 DNS server addresses.
 
-Please note global nameservers are only available with the following
-bootstrap providers: LinuxPrep and Sysprep. The Cloud-Init bootstrap
-provider supports per-interface nameservers. However, when Cloud-Init
-is used and UseGlobalNameserversAsDefault is true, the global
-nameservers will be used when the per-interface nameservers is not
-provided.
+When the bootstrap provider is LinuxPrep or Sysprep, these nameservers are
+applied globally.
+
+When the bootstrap provider is CloudInit, these nameservers are used for
+each interface whose Nameservers list is empty, unless
+spec.bootstrap.cloudInit.useGlobalNameserversAsDefault is false. An
+interface's own Nameservers list takes precedence over this list.
+
+When the bootstrap provider is CloudInit and Netplan's networkd renderer
+is used, inherited nameservers replace DNS servers supplied by both DHCPv4
+and DHCPv6 on the interface, regardless of the nameserver address family.
 
 Please note that Linux allows only three nameservers
 (https://linux.die.net/man/5/resolv.conf). |

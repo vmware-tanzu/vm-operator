@@ -54,6 +54,15 @@ type Bootstrap struct {
 	// semantics as DHCP4.
 	DHCP6 bool
 
+	// IgnoreDHCPDNS suppresses DHCP DNS in favor of explicit nameservers.
+	IgnoreDHCPDNS bool
+
+	// IgnoreDHCP4Routes suppresses DHCPv4 routes when Gateway4 is None.
+	IgnoreDHCP4Routes bool
+
+	// IgnoreDHCP6Routes suppresses DHCPv6 routes when Gateway6 is None.
+	IgnoreDHCP6Routes bool
+
 	// AcceptRA indicates that Router Advertisement processing (SLAAC) should
 	// be enabled for this interface. Independent of DHCP6: both may be true
 	// when the subnet uses SLAAC + DHCPv6; AcceptRA alone means SLAAC-only.
@@ -226,6 +235,10 @@ func InterfaceBootstrap(
 	} else if defaultToGlobalNameservers && networkSpec != nil {
 		bootstrap.Nameservers = networkSpec.Nameservers
 	}
+
+	bootstrap.IgnoreDHCPDNS = len(bootstrap.Nameservers) > 0
+	bootstrap.IgnoreDHCP4Routes = interfaceSpec.Gateway4 == gatewayIgnored
+	bootstrap.IgnoreDHCP6Routes = interfaceSpec.Gateway6 == gatewayIgnored
 
 	if d := interfaceSpec.SearchDomains; len(d) > 0 {
 		bootstrap.SearchDomains = d

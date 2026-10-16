@@ -2168,8 +2168,8 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 					if err != nil {
 						return err
 					}
-					if filesReady {
 
+					if filesReady {
 						// The location has the cached files.
 						vmCtx.Logger.Info("got source files", "files", l.Files)
 

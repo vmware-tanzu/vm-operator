@@ -13,9 +13,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
 )
 
@@ -273,4 +276,31 @@ func GetWebhookCABundle(ctx context.Context, k8sClient client.Client) ([]byte, e
 	}
 
 	return caBundle, nil
+}
+
+// ValidatingWebhookConfigurationToStoragePolicyQuotaMapper enqueues all watched
+// quotas when the VM Operator webhook configuration changes. Every quota uses
+// the same CA bundle, which is resolved during normal quota reconciliation.
+func ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(k8sClient client.Reader) handler.MapFunc {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
+		if obj.GetName() != ValidatingWebhookConfigName {
+			return nil
+		}
+
+		var quotas spqv1.StoragePolicyQuotaList
+		// Only read names and namespaces; avoid copying quota specs and status.
+		if err := k8sClient.List(ctx, &quotas, client.UnsafeDisableDeepCopy); err != nil {
+			pkglog.FromContextOrDefault(ctx).Error(err,
+				"Failed to list storage policy quotas for webhook CA reconciliation")
+			return nil
+		}
+
+		requests := make([]reconcile.Request, len(quotas.Items))
+		for i := range quotas.Items {
+			requests[i] = reconcile.Request{
+				NamespacedName: client.ObjectKeyFromObject(&quotas.Items[i]),
+			}
+		}
+		return requests
+	}
 }

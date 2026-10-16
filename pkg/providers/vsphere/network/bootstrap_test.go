@@ -26,6 +26,20 @@ import (
 )
 
 var _ = Describe("InterfaceBootstrap", func() {
+	DescribeTable("DHCP route suppression from gateway None",
+		func(gateway4, gateway6 string, ignore4, ignore6 bool) {
+			vm := &vmopv1.VirtualMachine{}
+			b := network.InterfaceBootstrap(context.Background(), vm, network.Bootstrap{DHCP4: true, DHCP6: true},
+				vmopv1.VirtualMachineNetworkInterfaceSpec{Name: "eth0", Gateway4: gateway4, Gateway6: gateway6})
+			Expect(b.IgnoreDHCP4Routes).To(Equal(ignore4))
+			Expect(b.IgnoreDHCP6Routes).To(Equal(ignore6))
+		},
+		Entry("no suppression by default", "", "", false, false),
+		Entry("IPv4 only", "None", "", true, false),
+		Entry("IPv6 only", "", "None", false, true),
+		Entry("both families", "None", "None", true, true),
+	)
+
 	var (
 		ctx           context.Context
 		vm            *vmopv1.VirtualMachine

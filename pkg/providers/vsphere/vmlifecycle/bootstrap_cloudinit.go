@@ -122,7 +122,7 @@ func BootStrapCloudInit(
 		}
 	}
 
-	netPlan, err := network.NetPlanCustomization(bsArgs.NetBootstraps, bsArgs.VLANs)
+	netPlan, err := network.NetPlanCustomization(vmCtx, bsArgs.NetBootstraps, bsArgs.VLANs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create NetPlan customization: %w", err)
 	}

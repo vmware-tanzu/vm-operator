@@ -45,11 +45,10 @@ type VeeamConfig struct {
 }
 
 type InfraConfig struct {
-	// kind, vcenter
+	// vcenter
 	InfraName          string `json:"infraName,omitempty"`
 	KubeconfigPath     string `json:"kubeconfigPath,omitempty"`
 	NetworkingTopology string `json:"networkingTopology,omitempty"`
-	KeepVCSIM          bool   `json:"keepVCSIM,omitempty"`
 	// Assume only one namespace for mgmt cluster on the infra provider
 	ManagementClusterConfig *ManagementClusterConfig `json:"managementClusterConfig,omitempty"`
 }
@@ -149,7 +148,7 @@ func expandEnv(data string) string {
 }
 
 func (c *E2EConfig) Validate() error {
-	// kind or wcp must be provided
+	// WCP must be provided.
 	if c.InfraConfig.InfraName == "" {
 		return framework.ErrEmptyArg("InfraConfig.InfraName")
 	}

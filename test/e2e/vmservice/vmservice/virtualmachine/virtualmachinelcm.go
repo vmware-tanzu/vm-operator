@@ -567,7 +567,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	})
 
 	It("Should Create Expected Resources For a Single Virtual Machine with Instance Storage", func() {
-		// Instance storage can't be tested on kind cluster
+		// Instance storage requires a WCP environment.
 		skipper.SkipUnlessInfraIs(config.InfraConfig.InfraName, "wcp")
 
 		// We don't need to check framework.NetworkTopologyIs(config.InfraConfig.NetworkingTopology, consts.VDS)

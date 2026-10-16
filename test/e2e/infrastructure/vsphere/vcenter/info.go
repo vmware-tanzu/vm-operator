@@ -12,7 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
 
-	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 
@@ -132,51 +131,6 @@ func getWCPClusterConfig(ctx context.Context, path string) wcpClusterConfig {
 	Expect(err).NotTo(HaveOccurred(), "should be able to parse the WCP cluster config as YAML: %s", string(configYAML))
 
 	return cfg
-}
-
-// NewVcsimFinder returns a vcsim finder.
-func NewVcsimFinder(ctx context.Context, vimClient *vim25.Client) *find.Finder {
-	finder := find.NewFinder(vimClient, false)
-	dc, err := finder.DefaultDatacenter(ctx)
-	Expect(err).NotTo(HaveOccurred(), "Should be able to get the default DC.")
-	finder.SetDatacenter(dc)
-
-	return finder
-}
-
-// GetClusterRefs returns available clusters in the vcsim.
-func GetClusterRefs(ctx context.Context, finder *find.Finder) []*object.ClusterComputeResource {
-	clusters, err := finder.ClusterComputeResourceList(ctx, "*")
-	Expect(err).NotTo(HaveOccurred(), "Should be able to find clusters.")
-	Expect(clusters).ShouldNot(BeEmpty(), "Should be able to find at least one cluster.")
-
-	return clusters
-}
-
-func GetClusterIDToRefMapping(clusterRefs []*object.ClusterComputeResource) map[string]*object.ClusterComputeResource {
-	refMapping := make(map[string]*object.ClusterComputeResource)
-	for _, ref := range clusterRefs {
-		refMapping[ref.Reference().Value] = ref
-	}
-
-	return refMapping
-}
-
-// GetResourcePoolAndFolder returns associated resource pool and folder for a cluster.
-// Note: the folder here is the root folder of datacenter DC0 in the vcsim.
-func GetResourcePoolAndFolder(ctx context.Context, finder *find.Finder,
-	cluster *object.ClusterComputeResource) (rp, folder string) {
-	rpRef, err := cluster.ResourcePool(ctx)
-	Expect(err).NotTo(HaveOccurred(), "Should return the cluster's resource pool.")
-
-	rp = rpRef.Reference().Value
-
-	folderRef, err := finder.DefaultFolder(ctx)
-	Expect(err).NotTo(HaveOccurred(), "Should return default folder.")
-
-	folder = folderRef.Reference().Value
-
-	return rp, folder
 }
 
 // DeleteFolder deletes a folder and all its contents (VMs/templates/folders).

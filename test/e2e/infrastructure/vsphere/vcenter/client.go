@@ -14,7 +14,6 @@ import (
 
 	"github.com/antchfx/htmlquery"
 	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/session/cache"
 	vapirest "github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/methods"
@@ -27,7 +26,6 @@ import (
 const (
 	h5LoginURLFormat  = "https://%s/ui/login"
 	ssoLoginURLFormat = "https://%s/ui/saml/websso/sso"
-	vcsimURLFormat    = "https://user:pass@%s:8989"
 
 	castleAuthorizationKey    = "CastleAuthorization"
 	castleAuthorizationFormat = "Basic %s"
@@ -172,23 +170,6 @@ func loginByTokenToH5(client *http.Client, hostname, relayState, samlResponse st
 		Value: strings.Split(cookie[0], "=")[1],
 		Path:  strings.Split(cookie[1], "=")[1],
 	}
-}
-
-// NewVCSimClient creates a vcsim vim25.Client for using in the kind environment.
-func NewVcSimClient(ctx context.Context, vcip string) *vim25.Client {
-	u, err := soap.ParseURL(fmt.Sprintf(vcsimURLFormat, vcip))
-	Expect(err).NotTo(HaveOccurred(), "Should be able to parse the url.")
-
-	s := &cache.Session{
-		URL:      u,
-		Insecure: true,
-	}
-
-	c := new(vim25.Client)
-	err = s.Login(ctx, c, nil)
-	Expect(err).NotTo(HaveOccurred(), "Should be able to login to the vcsim")
-
-	return c
 }
 
 // Constructs a new rest client authenticated with the given user credentials.

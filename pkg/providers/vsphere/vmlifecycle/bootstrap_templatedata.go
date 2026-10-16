@@ -35,37 +35,37 @@ func GetTemplateRenderFunc(
 	networkDevicesStatusV1A1 := toTemplateNetworkStatusV1A1(bsArgs)
 	networkStatusV1A1 := vmopv1a1.NetworkStatus{
 		Devices:     networkDevicesStatusV1A1,
-		Nameservers: bsArgs.DNSServers,
+		Nameservers: bsArgs.TemplateDNSServers,
 	}
 
 	networkDevicesStatusV1A2 := toTemplateNetworkStatusV1A2(bsArgs)
 	networkStatusV1A2 := vmopv1a2.NetworkStatus{
 		Devices:     networkDevicesStatusV1A2,
-		Nameservers: bsArgs.DNSServers,
+		Nameservers: bsArgs.TemplateDNSServers,
 	}
 
 	networkDevicesStatusV1A3 := toTemplateNetworkStatusV1A3(bsArgs)
 	networkStatusV1A3 := vmopv1a3.NetworkStatus{
 		Devices:     networkDevicesStatusV1A3,
-		Nameservers: bsArgs.DNSServers,
+		Nameservers: bsArgs.TemplateDNSServers,
 	}
 
 	networkDevicesStatusV1A4 := toTemplateNetworkStatusV1A4(bsArgs)
 	networkStatusV1A4 := vmopv1a4.NetworkStatus{
 		Devices:     networkDevicesStatusV1A4,
-		Nameservers: bsArgs.DNSServers,
+		Nameservers: bsArgs.TemplateDNSServers,
 	}
 
 	networkDevicesStatusV1A5 := toTemplateNetworkStatusV1A5(bsArgs)
 	networkStatusV1A5 := vmopv1a5.NetworkStatus{
 		Devices:     networkDevicesStatusV1A5,
-		Nameservers: bsArgs.DNSServers,
+		Nameservers: bsArgs.TemplateDNSServers,
 	}
 
 	networkDevicesStatusV1A6 := toTemplateNetworkStatusV1A6(bsArgs)
 	networkStatusV1A6 := vmopv1.NetworkStatus{
 		Devices:     networkDevicesStatusV1A6,
-		Nameservers: bsArgs.DNSServers,
+		Nameservers: bsArgs.TemplateDNSServers,
 	}
 
 	// Use separate deep copies of the VM to prevent issues caused by

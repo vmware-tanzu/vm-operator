@@ -115,11 +115,15 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 	When("VM Class is associated with default namespace, not associated with the second namespace", func() {
 		It("VMClass CR should exist in default namespace and not exist in the second namespace", Label("smoke"), func() {
-			vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmClassName)
-			Expect(vmclass).ToNot(BeNil())
-			Expect(err).ToNot(HaveOccurred(), "vmclass should exist in namespace where it's associated with")
+			// WCP syncs the VMClass CR into the namespace asynchronously, and
+			// may retry if the VM Operator webhook is briefly unavailable.
+			Eventually(func(g Gomega) {
+				vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmClassName)
+				g.Expect(err).ToNot(HaveOccurred(), "vmclass should exist in namespace where it's associated with")
+				g.Expect(vmclass).ToNot(BeNil())
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
-			vmclass, err = utils.GetVirtualMachineClass(ctx, svClusterClient, secondNamespaceName, vmClassName)
+			vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, secondNamespaceName, vmClassName)
 			Expect(vmclass).To(BeNil())
 			Expect(err).To(HaveOccurred(), "vmclass shouldn't exist in namespace where it's not associated with")
 		})

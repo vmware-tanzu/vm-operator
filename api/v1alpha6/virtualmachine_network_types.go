@@ -103,8 +103,10 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// Please note this field is only supported if the network connection
 	// supports DHCP.
 	//
-	// Please note this field is mutually exclusive with IP4 addresses in the
-	// Addresses field and the Gateway4 field.
+	// When true, Addresses must not contain IP4 addresses and Gateway4 must be
+	// omitted. When the bootstrap provider is CloudInit, Gateway4 may instead be
+	// set to "None" to ignore routes supplied by DHCPv4 while still obtaining an
+	// IPv4 address.
 	DHCP4 *bool `json:"dhcp4,omitempty"`
 
 	// +optional
@@ -120,34 +122,55 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// Please note this field is only supported if the network connection
 	// supports DHCP.
 	//
-	// Please note this field is mutually exclusive with IP6 addresses in the
-	// Addresses field and the Gateway6 field.
+	// When true, Addresses must not contain IP6 addresses and Gateway6 must be
+	// omitted. When the bootstrap provider is CloudInit, Gateway6 may instead be
+	// set to "None" to ignore routes supplied by DHCPv6 while still obtaining an
+	// IPv6 address.
 	DHCP6 *bool `json:"dhcp6,omitempty"`
 
 	// +optional
 
 	// Gateway4 is the default, IP4 gateway for this interface.
 	//
-	// If unset, the gateway from the network provider will be used. However,
-	// if set to "None", the network provider gateway will be ignored.
+	// If omitted, the gateway from the network provider is used. Set to an
+	// IPv4 address to override that gateway, or to "None" to ignore it.
 	//
-	// Please note this field is only supported if the network connection
-	// supports manual IP allocation.
+	// When the bootstrap provider is CloudInit, "None" also ignores all routes
+	// supplied by DHCPv4, including the default route. DHCPv4 address allocation
+	// is unaffected, and static routes in Routes are still applied.
 	//
-	// Please note this field is mutually exclusive with DHCP4.
+	// If both DHCPv4 and DHCPv6 are enabled on this interface, either
+	// explicitly or by the network provider, CloudInit ignores DHCP routes
+	// only when Gateway4 and Gateway6 are both "None". When DHCP4 and DHCP6
+	// are both true, setting only one of them to "None" is rejected.
+	//
+	// Setting a gateway address requires a network that supports manual IP
+	// allocation and cannot be combined with DHCP4 set to true. When the
+	// bootstrap provider is not CloudInit, these restrictions also apply to
+	// "None".
 	Gateway4 string `json:"gateway4,omitempty"`
 
 	// +optional
 
 	// Gateway6 is the primary IP6 gateway for this interface.
 	//
-	// If unset, the gateway from the network provider will be used. However,
-	// if set to "None", the network provider gateway will be ignored.
+	// If omitted, the gateway from the network provider is used. Set to an
+	// IPv6 address to override that gateway, or to "None" to ignore it.
 	//
-	// Please note this field is only supported if the network connection
-	// supports manual IP allocation.
+	// When the bootstrap provider is CloudInit, "None" also ignores all routes
+	// supplied by DHCPv6. DHCPv6 address allocation is unaffected, and static
+	// routes in Routes are still applied. Routes learned from IPv6 router
+	// advertisements are unaffected.
 	//
-	// Please note this field is mutually exclusive with DHCP6.
+	// If both DHCPv4 and DHCPv6 are enabled on this interface, either
+	// explicitly or by the network provider, CloudInit ignores DHCP routes
+	// only when Gateway4 and Gateway6 are both "None". When DHCP4 and DHCP6
+	// are both true, setting only one of them to "None" is rejected.
+	//
+	// Setting a gateway address requires a network that supports manual IP
+	// allocation and cannot be combined with DHCP6 set to true. When the
+	// bootstrap provider is not CloudInit, these restrictions also apply to
+	// "None".
 	Gateway6 string `json:"gateway6,omitempty"`
 
 	// +optional
@@ -170,6 +193,11 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// true, if nameservers is not provided, the global nameservers will be used
 	// instead.
 	//
+	// When the bootstrap provider is CloudInit and Netplan's networkd renderer
+	// is used, nameservers specified here replace DNS servers supplied by both
+	// DHCPv4 and DHCPv6 on this interface, regardless of the nameserver address
+	// family.
+	//
 	// Please note that Linux allows only three nameservers
 	// (https://linux.die.net/man/5/resolv.conf).
 	Nameservers []string `json:"nameservers,omitempty"`
@@ -180,6 +208,10 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	//
 	// Please note this feature is available only with the following bootstrap
 	// providers: CloudInit.
+	//
+	// These routes are applied in addition to routes supplied by DHCP. To
+	// ignore DHCP routes, set Gateway4 or Gateway6 to "None" for that address
+	// family. Static routes in this list are still applied in that case.
 	Routes []VirtualMachineNetworkRouteSpec `json:"routes,omitempty"`
 
 	// +optional

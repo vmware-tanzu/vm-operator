@@ -4000,6 +4000,170 @@ func unitTestsValidateCreate() {
 				},
 			),
 		)
+
+		DescribeTable("allow CloudInit interface nameservers with DHCP",
+			func(dhcp4, dhcp6 bool) {
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{{
+								Name:  "eth0",
+								DHCP4: new(dhcp4),
+								DHCP6: new(dhcp6),
+								Nameservers: []string{
+									"8.8.8.8",
+									"2001:4860:4860::8888",
+								},
+							}},
+						}
+					},
+					expectAllowed: true,
+				})
+			},
+			Entry("IPv4 DHCP", true, false),
+			Entry("IPv6 DHCP", false, true),
+			Entry("dual-stack DHCP", true, true),
+		)
+
+		DescribeTable("DHCP route overrides",
+			func(provider string, dhcp4, dhcp6 *bool, gateway4, gateway6 string, expectedErr string) {
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+						switch provider {
+						case "CloudInit":
+							ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+						case "LinuxPrep":
+							ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+						case "Sysprep":
+							ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{Sysprep: &sysprep.Sysprep{}}
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{{
+								Name:     "eth0",
+								DHCP4:    dhcp4,
+								DHCP6:    dhcp6,
+								Gateway4: gateway4,
+								Gateway6: gateway6,
+							}},
+						}
+					},
+					expectAllowed: expectedErr == "",
+					validate: func(response admission.Response) {
+						if expectedErr != "" {
+							Expect(string(response.Result.Reason)).To(Equal(expectedErr))
+						}
+					},
+				})
+			},
+			Entry("CloudInit IPv4",
+				"CloudInit",
+				new(true),
+				new(false),
+				"None",
+				"",
+				"",
+			),
+			Entry("CloudInit IPv6",
+				"CloudInit",
+				new(false),
+				new(true),
+				"",
+				"None",
+				"",
+			),
+			Entry("CloudInit dual-stack",
+				"CloudInit",
+				new(true),
+				new(true),
+				"None",
+				"None",
+				"",
+			),
+			Entry("CloudInit dual-stack IPv4 mismatch",
+				"CloudInit",
+				new(true),
+				new(true),
+				"None",
+				"",
+				`spec.network.interfaces[0]: Invalid value: "eth0": dual-stack DHCP requires identical DHCP overrides; set both gateway4 and gateway6 to None to ignore DHCP routes`,
+			),
+			Entry("CloudInit dual-stack IPv6 mismatch",
+				"CloudInit",
+				new(true),
+				new(true),
+				"",
+				"None",
+				`spec.network.interfaces[0]: Invalid value: "eth0": dual-stack DHCP requires identical DHCP overrides; set both gateway4 and gateway6 to None to ignore DHCP routes`,
+			),
+			Entry("CloudInit provider-derived DHCP is checked at bootstrap",
+				"CloudInit",
+				nil,
+				nil,
+				"None",
+				"",
+				"",
+			),
+			Entry("LinuxPrep IPv4 gateway remains incompatible",
+				"LinuxPrep",
+				new(true),
+				new(false),
+				"None",
+				"",
+				`spec.network.interfaces[0].gateway4: Invalid value: "None": gateway4 is mutually exclusive with dhcp4`,
+			),
+			Entry("LinuxPrep IPv6 gateway remains incompatible",
+				"LinuxPrep",
+				new(false),
+				new(true),
+				"",
+				"None",
+				`spec.network.interfaces[0].gateway6: Invalid value: "None": gateway6 is mutually exclusive with dhcp6`,
+			),
+			Entry("Sysprep IPv4 gateway remains incompatible",
+				"Sysprep",
+				new(true),
+				new(false),
+				"None",
+				"",
+				`spec.network.interfaces[0].gateway4: Invalid value: "None": gateway4 is mutually exclusive with dhcp4`,
+			),
+			Entry("Sysprep IPv6 gateway remains incompatible",
+				"Sysprep",
+				new(false),
+				new(true),
+				"",
+				"None",
+				`spec.network.interfaces[0].gateway6: Invalid value: "None": gateway6 is mutually exclusive with dhcp6`,
+			),
+			Entry("LinuxPrep static gateway suppression",
+				"LinuxPrep",
+				new(false),
+				new(false),
+				"None",
+				"None",
+				"",
+			),
+			Entry("Sysprep static gateway suppression",
+				"Sysprep",
+				new(false),
+				new(false),
+				"None",
+				"None",
+				"",
+			),
+			Entry("concrete gateway remains incompatible",
+				"CloudInit",
+				new(true),
+				new(false),
+				"192.0.2.1",
+				"",
+				`spec.network.interfaces[0].gateway4: Invalid value: "192.0.2.1": gateway4 must have an IPv4 address in the addresses field, spec.network.interfaces[0].gateway4: Invalid value: "192.0.2.1": gateway4 is mutually exclusive with dhcp4`,
+			),
+		)
 	})
 
 	Context("HardwareVersion", func() {

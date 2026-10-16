@@ -68,7 +68,7 @@ func (vs *vSphereVMProvider) PlaceVirtualMachineGroup(
 
 	results, err := vs.vmGroupDoPlacement(ctx, vcClient, group.Namespace, placementArgs)
 	if err != nil {
-		setVMGroupPendingPlacementErr(groupPlacements, err)
+		setVMGroupPlacementErr(groupPlacements, err)
 		return err
 	}
 
@@ -152,19 +152,38 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 	return placementArgs, nil
 }
 
-// setVMGroupPendingPlacementErr records the group placement error as the
-// message of every member's pending PlacementReady condition.
-func setVMGroupPendingPlacementErr(
+// setVMGroupPlacementErr records the group placement error on every
+// participating member's PlacementReady condition.
+func setVMGroupPlacementErr(
 	groupPlacements []providers.VMGroupPlacement,
 	err error) {
 
+	reason := "PlacementFailed"
+	switch {
+	case errors.Is(err, placement.ErrNoPlacementCandidates):
+		reason = "NoPlacementCandidates"
+	case errors.Is(err, placement.ErrGroupPlacementZoneMismatch):
+		reason = "ZoneMismatch"
+	}
+	var placementFaults *placement.PlacementFaultsError
+	errors.As(err, &placementFaults)
+
 	for _, grpPlacement := range groupPlacements {
 		for _, vm := range grpPlacement.VMMembers {
-			pkgcond.MarkFalse(
+			memberReason, memberErr := reason, err
+			if placementFaults != nil {
+				if vmErr := placementFaults.ErrorForVM(vm.Name); vmErr != nil {
+					memberErr = vmErr
+				} else {
+					memberReason = "GroupPlacementFailed"
+					memberErr = errors.New("group placement failed because another member could not be placed")
+				}
+			}
+			pkgcond.MarkError(
 				getOrAddVMMemberStatus(grpPlacement.VMGroup, vm),
 				vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
-				"PendingPlacement",
-				"%v", err)
+				memberReason,
+				memberErr)
 		}
 	}
 }

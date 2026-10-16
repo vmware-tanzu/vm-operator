@@ -6,6 +6,7 @@ package virtualmachinegroup_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -718,6 +719,53 @@ var _ = Describe(
 				})
 			})
 
+			When("group placement fails", func() {
+				BeforeEach(func() {
+					intgFakeVMProvider.Lock()
+					intgFakeVMProvider.PlaceVirtualMachineGroupFn = func(
+						_ context.Context,
+						_ *vmopv1.VirtualMachineGroup,
+						groupPlacements []providers.VMGroupPlacement) error {
+
+						placementErr := errors.New("group placement failed")
+						for _, placement := range groupPlacements {
+							for i := range placement.VMGroup.Status.Members {
+								ms := &placement.VMGroup.Status.Members[i]
+								if ms.Kind == virtualMachineKind {
+									conditions.MarkError(ms,
+										vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+										"PlacementFailed", placementErr)
+								}
+							}
+						}
+						return placementErr
+					}
+					intgFakeVMProvider.Unlock()
+				})
+
+				It("should persist placement errors on root and child group VM members", func() {
+					Eventually(func(g Gomega) {
+						for groupKey, memberCount := range map[types.NamespacedName]int{
+							vmGroup1Key: 3,
+							vmGroup2Key: 1,
+						} {
+							group := &vmopv1.VirtualMachineGroup{}
+							g.Expect(ctx.Client.Get(ctx, groupKey, group)).To(Succeed())
+							g.Expect(group.Status.Members).To(HaveLen(memberCount))
+							for _, ms := range group.Status.Members {
+								if ms.Kind == virtualMachineKind {
+									c := conditions.Get(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+									g.Expect(c).ToNot(BeNil())
+									g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									g.Expect(c.Reason).To(Equal("PlacementFailed"))
+									g.Expect(c.Message).To(Equal("group placement failed"))
+								}
+							}
+						}
+					}, "30s", "100ms").Should(Succeed())
+				})
+			})
+
 			When("VMAffinityDuringExecution is enabled", func() {
 				var oldVMAffinityDuringExecution bool
 
@@ -763,6 +811,19 @@ var _ = Describe(
 								}
 							}
 						}, "3s").Should(Succeed())
+
+						By("recording the VKS zone contract after ordinary VM placement")
+						setVMUniqueID(vm1Key, "vm-unique-id-1", "zone-a")
+						setVMUniqueID(vm2Key, "vm-unique-id-2", "zone-b")
+						setVMUniqueID(vm3Key, "vm-unique-id-3", "zone-c")
+						reconcileVMG(vmGroup1Key)
+						reconcileVMG(vmGroup2Key)
+						verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "AlreadyPlaced")
+						verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "AlreadyPlaced")
+						verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm1Key, "zone-a")
+						verifyGroupPlacementReadyConditionWithZone(vmGroup2Key, vm2Key, "zone-b")
+						verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm3Key, "zone-c")
+						Expect(groupPlacementCallCount.Load()).To(BeZero())
 					})
 				})
 

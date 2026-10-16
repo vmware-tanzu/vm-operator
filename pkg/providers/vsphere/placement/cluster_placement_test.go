@@ -6,6 +6,7 @@ package placement_test
 
 import (
 	"context"
+	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -24,6 +25,72 @@ func createRelocateSpec() *vimtypes.VirtualMachineRelocateSpec {
 	spec.Datastore = &vimtypes.ManagedObjectReference{}
 	return spec
 }
+
+var _ = Describe("PlacementFaultsError", func() {
+	It("keeps full and per-member messages stable when DRS reorders resource pool faults", func() {
+		faults := []vimtypes.PlaceVmsXClusterResultPlacementFaults{
+			{VmName: "vm-1", ResourcePool: vimtypes.ManagedObjectReference{Value: "rp-2"},
+				Faults: []vimtypes.LocalizedMethodFault{{LocalizedMessage: "second pool fault"}}},
+			{VmName: "vm-2", ResourcePool: vimtypes.ManagedObjectReference{Value: "rp-3"},
+				Faults: []vimtypes.LocalizedMethodFault{{LocalizedMessage: "other member fault"}}},
+			{VmName: "vm-1", ResourcePool: vimtypes.ManagedObjectReference{Value: "rp-1"},
+				Faults: []vimtypes.LocalizedMethodFault{{LocalizedMessage: "first pool fault"}}},
+		}
+		first := &placement.PlacementFaultsError{Faults: faults}
+		reversed := slices.Clone(faults)
+		slices.Reverse(reversed)
+		second := &placement.PlacementFaultsError{Faults: reversed}
+		Expect(first.Error()).To(Equal(second.Error()))
+		Expect(first.ErrorForVM("vm-1").Error()).To(Equal(second.ErrorForVM("vm-1").Error()))
+		Expect(first.ErrorForVM("vm-1").Error()).ToNot(ContainSubstring("other member fault"))
+		Expect(first.Faults[0].ResourcePool.Value).To(Equal("rp-2"), "formatting must not mutate structured faults")
+	})
+
+	It("keeps faults for different VMs separate and retains all resource pool details", func() {
+		err := &placement.PlacementFaultsError{Faults: []vimtypes.PlaceVmsXClusterResultPlacementFaults{
+			{
+				VmName:       "vm-1",
+				ResourcePool: vimtypes.ManagedObjectReference{Value: "rp-1"},
+				Faults:       []vimtypes.LocalizedMethodFault{{LocalizedMessage: "first VM fault"}},
+			},
+			{
+				VmName:       "vm-2",
+				ResourcePool: vimtypes.ManagedObjectReference{Value: "rp-2"},
+				Faults:       []vimtypes.LocalizedMethodFault{{LocalizedMessage: "second VM fault"}},
+			},
+			{
+				VmName:       "vm-1",
+				ResourcePool: vimtypes.ManagedObjectReference{Value: "rp-3"},
+				Faults: []vimtypes.LocalizedMethodFault{{
+					Fault: &vimtypes.NoCompatibleHost{Error: []vimtypes.LocalizedMethodFault{{LocalizedMessage: "nested fault"}}},
+				}},
+			},
+		}}
+		vmErr := err.ErrorForVM("vm-1")
+		Expect(vmErr).To(HaveOccurred())
+		Expect(vmErr.Error()).To(ContainSubstring("first VM fault"))
+		Expect(vmErr.Error()).To(ContainSubstring("nested fault"))
+		Expect(vmErr.Error()).To(ContainSubstring("rp-1"))
+		Expect(vmErr.Error()).To(ContainSubstring("rp-3"))
+		Expect(vmErr.Error()).ToNot(ContainSubstring("second VM fault"))
+		Expect(err.ErrorForVM("vm-2")).To(MatchError(ContainSubstring("second VM fault")))
+		Expect(err.ErrorForVM("vm-3")).ToNot(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("first VM fault"))
+		Expect(err.Error()).To(ContainSubstring("second VM fault"))
+		Expect(err.Error()).To(ContainSubstring("nested fault"))
+	})
+
+	It("retains the VM association when faults have no localized messages", func() {
+		err := &placement.PlacementFaultsError{Faults: []vimtypes.PlaceVmsXClusterResultPlacementFaults{{
+			VmName:       "vm-1",
+			ResourcePool: vimtypes.ManagedObjectReference{Value: "rp-1"},
+			Faults:       []vimtypes.LocalizedMethodFault{{Fault: &vimtypes.NoCompatibleHost{}}},
+		}}}
+		Expect(err.ErrorForVM("vm-1")).To(MatchError(ContainSubstring("placement failed without fault details")))
+		Expect(err.Error()).To(ContainSubstring("VM vm-1, resource pool (rp-1)"))
+		Expect(err.ErrorForVM("vm-2")).ToNot(HaveOccurred())
+	})
+})
 
 func createValidPlacementAction() (vimtypes.BaseClusterAction, *vimtypes.VirtualMachineRelocateSpec) {
 	action := vimtypes.PlacementAction{}

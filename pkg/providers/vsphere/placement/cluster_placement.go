@@ -7,6 +7,7 @@ package placement
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/vmware/govmomi/find"
@@ -26,6 +27,40 @@ type Recommendation struct {
 	PoolMoRef  vimtypes.ManagedObjectReference
 	HostMoRef  *vimtypes.ManagedObjectReference
 	Datastores []DatastoreResult
+}
+
+// PlacementFaultsError preserves the per-VM faults returned by PlaceVmsXCluster.
+type PlacementFaultsError struct {
+	Faults []vimtypes.PlaceVmsXClusterResultPlacementFaults
+}
+
+// Error returns all placement fault details for logging.
+func (e *PlacementFaultsError) Error() string {
+	var messages []string
+	for _, pf := range e.Faults {
+		leafMessages := faultutil.LocalizedMessagesFromFaults(pf.Faults)
+		if len(leafMessages) == 0 {
+			leafMessages = []string{"placement failed without fault details"}
+		}
+		messages = append(messages, fmt.Sprintf("VM %s, resource pool (%s) has faults: %s",
+			pf.VmName, pf.ResourcePool.Value, strings.Join(leafMessages, " ")))
+	}
+	slices.Sort(messages)
+	return fmt.Sprintf("%v", messages)
+}
+
+// ErrorForVM returns only the faults for vmName, or nil if none were reported.
+func (e *PlacementFaultsError) ErrorForVM(vmName string) error {
+	var faults []vimtypes.PlaceVmsXClusterResultPlacementFaults
+	for _, pf := range e.Faults {
+		if pf.VmName == vmName {
+			faults = append(faults, pf)
+		}
+	}
+	if len(faults) == 0 {
+		return nil
+	}
+	return &PlacementFaultsError{Faults: faults}
 }
 
 func relocateSpecToRecommendation(
@@ -226,7 +261,8 @@ type VMZonePlacementMapping struct {
 
 // getClusterPlacementRecommendations calls PlaceVmsXCluster to get the placement
 // recommendations for the given VMs. Each entry's ZoneName is sent as the
-// VM's CandidateVsphereZone in the PlaceVmsXCluster call.
+// VM's CandidateVsphereZone in the PlaceVmsXCluster call only when per-VM
+// zones are enabled.
 func getClusterPlacementRecommendations(
 	ctx context.Context,
 	vcClient *vim25.Client,
@@ -236,6 +272,11 @@ func getClusterPlacementRecommendations(
 	needHostPlacement, needDatastorePlacement bool) (map[string]Recommendation, error) {
 
 	logger := pkglog.FromContextOrDefault(ctx)
+	// Candidate pools may originate from maps. Keep the request order stable.
+	resourcePoolsMoRefs = slices.Clone(resourcePoolsMoRefs)
+	slices.SortFunc(resourcePoolsMoRefs, func(a, b vimtypes.ManagedObjectReference) int {
+		return strings.Compare(a.Value, b.Value)
+	})
 	placementSpec := vimtypes.PlaceVmsXClusterSpec{
 		PlacementType:           string(vimtypes.PlaceVmsXClusterSpecPlacementTypeCreateAndPowerOn),
 		ResourcePools:           resourcePoolsMoRefs,
@@ -244,13 +285,14 @@ func getClusterPlacementRecommendations(
 		DatastoreRecommRequired: &needDatastorePlacement,
 	}
 
+	perVMZones := pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution
 	for i, m := range vmToZoneMappings {
 		cs := m.ConfigSpec
 		// Work around PlaceVmsXCluster bug that crashes vpxd when ConfigSpec.Files is nil (still needed?)
 		cs.Files = new(vimtypes.VirtualMachineFileInfo)
 
 		placementSpec.VmPlacementSpecs[i].ConfigSpec = cs
-		if pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution {
+		if perVMZones {
 			placementSpec.VmPlacementSpecs[i].CandidateVsphereZone = m.ZoneName
 		}
 	}
@@ -265,18 +307,7 @@ func getClusterPlacementRecommendations(
 	logger.V(6).Info("PlaceVmsXCluster response", "results", vimtypes.ToString(results))
 
 	if len(results.Faults) != 0 {
-		var faultMsgs []string
-		for _, pf := range results.Faults {
-
-			leafMessages := faultutil.LocalizedMessagesFromFaults(pf.Faults)
-			if len(leafMessages) > 0 {
-				faultMsgs = append(faultMsgs,
-					fmt.Sprintf("VM %s, resource pool (%s) has faults: %s",
-						pf.VmName, pf.ResourcePool.Value, strings.Join(leafMessages, " ")))
-			}
-
-		}
-		return nil, fmt.Errorf("%v", faultMsgs)
+		return nil, &PlacementFaultsError{Faults: results.Faults}
 	}
 
 	recommendations := make(map[string]Recommendation, len(results.PlacementInfos))

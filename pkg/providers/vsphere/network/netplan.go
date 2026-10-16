@@ -13,6 +13,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
+// NetPlanCustomization builds CloudInit network configuration from the effective
+// interface settings.
 func NetPlanCustomization(
 	bootstraps []Bootstrap,
 	vlans []vmopv1.VirtualMachineNetworkVLANSpec) (*netplan.Network, error) {
@@ -41,6 +43,20 @@ func NetPlanCustomization(
 		npEth.Dhcp4 = &b.DHCP4
 		npEth.Dhcp6 = &b.DHCP6
 		npEth.AcceptRa = &b.AcceptRA
+
+		ignoreRoutes4, ignoreRoutes6 := b.IgnoreDHCP4Routes, b.IgnoreDHCP6Routes
+		if b.DHCP4 && b.DHCP6 && ignoreRoutes4 != ignoreRoutes6 {
+			// networkd requires identical overrides when both DHCP families
+			// are enabled, so only ignore DHCP routes when both families do.
+			ignoreRoutes4, ignoreRoutes6 = false, false
+		}
+
+		if b.DHCP4 {
+			npEth.Dhcp4Overrides = netPlanDHCPOverrides(b.IgnoreDHCPDNS, ignoreRoutes4)
+		}
+		if b.DHCP6 {
+			npEth.Dhcp6Overrides = netPlanDHCPOverrides(b.IgnoreDHCPDNS, ignoreRoutes6)
+		}
 
 		if !*npEth.Dhcp4 {
 			for i := range b.IPConfigs {
@@ -118,6 +134,20 @@ func NetPlanCustomization(
 	}
 
 	return netPlan, nil
+}
+
+func netPlanDHCPOverrides(ignoreDNS, ignoreRoutes bool) *netplan.DHCPOverrides {
+	if !ignoreDNS && !ignoreRoutes {
+		return nil
+	}
+	overrides := &netplan.DHCPOverrides{}
+	if ignoreDNS {
+		overrides.UseDNS = ptr.To(false)
+	}
+	if ignoreRoutes {
+		overrides.UseRoutes = ptr.To(false)
+	}
+	return overrides
 }
 
 // NormalizeNetplanMac normalizes the mac address format to one compatible with netplan.

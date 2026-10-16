@@ -138,10 +138,14 @@ func getBackfilledVolumes(
 		return []string{}
 	}
 
-	// Wait for both conditions
+	// Wait for volume backfill, disk promotion, and registration to complete.
 	conditions := []metav1.Condition{
 		{
 			Type:   consts.VMUnmanagedVolumesBackfilledCondition,
+			Status: metav1.ConditionTrue,
+		},
+		{
+			Type:   string(vmopv1.VirtualMachineDiskPromotionSynced),
 			Status: metav1.ConditionTrue,
 		},
 		{
@@ -2186,6 +2190,10 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				conditions := []metav1.Condition{
 					{
 						Type:   consts.VMUnmanagedVolumesBackfilledCondition,
+						Status: metav1.ConditionTrue,
+					},
+					{
+						Type:   string(vmopv1.VirtualMachineDiskPromotionSynced),
 						Status: metav1.ConditionTrue,
 					},
 					{

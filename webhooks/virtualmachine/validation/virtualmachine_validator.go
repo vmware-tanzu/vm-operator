@@ -782,7 +782,7 @@ func (v validator) validateStorageFields(
 		return append(allErrs, field.Invalid(objPath, objName, err.Error()))
 	}
 
-	ok, err := spqutil.IsStoragePolicyInNamespace(ctx, v.client, objName, policyID, vm.Namespace)
+	ok, err := spqutil.IsStoragePolicyInNamespace(ctx, v.client, policyID, vm.Namespace)
 	if err != nil {
 		return append(allErrs, field.Invalid(objPath, objName, err.Error()))
 	}

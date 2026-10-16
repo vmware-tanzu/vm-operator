@@ -52,7 +52,6 @@ const (
 	WebhookSecretNamespace
 	CRDCleanupEnabled
 	FSSInstanceStorage
-	FSSPodVMOnStretchedSupervisor
 	FSSVMResizeCPUMemory
 	FSSVMImportNewNet
 	FSSWorkloadDomainIsolation
@@ -171,8 +170,6 @@ func (n VarName) String() string {
 	//
 	case FSSInstanceStorage:
 		return "FSS_WCP_INSTANCE_STORAGE"
-	case FSSPodVMOnStretchedSupervisor:
-		return "FSS_PODVMONSTRETCHEDSUPERVISOR"
 	case FSSVMResizeCPUMemory:
 		return "FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY"
 	case FSSVMImportNewNet:

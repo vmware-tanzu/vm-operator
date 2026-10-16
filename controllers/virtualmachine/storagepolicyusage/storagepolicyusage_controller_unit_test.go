@@ -170,7 +170,6 @@ func unitTestsReconcile() {
 				pkgcfg.UpdateContext(
 					ctx,
 					func(config *pkgcfg.Config) {
-						config.Features.PodVMOnStretchedSupervisor = true
 						// Enable VMSnapshots feature.
 						config.Features.VMSnapshots = true
 					},
@@ -342,7 +341,6 @@ func unitTestsReconcile() {
 				pkgcfg.UpdateContext(
 					ctx,
 					func(config *pkgcfg.Config) {
-						config.Features.PodVMOnStretchedSupervisor = true
 						config.Features.VMSnapshots = false
 					},
 				),
@@ -482,12 +480,7 @@ func unitTestsReconcileSPUForVM() {
 			WithStatusSubresource(builder.KnownObjectTypes()...).
 			Build()
 		reconciler = storagepolicyusage.NewReconciler(
-			pkgcfg.UpdateContext(
-				ctx,
-				func(config *pkgcfg.Config) {
-					config.Features.PodVMOnStretchedSupervisor = true
-				},
-			),
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
@@ -1045,7 +1038,6 @@ func unitTestsReconcileSPUForVMSnapshot() {
 			pkgcfg.UpdateContext(
 				ctx,
 				func(config *pkgcfg.Config) {
-					config.Features.PodVMOnStretchedSupervisor = true
 					config.Features.VMSnapshots = true
 				},
 			),

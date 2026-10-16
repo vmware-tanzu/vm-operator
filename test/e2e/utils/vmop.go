@@ -8,11 +8,9 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,10 +20,6 @@ import (
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-)
-
-const (
-	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
 )
 
 func GetVirtualMachine(ctx context.Context, client ctrlclient.Client, ns, name string) (*vmopv1.VirtualMachine, error) {
@@ -270,38 +264,20 @@ func GetVirtualMachineWebConsoleRequest(ctx context.Context, client ctrlclient.C
 	return virtualMachineWebConsoleRequest, nil
 }
 
-func IsStorageClassInNamespace(ctx context.Context, k8sClient ctrlclient.Client, namespace, name string, podVMOnStretchedSupervisorEnabled bool) (bool, error) {
-	if podVMOnStretchedSupervisorEnabled {
-		var obj spqv1.StoragePolicyQuotaList
+func IsStorageClassInNamespace(ctx context.Context, k8sClient ctrlclient.Client, namespace, name string) (bool, error) {
+	var obj spqv1.StoragePolicyQuotaList
 
-		err := k8sClient.List(ctx, &obj, ctrlclient.InNamespace(namespace))
-		if err != nil {
-			return false, err
-		}
+	err := k8sClient.List(ctx, &obj, ctrlclient.InNamespace(namespace))
+	if err != nil {
+		return false, err
+	}
 
-		for i := range obj.Items {
-			for j := range obj.Items[i].Status.SCLevelQuotaStatuses {
-				// TODO: This should really check the Spec.StoragePolicyId instead.
-				qs := obj.Items[i].Status.SCLevelQuotaStatuses[j]
-				if qs.StorageClassName == name {
-					return true, nil
-				}
-			}
-		}
-	} else {
-		var obj corev1.ResourceQuotaList
-
-		err := k8sClient.List(ctx, &obj, ctrlclient.InNamespace(namespace))
-		if err != nil {
-			return false, err
-		}
-
-		prefix := name + storageResourceQuotaStrPattern
-		for i := range obj.Items {
-			for name := range obj.Items[i].Spec.Hard {
-				if strings.HasPrefix(name.String(), prefix) {
-					return true, nil
-				}
+	for i := range obj.Items {
+		for j := range obj.Items[i].Status.SCLevelQuotaStatuses {
+			// TODO: This should really check the Spec.StoragePolicyId instead.
+			qs := obj.Items[i].Status.SCLevelQuotaStatuses[j]
+			if qs.StorageClassName == name {
+				return true, nil
 			}
 		}
 	}

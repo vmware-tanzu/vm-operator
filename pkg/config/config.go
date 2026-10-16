@@ -190,7 +190,6 @@ func (c Config) GetMaxDeployThreadsOnProvider() int {
 
 type FeatureStates struct {
 	InstanceStorage               bool // FSS_WCP_INSTANCE_STORAGE
-	PodVMOnStretchedSupervisor    bool // FSS_PODVMONSTRETCHEDSUPERVISOR
 	TKGMultipleCL                 bool // to be fetched dynamically from capability
 	VMResizeCPUMemory             bool // FSS_WCP_VMSERVICE_RESIZE_CPU_MEMORY
 	VMImportNewNet                bool // FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET

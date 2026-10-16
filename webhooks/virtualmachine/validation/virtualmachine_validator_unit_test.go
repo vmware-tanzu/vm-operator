@@ -1338,9 +1338,9 @@ func unitTestsValidateCreate() {
 						*storageClass1,
 						true)).To(Succeed())
 
-					rlName := storageClass1.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
-					resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
-					Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+					storagePolicyQuota := builder.DummyStoragePolicyQuota(
+						storageClass1.Name+"-storagepolicyquota", ctx.vm.Namespace, profileID)
+					Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
 
 					ctx.vm.Spec.StorageClass = storageClass1.Name
 					ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
@@ -1375,9 +1375,9 @@ func unitTestsValidateCreate() {
 						*storageClass1,
 						false)).To(Succeed())
 
-					rlName := storageClass1.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
-					resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
-					Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+					storagePolicyQuota := builder.DummyStoragePolicyQuota(
+						storageClass1.Name+"-storagepolicyquota", ctx.vm.Namespace, profileID)
+					Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
 
 					ctx.vm.Spec.StorageClass = storageClass1.Name
 					ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
@@ -1411,11 +1411,11 @@ func unitTestsValidateCreate() {
 					storageClass2.Name += "2"
 					Expect(ctx.Client.Create(ctx, storageClass2)).To(Succeed())
 
-					resourceQuota := builder.DummyResourceQuota(
-						ctx.vm.Namespace,
-						storageClass1.Name+".storageclass.storage.k8s.io/persistentvolumeclaims",
-						storageClass2.Name+".storageclass.storage.k8s.io/persistentvolumeclaims")
-					Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+					for _, policyID := range []string{profileID, "id42"} {
+						storagePolicyQuota := builder.DummyStoragePolicyQuota(
+							policyID+"-storagepolicyquota", ctx.vm.Namespace, policyID)
+						Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+					}
 
 					pvc := builder.DummyPersistentVolumeClaim()
 					pvc.Name = builder.DummyPVCName
@@ -1703,45 +1703,9 @@ func unitTestsValidateCreate() {
 						`spec.storageClass: Invalid value: "dummy-storage-class": storageclasses.storage.k8s.io "dummy-storage-class" not found`),
 				},
 			),
-			Entry("storage class not associated with namespace",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						storageClass := builder.DummyStorageClass()
-						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
-						ctx.vm.Spec.StorageClass = storageClass.Name
-
-						rlName := "not-found" + ".storageclass.storage.k8s.io/persistentvolumeclaims"
-						resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
-						Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
-					},
-					validate: doValidateWithMsg(
-						`spec.storageClass: Invalid value: "dummy-storage-class": Storage policy is not associated with the namespace dummy-vm-namespace-for-webhook-validation`),
-				},
-			),
-			Entry("storage class associated with namespace",
-				testParams{
-					setup: func(ctx *unitValidatingWebhookContext) {
-						storageClass := builder.DummyStorageClass()
-						Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
-						ctx.vm.Spec.StorageClass = storageClass.Name
-
-						rlName := storageClass.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
-						resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
-						Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
-					},
-					expectAllowed: true,
-				},
-			),
 		)
 
-		Context("PodVMOnStretchedSupervisor is enabled", func() {
-
-			BeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.PodVMOnStretchedSupervisor = true
-				})
-			})
-
+		Context("storage policy quota is used", func() {
 			DescribeTable("StorageClass create", doTest,
 				Entry("storage class associated with namespace",
 					testParams{
@@ -1796,7 +1760,6 @@ func unitTestsValidateCreate() {
 
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.PodVMOnStretchedSupervisor = true
 				config.Features.StoragePolicyMutability = true
 			})
 		})
@@ -9861,8 +9824,9 @@ func unitTestsValidateUpdate() {
 						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
 						Expect(kubeutil.MarkEncryptedStorageClass(ctx, ctx.Client, *sc, true)).To(Succeed())
 
-						rlName := sc.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
-						Expect(ctx.Client.Create(ctx, builder.DummyResourceQuota(ctx.vm.Namespace, rlName))).To(Succeed())
+						storagePolicyQuota := builder.DummyStoragePolicyQuota(
+							sc.Name+"-storagepolicyquota", ctx.vm.Namespace, profileID)
+						Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
 
 						ctx.oldVM.Spec.StorageClass = sc.Name
 						ctx.vm.Spec.StorageClass = sc.Name
@@ -9885,8 +9849,9 @@ func unitTestsValidateUpdate() {
 						Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
 						Expect(kubeutil.MarkEncryptedStorageClass(ctx, ctx.Client, *sc, false)).To(Succeed())
 
-						rlName := sc.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
-						Expect(ctx.Client.Create(ctx, builder.DummyResourceQuota(ctx.vm.Namespace, rlName))).To(Succeed())
+						storagePolicyQuota := builder.DummyStoragePolicyQuota(
+							sc.Name+"-storagepolicyquota", ctx.vm.Namespace, profileID)
+						Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
 
 						ctx.oldVM.Spec.StorageClass = sc.Name
 						ctx.vm.Spec.StorageClass = sc.Name

@@ -92,14 +92,8 @@ func EnsureE2EEncryptionStorageInNamespace(
 			"Encryption storage policy already exists in namespace %s", namespace)
 	}
 
-	podVMOnStretchedSupervisorEnabled := IsFssEnabled(ctx, svClusterClient,
-		cfg.GetVariable("VMOPNamespace"),
-		cfg.GetVariable("VMOPDeploymentName"),
-		cfg.GetVariable("VMOPManagerCommand"),
-		cfg.GetVariable("EnvFSSPodVMOnStretchedSupervisor"))
-
 	EnsureStorageClassInNamespace(ctx, svClusterClient, namespace,
-		E2EEncryptionStorageClassName, podVMOnStretchedSupervisorEnabled, cfg)
+		E2EEncryptionStorageClassName, cfg)
 
 	return nil
 }
@@ -109,12 +103,10 @@ func EnsureStorageClassInNamespace(
 	k8sClient ctrlclient.Client,
 	namespace,
 	name string,
-	podVMOnStretchedSupervisorEnabled bool,
 	e2eConfig config.E2EConfig) {
 
 	gomega.Eventually(func(g gomega.Gomega) {
-		scInNS, err := IsStorageClassInNamespace(ctx, k8sClient, namespace,
-			name, podVMOnStretchedSupervisorEnabled)
+		scInNS, err := IsStorageClassInNamespace(ctx, k8sClient, namespace, name)
 		g.Expect(err).NotTo(gomega.HaveOccurred(),
 			"error checking if storage class %s in namespace %s: %v",
 			name, namespace, err)

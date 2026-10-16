@@ -24,12 +24,11 @@ func Default() Config {
 		ContainerNode:  false,
 		ContentAPIWait: 1 * time.Second,
 		Features: FeatureStates{
-			InstanceStorage:            true,
-			PodVMOnStretchedSupervisor: true,
-			TKGMultipleCL:              false,
-			WorkloadDomainIsolation:    false,
-			StoragePolicyMutability:    false,
-			TaggingAPI:                 false,
+			InstanceStorage:         true,
+			TKGMultipleCL:           false,
+			WorkloadDomainIsolation: false,
+			StoragePolicyMutability: false,
+			TaggingAPI:              false,
 		},
 		InstanceStorage: InstanceStorage{
 			JitterMaxFactor:      1.0,

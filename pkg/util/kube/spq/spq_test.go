@@ -16,7 +16,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -50,7 +49,6 @@ var _ = Describe("IsStoragePolicyInNamespace", func() {
 		withObjects []ctrlclient.Object
 		withFuncs   interceptor.Funcs
 		namespace   string
-		name        string
 		policyID    string
 		ok          bool
 		err         error
@@ -59,7 +57,6 @@ var _ = Describe("IsStoragePolicyInNamespace", func() {
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContext()
 		namespace = defaultNamespace
-		name = myStorageClass
 		policyID = sc1PolicyID
 		withFuncs = interceptor.Funcs{}
 		withObjects = []ctrlclient.Object{
@@ -75,118 +72,55 @@ var _ = Describe("IsStoragePolicyInNamespace", func() {
 		client = builder.NewFakeClientWithInterceptors(
 			withFuncs, withObjects...)
 		ok, err = spqutil.IsStoragePolicyInNamespace(
-			ctx, client, name, policyID, namespace)
+			ctx, client, policyID, namespace)
 	})
-
-	When("FSS_PODVMONSTRETCHEDSUPERVISOR is disabled", func() {
+	When("listing storage policy quotas returns an error", func() {
 		BeforeEach(func() {
-			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.PodVMOnStretchedSupervisor = false
-			})
-		})
-		When("listing resource quotas returns an error", func() {
-			BeforeEach(func() {
-				withFuncs.List = func(
-					ctx context.Context,
-					client ctrlclient.WithWatch,
-					list ctrlclient.ObjectList,
-					opts ...ctrlclient.ListOption) error {
+			withFuncs.List = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				list ctrlclient.ObjectList,
+				opts ...ctrlclient.ListOption) error {
 
-					if _, ok := list.(*corev1.ResourceQuotaList); ok {
-						return errors.New(fakeString)
-					}
-
-					return client.List(ctx, list, opts...)
+				if _, ok := list.(*spqv1.StoragePolicyQuotaList); ok {
+					return errors.New(fakeString)
 				}
-			})
-			It("should return an error", func() {
-				Expect(err).To(MatchError(fakeString))
-				Expect(ok).To(BeFalse())
-			})
+
+				return client.List(ctx, list, opts...)
+			}
 		})
-		When("there is a match", func() {
-			BeforeEach(func() {
-				withObjects = append(
-					withObjects,
-					&corev1.ResourceQuota{
-						ObjectMeta: metav1.ObjectMeta{
-							Namespace:    namespace,
-							GenerateName: "fake-",
-						},
-						Spec: corev1.ResourceQuotaSpec{
-							Hard: corev1.ResourceList{
-								corev1.ResourceName(name + ".storageclass.storage.k8s.io/fake"): resource.MustParse("10Gi"),
-							},
-						},
-					},
-				)
-			})
-			It("should return true", func() {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ok).To(BeTrue())
-			})
-		})
-		When("there is not a match", func() {
-			It("should return false", func() {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ok).To(BeFalse())
-			})
+		It("should return an error", func() {
+			Expect(err).To(MatchError(fakeString))
+			Expect(ok).To(BeFalse())
 		})
 	})
-
-	When("FSS_PODVMONSTRETCHEDSUPERVISOR is enabled", func() {
+	When("there is a match", func() {
 		BeforeEach(func() {
-			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.PodVMOnStretchedSupervisor = true
-			})
-		})
-		When("listing storage classes returns an error", func() {
-			BeforeEach(func() {
-				withFuncs.List = func(
-					ctx context.Context,
-					client ctrlclient.WithWatch,
-					list ctrlclient.ObjectList,
-					opts ...ctrlclient.ListOption) error {
-
-					if _, ok := list.(*spqv1.StoragePolicyQuotaList); ok {
-						return errors.New(fakeString)
-					}
-
-					return client.List(ctx, list, opts...)
-				}
-			})
-			It("should return an error", func() {
-				Expect(err).To(MatchError(fakeString))
-				Expect(ok).To(BeFalse())
-			})
-		})
-		When("there is a match", func() {
-			BeforeEach(func() {
-				withObjects = append(
-					withObjects,
-					&spqv1.StoragePolicyQuota{
-						ObjectMeta: metav1.ObjectMeta{
-							Namespace:    namespace,
-							GenerateName: "fake-",
-						},
-						Spec: spqv1.StoragePolicyQuotaSpec{
-							StoragePolicyId: sc1PolicyID,
-						},
+			withObjects = append(
+				withObjects,
+				&spqv1.StoragePolicyQuota{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:    namespace,
+						GenerateName: "fake-",
 					},
-				)
-			})
-			It("should return true", func() {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ok).To(BeTrue())
-			})
+					Spec: spqv1.StoragePolicyQuotaSpec{
+						StoragePolicyId: sc1PolicyID,
+					},
+				},
+			)
 		})
-		When("there is not a match", func() {
-			It("should return false", func() {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ok).To(BeFalse())
-			})
+		It("should return true", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeTrue())
 		})
 	})
+	When("there is not a match", func() {
+		It("should return false", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+		})
+	})
+
 })
 
 var _ = Describe("GetStorageClassInNamespace", func() {
@@ -245,60 +179,54 @@ var _ = Describe("GetStorageClassInNamespace", func() {
 	})
 
 	When("storage class does exist", func() {
-		When("FSS_PODVMONSTRETCHEDSUPERVISOR is enabled", func() {
+		When("listing storage policy quotas returns an error", func() {
 			BeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.PodVMOnStretchedSupervisor = true
-				})
-			})
-			When("listing storage policy quotas returns an error", func() {
-				BeforeEach(func() {
-					withFuncs.List = func(
-						ctx context.Context,
-						client ctrlclient.WithWatch,
-						list ctrlclient.ObjectList,
-						opts ...ctrlclient.ListOption) error {
+				withFuncs.List = func(
+					ctx context.Context,
+					client ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
 
-						if _, ok := list.(*spqv1.StoragePolicyQuotaList); ok {
-							return errors.New(fakeString)
-						}
-
-						return client.List(ctx, list, opts...)
+					if _, ok := list.(*spqv1.StoragePolicyQuotaList); ok {
+						return errors.New(fakeString)
 					}
-				})
-				It("should return an error", func() {
-					Expect(err).To(MatchError(fakeString))
-					Expect(obj).To(BeZero())
-				})
+
+					return client.List(ctx, list, opts...)
+				}
 			})
-			When("there is a match", func() {
-				BeforeEach(func() {
-					withObjects = append(
-						withObjects,
-						&spqv1.StoragePolicyQuota{
-							ObjectMeta: metav1.ObjectMeta{
-								Namespace:    namespace,
-								GenerateName: "fake-",
-							},
-							Spec: spqv1.StoragePolicyQuotaSpec{
-								StoragePolicyId: sc1PolicyID,
-							},
-						},
-					)
-				})
-				It("should return the storage class", func() {
-					Expect(err).ToNot(HaveOccurred())
-					Expect(obj.Name).To(Equal(name))
-				})
-			})
-			When("there is not a match", func() {
-				It("should return NotFoundInNamespace", func() {
-					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(spqutil.NotFoundInNamespace{Namespace: namespace, StorageClass: name}))
-					Expect(obj).To(BeZero())
-				})
+			It("should return an error", func() {
+				Expect(err).To(MatchError(fakeString))
+				Expect(obj).To(BeZero())
 			})
 		})
+		When("there is a match", func() {
+			BeforeEach(func() {
+				withObjects = append(
+					withObjects,
+					&spqv1.StoragePolicyQuota{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace:    namespace,
+							GenerateName: "fake-",
+						},
+						Spec: spqv1.StoragePolicyQuotaSpec{
+							StoragePolicyId: sc1PolicyID,
+						},
+					},
+				)
+			})
+			It("should return the storage class", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(obj.Name).To(Equal(name))
+			})
+		})
+		When("there is not a match", func() {
+			It("should return NotFoundInNamespace", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(spqutil.NotFoundInNamespace{Namespace: namespace, StorageClass: name}))
+				Expect(obj).To(BeZero())
+			})
+		})
+
 	})
 })
 
@@ -492,122 +420,116 @@ var _ = Describe("GetStorageClassesForPolicy", func() {
 	})
 
 	When("storage classes are available", func() {
-		When("FSS_PODVMONSTRETCHEDSUPERVISOR is enabled", func() {
+		When("listing storage classes returns an error", func() {
 			BeforeEach(func() {
-				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.PodVMOnStretchedSupervisor = true
-				})
-			})
-			When("listing storage classes returns an error", func() {
-				BeforeEach(func() {
-					withFuncs.List = func(
-						ctx context.Context,
-						client ctrlclient.WithWatch,
-						list ctrlclient.ObjectList,
-						opts ...ctrlclient.ListOption) error {
+				withFuncs.List = func(
+					ctx context.Context,
+					client ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
 
-						if _, ok := list.(*storagev1.StorageClassList); ok {
-							return errors.New(fakeString)
-						}
-
-						return client.List(ctx, list, opts...)
+					if _, ok := list.(*storagev1.StorageClassList); ok {
+						return errors.New(fakeString)
 					}
-				})
-				It("should return an error", func() {
-					Expect(err).To(MatchError(fakeString))
-					Expect(obj).To(BeZero())
-				})
-			})
-			When("listing storage policy quotas returns an error", func() {
-				BeforeEach(func() {
-					withFuncs.List = func(
-						ctx context.Context,
-						client ctrlclient.WithWatch,
-						list ctrlclient.ObjectList,
-						opts ...ctrlclient.ListOption) error {
 
-						if _, ok := list.(*spqv1.StoragePolicyQuotaList); ok {
-							return errors.New(fakeString)
-						}
-
-						return client.List(ctx, list, opts...)
-					}
-				})
-				It("should return an error", func() {
-					Expect(err).To(MatchError(fakeString))
-					Expect(obj).To(BeZero())
-				})
+					return client.List(ctx, list, opts...)
+				}
 			})
-			When("there is a match", func() {
-				BeforeEach(func() {
-					withObjects = append(
-						withObjects,
-						&spqv1.StoragePolicyQuota{
-							ObjectMeta: metav1.ObjectMeta{
-								Namespace:    namespace,
-								GenerateName: "fake-",
-							},
-							Spec: spqv1.StoragePolicyQuotaSpec{
-								StoragePolicyId: sc1PolicyID,
-							},
-						},
-					)
-				})
-				It("should return the storage class", func() {
-					Expect(err).ToNot(HaveOccurred())
-					Expect(obj).To(HaveLen(1))
-					Expect(obj[0].Name).To(Equal(sc1Name))
-				})
-			})
-			When("there are multiple matches", func() {
-				const newPolicyID = "my-new-policy-id"
-
-				BeforeEach(func() {
-					inPolicyID = newPolicyID
-
-					withObjects = append(
-						withObjects,
-						&storagev1.StorageClass{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: sc1Name + "-new",
-							},
-							Parameters: map[string]string{
-								"storagePolicyID": newPolicyID,
-							},
-						},
-						&storagev1.StorageClass{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: sc2Name + "-new",
-							},
-							Parameters: map[string]string{
-								"storagePolicyID": newPolicyID,
-							},
-						},
-						&spqv1.StoragePolicyQuota{
-							ObjectMeta: metav1.ObjectMeta{
-								Namespace:    namespace,
-								GenerateName: "fake-",
-							},
-							Spec: spqv1.StoragePolicyQuotaSpec{
-								StoragePolicyId: newPolicyID,
-							},
-						},
-					)
-				})
-				It("should return the storage classes", func() {
-					Expect(err).ToNot(HaveOccurred())
-					Expect(obj).To(HaveLen(2))
-					Expect(obj[0].Name).To(Equal(sc1Name + "-new"))
-					Expect(obj[1].Name).To(Equal(sc2Name + "-new"))
-				})
-			})
-			When("there is not a match", func() {
-				It("should return an empty list", func() {
-					Expect(err).ToNot(HaveOccurred())
-					Expect(obj).To(BeEmpty())
-				})
+			It("should return an error", func() {
+				Expect(err).To(MatchError(fakeString))
+				Expect(obj).To(BeZero())
 			})
 		})
+		When("listing storage policy quotas returns an error", func() {
+			BeforeEach(func() {
+				withFuncs.List = func(
+					ctx context.Context,
+					client ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
+
+					if _, ok := list.(*spqv1.StoragePolicyQuotaList); ok {
+						return errors.New(fakeString)
+					}
+
+					return client.List(ctx, list, opts...)
+				}
+			})
+			It("should return an error", func() {
+				Expect(err).To(MatchError(fakeString))
+				Expect(obj).To(BeZero())
+			})
+		})
+		When("there is a match", func() {
+			BeforeEach(func() {
+				withObjects = append(
+					withObjects,
+					&spqv1.StoragePolicyQuota{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace:    namespace,
+							GenerateName: "fake-",
+						},
+						Spec: spqv1.StoragePolicyQuotaSpec{
+							StoragePolicyId: sc1PolicyID,
+						},
+					},
+				)
+			})
+			It("should return the storage class", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(obj).To(HaveLen(1))
+				Expect(obj[0].Name).To(Equal(sc1Name))
+			})
+		})
+		When("there are multiple matches", func() {
+			const newPolicyID = "my-new-policy-id"
+
+			BeforeEach(func() {
+				inPolicyID = newPolicyID
+
+				withObjects = append(
+					withObjects,
+					&storagev1.StorageClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: sc1Name + "-new",
+						},
+						Parameters: map[string]string{
+							"storagePolicyID": newPolicyID,
+						},
+					},
+					&storagev1.StorageClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: sc2Name + "-new",
+						},
+						Parameters: map[string]string{
+							"storagePolicyID": newPolicyID,
+						},
+					},
+					&spqv1.StoragePolicyQuota{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace:    namespace,
+							GenerateName: "fake-",
+						},
+						Spec: spqv1.StoragePolicyQuotaSpec{
+							StoragePolicyId: newPolicyID,
+						},
+					},
+				)
+			})
+			It("should return the storage classes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(obj).To(HaveLen(2))
+				Expect(obj[0].Name).To(Equal(sc1Name + "-new"))
+				Expect(obj[1].Name).To(Equal(sc2Name + "-new"))
+			})
+		})
+		When("there is not a match", func() {
+			It("should return an empty list", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(obj).To(BeEmpty())
+			})
+		})
+
 	})
 })
 

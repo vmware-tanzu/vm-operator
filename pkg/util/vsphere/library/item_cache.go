@@ -23,7 +23,17 @@ import (
 // SourceFile refers to a file that is to be copied, including information about
 // what the destination file.
 type SourceFile struct {
-	Path    string
+	// Path is the path to the file on the datastore.
+	Path string
+
+	// OriginalName is an optional value that some catalogs, such as content
+	// library, may use as the name of the file when it differs from the file
+	// name on the actual datastore. For example, the file name could have been
+	// disk1.vmdk from an OVA, but when stored by content library on a
+	// datastore, the file was stored as [datastore-1] lib/disk1-abcd.vmdk.
+	// This field contains the value of the original file name, disk1.vmdk.
+	OriginalName string
+
 	VDiskID string
 
 	DstDir                string
@@ -38,8 +48,17 @@ type SourceFile struct {
 
 // CachedFile refers to file that has been cached.
 type CachedFile struct {
+	// Path is the path to the file on the datastore.
 	Path    string
 	VDiskID string
+
+	// OriginalName is an optional value that some catalogs, such as content
+	// library, may use as the name of the file when it differs from the file
+	// name on the actual datastore. For example, the file name could have been
+	// disk1.vmdk from an OVA, but when stored by content library on a
+	// datastore, the file was stored as [datastore-1] lib/disk1-abcd.vmdk.
+	// This field contains the value of the original file name, disk1.vmdk.
+	OriginalName string
 
 	// TODO(akutz) In the future there may be additional information about the
 	//             disk, such as its sector format (512 vs 4k), is encrypted,
@@ -109,6 +128,7 @@ func CacheStorageURIs(
 			return nil, err
 		}
 		cachedFiles[i].Path = dstFilePath
+		cachedFiles[i].OriginalName = srcFiles[i].OriginalName
 	}
 
 	return cachedFiles, nil

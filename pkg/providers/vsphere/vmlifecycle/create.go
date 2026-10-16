@@ -33,6 +33,7 @@ type CreateArgs struct {
 	Datastores                []DatastoreRef
 	DiskPaths                 []string
 	FilePaths                 []string
+	CachedFileNames           map[string]string
 	ZoneName                  string
 }
 

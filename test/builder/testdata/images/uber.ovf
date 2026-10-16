@@ -17,7 +17,7 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
   <DiskSection>
     <Info>Virtual disk information</Info>
     <Disk
-      ovf:capacity="30"
+      ovf:capacity="20"
       ovf:capacityAllocationUnits="byte * 2^20"
       ovf:diskId="system_small"
       ovf:fileRef="system"
@@ -45,7 +45,7 @@ UTC time: 2014-11-03T18:10:54.89528Z-->
       ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"
       ovf:populatedSize="18743296" />
     <Disk
-      ovf:capacity="50"
+      ovf:capacity="60"
       ovf:capacityAllocationUnits="byte * 2^20"
       ovf:diskId="extra_data_large"
       ovf:fileRef="extra_data"

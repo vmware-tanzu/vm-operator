@@ -211,7 +211,7 @@ var _ = Describe("createFastDeploy", func() {
 					ProviderItemID: ctx.ContentLibraryItem1ID,
 				}
 
-				// Attempt creation - should fail with "invalid disk count"
+				// Attempt creation - should fail with "failed to find cached"
 				_, err = vmlifecycle.CreateVirtualMachine(
 					vmCtx,
 					ctx.Client,
@@ -220,7 +220,7 @@ var _ = Describe("createFastDeploy", func() {
 					ctx.Finder,
 					createArgs)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("invalid disk count"))
+				Expect(err.Error()).To(ContainSubstring("failed to find cached"))
 
 				// Verify directory was cleaned up
 				// DatastoreFileExists returns nil when file exists, os.ErrNotExist when it doesn't

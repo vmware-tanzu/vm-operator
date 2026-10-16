@@ -428,6 +428,19 @@ func Install( //nolint:gocyclo
 						}
 					}
 
+					if !features.VMNetworkUnitNumbers {
+						if err := removeFields(
+							ctx,
+							k,
+							obj,
+							shouldRemoveFields,
+							specFieldPath("network", "interfaces", "[]", "unitNumber"),
+							statusFieldPath("network", "interfaces", "[]", "unitNumber")); err != nil {
+
+							return err
+						}
+					}
+
 					if !features.WorkloadIPv6 {
 						if err := removeFields(
 							ctx,

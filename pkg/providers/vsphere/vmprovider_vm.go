@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"math/rand"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -2159,12 +2160,16 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 					// Verify the files are still cached. If the files are
 					// found to no longer exist, a reconcile request is enqueued
 					// for the VMI cache object.
-					if vs.vmCreateGetSourceFilePathsVerify(
+					filesReady, err := vs.vmCreateGetSourceFilePathsVerify(
 						vmCtx,
 						vcClient,
 						obj,
-						l.Files) {
+						l.Files)
+					if err != nil {
+						return err
+					}
 
+					if filesReady {
 						// The location has the cached files.
 						vmCtx.Logger.Info("got source files", "files", l.Files)
 
@@ -2220,12 +2225,13 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 }
 
 // vmCreateGetSourceFilePathsVerify verifies the provided file(s) are still
-// available. If not, a reconcile request is enqueued for the VMI cache object.
+// available. If a file is missing, a reconcile request is enqueued for the VMI
+// cache object. Other errors are returned so the VM reconcile can retry.
 func (vs *vSphereVMProvider) vmCreateGetSourceFilePathsVerify(
 	vmCtx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client,
 	obj vmopv1.VirtualMachineImageCache,
-	srcFiles []vmopv1.VirtualMachineImageCacheFileStatus) bool {
+	srcFiles []vmopv1.VirtualMachineImageCacheFileStatus) (bool, error) {
 
 	for i := range srcFiles {
 		s := srcFiles[i]
@@ -2235,7 +2241,12 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePathsVerify(
 			s.ID,
 			vcClient.Datacenter()); err != nil {
 
-			vmCtx.Logger.Error(err, "file is invalid", "filePath", s.ID)
+			if !errors.Is(err, os.ErrNotExist) {
+				return false, fmt.Errorf(
+					"failed to verify cached file %q: %w", s.ID, err)
+			}
+
+			vmCtx.Logger.Info("cached file is missing", "filePath", s.ID)
 
 			chanSource := cource.FromContextWithBuffer(
 				vmCtx, "VirtualMachineImageCache", 100)
@@ -2248,11 +2259,11 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePathsVerify(
 				},
 			}
 
-			return false
+			return false, nil
 		}
 	}
 
-	return true
+	return true, nil
 }
 
 func (vs *vSphereVMProvider) vmCreateIsReady(

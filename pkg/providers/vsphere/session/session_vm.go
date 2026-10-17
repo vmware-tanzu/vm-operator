@@ -11,6 +11,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 )
 
 func updateVirtualDiskDeviceChanges(
@@ -46,6 +47,36 @@ func updateVirtualDiskDeviceChanges(
 		// TODO: De-dupe this with resizeBootDiskDeviceChange() in the clone path.
 
 		newCapacityInBytes := capacity.Value()
+
+		bootDisk, pvcName := getBootDiskInfo(vmCtx)
+
+		// A linked clone, or a disk with a snapshot, cannot be extended. The
+		// capacity is not applied after the VM is deployed.
+		if bootDisk != nil && (bootDisk.LinkedClone || bootDisk.Snapshot) {
+			vmCtx.Logger.Info(
+				"Skipping spec.advanced.bootDiskCapacity since the boot "+
+					"disk is a linked clone or has a snapshot",
+				"linkedClone", bootDisk.LinkedClone,
+				"snapshot", bootDisk.Snapshot,
+				"requestedBytes", capacity.Value(),
+				"currentBytes", vmDisk.CapacityInBytes)
+			return nil, nil
+		}
+
+		// Once the boot disk has a PVC, the PVC is the source of truth for the
+		// size of the disk, like any other disk.
+		if pvcName != "" {
+			if newCapacityInBytes > vmDisk.CapacityInBytes {
+				vmCtx.Logger.Info(
+					"Ignoring spec.advanced.bootDiskCapacity since the boot "+
+						"disk has a PVC, resize the PVC instead",
+					"pvcName", pvcName,
+					"requestedBytes", newCapacityInBytes,
+					"currentBytes", vmDisk.CapacityInBytes)
+			}
+			return nil, nil
+		}
+
 		if newCapacityInBytes < vmDisk.CapacityInBytes {
 			err := fmt.Errorf("cannot shrink boot disk from %d bytes to %d bytes",
 				vmDisk.CapacityInBytes, newCapacityInBytes)
@@ -69,4 +100,24 @@ func updateVirtualDiskDeviceChanges(
 	}
 
 	return deviceChanges, nil
+}
+
+// getBootDiskInfo returns the first disk, which is assumed to be the boot disk,
+// and the name of the PVC that backs it, if any. The disk is nil if the VM has
+// no disks.
+func getBootDiskInfo(
+	vmCtx pkgctx.VirtualMachineContext) (*pkgvol.VirtualDiskInfo, string) {
+
+	info := pkgvol.GetVolumeInfoFromVM(vmCtx.VM, vmCtx.MoVM)
+	if len(info.Disks) == 0 {
+		return nil, ""
+	}
+
+	disk := info.Disks[0]
+	vol := info.Volumes[disk.Target.String()]
+	if vol == nil || vol.PersistentVolumeClaim == nil {
+		return &disk, ""
+	}
+
+	return &disk, vol.PersistentVolumeClaim.ClaimName
 }

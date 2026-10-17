@@ -150,6 +150,21 @@ func (r reconciler) Reconcile(
 	info.Disks = pkgvol.FilterOutLinkedClones(info.Disks...)
 	info.Disks = pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)
 
+	// A disk registered with a CnsRegisterVolume gets a PV with the disk's
+	// current capacity, and a PVC that requests more than the PV is never
+	// bound. If the disk is about to be extended, ex. by
+	// spec.advanced.bootDiskCapacity, wait for the extend and register the disk
+	// on a later reconcile.
+	if hasPendingDiskExtend(info, configSpec) {
+		logger.Info("Skipping register unmanaged volumes until disk extend is applied")
+		pkgcond.MarkFalse(
+			vm,
+			Condition,
+			"PendingConfigUpdates",
+			"")
+		return nil
+	}
+
 	hasConfigSpecChanges, err := ensureUnmanagedDisksConfigsAreUpdated(
 		ctx,
 		k8sClient,
@@ -233,6 +248,35 @@ func (r reconciler) Reconcile(
 
 	pkgcond.MarkTrue(vm, Condition)
 	return nil
+}
+
+// hasPendingDiskExtend returns true if the configSpec has a pending edit that
+// increases the capacity of one of the disks to be registered.
+func hasPendingDiskExtend(
+	info pkgvol.VolumeInfo,
+	configSpec *vimtypes.VirtualMachineConfigSpec) bool {
+
+	if configSpec == nil {
+		return false
+	}
+
+	for _, bdc := range configSpec.DeviceChange {
+		dc := bdc.GetVirtualDeviceConfigSpec()
+		if dc.Operation != vimtypes.VirtualDeviceConfigSpecOperationEdit {
+			continue
+		}
+		vd, ok := dc.Device.(*vimtypes.VirtualDisk)
+		if !ok {
+			continue
+		}
+		for _, di := range info.Disks {
+			if di.DeviceKey == vd.Key && vd.CapacityInBytes > di.CapacityInBytes {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func ensureUnmanagedDisksConfigsAreUpdated(

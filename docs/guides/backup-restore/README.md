@@ -335,6 +335,50 @@ flowchart TD
 | **Restore to Existing** | VM exists AND ExtraConfig version < Annotation version | Update existing VirtualMachine CR |
 | **Disk-Only Restore** | VM exists AND ExtraConfig version >= Annotation version | Register only non-FCD disks |
 
+### 4.4 Registration Through an ImportOperation
+
+On a Supervisor that reports the capability `supports_vm_service_register_vm_via_import_operation`, the RegisterVM API creates a mobility operator `ImportOperation` that carries `spec.restoreConfig`, and the mobility operator performs the registration instead of WCP Service. This section describes what differs from the workflow above; the mobility operator's restore documentation gives the operation's conditions, status and messages.
+
+**Restore types**: the operation creates the VirtualMachine CR of the backup's name when none exists (restore to new) and patches the existing one otherwise (restore to existing). Backup versions are never ordered, so there is no disk-only restore: an existing VM CR that already matches the backup ends the operation with the reason `NothingToRestore` and is not changed. There is no restore timeout.
+
+**Vendor contract**: the restore relies on the vendor to:
+
+- Restore the VM with its ExtraConfig intact, its BIOS UUID and instance UUID kept, into the namespace's folder and resource pool.
+- Keep, for each restored base disk, its backing UUID or its file's base name.
+- Call `EndAccess` when its work ends, a failure included, after it called `PrepareForAccess`; only the holder of a hold on `RelocateVM_Task` releases it. While `RelocateVM_Task` is disabled, the operation waits.
+- Attach a disk the backup does not list only on a controller the backup lists.
+
+**Assumptions**:
+
+- No Supervisor upgrade or capability activation runs during a restore.
+- Each storage policy assigned to a namespace has at most one StorageClass without `WaitForFirstConsumer` binding, the one vCenter creates. A disk to register that has no storage policy, or whose policy has no such StorageClass assigned to the namespace, as a vSAN Direct or vSAN SNA policy has none, ends the restore, since CSI requires both.
+
+**What the restore writes**:
+
+- A PVC for each disk the backup lists as a PVC disk, named `restored-` plus the first 16 hex characters of SHA-256 over the operation's UID and the disk's backing UUID (or the PVC name, for a backup from VC 8.0U3, which records no backing UUID). A disk a Bound PVC of the namespace already holds is reused under that PVC's name. The PVCs the restore registers carry no owner reference; reused PVCs keep theirs. The PVCs VM Operator creates afterwards for classic disks are owned by the VM CR, so deleting the VM CR deletes those PVCs and, with reclaim policy `Delete`, their disks.
+- The VM CR with `spec.powerState: PoweredOff` whatever state the vendor left the VM in, so VM Operator shuts down a VM left running; power the VM on after you have checked it.
+- `vmoperator.vmware.com/restored-vm: "true"`, and, on a cross-vCenter failover, `vmoperator.vmware.com/failed-over-vm: "true"` beside it.
+- On a restore to existing, the existing VM CR's `upgraded-to-` annotations are kept only when the backup carries the same three values, and removed otherwise, so VM Operator upgrades a spec from an older schema itself.
+- Every owner reference of the VM CR is dropped, the existing VM CR's included; the completion message names them.
+
+**The pause**: on a restore to existing, the operation sets `vmoperator.vmware.com/paused` and `PoweredOff` on the VM CR before it registers any disk, and its final patch clears the pause. An operation that ends without completing leaves the VM CR paused: a new restore that completes clears it, and removing the annotation instead hands the stale VM CR back to VM Operator as it is. Do not remove the pause while an operation for the VM exists.
+
+**After a vendor restore**: do not delete a stale VM CR to make room for the restore; deleting it destroys the restored vSphere VM. PVCs the restored VM CR no longer claims (superseded PVCs) are kept, and the completion message names them. Deleting one does not touch the restored VM's disks: a disk the vendor restored in place is registered again under a new FCD ID, so the delete of the superseded PVC's volume finds no disk of its ID and completes. It does delete the volume of a superseded PVC whose disk the restored VM no longer uses, such as a PVC attached after the backup, so delete a superseded PVC only once you no longer need its data. A `restored-` PVC that is still `Pending` after its operation was deleted mid-registration is left behind: once no CnsRegisterVolume labelled `mobility-operator.vmware.com/restore-operation-uid` with that operation's UID remains, delete it.
+
+**Encrypted storage classes**: the PVCs the restore registers on an encrypted StorageClass get CSI's EncryptionClass; a user who knows a disk's own EncryptionClass sets it as the PVC's `csi.vsphere.encryption-class` annotation.
+
+**Progress**: the RegisterVM task reports 5% once the operation exists, 20% once its checks pass, 80% while the disks' PVCs bind, and 100% when it completes, and shows the operation's latest message as the task's description. A task that fails carries the operation's message in its error's details.
+
+**Cancel and events**: cancelling the RegisterVM task stops the registration unless the registration completes first, or WCP Service misses the cancel because it is not running or is restarting; a stopped registration is not rolled back. Each end of the task posts the event `com.vmware.wcp.RegisterVM.success` or `com.vmware.wcp.RegisterVM.failure` on the VM, as the registration by WCP Service does, and the alarm `WCPRegisterVMFailedAlarm` reads them.
+
+**Backups from a newer VM Operator**: a backup VM CR in the VM Operator API version the restoring Supervisor serves as its newest, with a field that version does not know, as a backup taken by a newer VM Operator can have, is refused, and the operation names the fields. Restore it on a Supervisor whose VM Operator knows them.
+
+**Known causes of a rejected write, with their remedies**:
+
+- A disk the vendor attached on a controller the backup does not list: move it to a controller the backup lists.
+- A volume name re-added to the VM CR since the backup with another placement or mode: remove that entry from the paused VM CR.
+- An in-place restore of a backup taken before a Supervisor upgrade, of a VM with a CD-ROM entry, or a PVC entry the backup's disk record does not cover, that carries no controller placement: restore a backup taken since the upgrade.
+
 ---
 
 ## 5. Backup Considerations
@@ -487,7 +531,7 @@ After taking a backup, validate:
 
 ### 6.3 Disk-Only Restore (Partial Restore)
 
-**Availability**: VCF 9.0+ only
+**Availability**: VCF 9.0+ only. Registration through an ImportOperation ([4.4](#44-registration-through-an-importoperation)) has no disk-only restore.
 
 **Use Case**: Restore specific disks without restoring the entire VM configuration.
 
@@ -640,6 +684,8 @@ After taking a backup, validate:
 
 **Mitigation**: WCP Service monitors `RelocateVM_Task` method state to detect restore completion.
 
+Registration through an ImportOperation ([4.4](#44-registration-through-an-importoperation)) has no timeout: it waits while `RelocateVM_Task` is disabled.
+
 ---
 
 ## 8. Understanding the Restored VM
@@ -673,6 +719,8 @@ spec:
 **PVC Naming Convention**: `restored-<6-character-random-hex>`
 
 **Example**: `restored-a1b2c3`, `restored-f4e5d6`
+
+Registration through an ImportOperation ([4.4](#44-registration-through-an-importoperation)) names a PVC `restored-` plus 16 hex characters derived from the operation and the disk, and reuses a PVC that already holds the disk.
 
 #### 8.1.2 Labels
 
@@ -716,6 +764,8 @@ Annotations are merged during restore:
 **Annotations Added by Restore**:
 - `vmoperator.vmware.com/restored-vm` (for normal restore)
 - `vmoperator.vmware.com/failed-over-vm` (for cross-vCenter failover)
+
+Registration through an ImportOperation ([4.4](#44-registration-through-an-importoperation)) keeps the `upgraded-to-` annotations only when the backup carries the same values, and sets `restored-vm` on every restored VM CR, beside `failed-over-vm` on a failover.
 
 #### 8.1.4 Power State
 
@@ -935,7 +985,16 @@ kubectl wait --for=jsonpath='{.status.powerState}'=PoweredOff \
     vm/<vm-name> -n <namespace> --timeout=300s
 ```
 
-**Step 3: Initiate VADP Restore**
+**Step 3: Clear the Extension Compatibility Constraints**
+
+When its extension compatibility constraint feature is enabled, VM Operator registers extension compatibility constraints on the VMs it creates. Their DEVICE invariant makes vCenter refuse the reconfigure of an in-place restore unless the vendor sets `skipExtensionCompatibilityChecks` and holds the `VirtualMachine.ExtensionCompatibility.Bypass` privilege, which Veeam Backup & Replication does not. For such a vendor, pause the VM so that VM Operator does not register the constraints again, then have a vSphere administrator clear them with a reconfigure that carries an empty `extensionCompatibilityConstraint` set and `skipExtensionCompatibilityChecks: true`, using the newest vSphere API version vCenter supports. VM Operator registers the constraints again after the registration.
+
+```bash
+kubectl annotate vm <vm-name> -n <namespace> \
+    vmoperator.vmware.com/paused=true
+```
+
+**Step 4: Initiate VADP Restore**
 
 Using your backup vendor:
 
@@ -945,18 +1004,18 @@ Using your backup vendor:
 4. Start restore job
 5. Wait for restore to complete
 
-**Step 4: Wait for Registration**
+**Step 5: Wait for Registration**
 
 ```bash
 # VM will be automatically paused
 kubectl get vm -n <namespace> <vm-name> -o jsonpath='{.metadata.annotations}'
-# Should show: vmoperator.vmware.com/pause: "true"
+# Should show: vmoperator.vmware.com/paused: "true"
 
 # Wait for registration task
 # Check vCenter tasks for com.vmware.wcp.vmservice.registervm
 ```
 
-**Step 5: Verify Changes**
+**Step 6: Verify Changes**
 
 ```bash
 # Check PVCs - old ones should be deleted, new ones created
@@ -966,13 +1025,13 @@ kubectl get pvc -n <namespace>
 diff <(kubectl get pvc -n <namespace> -o yaml) current-pvcs.yaml
 ```
 
-**Step 6: Remove Pause and Power On**
+**Step 7: Remove Pause and Power On**
 
 ```bash
 # Registration should remove pause automatically
 # If not, remove manually:
 kubectl annotate vm <vm-name> -n <namespace> \
-    vmoperator.vmware.com/pause-
+    vmoperator.vmware.com/paused-
 
 # Power on VM
 kubectl patch vm <vm-name> -n <namespace> --type merge \

@@ -114,6 +114,28 @@ func Remove(ctx context.Context, ref moRef, id string) (err error) {
 	return
 }
 
+// IsWatching returns true if the watcher associated with the context is
+// watching the specified container, such as a Folder, Cluster, ResourcePool,
+// etc. A container is watched once its container view has been created and
+// added to the watcher's list view.
+// This function is intended for testing only.
+func IsWatching(ctx context.Context, ref moRef) (ok bool, err error) {
+	if !pkgcfg.FromContext(ctx).AsyncSignalEnabled {
+		return false, ErrAsyncSignalDisabled
+	}
+	ctxgen.ExecWithContext(
+		ctx,
+		contextKeyValue,
+		func(w contextValueType) {
+			if w == nil {
+				err = ErrNoWatcher
+			} else {
+				_, ok = w.cv[ref]
+			}
+		})
+	return
+}
+
 // Close closes the watcher associated with the context.
 func Close(ctx context.Context) (err error) {
 	if !pkgcfg.FromContext(ctx).AsyncSignalEnabled {

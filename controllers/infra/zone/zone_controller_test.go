@@ -104,7 +104,7 @@ var _ = Describe(
 			JustBeforeEach(func() {
 				nsInfo = vcSimCtx.CreateWorkloadNamespace()
 
-				By("ensure all zones have finalizers", func() {
+				By("ensure all zones have finalizers and are watched", func() {
 					Eventually(func(g Gomega) {
 						var obj topologyv1.ZoneList
 						g.Expect(vcSimCtx.Client.List(ctx, &obj, ctrlclient.InNamespace(nsInfo.Namespace))).To(Succeed())
@@ -112,7 +112,16 @@ var _ = Describe(
 						g.Expect(obj.Items).ToNot(BeEmpty())
 
 						for i := range obj.Items {
-							g.Expect(obj.Items[i].Finalizers).To(ConsistOf([]string{zone.Finalizer}))
+							z := &obj.Items[i]
+							g.Expect(z.Finalizers).To(ConsistOf([]string{zone.Finalizer}))
+
+							// Finalizers are added before watching starts. Ensure
+							// container views exist before moving VMs, since vcsim
+							// races when creating views while folder contents change.
+							g.Expect(watcher.IsWatching(ctx, vimtypes.ManagedObjectReference{
+								Type:  "Folder",
+								Value: z.Spec.ManagedVMs.FolderMoID,
+							})).To(BeTrue())
 						}
 					}).Should(Succeed())
 				})

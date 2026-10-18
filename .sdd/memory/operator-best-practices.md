@@ -1,6 +1,6 @@
 # Kubernetes Operator Best Practices
 
-> **Aliases used in the examples below** (`pkgcfg`, `pkgctx`, `pkglog`, `pkgerr`, `vmopv1`, `byokv1`, `ctrl`, `ctrlclient`, etc.) come from the `importas` table in [`.golangci.yml`](../../.golangci.yml) `linters.settings.importas.alias`, which is the source of truth. The depguard rules in the same file (under `linters.settings.depguard`) also forbid importing certain packages (`io/ioutil`, `github.com/pkg/errors`, `k8s.io/utils`, and ginkgo / gomega / `testing` outside test files) — keep that in mind when copying these patterns into a new package.
+> Aliases in the examples below (`pkgcfg`, `pkgctx`, `pkglog`, `pkgerr`, `vmopv1`, `ctrl`, `ctrlclient`, …) come from `.golangci.yml` `linters.settings.importas.alias`.
 
 ## Reconcile Loop Structure
 
@@ -54,59 +54,13 @@ Key patterns:
 
 ## Level-Triggered Reconciliation (Idempotent)
 
-From the controller-runtime FAQ:
-
-> **Q: How do I have different logic for create vs update vs delete?**
-> **A: You should not.** Reconcile functions should be idempotent — read all state, then write updates.
-
-```go
-// Good - checks actual state, converges toward desired
-func (r *Reconciler) ReconcileNormal(ctx *pkgctx.MyResourceContext) error {
-    // Read current state from the cluster/vSphere
-    // Compare actual vs desired
-    // Make changes to converge
-}
-
-// Bad - event-driven / edge-triggered
-func (r *Reconciler) Reconcile(...) {
-    if isCreateEvent { /* ... */ }
-    if isUpdateEvent { /* ... */ }
-}
-```
-
-Why this matters:
-- Controller restarts don't break reconciliation
-- Manual changes are automatically corrected
-- Handles skipped/coalesced events correctly
+Reconcile is level-triggered: read all current state (cluster and vSphere), compare with desired, and converge. Never branch on create vs. update vs. delete events — this is what makes restarts, manual changes, and coalesced events safe.
 
 ## Finalizer Management
 
-Finalizers are added early in reconciliation and removed only after cleanup:
-
-```go
-func (r *Reconciler) ReconcileNormal(ctx *pkgctx.MyResourceContext) error {
-    // Add finalizer before any work (also handle deprecated finalizer migration)
-    if !controllerutil.ContainsFinalizer(ctx.Obj, finalizerName) {
-        controllerutil.RemoveFinalizer(ctx.Obj, deprecatedFinalizerName)
-        controllerutil.AddFinalizer(ctx.Obj, finalizerName)
-        return nil  // Return to patch immediately
-    }
-    // ... normal reconciliation
-}
-
-func (r *Reconciler) ReconcileDelete(ctx *pkgctx.MyResourceContext) error {
-    // Perform cleanup
-    if err := r.cleanup(ctx); err != nil {
-        return err
-    }
-    // Remove finalizer only after successful cleanup
-    controllerutil.RemoveFinalizer(ctx.Obj, finalizerName)
-    controllerutil.RemoveFinalizer(ctx.Obj, deprecatedFinalizerName)
-    return nil
-}
-```
-
-Finalizer naming convention: `vmoperator.vmware.com/<resource>`
+- Name finalizers `vmoperator.vmware.com/<resource>`.
+- In `ReconcileNormal`, if the finalizer is missing, remove any deprecated finalizer, add the current one, and `return nil` immediately so the deferred patch persists it before any other work.
+- In `ReconcileDelete`, remove the finalizer (and any deprecated one) only after cleanup succeeds.
 
 ## Controller Setup (AddToManager)
 
@@ -415,38 +369,14 @@ ctx = cource.JoinContext(ctx, r.Context)
 - `JoinContext` copies channel references from one context to another (used to propagate from controller-manager context into per-reconcile context).
 - This pattern enables cross-controller and cross-service signaling without direct dependencies.
 
-## Conditions
+## Conditions and RBAC
 
-Conditions communicate status to users. They do NOT control reconciliation flow:
-
-```go
-// Good - reflect observable state
-conditions.MarkTrue(ctx.VM, vmopv1.VirtualMachineConditionCreated)
-
-// Good - surface errors
-conditions.MarkFalse(ctx.VM,
-    vmopv1.VirtualMachineConditionCreated,
-    "CreateError",
-    "%v", err)
-
-// Bad - using conditions to skip reconciliation steps
-if conditions.IsTrue(obj, "StepDone") { return nil }
-```
-
-## RBAC
-
-Document permissions using kubebuilder markers above the Reconcile function:
-
-```go
-// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
-```
+- Conditions communicate status to users (`conditions.MarkTrue` / `conditions.MarkFalse` with API constants). They do **not** control reconciliation flow — never `if conditions.IsTrue(obj, "StepDone") { return nil }`. Set conditions before returning errors.
+- Document permissions with `// +kubebuilder:rbac:groups=...,resources=...,verbs=...` markers above `Reconcile` (including the `/status` subresource).
 
 ## Anti-Patterns
 
-1. **Event-driven logic** - Never branch on create/update/delete event type
-2. **Modifying Spec in controllers** - Controllers should only modify Status
-3. **Missing owner references** - Set `controllerutil.SetControllerReference` on owned resources
-4. **Blocking without context** - Always use `select` with `ctx.Done()` for channels
-5. **Returning errors without status updates** - Always set conditions before returning errors
-6. **Shared mutable state** - Use `sync.Map` or mutexes for concurrent reconciles
+1. **Modifying Spec in controllers** — controllers should only modify Status.
+2. **Missing owner references** — set `controllerutil.SetControllerReference` on owned resources.
+3. **Blocking without context** — always `select` on `ctx.Done()` when waiting on channels.
+4. **Shared mutable state** — use `sync.Map` or mutexes for concurrent reconciles.

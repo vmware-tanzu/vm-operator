@@ -12,15 +12,15 @@ Read the universal rules before making or reviewing any change, then load task-s
 
 | File | When to read | What it covers |
 |------|--------------|----------------|
-| [constitution.md](memory/constitution.md) | Universal. | Non-negotiables: API compatibility, controller/webhook design, testing rules, ticket and wiki masking |
-| [architectural-standards.md](memory/architectural-standards.md) | Universal. | Naming, import grouping, import aliases, error handling, copyright header, context/logger/feature-flag usage |
-| [operator-best-practices.md](memory/operator-best-practices.md) | Work involving `controllers/`, `pkg/providers/`, `pkg/vmconfig/`, `pkg/errors/`, `pkg/util/kube/cource/`, or `services/`; reconciliation, conditions, or controller-runtime behavior elsewhere. | Canonical reconcile loop, finalizer management, VM update reconcile order, error semantics, mapper/watch patterns |
-| [testing-standards.md](memory/testing-standards.md) | Planning, writing, editing, or reviewing Go tests or shared test helpers. | One test file per package, external `_test` package, Ginkgo labels, no `time.Sleep` |
+| [constitution.md](memory/constitution.md) | Universal. | Non-negotiables: SDD, API compatibility, controller/webhook design, testing rules, ticket and wiki masking, repository layout and Go modules |
+| [architectural-standards.md](memory/architectural-standards.md) | Universal. | Naming, import grouping, import aliases, error handling, copyright header, context/logger/feature-flag usage, comment grammar |
+| [operator-best-practices.md](memory/operator-best-practices.md) | Work involving `controllers/`, `pkg/providers/`, `pkg/vmconfig/`, `pkg/errors/`, `pkg/util/kube/cource/`, or `services/`; reconciliation, conditions, or controller-runtime behavior elsewhere. | Canonical reconcile loop, finalizer management, fan-out patching, VM update reconcile order, `WithVCOpID`, error semantics, mapper/watch patterns, channel sources |
+| [testing-standards.md](memory/testing-standards.md) | Planning, writing, editing, or reviewing Go tests or shared test helpers. | External `_test` package, Ginkgo labels, suite/unit/integration patterns, test builders, fake provider, no `time.Sleep` |
 | [e2e-testing.md](memory/e2e-testing.md) | Planning, writing, editing, running, or reviewing E2E tests and their helpers or configuration under `test/e2e/`. | E2E test structure, labels, helpers, make targets |
 | [e2e-sync-with-changes.md](memory/e2e-sync-with-changes.md) | Universal. | When E2E coverage is mandatory and what must ship together |
-| [sdd-standards.md](memory/sdd-standards.md) | Planning or reviewing non-trivial work; creating, editing, or reviewing SDD artifacts. | SDD workflow: when it applies, required artifacts, task format, ticket tagging |
-| [commit-message-standards.md](memory/commit-message-standards.md) | Writing or reviewing commit messages. | Imperative mood, 50-char subject, 72-char body wrap |
-| [pull-request-standards.md](memory/pull-request-standards.md) | Creating, editing, or reviewing pull requests. | Emoji prefix, release notes block, issue links, PR template |
+| [sdd-standards.md](memory/sdd-standards.md) | Planning or reviewing non-trivial work; creating, editing, or reviewing SDD artifacts. | SDD workflow: when it applies, required artifacts, task format, ticket tagging, roles referenced in specs |
+| [commit-message-standards.md](memory/commit-message-standards.md) | Writing or reviewing commit messages. | Imperative mood, 50-char capitalized subject, 72-char body wrap |
+| [pull-request-standards.md](memory/pull-request-standards.md) | Creating, editing, or reviewing pull requests. | Title emoji prefix, PR description template, release-note block, issue links |
 
 ---
 

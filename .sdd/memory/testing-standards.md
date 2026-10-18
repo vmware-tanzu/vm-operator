@@ -1,26 +1,12 @@
 # Testing Standards
 
-**E2E (real WCP/vSphere cluster):** Tests under `test/e2e/` follow a different layout and Makefile workflow than controller tests. Follow **e2e-sync-with-changes** to add/update/delete E2E tests with product work; use **e2e-testing** when editing `test/e2e/**/*.go`, and read **`test/e2e/README.md`** for setup, running, labels, and writing patterns.
+E2E tests under `test/e2e/` follow a different layout; see `e2e-testing.md` and `test/e2e/README.md`.
 
+## Test Files and Packages
 
-## Test File Naming
+The constitution's Testing section is authoritative: one `<package>_test.go` plus one `<package>_suite_test.go` per package, no legacy `_unit_test.go` / `_intg_test.go` split (still present in many older packages — do not copy it), tests differentiated only by `Label()`.
 
-| Suffix | Purpose | Example |
-|--------|---------|---------|
-| `_test.go` | All tests (unit and integration, differentiated by `Label()`) | `virtualmachinesnapshot_controller_test.go` |
-| `_suite_test.go` | Ginkgo suite setup and registration | `virtualmachinesnapshot_controller_suite_test.go` |
-
-Do **not** use the old `_unit_test.go` / `_intg_test.go` split. All tests live in `_test.go` and are differentiated exclusively by Ginkgo `Label()` decorators (see **Test Labels** below).
-
-## Package Naming
-
-Always use external test packages (black-box testing):
-
-```go
-package virtualmachinesnapshot_test  // Note the _test suffix
-```
-
-The external `_test` package is required because the `depguard` linter — configured in [`.golangci.yml`](../../.golangci.yml) `linters.settings.depguard` — forbids importing `testing`, `github.com/onsi/ginkgo`, `github.com/onsi/ginkgo/v2`, and `github.com/onsi/gomega` from any non-test source. An internal-package test file (`package virtualmachinesnapshot`) cannot import those packages without tripping `depguard.main`. The `depguard.test` ruleset is what allows them inside `$test` files.
+Always use the external test package (`package virtualmachinesnapshot_test`). `depguard` forbids importing `testing`, ginkgo, and gomega from non-test sources, so an internal-package test cannot import them.
 
 ## Test Labels
 
@@ -142,16 +128,7 @@ vmSnapshot := builder.DummyVirtualMachineSnapshot(namespace, "snap-1", vm.Name)
 
 ## Assertions
 
-Use Gomega dot-import style (standard in this codebase):
-
-```go
-import (
-    . "github.com/onsi/ginkgo/v2"
-    . "github.com/onsi/gomega"
-)
-```
-
-The dot import is **only** allowed inside `_test.go` files and a small set of shared test helpers — the allow-list is maintained in [`.golangci.yml`](../../.golangci.yml) `linters.exclusions.rules` (search for `should not use dot imports`). Files currently exempted include `test/builder/intg_test_context.go`, `test/builder/test_suite.go`, `test/builder/vcsim_test_context.go`, and any `_test.go` path. Anywhere else, the `revive`-style "should not use dot imports" warning is enforced.
+Use Ginkgo/Gomega dot imports (`. "github.com/onsi/ginkgo/v2"`, `. "github.com/onsi/gomega"`). Dot imports are allowed only in `_test.go` files and the shared helpers allow-listed in `.golangci.yml` `linters.exclusions.rules` (search for `should not use dot imports`).
 
 ### Async Assertions (Eventually / Consistently)
 
@@ -167,16 +144,6 @@ Eventually(func(g Gomega) {
 Consistently(func(g Gomega) {
     // ...
 }).Should(Succeed())
-```
-
-### Common Matchers
-
-```go
-Expect(err).ToNot(HaveOccurred())
-Expect(err).To(MatchError(ContainSubstring("expected error")))
-Expect(obj).To(BeNil())
-Expect(list.Items).To(HaveLen(3))
-Expect(conditions.IsTrue(obj, conditionType)).To(BeTrue())
 ```
 
 ## Fake Provider Setup

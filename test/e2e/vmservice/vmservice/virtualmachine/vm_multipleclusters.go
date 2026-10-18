@@ -11,11 +11,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -98,18 +101,22 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 					Expect(err).NotTo(HaveOccurred(), "failed to update namespace with Zones")
 				}
 
-				vmParameters := manifestbuilders.VirtualMachineYaml{
-					Namespace:        input.WCPNamespaceName,
-					Name:             vmName,
-					Labels:           map[string]string{"topology.kubernetes.io/zone": zoneName},
-					ImageName:        linuxVMIName,
-					VMClassName:      clusterResources.VMClassName,
-					StorageClassName: clusterResources.StorageClassName,
-					ResourcePolicy:   clusterResources.VMResourcePolicyName,
-					PowerState:       "PoweredOn",
+				vmToCreate := &vmopv1a2.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      vmName,
+						Labels:    map[string]string{"topology.kubernetes.io/zone": zoneName},
+					},
+					Spec: vmopv1a2.VirtualMachineSpec{
+						ImageName:    linuxVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+					},
 				}
-				vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
-				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+				if clusterResources.VMResourcePolicyName != "" {
+					vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
+				}
 				vmoperator.CreateVirtualMachine(ctx, config, input.ClusterProxy, vmToCreate, false)
 
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
@@ -122,16 +129,19 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 
 		When("Create a VM without a zone assigned", func() {
 			It("Should create successfully and be assigned to a zone", func() {
-				vmParameters := manifestbuilders.VirtualMachineYaml{
-					Namespace:        input.WCPNamespaceName,
-					Name:             vmName,
-					ImageName:        linuxVMIName,
-					VMClassName:      clusterResources.VMClassName,
-					StorageClassName: clusterResources.StorageClassName,
-					ResourcePolicy:   clusterResources.VMResourcePolicyName,
-					PowerState:       "poweredOn",
+				vmToCreate := &vmopv1a1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      vmName,
+					},
+					Spec: vmopv1a1.VirtualMachineSpec{
+						ImageName:          linuxVMIName,
+						ClassName:          clusterResources.VMClassName,
+						StorageClass:       clusterResources.StorageClassName,
+						ResourcePolicyName: clusterResources.VMResourcePolicyName,
+						PowerState:         vmopv1a1.VirtualMachinePoweredOn,
+					},
 				}
-				vmToCreate := manifestbuilders.VirtualMachineA1(vmParameters)
 				vmoperator.CreateVirtualMachine(ctx, config, input.ClusterProxy, vmToCreate, false)
 
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")

@@ -211,7 +211,7 @@ var _ = Describe("My Feature", Label("my-feature"), func() {
     When("feature is enabled", func() {
         It("should work correctly", func() {
             // Test implementation
-            Expect(client.Create(ctx, vm)).To(Succeed())
+            vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
             
             Eventually(func(g Gomega) {
                 g.Expect(client.Get(ctx, vmKey, vm)).To(Succeed())
@@ -227,7 +227,7 @@ var _ = Describe("My Feature", Label("my-feature"), func() {
 1. **Use descriptive test names** that explain the scenario
 2. **Apply appropriate labels** for filtering
 3. **Use Eventually/Consistently** for async operations
-4. **Clean up resources** in AfterEach hooks
+4. **Register cleanup when creating resources** with `DeferCleanup` helpers
 5. **Test both positive and negative cases**
 6. **Use manifest builders** for complex objects
 7. **Validate status conditions** and events
@@ -235,9 +235,14 @@ var _ = Describe("My Feature", Label("my-feature"), func() {
 ### Helper Libraries
 
 #### VM Operations (`lib/vmoperator`)
+
+Use `CreateVirtualMachine` with a typed VM to create it and immediately register failure diagnostics and deferred cleanup. Pass the same cluster proxy used by the test's kubectl operations: its client loads that proxy's kubeconfig and current context, without overriding the Kubernetes user. API versions are preserved; use `manifestbuilders.VirtualMachineA1`, `VirtualMachineA2`, `VirtualMachineA3`, `VirtualMachineA5`, or `VirtualMachineA6` when building fixtures. The typed A5/A6 constructors build only the VM; create any PVCs separately.
+
 ```go
-vmoperator.WaitForVirtualMachineCreation(ctx, config, client, vm)
-vmoperator.VerifyVirtualMachinePowerState(ctx, config, client, vm, vmopv1.VirtualMachinePowerStateOn)
+vm, err := manifestbuilders.VirtualMachineA6(vmParameters)
+Expect(err).NotTo(HaveOccurred())
+vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
+vmoperator.WaitForVirtualMachineCreation(ctx, config, clusterProxy.GetClient(), vm.Namespace, vm.Name)
 ```
 
 #### Manifest Builders (`manifestbuilders`)

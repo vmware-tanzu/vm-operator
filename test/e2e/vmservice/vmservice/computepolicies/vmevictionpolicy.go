@@ -967,9 +967,7 @@ func createVMWithExplicitPolicyRefs(
 		ctx, &input.Config.Config, svClusterClient, input.WCPNamespaceName, imageDisplayName)
 
 	vm := buildVM(input, imageName, vmName, labels, policies)
-	Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create virtualmachine %q", vmName)
-	vmoperator.DeferCleanupVirtualMachine(input.Config, svClusterClient, input.ClusterProxy.GetKubeconfigPath(),
-		vm.Namespace, vm.Name, false)
+	vmoperator.CreateVirtualMachine(ctx, input.Config, input.ClusterProxy, vm, false)
 }
 
 // verifyPolicyEvaluationNotReady asserts that the VM's PolicyEvaluation

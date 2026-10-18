@@ -92,10 +92,9 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 			StorageClassName: clusterResources.StorageClassName,
 			PowerState:       "PoweredOff",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(
-			config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -200,10 +199,9 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 			StorageClassName: clusterResources.StorageClassName,
 			PowerState:       "PoweredOff",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(
-			config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)

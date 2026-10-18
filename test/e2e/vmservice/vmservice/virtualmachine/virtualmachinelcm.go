@@ -162,16 +162,16 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			PowerState:       "PoweredOff",
 		}
 
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
 
 		var vmMO mo.VirtualMachine
-		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
+		err = propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
 		e2eframework.ExpectNoError(err)
 
 		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, clusterResources.VMClassName)
@@ -198,9 +198,8 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			PowerState:       "PoweredOff",
 		}
 
-		vmYaml := manifestbuilders.GetVirtualMachineYaml(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA1(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", input.WCPNamespaceName, vmName))
 		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -267,10 +266,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
@@ -322,10 +320,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				"vmoperator.vmware.com/fast-deploy": "\"false\"",
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
@@ -359,16 +356,16 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOff",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
 
 		By("Verify that the VirtualMachine can be powered on and also powered off after")
 		vmParameters.PowerState = poweredOnState
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 		e2eframework.Logf("Updating the VM's PowerState to '%v'", vmParameters.PowerState)
 		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to power-on virtualmachine", string(vmYaml))
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
@@ -394,9 +391,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				ResourcePolicy:   clusterResources.VMResourcePolicyName,
 				PowerState:       poweredOnState,
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+			vmToCreate, err := manifestbuilders.VirtualMachineA6(vmParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, poweredOnState)
@@ -441,14 +438,14 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			PowerState:       "PoweredOn",
 		}
 
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
 		// Delete the virtual machine and temporary namespace to recreate the latter with the same name.
-		Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
+		Expect(svClusterClient.Delete(ctx, vmToCreate)).To(Succeed(), "failed to delete virtualmachine")
 		vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 		clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
 		wcp.WaitForNamespaceDeleted(wcpClient, tmpNamespaceName)
@@ -465,9 +462,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		// Create a new VM and verify the creation is successful.
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		vmParameters.Name = vmName
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err = manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 	})
@@ -482,9 +479,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       poweredOnState,
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA6(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
@@ -510,9 +507,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		By("Verify that we have a single VirtualMachine with expected condition")
 		vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, expectedCondition)
@@ -551,9 +548,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		By("Verify that we have a single VirtualMachine with expected condition")
 		vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, expectedCondition)
@@ -621,9 +618,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineInstanceStorageAnnotations(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
@@ -691,9 +688,8 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				},
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM with CD-ROM:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
@@ -764,7 +760,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		// https://knowledge.broadcom.com/external/article?legacyId=2144053
 		By("Powering off the VM to safely disconnect the CD-ROM")
 		vmParameters.PowerState = poweredOffState
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML to power off the VM %s", string(vmYaml))
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, poweredOffState)
 
@@ -806,9 +802,8 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			PowerState:       poweredOnState,
 			GuestID:          "ubuntu64Guest",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		By("Waiting for VM creation")
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -894,10 +889,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				ResourcePolicy:   clusterResources.VMResourcePolicyName,
 				PowerState:       "PoweredOn",
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-			e2eframework.Logf("VM YAML without spec.policies:\n%s", string(vmYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+			vmToCreate, err := manifestbuilders.VirtualMachineA5(vmParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
 			By("Creating a new tag category")
@@ -1036,10 +1030,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 					},
 				},
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-			e2eframework.Logf("Creating VM with explicit spec.policies:\n%s", string(vmYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM with explicitly specified optional policy")
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+			vmToCreate, err := manifestbuilders.VirtualMachineA5(vmParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
 			By("Verifying the new VM has both mandatory (match all) and optional policies (match by guest ID) and their tags applied")
@@ -1055,7 +1048,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 					Name:       opPolicyNameMatchByLabel,
 				},
 			}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
+			vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
 			e2eframework.Logf("Updating VM's labels and spec.policies:\n%s", string(vmYaml))
 			Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML")
 
@@ -1224,10 +1217,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 						},
 					},
 				}
-				vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-				e2eframework.Logf("Creating VM with policy references:\n%s", string(vmYaml))
-				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM with policies")
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+				vmToCreate, err := manifestbuilders.VirtualMachineA5(vmParameters)
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
 				By("Verifying PolicyEvaluation is created and populated with mandatory and optional policies")
@@ -1291,10 +1283,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,
 					PowerState:       "PoweredOn",
 				}
-				existingVMYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-				e2eframework.Logf("Creating existing VM:\n%s", string(existingVMYaml))
-				Expect(clusterProxy.CreateWithArgs(ctx, existingVMYaml)).To(Succeed(), "failed to create existing VM")
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), tmpNamespaceName, existingVMName, false)
+				vmToCreate, err := manifestbuilders.VirtualMachineA5(vmParameters)
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, existingVMName)
 
 				By("Verifying initial PolicyEvaluation is created with the mandatory policy")
@@ -1364,7 +1355,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 					existingVMName, len(policyEvaluation.Status.Policies))
 
 				// Delete the VM explicitly so the outer AfterEach namespace teardown is faster.
-				Expect(clusterProxy.DeleteWithArgs(ctx, existingVMYaml)).To(Succeed(), "failed to delete existing VM")
+				Expect(svClusterClient.Delete(ctx, vmToCreate)).To(Succeed(), "failed to delete existing VM")
 				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, existingVMName)
 			})
 		})

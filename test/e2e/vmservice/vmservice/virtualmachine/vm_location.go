@@ -137,14 +137,6 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			ctx, svClusterClient, consts.ExtensionCompatConstraintCapabilityName, asyncSupervisorFSSEnabled)
 
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-		vmoperator.DeferCleanupVirtualMachine(
-			config,
-			svClusterClient,
-			clusterProxy.GetKubeconfigPath(),
-			input.WCPNamespaceName,
-			vmName,
-			false,
-		)
 	})
 
 	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given zone, read
@@ -201,10 +193,9 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			StorageClassName: clusterResources.StorageClassName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-		e2eframework.Logf("Creating VirtualMachine %s", vmName)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(),
-			"failed to create VM %s", vmName)
+		vmToCreate, err := manifestbuilders.VirtualMachineA5(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 	}
 

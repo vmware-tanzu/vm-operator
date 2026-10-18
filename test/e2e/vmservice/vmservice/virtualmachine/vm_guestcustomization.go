@@ -113,11 +113,12 @@ func buildVAppConfigVM(
 func createAndVerifyVAppConfigVM(
 	ctx context.Context,
 	config *e2eConfig.E2EConfig,
-	svClusterClient ctrlclient.Client,
+	clusterProxy *common.VMServiceClusterProxy,
 	namespace, name string,
 	vm *vmopv1.VirtualMachine,
 ) string {
-	Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create virtualmachine %+v", vm)
+	vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, false)
+	svClusterClient := clusterProxy.GetClient()
 	vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, namespace, name)
 	return vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, namespace, name)
 }
@@ -393,7 +394,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		svClusterConfig               *e2eConfig.ManagementClusterConfig
 		svClusterClient               ctrlclient.Client
 		clusterResources              *e2eConfig.Resources
-		vmYaml                        []byte
 		configMapYaml                 []byte
 		secretYaml                    []byte
 		vmName                        string
@@ -451,25 +451,23 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 	// createAndVerifyVM creates the VM. v1a2 also supports v1a3.
 	createAndVerifyVM := func(ctx context.Context, vmParameters manifestbuilders.VirtualMachineYaml, v1a2 ...bool) {
+		var vmToCreate ctrlclient.Object
 		if len(v1a2) == 1 && v1a2[0] {
-			// Create v1alpha2 VM deployment yaml
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+			var err error
+			vmToCreate, err = manifestbuilders.VirtualMachineA2(vmParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 		} else {
-			vmYaml = manifestbuilders.GetVirtualMachineYaml(vmParameters)
+			vmToCreate = manifestbuilders.VirtualMachineA1(vmParameters)
 		}
 
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-			input.WCPNamespaceName, vmName, false)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 	}
 
 	createAndVerifyVMA5 := func(ctx context.Context, vmParameters manifestbuilders.VirtualMachineYaml) {
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-			input.WCPNamespaceName, vmName, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA5(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 	}
 
@@ -906,9 +904,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "10.0.0.0/24" }}`),
 				}
 				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-					vm.Namespace, vm.Name, false)
-				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+				vmmoid := createAndVerifyVAppConfigVM(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				verifyV1alpha6TemplateFunctionProperties(ctx, vCenterClient, vmmoid)
@@ -926,9 +922,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "2001:db8::/64" }}`),
 				}
 				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-					vm.Namespace, vm.Name, false)
-				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+				vmmoid := createAndVerifyVAppConfigVM(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				verifyV1alpha6RemainingTemplateFunctionsRoundB(ctx, vCenterClient, vmmoid)
@@ -946,9 +940,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("string-empty", `{{ `+constants.V1alpha6FormatIP+` "192.168.1.10/24" "/16" }}`),
 				}
 				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-					vm.Namespace, vm.Name, false)
-				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+				vmmoid := createAndVerifyVAppConfigVM(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				verifyV1alpha6RemainingTemplateFunctionsRoundC(ctx, vCenterClient, vmmoid)

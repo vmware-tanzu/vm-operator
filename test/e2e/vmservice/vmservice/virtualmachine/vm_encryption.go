@@ -167,9 +167,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA6(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
@@ -191,9 +191,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
@@ -229,9 +229,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			PowerState:       "PoweredOn",
 			Annotations:      map[string]string{"vmoperator.vmware.com/firmware": "efi"},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
@@ -289,9 +289,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
@@ -334,9 +334,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: "invalid",
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 		waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "EncryptionClassNotFound")
@@ -344,7 +343,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		By("Update VM using valid encryption class name")
 
 		vmParameters.Crypto.EncryptionClassName = class.Name
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
 		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to update virtualmachine:\n %s", string(vmYaml))
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
@@ -404,9 +403,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 		waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "EncryptionClassInvalid")
 
 		By("Update encryption class using valid key")
@@ -458,9 +456,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
@@ -517,9 +514,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
@@ -590,9 +586,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
@@ -662,9 +657,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
@@ -763,9 +757,8 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				EncryptionClassName: class.Name,
 			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).Should(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		By("Verify the encryption synced condition reports an error due to mixed provider types")
 		Eventually(func(g Gomega) {

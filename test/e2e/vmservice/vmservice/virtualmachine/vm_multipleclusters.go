@@ -45,7 +45,6 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 
-		vmYaml []byte
 		vmName string
 
 		linuxImageDisplayName string
@@ -68,8 +67,6 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = input.ClusterProxy.GetClient()
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, input.ClusterProxy.GetKubeconfigPath(),
-			input.WCPNamespaceName, vmName, false)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
 
@@ -111,8 +108,9 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,
 					PowerState:       "PoweredOn",
 				}
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-				Expect(input.ClusterProxy.Apply(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
+				vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+				vmoperator.CreateVirtualMachine(ctx, config, input.ClusterProxy, vmToCreate, false)
 
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
 				vmoperator.WaitForVirtualMachineZone(ctx, config, svClusterClient, input.WCPNamespaceName, zoneName, vmName)
@@ -133,8 +131,8 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 					ResourcePolicy:   clusterResources.VMResourcePolicyName,
 					PowerState:       "poweredOn",
 				}
-				vmYaml = manifestbuilders.GetVirtualMachineYaml(vmParameters)
-				Expect(input.ClusterProxy.Apply(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
+				vmToCreate := manifestbuilders.VirtualMachineA1(vmParameters)
+				vmoperator.CreateVirtualMachine(ctx, config, input.ClusterProxy, vmToCreate, false)
 
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
 				vmoperator.WaitForVirtualMachineZone(ctx, config, svClusterClient, input.WCPNamespaceName, "", vmName)

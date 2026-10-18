@@ -275,8 +275,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				By("Deploying a new VM from the published image")
 				// Use the published the vmi to deploy a new VM should succeed with VM powered on and IP assigned.
 				newVmName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vm", capiutil.RandomString(4))
-				createVMWithPromotionDisabled(ctx, svClusterClient, input.WCPNamespaceName, newVmName, publishedImageCRName, *clusterResources, nil)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, newVmName, false)
+				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, buildVMWithPromotionDisabled(input.WCPNamespaceName, newVmName, publishedImageCRName, *clusterResources, nil), false)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
 			})
 
@@ -312,8 +311,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 						Properties: sourceVAppProperties,
 					},
 				}
-				createVMWithPromotionDisabled(ctx, svClusterClient, input.WCPNamespaceName, sourceVMName, sourceImageName, *clusterResources, sourceBootstrapSpec)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, sourceVMName, false)
+				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, buildVMWithPromotionDisabled(input.WCPNamespaceName, sourceVMName, sourceImageName, *clusterResources, sourceBootstrapSpec), false)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, sourceVMName)
 
 				By("Publishing the source VM to the target content library")
@@ -333,9 +331,9 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				// from the defaults captured during publish.
 				deployedVMName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vapp-vm", capiutil.RandomString(4))
 				deployedVMBuilder := generateVMBuilder(input.WCPNamespaceName, deployedVMName, publishedImageCRName, *clusterResources)
-				deployedVMYaml := manifestbuilders.GetVirtualMachineYamlA2(deployedVMBuilder)
-				Expect(clusterProxy.CreateWithArgs(ctx, deployedVMYaml)).NotTo(HaveOccurred(), "failed to create virtualmachine from the published image", string(deployedVMYaml))
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, deployedVMName, false)
+				vmToCreate, err := manifestbuilders.VirtualMachineA2(deployedVMBuilder)
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, deployedVMName)
 
 				By("Verifying the deployed VM inherited the vAppConfig property from the published image")
@@ -437,8 +435,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 				// Deploy a new VM from the published image and verify it powers on with an IP.
 				newVmName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vm", capiutil.RandomString(4))
-				createVMWithPromotionDisabled(ctx, svClusterClient, input.WCPNamespaceName, newVmName, publishedImageCRName, *clusterResources, nil)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, newVmName, false)
+				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, buildVMWithPromotionDisabled(input.WCPNamespaceName, newVmName, publishedImageCRName, *clusterResources, nil), false)
 				// Wait for the image cache on its own generous budget before
 				// waiting on the rest of VM creation, rather than sharing one
 				// 5-minute window across both: caching the just-published
@@ -617,7 +614,7 @@ func generateVMBuilder(
 	}
 }
 
-// createVMWithPromotionDisabled creates a VirtualMachine with no online disk promotion.
+// buildVMWithPromotionDisabled builds a VirtualMachine with no online disk promotion.
 //
 // The VM is built as a typed struct rather than rendered YAML because
 // PromoteDisksMode does not exist before v1alpha4, so the v1alpha2 fixture
@@ -628,12 +625,10 @@ func generateVMBuilder(
 // promotion running risks a background PromoteDisks task colliding with a
 // deployed VM's first boot, or with a soon-to-be-published source VM's OVF
 // capture, on a loaded testbed.
-func createVMWithPromotionDisabled(
-	ctx context.Context,
-	svClusterClient ctrlclient.Client,
+func buildVMWithPromotionDisabled(
 	namespace, name, imageName string,
 	clusterResources e2eConfig.Resources,
-	bootstrap *vmopv1.VirtualMachineBootstrapSpec) {
+	bootstrap *vmopv1.VirtualMachineBootstrapSpec) *vmopv1.VirtualMachine {
 	vm := &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
@@ -648,8 +643,7 @@ func createVMWithPromotionDisabled(
 			Bootstrap:        bootstrap,
 		},
 	}
-	Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-		"failed to create virtualmachine %q with disk promotion disabled", name)
+	return vm
 }
 
 func generateVMPublishRequestBuilder(

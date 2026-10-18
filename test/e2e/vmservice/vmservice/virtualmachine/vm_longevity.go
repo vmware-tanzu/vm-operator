@@ -56,7 +56,6 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 		svClusterClient       ctrlclient.Client
 		clusterResources      *e2eConfig.Resources
 		secondNSContext       wcpframework.NamespaceContext
-		vmYaml                []byte
 		vmName                string
 		classReady            metav1.Condition
 		imageReady            metav1.Condition
@@ -142,10 +141,9 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 				ResourcePolicy:   clusterResources.VMResourcePolicyName,
 				PowerState:       "PoweredOn",
 			}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				input.WCPNamespaceName, vmName, false)
+			vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		})
 

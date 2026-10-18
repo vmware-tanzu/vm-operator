@@ -100,12 +100,17 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 	// createVM creates a VirtualMachine, retrying on a real (non-transient)
 	// validation error while its dependencies finish realizing; see the
 	// VMVPCSpec doc comment.
-	createVM := func(vmYaml []byte) {
+	createVM := func(vmParameters manifestbuilders.VirtualMachineYaml) {
 		GinkgoHelper()
 
+		vm, err := manifestbuilders.VirtualMachineA2(vmParameters)
+		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 		Eventually(func(g Gomega) {
-			g.Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine: %s", string(vmYaml))
+			g.Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
+				"failed to create VirtualMachine %s/%s", vm.Namespace, vm.Name)
 		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out in creating the VirtualMachine")
+		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+			vm.Namespace, vm.Name, false)
 	}
 
 	BeforeEach(func() {
@@ -185,8 +190,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 					{Name: subnetDHCPName, Kind: utils.SubnetKind, APIVersion: vpcAPIVersion},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm1Params))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm1Name, false)
+			createVM(vm1Params)
 
 			vm2Params := v1a2vmParameters
 			vm2Params.Name = vm2Name
@@ -195,8 +199,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 					{Name: subnetSetDHCPName, Kind: utils.SubnetSetKind, APIVersion: vpcAPIVersion},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm2Params))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm2Name, false)
+			createVM(vm2Params)
 
 			By("Waiting for both VMs to be created with IPs")
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name)
@@ -229,8 +232,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 					{Name: subnetCIDRName, Kind: utils.SubnetKind, APIVersion: vpcAPIVersion},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm1Params))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm1Name, false)
+			createVM(vm1Params)
 
 			vm2Params := v1a2vmParameters
 			vm2Params.Name = vm2Name
@@ -239,8 +241,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 					{Name: subnetSetCIDRName, Kind: utils.SubnetSetKind, APIVersion: vpcAPIVersion},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm2Params))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm2Name, false)
+			createVM(vm2Params)
 
 			By("Waiting for both VMs to be created with IPs")
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name)
@@ -271,8 +272,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 					{Name: nic2Name, Kind: utils.SubnetSetKind, APIVersion: vpcAPIVersion},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineWithMultiNetworkYamlA2(v1a2vmParameters))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm1Name, false)
+			createVM(v1a2vmParameters)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name)
 		})
 	})
@@ -295,8 +295,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 					{Name: subnetName, Kind: utils.SubnetKind, APIVersion: vpcAPIVersion},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(v1a2vmParameters))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm1Name, false)
+			createVM(v1a2vmParameters)
 
 			By("Create a second namespace")
 
@@ -342,8 +341,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 			vm2Parameters.Name = vm2Name
 			vm2Parameters.Namespace = secondNamespaceName
 			vm2Parameters.ImageName = vmImageName2
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm2Parameters))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), secondNamespaceName, vm2Name, false)
+			createVM(vm2Parameters)
 
 			By("Label VM2 and apply Security Policy that allows ingress")
 			Expect(vmservice.LabelVM(ctx, config, clusterProxy, vm2Name, secondNamespaceName, "role", "allow-ingress")).To(Succeed())

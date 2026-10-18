@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1518,7 +1519,25 @@ var _ = Describe(
 					CRDCleanupEnabled: cleanup,
 					Features:          featureStates(enabled),
 				})
+				if cleanup && !enabled {
+					// Exercise deletion even when this entry runs in isolation.
+					Expect(pkgcrd.Install(pkgcfg.WithConfig(pkgcfg.Config{
+						Features: featureStates(true),
+					}), envTestClient, nil)).To(Succeed())
+				}
 				Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+				if cleanup && !enabled {
+					// CRD deletion is asynchronous. Wait for finalization before
+					// checking that subsequent installs no longer issue deletes.
+					Eventually(func(g Gomega) {
+						var crds apiextensionsv1.CustomResourceDefinitionList
+						g.Expect(envTestClient.List(ctx, &crds)).To(Succeed())
+						for _, crd := range crds.Items {
+							g.Expect(crd.DeletionTimestamp.IsZero()).To(BeTrue(),
+								"CRD %s is still terminating", crd.Name)
+						}
+					}).WithTimeout(30 * time.Second).Should(Succeed())
+				}
 				if !cleanup {
 					// Creation always removes disabled feature fields, so allow
 					// one update to converge when cleanup is disabled.

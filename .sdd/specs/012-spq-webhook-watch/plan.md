@@ -12,11 +12,14 @@ List quotas directly rather than locating stale usages and their owners. Every q
 
 Remove cluster-scoped webhook-key dispatch and the standalone CA-only utility. Keep the manager's typed webhook cache because normal quota reconciliation already reads the full configuration. A metadata watch would add a second representation unless all typed reads changed; uncached reads would add API requests per quota reconcile.
 
+Restrict the manager's `cache.Options.ByObject` entry for `admissionregistration/v1.ValidatingWebhookConfiguration` with `fields.OneTermEqualSelector("metadata.name", pkgconst.ValidatingWebhookConfigurationName)`. This selector applies to API list/watch requests, excluding unrelated configurations before decoding and storage. Keep the existing managed-field stripping transform. Move the name from SPQ utilities into `pkg/constants`, shared by manager setup, quota predicates, CA lookup, mapper, and tests. Production code has no other reader or watcher of this type; deployment manifests and webhook test installation use direct API clients. Other object caches remain unchanged.
+
 ## Technical context
 
 - Root Go module, Go 1.26.9; existing controller-runtime dependency.
 - Existing admissionregistration/v1 and cns.vmware.com/v1alpha2 types; no dependency changes.
 - Modify `controllers/storage/storagepolicyquota/` and `pkg/util/kube/spq/`.
+- Modify `pkg/constants/`, `pkg/manager/`, and `pkg/manager/test/` for the shared name and cache restriction.
 - The dedicated infrastructure controller remains removed.
 
 ## Constitution check
@@ -38,3 +41,5 @@ No new flag or migration. Webhook events enqueue one key per watched quota, with
 ## Verification
 
 Test mapper filtering, all namespaces, quotas without usages, no CA/usage reads during mapping, empty lists, and list failures. Run controller envtests for CA rotation across multiple quotas/namespaces, enabled/disabled snapshots, Secret fallback recovery, webhook recreation, status preservation, and no-op suppression. Keep existing quota unit tests and CA source utility tests. Run focused lint and whitespace checks. Real Supervisor execution requires a configured cluster.
+
+Manager envtests verify that an unrelated configuration exists through the API reader but is absent from cached Get/List, while the named configuration remains readable, tracks updates, disappears on deletion, and returns on recreation. Verify the actual list/watch requests contain the name selector. This changes internal cache retention only; existing quota envtests guard external behavior.

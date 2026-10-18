@@ -20,6 +20,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -61,7 +62,7 @@ func intgTestsReconcile() {
 		BeforeEach(func() {
 			validatingWebhookConfiguration := &admissionv1.ValidatingWebhookConfiguration{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: spqutil.ValidatingWebhookConfigName,
+					Name: pkgconst.ValidatingWebhookConfigurationName,
 				},
 				Webhooks: []admissionv1.ValidatingWebhook{
 					{
@@ -178,7 +179,7 @@ func intgTestsReconcile() {
 			before := usage.DeepCopy()
 
 			var webhook admissionv1.ValidatingWebhookConfiguration
-			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: spqutil.ValidatingWebhookConfigName}, &webhook)).To(Succeed())
+			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: pkgconst.ValidatingWebhookConfigurationName}, &webhook)).To(Succeed())
 			webhook.Webhooks[0].ClientConfig.CABundle = []byte("rotated-ca")
 			Expect(ctx.Client.Update(ctx, &webhook)).To(Succeed())
 			Eventually(func(g Gomega) {
@@ -296,7 +297,7 @@ func intgTestsReconcile() {
 
 		It("uses the fallback Secret CA after fan-out", func() {
 			var webhook admissionv1.ValidatingWebhookConfiguration
-			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: spqutil.ValidatingWebhookConfigName}, &webhook)).To(Succeed())
+			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: pkgconst.ValidatingWebhookConfigurationName}, &webhook)).To(Succeed())
 			webhook.Webhooks = nil
 			webhook.Annotations = map[string]string{spqutil.WebhookConfigAnnotationKey: ctx.Namespace + "/ca-secret"}
 			Expect(ctx.Client.Update(ctx, &webhook)).To(Succeed())
@@ -316,7 +317,7 @@ func intgTestsReconcile() {
 
 		It("fans out when the webhook configuration is recreated", func() {
 			var webhook admissionv1.ValidatingWebhookConfiguration
-			key := client.ObjectKey{Name: spqutil.ValidatingWebhookConfigName}
+			key := client.ObjectKey{Name: pkgconst.ValidatingWebhookConfigurationName}
 			Expect(ctx.Client.Get(ctx, key, &webhook)).To(Succeed())
 			Expect(ctx.Client.Delete(ctx, &webhook)).To(Succeed())
 			Eventually(func() bool {
@@ -339,7 +340,7 @@ func intgTestsReconcile() {
 
 func updateQuotaWebhookCA(ctx *builder.IntegrationTestContext, ca []byte) {
 	var webhook admissionv1.ValidatingWebhookConfiguration
-	ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKey{Name: spqutil.ValidatingWebhookConfigName}, &webhook)).To(Succeed())
+	ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKey{Name: pkgconst.ValidatingWebhookConfigurationName}, &webhook)).To(Succeed())
 	webhook.Webhooks[0].ClientConfig.CABundle = ca
 	ExpectWithOffset(1, ctx.Client.Update(ctx, &webhook)).To(Succeed())
 }

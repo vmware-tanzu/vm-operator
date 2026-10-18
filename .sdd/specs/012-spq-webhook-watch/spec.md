@@ -19,6 +19,7 @@ Consolidate webhook CA propagation into normal storage quota reconciliation. A r
 - The mapper reads only quotas. It does not fetch the CA, list usages, or inspect usage owners. An unexpected quota-list failure is logged and returns no requests, following the existing mapper contract.
 - Unrelated webhook configurations, deletion events, generic events, and unchanged resource versions do not trigger fan-out.
 - The webhook watch and normal quota reads share the manager's full-object cache.
+- The manager caches only the VM Operator validating webhook configuration; unrelated configurations MUST NOT be listed or watched into its cache. CA rotation, deletion/recreation, and Secret fallback keep their existing behavior.
 
 ## Supported scope and behavior differences
 

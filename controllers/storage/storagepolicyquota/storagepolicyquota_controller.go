@@ -29,6 +29,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -62,10 +63,10 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			ctrlbuilder.WithPredicates(
 				predicate.Funcs{
 					CreateFunc: func(e event.CreateEvent) bool {
-						return e.Object.GetName() == spqutil.ValidatingWebhookConfigName
+						return e.Object.GetName() == pkgconst.ValidatingWebhookConfigurationName
 					},
 					UpdateFunc: func(e event.UpdateEvent) bool {
-						return e.ObjectNew.GetName() == spqutil.ValidatingWebhookConfigName
+						return e.ObjectNew.GetName() == pkgconst.ValidatingWebhookConfigurationName
 					},
 					DeleteFunc:  func(event.DeleteEvent) bool { return false },
 					GenericFunc: func(event.GenericEvent) bool { return false },

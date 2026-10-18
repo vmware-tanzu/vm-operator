@@ -24,6 +24,7 @@ import (
 
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -649,7 +650,7 @@ var _ = Describe("GetWebhookCABundle", func() {
 
 		config = &admissionv1.ValidatingWebhookConfiguration{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: spqutil.ValidatingWebhookConfigName,
+				Name: pkgconst.ValidatingWebhookConfigurationName,
 				Annotations: map[string]string{
 					"cert-manager.io/inject-ca-from": fmt.Sprintf("%s/vmware-system-vmop-serving-cert", namespace),
 				},
@@ -784,7 +785,7 @@ var _ = Describe("ValidatingWebhookConfigurationToStoragePolicyQuotaMapper", fun
 		listCalls = 0
 		listError = nil
 		webhook = &admissionv1.ValidatingWebhookConfiguration{
-			ObjectMeta: metav1.ObjectMeta{Name: spqutil.ValidatingWebhookConfigName},
+			ObjectMeta: metav1.ObjectMeta{Name: pkgconst.ValidatingWebhookConfigurationName},
 		}
 		// No usages or CA source are needed to enqueue a quota. Include the same
 		// quota name in different namespaces to verify keys retain their scope.

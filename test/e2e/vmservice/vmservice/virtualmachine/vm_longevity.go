@@ -12,15 +12,16 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
@@ -132,17 +133,21 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			By("Create VirtualMachine")
 
 			vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				ImageName:        linuxVMIName,
-				VMClassName:      vmClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				ResourcePolicy:   clusterResources.VMResourcePolicyName,
-				PowerState:       "PoweredOn",
+			vmToCreate := &vmopv1a2.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: input.WCPNamespaceName,
+					Name:      vmName,
+				},
+				Spec: vmopv1a2.VirtualMachineSpec{
+					ImageName:    linuxVMIName,
+					ClassName:    vmClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+				},
 			}
-			vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
-			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+			if clusterResources.VMResourcePolicyName != "" {
+				vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
+			}
 			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		})

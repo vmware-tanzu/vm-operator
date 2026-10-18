@@ -236,24 +236,28 @@ var _ = Describe("My Feature", Label("my-feature"), func() {
 
 #### VM Operations (`lib/vmoperator`)
 
-Use `CreateVirtualMachine` with a typed VM to create it and immediately register failure diagnostics and deferred cleanup. Pass the same cluster proxy used by the test's kubectl operations: its client loads that proxy's kubeconfig and current context, without overriding the Kubernetes user. API versions are preserved; use `manifestbuilders.VirtualMachineA1`, `VirtualMachineA2`, `VirtualMachineA3`, `VirtualMachineA5`, or `VirtualMachineA6` when building fixtures. The typed A5/A6 constructors build only the VM; create any PVCs separately.
+Prefer a direct `vmopv1.VirtualMachine` literal for ordinary VM fixtures. Use `CreateVirtualMachine` to create it and immediately register failure diagnostics and deferred cleanup. Pass the same cluster proxy used by the test's kubectl operations: its client loads that proxy's kubeconfig and current context, without overriding the Kubernetes user. When refactoring an existing fixture, preserve its API version using the corresponding versioned Go type.
 
 ```go
-vm, err := manifestbuilders.VirtualMachineA6(vmParameters)
-Expect(err).NotTo(HaveOccurred())
+vm := &vmopv1.VirtualMachine{
+    ObjectMeta: metav1.ObjectMeta{
+        Name:      "test-vm",
+        Namespace: namespace,
+    },
+    Spec: vmopv1.VirtualMachineSpec{
+        ClassName:    "best-effort-small",
+        ImageName:    imageName,
+        StorageClass: storageClassName,
+        PowerState:   vmopv1.VirtualMachinePowerStateOn,
+    },
+}
 vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 vmoperator.WaitForVirtualMachineCreation(ctx, config, clusterProxy.GetClient(), vm.Namespace, vm.Name)
 ```
 
 #### Manifest Builders (`manifestbuilders`)
-```go
-vm := manifestbuilders.CreateVMManifest(manifestbuilders.CreateVMParams{
-    VMName:    "test-vm",
-    Namespace: namespace,
-    VMClass:   "best-effort-small",
-    VMImage:   "photon-5.0",
-})
-```
+
+Keep the existing builders where they decode inline cloud-init/Sysprep YAML or assemble VM/PVC manifest bundles. Avoid introducing `VirtualMachineYaml` just to rename API fields. The typed A5/A6 constructors build only the VM; create any PVCs separately. Use `manifestbuilders.ToYAML` when a test specifically needs a YAML document, such as a kubectl validation test.
 
 #### Infrastructure Access (`infrastructure/vsphere`)
 ```go

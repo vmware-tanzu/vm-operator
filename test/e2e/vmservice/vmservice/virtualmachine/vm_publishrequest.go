@@ -18,6 +18,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,9 +27,11 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	imgregv1a2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
+
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
-	imgregv1a2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -330,9 +333,21 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				// Without bootstrap overrides, the deployed VM's vApp properties come purely
 				// from the defaults captured during publish.
 				deployedVMName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vapp-vm", capiutil.RandomString(4))
-				deployedVMBuilder := generateVMBuilder(input.WCPNamespaceName, deployedVMName, publishedImageCRName, *clusterResources)
-				vmToCreate, err := manifestbuilders.VirtualMachineA2(deployedVMBuilder)
-				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+				vmToCreate := &vmopv1a2.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      deployedVMName,
+					},
+					Spec: vmopv1a2.VirtualMachineSpec{
+						ImageName:    publishedImageCRName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+					},
+				}
+				if clusterResources.VMResourcePolicyName != "" {
+					vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
+				}
 				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, deployedVMName)
 
@@ -598,20 +613,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			})
 		})
 	})
-}
-
-func generateVMBuilder(
-	namespace, name, imageName string,
-	clusterResources e2eConfig.Resources) manifestbuilders.VirtualMachineYaml {
-	return manifestbuilders.VirtualMachineYaml{
-		Namespace:        namespace,
-		Name:             name,
-		ImageName:        imageName,
-		VMClassName:      clusterResources.VMClassName,
-		StorageClassName: clusterResources.StorageClassName,
-		ResourcePolicy:   clusterResources.VMResourcePolicyName,
-		PowerState:       "PoweredOn",
-	}
 }
 
 // buildVMWithPromotionDisabled builds a VirtualMachine with no online disk promotion.

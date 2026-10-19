@@ -614,6 +614,28 @@ func DeleteVirtualMachineAndWait(ctx context.Context, config *config.E2EConfig, 
 	WaitForVirtualMachineToBeDeleted(ctx, config, client, ns, vmName)
 }
 
+// DeleteAllVirtualMachinesAndWait deletes every VirtualMachine in the
+// namespace and waits for all of them to be gone. Call it before deleting a
+// namespace that may still contain VMs: namespace teardown deletes the VMs'
+// SubnetPorts before the VMs themselves, so NSX can remove the VM network
+// while a VM is still being destroyed, leaving the VM undeletable and the
+// namespace stuck in REMOVING.
+func DeleteAllVirtualMachinesAndWait(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns string) {
+	vmList := &vmopv1.VirtualMachineList{}
+	Expect(client.List(ctx, vmList, ctrlclient.InNamespace(ns))).To(Succeed(), "failed to list VirtualMachines in namespace %s", ns)
+
+	for i := range vmList.Items {
+		vm := &vmList.Items[i]
+		e2eframework.Logf("Deleting VirtualMachine %s/%s before namespace deletion", ns, vm.Name)
+		Expect(ctrlclient.IgnoreNotFound(client.Delete(ctx, vm))).To(Succeed(), "failed to delete VirtualMachine %s/%s", ns, vm.Name)
+	}
+
+	Eventually(func(g Gomega) {
+		g.Expect(client.List(ctx, vmList, ctrlclient.InNamespace(ns))).To(Succeed())
+		g.Expect(vmList.Items).To(BeEmpty())
+	}, config.GetIntervals("default", "wait-virtual-machine-deletion")...).Should(Succeed(), "Timed out waiting for all VirtualMachines in namespace %s to be deleted", ns)
+}
+
 // DeleteSubnetOrSubnetSet deletes the Subnet or SubnetSet. It is a no-op if
 // the object does not exist. The delete is retried because a network cannot
 // be deleted until the SubnetPorts owned by a recently deleted VirtualMachine

@@ -143,6 +143,11 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		// Delete the temporary namespace if it was created.
 		if tmpNamespaceCtx.GetNamespace() != nil {
+			// Some specs create more than one VM in the temporary namespace (e.g. a
+			// VM in BeforeEach and another in It), but vmYaml only tracks the last
+			// one. Delete any remaining VMs first so namespace teardown never has to
+			// destroy a running VM whose network is being removed concurrently.
+			vmoperator.DeleteAllVirtualMachinesAndWait(ctx, config, svClusterClient, tmpNamespaceCtx.GetNamespace().Name)
 			clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
 			wcp.WaitForNamespaceDeleted(wcpClient, tmpNamespaceCtx.GetNamespace().Name)
 		}

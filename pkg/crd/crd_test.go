@@ -406,6 +406,7 @@ var _ = Describe("Install", func() {
 				Entry("volumes pvc diskMode", "volumes.[].diskMode"),
 				Entry("volumes pvc sharingMode", "volumes.[].sharingMode"),
 				Entry("volumes pvc unitNumber", "volumes.[].unitNumber"),
+				Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
 				Entry("advanced preferHtEnabled", "advanced.preferHtEnabled"),
 				Entry("advanced hugePages1GEnabled", "advanced.hugePages1GEnabled"),
 				Entry("advanced timeTrackerLowLatencyEnabled", "advanced.timeTrackerLowLatencyEnabled"),
@@ -465,6 +466,7 @@ var _ = Describe("Install", func() {
 					assertField(false, fields...)
 				},
 				Entry("currentSnapshot", "currentSnapshot"),
+				Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
 				Entry("rootSnapshots", "rootSnapshots"),
 				Entry("policies", "policies"),
 				Entry("volumes diskMode", "volumes.[].diskMode"),
@@ -791,6 +793,30 @@ var _ = Describe("Install", func() {
 			})
 		})
 
+		When("VM network unit numbers capability is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMNetworkUnitNumbers = true
+				})
+			})
+
+			DescribeTable("vm api should have spec fields",
+				func(field string) {
+					fields := specFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
+			)
+
+			DescribeTable("vm api should have status fields",
+				func(field string) {
+					fields := statusFieldPath(field)
+					assertField(true, fields...)
+				},
+				Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
+			)
+		})
+
 		When("VM shared disks (OracleRAC) is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -965,6 +991,7 @@ var _ = Describe("Install", func() {
 					config.Features.VirtualMachineConfigPolicy = true
 					config.Features.K8sWorkloadMgmtAPI = true
 					config.Features.TaggingAPI = true
+					config.Features.VMNetworkUnitNumbers = true
 				})
 			})
 			It("should get the expected crds", func() {
@@ -1012,6 +1039,7 @@ var _ = Describe("Install", func() {
 						VirtualMachineConfigPolicy:  true,
 						K8sWorkloadMgmtAPI:          true,
 						TaggingAPI:                  true,
+						VMNetworkUnitNumbers:        true,
 					},
 				}),
 				client,
@@ -1118,6 +1146,7 @@ var _ = Describe("Install", func() {
 					Entry("volumes diskMode", "volumes.[].diskMode"),
 					Entry("volumes sharingMode", "volumes.[].sharingMode"),
 					Entry("volumes unitNumber", "volumes.[].unitNumber"),
+					Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
 				)
 
 				DescribeTable("vm api should have removed status fields",
@@ -1126,6 +1155,7 @@ var _ = Describe("Install", func() {
 						assertField(true, fields...)
 					},
 					Entry("currentSnapshot", "currentSnapshot"),
+					Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
 					Entry("rootSnapshots", "rootSnapshots"),
 					Entry("policies", "policies"),
 					Entry("volumes diskMode", "volumes.[].diskMode"),
@@ -1182,6 +1212,7 @@ var _ = Describe("Install", func() {
 					Entry("volumes diskMode", "volumes.[].diskMode"),
 					Entry("volumes sharingMode", "volumes.[].sharingMode"),
 					Entry("volumes unitNumber", "volumes.[].unitNumber"),
+					Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
 					Entry("advanced preferHtEnabled", "advanced.preferHtEnabled"),
 					Entry("advanced hugePages1GEnabled", "advanced.hugePages1GEnabled"),
 					Entry("advanced timeTrackerLowLatencyEnabled", "advanced.timeTrackerLowLatencyEnabled"),
@@ -1201,6 +1232,7 @@ var _ = Describe("Install", func() {
 						assertField(false, fields...)
 					},
 					Entry("currentSnapshot", "currentSnapshot"),
+					Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
 					Entry("rootSnapshots", "rootSnapshots"),
 					Entry("policies", "policies"),
 					Entry("volumes diskMode", "volumes.[].diskMode"),
@@ -1259,6 +1291,7 @@ var _ = Describe("Install", func() {
 						Entry("volumes diskMode", "volumes.[].diskMode"),
 						Entry("volumes sharingMode", "volumes.[].sharingMode"),
 						Entry("volumes unitNumber", "volumes.[].unitNumber"),
+						Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
 						Entry("advanced preferHtEnabled", "advanced.preferHtEnabled"),
 						Entry("advanced hugePages1GEnabled", "advanced.hugePages1GEnabled"),
 						Entry("advanced timeTrackerLowLatencyEnabled", "advanced.timeTrackerLowLatencyEnabled"),
@@ -1278,6 +1311,7 @@ var _ = Describe("Install", func() {
 							assertField(false, fields...)
 						},
 						Entry("currentSnapshot", "currentSnapshot"),
+						Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
 						Entry("rootSnapshots", "rootSnapshots"),
 						Entry("policies", "policies"),
 						Entry("volumes diskMode", "volumes.[].diskMode"),

@@ -86,6 +86,12 @@ install() {
   # below); the gateway VM still gets the full install + generated cert.
   local target_user="$1" target_ip="$2" target_password="$3"
   local dedicated=false pykmip_down=false
+
+  # gce2e-native does not depend on PyKMIP, so configure it before anything that
+  # talks to the PyKMIP host. Under errexit, an unreachable host would otherwise
+  # abort this function before native is ever configured.
+  setup_native
+
   if [ -n "${PYKMIP_HOST_IP:-}" ]; then
     target_user="${PYKMIP_HOST_USERNAME:-root}"
     target_ip="${PYKMIP_HOST_IP}"
@@ -283,6 +289,24 @@ deploy_with_retries() {
   done
 }
 
+# setup_native configures gce2e-native, a vCenter-native key provider that does
+# not need an external server. It is configured unconditionally so encryption
+# tests can run even on testbeds that have no VDS gateway VM (e.g. NSX or
+# minimal testbeds), or whose PyKMIP server is unreachable. It is idempotent.
+setup_native() {
+  local name=gce2e-native
+  if kms_is_green "$name"; then
+    echo "KMS provider ${name} already green, skipping setup"
+  else
+    if ! govc kms.ls "$name" 2> /dev/null ; then
+      govc kms.add -tpm=false -N "$name"
+    fi
+    # Take a backup (and throw it away), required to activate the provider.
+    govc kms.export -f /dev/null "$name"
+  fi
+  govc kms.ls "$name"
+}
+
 # See also: vCenter -> Configure -> Security -> Key Providers
 setup() {
   ip="$1"
@@ -321,20 +345,7 @@ setup() {
     echo "Skipping gce2e-standard KMS setup: no target IP available"
   fi
 
-  # gce2e-native is a vCenter-native key provider that does not need an external
-  # server. Configure it unconditionally so encryption tests can run even on
-  # testbeds that have no VDS gateway VM (e.g. NSX or minimal testbeds).
-  name=gce2e-native
-  if kms_is_green "$name"; then
-    echo "KMS provider ${name} already green, skipping setup"
-  else
-    if ! govc kms.ls "$name" 2> /dev/null ; then
-      govc kms.add -tpm=false -N "$name"
-    fi
-    # Take a backup (and throw it away), required to activate the provider.
-    govc kms.export -f /dev/null "$name"
-  fi
-  govc kms.ls "$name"
+  setup_native
 }
 
 main() {

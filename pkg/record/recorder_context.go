@@ -17,7 +17,7 @@ const contextKeyValue contextKeyType = 0
 type contextValueType = Recorder
 
 // FromContext returns the recorder from the specified context.
-func FromContext(ctx context.Context) contextValueType {
+func FromContext(ctx context.Context) Recorder {
 	return ctxgen.FromContext(
 		ctx,
 		contextKeyValue,

@@ -1325,6 +1325,16 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				completedTime = t.Info.CompleteTime.String()
 			}
 
+			var entity string
+			if t.Info.Entity != nil {
+				entity = t.Info.Entity.String()
+			}
+
+			var startTime string
+			if t.Info.StartTime != nil {
+				startTime = t.Info.StartTime.String()
+			}
+
 			logger.V(logLevel).Info("VM has task",
 				"activationId", t.Info.ActivationId,
 				"descriptionId", t.Info.DescriptionId,
@@ -1333,7 +1343,7 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				"cancelled", t.Info.Cancelled,
 				"changeTag", t.Info.ChangeTag,
 				"completeTime", completedTime,
-				"entity", t.Info.Entity,
+				"entity", entity,
 				"entityName", t.Info.EntityName,
 				"error", t.Info.Error,
 				"eventChainId", t.Info.EventChainId,
@@ -1346,7 +1356,7 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				"reason", t.Info.Reason,
 				"result", t.Info.Result,
 				"rootTaskKey", t.Info.RootTaskKey,
-				"startTime", t.Info.StartTime,
+				"startTime", startTime,
 				"state", t.Info.State,
 				"task", t.Info.Task)
 			rt = append(rt, t.Info)

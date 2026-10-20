@@ -3,8 +3,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package nil provides a utility function for determining if a value is nil.
-//
-//nolint:predeclared
 package nil
 
 import (

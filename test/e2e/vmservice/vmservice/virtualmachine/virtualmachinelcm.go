@@ -684,24 +684,29 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		isoImageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, isoImageDisplayName)
 
 		By("Create a VM with CD-ROM attached and backed by the ISO-type image")
-		vmParameters := manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			Name:             vmName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			GuestID:          "ubuntu64Guest",
-			PowerOffMode:     "Hard",
-			Cdrom: []manifestbuilders.Cdrom{
-				{
-					Name:              "cdrom1",
-					ImageName:         isoImageName,
-					ImageKind:         "VirtualMachineImage",
-					Connected:         true,
-					AllowGuestControl: true,
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				GuestID:      "ubuntu64Guest",
+				PowerOffMode: vmopv1a3.VirtualMachinePowerOpModeHard,
+				Cdrom: []vmopv1a3.VirtualMachineCdromSpec{
+					{
+						Name: "cdrom1",
+						Image: vmopv1a3.VirtualMachineImageRef{
+							Name: isoImageName,
+							Kind: "VirtualMachineImage",
+						},
+						Connected:         new(true),
+						AllowGuestControl: new(true),
+					},
 				},
 			},
 		}
-		vmToCreate := manifestbuilders.VirtualMachineA3(vmParameters)
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -748,7 +753,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(cdrom.Backing).NotTo(BeNil())
 
 		By("Verifying VM's CD-ROM has expected backing file from the specified ISO-type image's content library item")
-		clItemName := strings.Replace(vmParameters.Cdrom[0].ImageName, "vmi", "clitem", 1)
+		clItemName := strings.Replace(isoImageName, "vmi", "clitem", 1)
 		clItem := imgregv1a1.ContentLibraryItem{}
 		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: clItemName, Namespace: input.WCPNamespaceName}, &clItem)).To(Succeed())
 		Expect(clItem.Status.FileInfo).NotTo(BeEmpty())
@@ -772,32 +777,32 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		// as a v1alpha6 CD-ROM option instead of requiring a power cycle.
 		// https://knowledge.broadcom.com/external/article?legacyId=2144053
 		By("Powering off the VM to safely disconnect the CD-ROM")
-		vmParameters.PowerState = poweredOffState
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML to power off the VM %s", string(vmYaml))
+		base := vmToCreate.DeepCopy()
+		vmToCreate.Spec.PowerState = vmopv1a3.VirtualMachinePowerStateOff
+		Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to power off VirtualMachine")
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, poweredOffState)
 
 		By("Verifying CD-ROM can be disconnected from the VM while powered off")
-		vmParameters.Cdrom[0].Connected = false
-		vmParameters.Cdrom[0].AllowGuestControl = false
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML with CD-ROM disconnected %s", string(vmYaml))
+		base = vmToCreate.DeepCopy()
+		vmToCreate.Spec.Cdrom[0].Connected = new(false)
+		vmToCreate.Spec.Cdrom[0].AllowGuestControl = new(false)
+		Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to disconnect CD-ROM")
 		verifyCdromConnectionState(ctx, vmMoRef, propCollector, false, false)
 
 		By("Powering the VM back on")
-		vmParameters.PowerState = poweredOnState
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML to power on the VM %s", string(vmYaml))
+		base = vmToCreate.DeepCopy()
+		vmToCreate.Spec.PowerState = vmopv1a3.VirtualMachinePowerStateOn
+		Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to power on VirtualMachine")
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, poweredOnState)
 
 		By("Verifying CD-ROM did not auto-connect on power on")
 		verifyCdromConnectionState(ctx, vmMoRef, propCollector, false, false)
 
 		By("Verifying CD-ROM can be reconnected to the VM with allowGuestControl disabled")
-		vmParameters.Cdrom[0].Connected = true
-		vmParameters.Cdrom[0].AllowGuestControl = false
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA3(vmParameters)
-		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML with CD-ROM reconnected %s", string(vmYaml))
+		base = vmToCreate.DeepCopy()
+		vmToCreate.Spec.Cdrom[0].Connected = new(true)
+		vmToCreate.Spec.Cdrom[0].AllowGuestControl = new(false)
+		Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to reconnect CD-ROM")
 		verifyCdromConnectionState(ctx, vmMoRef, propCollector, true, false)
 	})
 

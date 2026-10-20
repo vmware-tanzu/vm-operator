@@ -1272,12 +1272,12 @@ func DeployVMWithCloudInit(
 
 func CreateVMGroup(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	params manifestbuilders.VirtualMachineGroupYaml,
 ) {
-	vmGroupYaml := manifestbuilders.GetVirtualMachineGroupYaml(params)
-	framework.Logf("Create VirtualMachineGroup:\n%s", string(vmGroupYaml))
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmGroupYaml)).To(Succeed())
+	vmGroup := manifestbuilders.VirtualMachineGroupA5(params)
+	framework.Logf("Create VirtualMachineGroup: %s/%s", params.Namespace, params.Name)
+	Expect(vmSvcClusterProxy.GetClient().Create(ctx, vmGroup)).To(Succeed())
 }
 
 func DeleteVMGroup(
@@ -1286,9 +1286,9 @@ func DeleteVMGroup(
 	vmSvcE2EConfig *config.E2EConfig,
 	params manifestbuilders.VirtualMachineGroupYaml,
 ) {
-	vmGroupYaml := manifestbuilders.GetVirtualMachineGroupYaml(params)
-	framework.Logf("Delete VirtualMachineGroup:\n%s", string(vmGroupYaml))
-	Expect(vmSvcClusterProxy.Delete(ctx, vmGroupYaml)).To(Succeed())
+	vmGroup := manifestbuilders.VirtualMachineGroupA5(params)
+	framework.Logf("Delete VirtualMachineGroup: %s/%s", params.Namespace, params.Name)
+	Expect(vmSvcClusterProxy.GetClient().Delete(ctx, vmGroup)).To(Succeed())
 
 	Eventually(func() bool {
 		_, err := utils.GetVirtualMachineGroup(ctx, vmSvcClusterProxy.GetClient(), params.Namespace, params.Name)

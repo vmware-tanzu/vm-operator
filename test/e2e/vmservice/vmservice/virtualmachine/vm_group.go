@@ -25,6 +25,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -65,7 +66,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		vCenterClient    *vim25.Client
 		clusterResources *e2eConfig.Resources
 
-		vmgRootYaml   []byte
+		rootGroup     ctrlclient.Object
 		vmgRootName   string
 		vmgChildName  string
 		vm1Name       string
@@ -103,7 +104,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
-		vmgRootYaml = nil
+		rootGroup = nil
 		vmMemberNames = []string{}
 		vmgRootName = fmt.Sprintf("%s-%s-root", specName, capiutil.RandomString(4))
 		vmgChildName = fmt.Sprintf("%s-child", vmgRootName)
@@ -114,7 +115,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		deferCleanupVirtualMachineGroup(
 			config,
-			clusterProxy,
 			svClusterClient,
 			clusterProxy.GetKubeconfigPath(),
 			input.WCPNamespaceName,
@@ -122,7 +122,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			vmgChildName,
 			vmgKind,
 			vmKind,
-			&vmgRootYaml,
+			&rootGroup,
 			&vmMemberNames,
 		)
 	})
@@ -164,9 +164,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 				},
 			}
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmGroupParameters)
-			e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+			vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(vmGroupParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			rootGroup = vmgRoot
+			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
 
@@ -182,8 +183,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					StorageClassName: clusterResources.StorageClassName,
 					PowerState:       "PoweredOff",
 				}
-				vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM %q:\n %s", vmName, string(vmYaml))
+				vm, err := manifestbuilders.VirtualMachineA5(vmParameters)
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", vm.Name)
 			}
 
 			By("Waiting for all VMs to exist")
@@ -212,9 +214,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Setting VirtualMachineGroup spec.powerState to PoweredOn")
 
-			vmGroupParameters.PowerState = "PoweredOn"
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmGroupParameters)
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to update VirtualMachineGroup power state:\n %s", string(vmgRootYaml))
+			patchVMGroup(ctx, svClusterClient, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}, &vmopv1a5.VirtualMachineGroup{}, func(g *vmopv1a5.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOn
+			}, "failed to update VirtualMachineGroup power state")
 
 			By("Waiting for all VMs to be powered on")
 
@@ -302,8 +304,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				VMClassName:      clusterResources.VMClassName,
 				StorageClassName: clusterResources.StorageClassName,
 			}
-			vm4Yaml := manifestbuilders.GetVirtualMachineYamlA5(vm4Parameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vm4Yaml)).To(Succeed(), "failed to create VM %q:\n %s", vm4Name, string(vm4Yaml))
+			vm4, err := manifestbuilders.VirtualMachineA5(vm4Parameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+			Expect(svClusterClient.Create(ctx, vm4)).To(Succeed(), "failed to create VirtualMachine %s", vm4.Name)
 
 			By("Waiting for VM4 to be created and powered on")
 			vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vm4Name)
@@ -312,30 +315,25 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Setting VM4 spec.groupName to the VirtualMachineGroup")
 
 			vm4Parameters.GroupName = vmgRootName
-			vm4Yaml = manifestbuilders.GetVirtualMachineYamlA5(vm4Parameters)
+			vm4Yaml := manifestbuilders.GetVirtualMachineYamlA5(vm4Parameters)
 			Expect(clusterProxy.ApplyWithArgs(ctx, vm4Yaml)).To(Succeed(), "failed to update VM %q group name:\n %s", vm4Name, string(vm4Yaml))
 
 			By("Updating VirtualMachineGroup to adopt the existing VM4")
 
-			vmGroupParameters.BootOrder = append(vmGroupParameters.BootOrder, manifestbuilders.BootOrder{
-				Members: []vmopv1.GroupMember{
-					{
-						Kind: vmKind,
-						Name: vm4Name,
-					},
-				},
-			})
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmGroupParameters)
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to update VirtualMachineGroup members:\n %s", string(vmgRootYaml))
+			patchVMGroup(ctx, svClusterClient, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}, &vmopv1a5.VirtualMachineGroup{}, func(g *vmopv1a5.VirtualMachineGroup) {
+				g.Spec.BootOrder = append(g.Spec.BootOrder, vmopv1a5.VirtualMachineGroupBootOrderGroup{
+					Members: []vmopv1a5.GroupMember{{Kind: vmKind, Name: vm4Name}},
+				})
+			}, "failed to update VirtualMachineGroup members")
 
 			vmMemberNames = append(vmMemberNames, vm4Name)
 
 			By("Changing VirtualMachineGroup spec.powerState to PoweredOff and spec.powerOffMode to Hard")
 
-			vmGroupParameters.PowerState = "PoweredOff"
-			vmGroupParameters.PowerOffMode = "Hard"
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmGroupParameters)
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to update VirtualMachineGroup power state:\n %s", string(vmgRootYaml))
+			patchVMGroup(ctx, svClusterClient, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}, &vmopv1a5.VirtualMachineGroup{}, func(g *vmopv1a5.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOff
+				g.Spec.PowerOffMode = vmopv1a5.VirtualMachinePowerOpModeHard
+			}, "failed to update VirtualMachineGroup power state")
 
 			By("Waiting for all VMs to be powered off")
 
@@ -381,9 +379,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Setting VirtualMachineGroup nextForcePowerStateSyncTime to 'now'")
 
-			vmGroupParameters.NextForcePowerStateSyncTime = "now"
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmGroupParameters)
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to update VirtualMachineGroup force sync time:\n %s", string(vmgRootYaml))
+			patchVMGroup(ctx, svClusterClient, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}, &vmopv1a5.VirtualMachineGroup{}, func(g *vmopv1a5.VirtualMachineGroup) {
+				g.Spec.NextForcePowerStateSyncTime = "now"
+			}, "failed to update VirtualMachineGroup force sync time")
 
 			By("Verifying VirtualMachineGroup has Ready condition set to true after force power state sync")
 			vmoperator.WaitOnVirtualMachineGroupCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName, readyTrueCondition)
@@ -417,8 +415,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					StorageClassName: clusterResources.StorageClassName,
 					PowerState:       "PoweredOn",
 				}
-				vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM %q:\n %s", vmName, string(vmYaml))
+				vm, err := manifestbuilders.VirtualMachineA5(vmParameters)
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", vm.Name)
 			}
 
 			By("Waiting for all VMs to be powered on")
@@ -451,9 +450,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 				},
 			}
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYamlV1Alpha6(vmGroupParameters)
-			e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+			vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA6(vmGroupParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			rootGroup = vmgRoot
+			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 			By("Setting each VM's spec.groupName to point to the VirtualMachineGroup")
 
@@ -482,11 +482,11 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			// first, which can block for up to 5 minutes if the guest is
 			// unresponsive and would throw off the power off delay timing
 			// assertions below.
-			vmGroupParameters.PowerState = "PoweredOff"
-			vmGroupParameters.PowerOffMode = "Hard"
 			powerOffStartTime := time.Now()
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYamlV1Alpha6(vmGroupParameters)
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to update VirtualMachineGroup power state:\n %s", string(vmgRootYaml))
+			patchVMGroup(ctx, svClusterClient, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				g.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
+			}, "failed to update VirtualMachineGroup power state")
 
 			By("Verifying group member VMs power off in reverse boot order with the expected delay", func() {
 				vcClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -574,9 +574,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 				},
 			}
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgRootParameters)
-			e2eframework.Logf("Root VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+			vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(vmgRootParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			rootGroup = vmgRoot
+			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 			vmMemberNames = []string{vm1Name}
 
@@ -598,9 +599,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 				},
 			}
-			vmgChildYaml := manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgChildParameters)
-			e2eframework.Logf("Child VirtualMachineGroup YAML:\n%s", string(vmgChildYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, vmgChildYaml)).To(Succeed())
+			vmgChild, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(vmgChildParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			Expect(svClusterClient.Create(ctx, vmgChild)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 			vmMemberNames = append(vmMemberNames, vm2Name)
 
@@ -615,8 +616,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				StorageClassName: clusterResources.StorageClassName,
 				PowerState:       "PoweredOff",
 			}
-			vm1Yaml := manifestbuilders.GetVirtualMachineYamlA5(vm1Parameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vm1Yaml)).To(Succeed(), "failed to create vm1:\n %s", string(vm1Yaml))
+			vm1, err := manifestbuilders.VirtualMachineA5(vm1Parameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+			Expect(svClusterClient.Create(ctx, vm1)).To(Succeed(), "failed to create VirtualMachine %s", vm1.Name)
 
 			By("Creating VM2 in the child group")
 
@@ -629,8 +631,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				StorageClassName: clusterResources.StorageClassName,
 				PowerState:       "PoweredOff",
 			}
-			vm2Yaml := manifestbuilders.GetVirtualMachineYamlA5(vm2Parameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vm2Yaml)).To(Succeed(), "failed to create vm2:\n %s", string(vm2Yaml))
+			vm2, err := manifestbuilders.VirtualMachineA5(vm2Parameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+			Expect(svClusterClient.Create(ctx, vm2)).To(Succeed(), "failed to create VirtualMachine %s", vm2.Name)
 
 			By("Waiting for all VMs to exist")
 
@@ -661,9 +664,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Setting root VirtualMachineGroup spec.powerState to PoweredOn")
 
-			vmgRootParameters.PowerState = "PoweredOn"
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgRootParameters)
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to update root VirtualMachineGroup power state:\n %s", string(vmgRootYaml))
+			patchVMGroup(ctx, svClusterClient, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}, &vmopv1a5.VirtualMachineGroup{}, func(g *vmopv1a5.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOn
+			}, "failed to update root VirtualMachineGroup power state")
 
 			By("Waiting for all VMs to be powered on")
 
@@ -703,10 +706,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Changing root VirtualMachineGroup spec.powerState to PoweredOff")
 
-			vmgRootParameters.PowerState = "PoweredOff"
-			vmgRootParameters.PowerOffMode = "Hard"
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgRootParameters)
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmgRootYaml)).To(Succeed(), "failed to update root VirtualMachineGroup power state:\n %s", string(vmgRootYaml))
+			patchVMGroup(ctx, svClusterClient, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}, &vmopv1a5.VirtualMachineGroup{}, func(g *vmopv1a5.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOff
+				g.Spec.PowerOffMode = vmopv1a5.VirtualMachinePowerOpModeHard
+			}, "failed to update root VirtualMachineGroup power state")
 
 			By("Waiting for all VMs to be powered off")
 
@@ -813,7 +816,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			wcp.WaitForNamespaceReady(input.WCPClient, tmpNamespaceName)
 			deferCleanupVirtualMachineGroup(
 				config,
-				clusterProxy,
 				svClusterClient,
 				clusterProxy.GetKubeconfigPath(),
 				tmpNamespaceName,
@@ -821,7 +823,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				vmgChildName,
 				vmgKind,
 				vmKind,
-				&vmgRootYaml,
+				&rootGroup,
 				&vmMemberNames,
 			)
 
@@ -882,9 +884,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					},
 				},
 			}
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
-			e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+			vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(vmgParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			rootGroup = vmgRoot
+			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 			By(fmt.Sprintf("Creating VM1 (%s) with tier=1 label, affinity to tier=1, and anti-affinity to tier=2 and tier=3", vm1Name))
 			createVMWithAffinityAndAntiAffinityFunc(vm1Name, "1", []string{"2", "3"})
@@ -1040,9 +1043,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						},
 					},
 				}
-				vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
-				e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
-				Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+				vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(vmgParameters)
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+				rootGroup = vmgRoot
+				Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 				By("Creating each VM with a different pinned zone and host affinity only to itself")
 
@@ -1108,7 +1112,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					{Name: fmt.Sprintf("%s-vm6", vmgRootName), Zone: zones[2]},
 				}
 				vmMemberNames = getZonePinnedVMNames(vms)
-				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				rootGroup = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
 				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
 
 				for _, vm := range vms {
@@ -1136,7 +1140,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					{Name: vm3Name},
 				}
 				vmMemberNames = getZonePinnedVMNames(vms)
-				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				rootGroup = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
 				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
 
 				for _, vm := range vms {
@@ -1157,7 +1161,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					{Name: vm3Name, Zone: zones[0]},
 				}
 				vmMemberNames = getZonePinnedVMNames(vms)
-				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				rootGroup = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
 				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
 
 				for _, vm := range vms {
@@ -1176,7 +1180,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					{Name: vm3Name, Zone: zones[2], Labels: appLabels, Affinity: requiredAntiAffinity(zoneLabelKey, appLabels)},
 				}
 				vmMemberNames = getZonePinnedVMNames(vms)
-				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				rootGroup = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
 				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
 
 				for _, vm := range vms {
@@ -1207,7 +1211,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					{Name: vm3Name, Zone: zone, Labels: appLabels, Affinity: requiredAntiAffinity(hostTopoKey, appLabels)},
 				}
 				vmMemberNames = getZonePinnedVMNames(vms)
-				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				rootGroup = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
 				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
 
 				hosts := map[string]string{}
@@ -1253,7 +1257,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					}
 				}
 				vmMemberNames = getZonePinnedVMNames(vms)
-				vmgRootYaml = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
+				rootGroup = createVMGroupWithVMs(ctx, clusterProxy, tmpNamespaceName, vmgRootName, vms)
 				createZonePinnedVMs(ctx, clusterProxy, clusterResources, tmpNamespaceName, vmgRootName, tinyVMIName, vms)
 
 				zoneCounts := map[string]int{}
@@ -1389,9 +1393,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						},
 					},
 				}
-				vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
-				e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
-				Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+				vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(vmgParameters)
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+				rootGroup = vmgRoot
+				Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 				By(fmt.Sprintf("Creating VM1 (%s) with tier=1 label, affinity to tier=1, and anti-affinity to tier=2 and tier=3", vm1Name))
 				createVMWithAffinityAndAntiAffinityFunc(vm1Name, "1", []string{"2", "3"})
@@ -1669,9 +1674,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					vmopv1.GroupMember{Kind: vmKind, Name: v})
 			}
 
-			vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
-			e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+			vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(vmgParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			rootGroup = vmgRoot
+			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 			affinedSet := make(map[string]bool, len(affinedVms))
 			for _, v := range affinedVms {
@@ -1843,7 +1849,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			wcp.WaitForNamespaceReady(input.WCPClient, tmpNamespaceName)
 			deferCleanupVirtualMachineGroup(
 				config,
-				clusterProxy,
 				svClusterClient,
 				clusterProxy.GetKubeconfigPath(),
 				tmpNamespaceName,
@@ -1851,7 +1856,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				vmgChildName,
 				vmgKind,
 				vmKind,
-				&vmgRootYaml,
+				&rootGroup,
 				&vmMemberNames,
 			)
 
@@ -2005,14 +2010,16 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					It("Should allow updating the spec of a VM without required-required terms", func() {
 						By("Creating a VirtualMachineGroup and a VM without required-required terms")
 						vmMemberNames = []string{vm1Name}
-						vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(manifestbuilders.VirtualMachineGroupYaml{
+						vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(manifestbuilders.VirtualMachineGroupYaml{
 							Namespace: tmpNamespaceName,
 							Name:      vmgRootName,
 							BootOrder: []manifestbuilders.BootOrder{
 								{Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm1Name}}},
 							},
 						})
-						Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+						Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+						rootGroup = vmgRoot
+						Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 						Expect(clusterProxy.ApplyWithArgs(ctx, manifestbuilders.GetVirtualMachineYamlA6(manifestbuilders.VirtualMachineYaml{
 							Namespace:        tmpNamespaceName,
 							Name:             vm1Name,
@@ -2040,7 +2047,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					It("Should reject new VMs and allow spec updates on existing VMs once the policy is deleted", func() {
 						By("Creating a VirtualMachineGroup and a VM with required-required host affinity")
 						vmMemberNames = []string{vm1Name}
-						vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(manifestbuilders.VirtualMachineGroupYaml{
+						vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(manifestbuilders.VirtualMachineGroupYaml{
 							Namespace: tmpNamespaceName,
 							Name:      vmgRootName,
 							BootOrder: []manifestbuilders.BootOrder{
@@ -2049,7 +2056,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 								}},
 							},
 						})
-						Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+						Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+						rootGroup = vmgRoot
+						Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 						vmParameters := manifestbuilders.VirtualMachineYaml{
 							Namespace:        tmpNamespaceName,
@@ -2085,7 +2094,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 						By("Verifying a new VM with required-required terms is rejected")
 						vmParameters.Name = vm2Name
-						err := clusterProxy.ApplyWithArgs(ctx, requiredRequiredVMYaml(vmParameters, hostTopoKey, false))
+						err = clusterProxy.ApplyWithArgs(ctx, requiredRequiredVMYaml(vmParameters, hostTopoKey, false))
 						Expect(err).To(HaveOccurred(), "VM creation should be rejected once the policy is deleted")
 						Expect(err.Error()).To(ContainSubstring("requires a RequiredDuringExecutionVMPlacementPolicy in the namespace"))
 
@@ -2225,9 +2234,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 							},
 						},
 					}
-					aafGroupYaml := manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(aafGroupParameters)
-					e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(aafGroupYaml))
-					Expect(clusterProxy.CreateWithArgs(ctx, aafGroupYaml)).To(Succeed())
+					aafGroup, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(aafGroupParameters)
+					Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+					Expect(svClusterClient.Create(ctx, aafGroup)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 					afGroupParameters := manifestbuilders.VirtualMachineGroupYaml{
 						Namespace: tmpNamespaceName,
@@ -2241,9 +2250,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 							},
 						},
 					}
-					afGroupYaml := manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(afGroupParameters)
-					e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(afGroupYaml))
-					Expect(clusterProxy.CreateWithArgs(ctx, afGroupYaml)).To(Succeed())
+					afGroup, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(afGroupParameters)
+					Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+					Expect(svClusterClient.Create(ctx, afGroup)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 					createCacheVMFunc(aafVM1, aafGroupName, preferredZone, "cache-cluster-aaf", true)
 					createCacheVMFunc(aafVM2, aafGroupName, preferredZone, "cache-cluster-aaf", true)
@@ -2274,8 +2283,8 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					Expect(afHost1).To(Equal(afHost2), "iteration %d: AF VMs %s and %s are on different hosts", i, afVM1, afVM2)
 
 					By(fmt.Sprintf("Iteration %d: deleting both VirtualMachineGroups", i))
-					Expect(clusterProxy.DeleteWithArgs(ctx, aafGroupYaml)).To(Succeed())
-					Expect(clusterProxy.DeleteWithArgs(ctx, afGroupYaml)).To(Succeed())
+					Expect(svClusterClient.Delete(ctx, aafGroup)).To(Succeed())
+					Expect(svClusterClient.Delete(ctx, afGroup)).To(Succeed())
 					vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, aafGroupName)
 					vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, afGroupName)
 					for _, vmName := range allVMNames {
@@ -2379,9 +2388,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					vmgParameters.BootOrder[0].Members = append(vmgParameters.BootOrder[0].Members,
 						vmopv1.GroupMember{Kind: vmKind, Name: v})
 				}
-				vmgRootYaml = manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(vmgParameters)
-				e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(vmgRootYaml))
-				Expect(clusterProxy.CreateWithArgs(ctx, vmgRootYaml)).To(Succeed())
+				vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(vmgParameters)
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+				rootGroup = vmgRoot
+				Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
 				By(fmt.Sprintf("Creating tier-1 VMs (%s preferred, %s required) host AAF within tier, zone AAF against tiers 2 and 3", tier1VM1, tier1VM2))
 				createVKSNodePoolVMFunc(tier1VM1, "1", preferredDuringSchedulingPreferredDuringExecution, []string{"3", "2"})
@@ -2540,13 +2550,35 @@ func requiredAntiAffinity(topologyKey string, matchLabels map[string]string) *vm
 	}
 }
 
+// patchVMGroup gets the VirtualMachineGroup identified by key into group,
+// applies mutate to it, and patches the resulting changes. Pass an empty group
+// of the API version to use, e.g. &vmopv1a5.VirtualMachineGroup{}.
+func patchVMGroup[T ctrlclient.Object](
+	ctx context.Context,
+	c ctrlclient.Client,
+	key ctrlclient.ObjectKey,
+	group T,
+	mutate func(T),
+	failureMsg string) {
+
+	GinkgoHelper()
+
+	Expect(c.Get(ctx, key, group)).To(Succeed(), "failed to get VirtualMachineGroup %s", key)
+
+	base, ok := group.DeepCopyObject().(T)
+	Expect(ok).To(BeTrue(), "unexpected type %T from DeepCopyObject", group)
+
+	mutate(group)
+	Expect(c.Patch(ctx, group, ctrlclient.MergeFrom(base))).To(Succeed(), failureMsg)
+}
+
 // createVMGroupWithVMs creates a root VirtualMachineGroup whose boot order has
-// the given VMs as its members, and returns the group's YAML.
+// the given VMs as its members, and returns the group.
 func createVMGroupWithVMs(
 	ctx context.Context,
 	clusterProxy *common.VMServiceClusterProxy,
 	namespace, groupName string,
-	vms []zonePinnedVM) []byte {
+	vms []zonePinnedVM) *vmopv1a5.VirtualMachineGroup {
 
 	GinkgoHelper()
 
@@ -2555,16 +2587,16 @@ func createVMGroupWithVMs(
 		members[i] = vmopv1.GroupMember{Kind: pinnedVMKind, Name: vm.Name}
 	}
 
-	groupYAML := manifestbuilders.GetVirtualMachineGroupWithBootOrderYaml(
+	group, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(
 		manifestbuilders.VirtualMachineGroupYaml{
 			Namespace: namespace,
 			Name:      groupName,
 			BootOrder: []manifestbuilders.BootOrder{{Members: members}},
 		})
-	e2eframework.Logf("VirtualMachineGroup YAML:\n%s", string(groupYAML))
-	Expect(clusterProxy.CreateWithArgs(ctx, groupYAML)).To(Succeed())
+	Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+	Expect(clusterProxy.GetClient().Create(ctx, group)).To(Succeed())
 
-	return groupYAML
+	return group
 }
 
 // createZonePinnedVMs creates the given VMs as members of the group, powered
@@ -2616,7 +2648,7 @@ func getZonePinnedVMNames(vms []zonePinnedVM) []string {
 // host count. It skips the test if there is no such zone.
 func getZoneWithMinHosts(
 	ctx context.Context,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy framework.ClusterProxyInterface,
 	minHostCount int) (string, int) {
 
 	GinkgoHelper()
@@ -2678,20 +2710,19 @@ func getVMHostFromVmodl(
 
 func deferCleanupVirtualMachineGroup(
 	config *e2eConfig.E2EConfig,
-	clusterProxy *common.VMServiceClusterProxy,
 	client ctrlclient.Client,
 	kubeconfigPath, namespace, rootName, childName, groupKind, vmKind string,
-	rootYaml *[]byte,
+	rootGroup *ctrlclient.Object,
 	vmMemberNames *[]string) {
 
 	vmoperator.DeferCleanupWithDumpOnFailure(
 		func(ctx context.Context) {
-			if len(*rootYaml) == 0 {
+			if *rootGroup == nil {
 				return
 			}
 
 			By("Deleting the root VirtualMachineGroup")
-			Expect(clusterProxy.DeleteWithArgs(ctx, *rootYaml)).To(Succeed(), "failed to delete VirtualMachineGroup")
+			Expect(client.Delete(ctx, *rootGroup)).To(Succeed(), "failed to delete VirtualMachineGroup")
 			vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, client, namespace, rootName)
 
 			By("Waiting for all group members to be deleted automatically due to owner reference to the root group")
@@ -2701,10 +2732,10 @@ func deferCleanupVirtualMachineGroup(
 				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, client, namespace, vmName)
 			}
 
-			*rootYaml = nil
+			*rootGroup = nil
 		},
 		func(ctx context.Context) {
-			if len(*rootYaml) == 0 {
+			if *rootGroup == nil {
 				return
 			}
 

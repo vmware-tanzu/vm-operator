@@ -24,6 +24,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -402,7 +403,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		wcpClient                     wcp.WorkloadManagementAPI
 		vm                            *vmopv1a1.VirtualMachine
 		v1a2vmParameters              manifestbuilders.VirtualMachineYaml
-		v1a5vmParameters              manifestbuilders.VirtualMachineYaml
+		v1a5VM                        *vmopv1a5.VirtualMachine
 		linuxImageDisplayName         string
 	)
 
@@ -459,13 +460,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
 		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 		createAndVerifyVM(ctx, vmToCreate)
-	}
-
-	createAndVerifyVMA5 := func(ctx context.Context, vmParameters manifestbuilders.VirtualMachineYaml) {
-		vmToCreate, err := manifestbuilders.VirtualMachineA5(vmParameters)
-		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
-		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
-		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 	}
 
 	verifyLoginAndRunCmds := func(ctx context.Context, vmIp string, cmds []string, expectedOutput []string) {
@@ -529,12 +523,16 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			StorageClassName: clusterResources.StorageClassName,
 			PowerState:       "PoweredOn",
 		}
-		v1a5vmParameters = manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			Name:             vmName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			PowerState:       "PoweredOn",
+		v1a5VM = &vmopv1a5.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a5.VirtualMachineSpec{
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+			},
 		}
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))
 	})
@@ -661,22 +659,21 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 		Context("LinuxPrep with CustomizeAtNextPowerOn latch", func() {
 			BeforeEach(func() {
-				t := true
 				imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
-				v1a5vmParameters.ImageName = imageName
-				v1a5vmParameters.Bootstrap = manifestbuilders.Bootstrap{
-					LinuxPrep: &manifestbuilders.LinuxPrep{
-						HardwareClockIsUTC:     true,
+				v1a5VM.Spec.ImageName = imageName
+				v1a5VM.Spec.Bootstrap = &vmopv1a5.VirtualMachineBootstrapSpec{
+					LinuxPrep: &vmopv1a5.VirtualMachineBootstrapLinuxPrepSpec{
+						HardwareClockIsUTC:     new(true),
 						TimeZone:               "US/Pacific",
-						CustomizeAtNextPowerOn: &t,
+						CustomizeAtNextPowerOn: new(true),
 					},
 				}
 			})
 
 			It("should successfully deploy VM and set latch to false", func() {
-				createAndVerifyVMA5(ctx, v1a5vmParameters)
-				vmoperator.WaitForLinuxPrepCustomizeNextPowerOnFalse(ctx, config, svClusterClient, input.WCPNamespaceName, v1a5vmParameters.Name)
+				createAndVerifyVM(ctx, v1a5VM)
+				vmoperator.WaitForLinuxPrepCustomizeNextPowerOnFalse(ctx, config, svClusterClient, input.WCPNamespaceName, v1a5VM.Name)
 			})
 		})
 	})

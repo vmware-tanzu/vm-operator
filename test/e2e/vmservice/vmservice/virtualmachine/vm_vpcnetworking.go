@@ -65,7 +65,6 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		input                 VMVPCSpecInput
 		config                *e2eConfig.E2EConfig
 		clusterProxy          *common.VMServiceClusterProxy
-		svClusterConfig       *e2eConfig.ManagementClusterConfig
 		svClusterClient       ctrlclient.Client
 		wcpClient             wcp.WorkloadManagementAPI
 		clusterResources      *e2eConfig.Resources
@@ -74,7 +73,6 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		vm2Name               string
 		secretName            string
 		linuxImageDisplayName string
-		linuxVMIName          string
 	)
 
 	// createSubnetOrSubnetSet creates a Subnet or SubnetSet, retrying on a
@@ -104,7 +102,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 
-		svClusterConfig = config.InfraConfig.ManagementClusterConfig
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
@@ -121,7 +119,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		vmservice.VerifySecretCreation(ctx, config, svClusterClient, input.WCPNamespaceName, secretName)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
-		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+		linuxVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		vmTemplate = &vmopv1a2.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{Namespace: input.WCPNamespaceName},

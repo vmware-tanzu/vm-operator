@@ -411,7 +411,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		input                         VMGOSCSpecInput
 		config                        *e2eConfig.E2EConfig
 		clusterProxy                  *common.VMServiceClusterProxy
-		svClusterConfig               *e2eConfig.ManagementClusterConfig
 		svClusterClient               ctrlclient.Client
 		clusterResources              *e2eConfig.Resources
 		vmName                        string
@@ -497,7 +496,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 		config = input.Config
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
-		svClusterConfig = config.InfraConfig.ManagementClusterConfig
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		wcpClient = input.WCPClient
 		svClusterClient = clusterProxy.GetClient()

@@ -44,14 +44,12 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 	var (
 		input            VMMultipleClusterInput
 		config           *e2eConfig.E2EConfig
-		svClusterConfig  *e2eConfig.ManagementClusterConfig
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 
 		vmName string
 
-		linuxImageDisplayName string
-		linuxVMIName          string
+		linuxVMIName string
 	)
 
 	BeforeEach(func() {
@@ -66,12 +64,12 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 
 		config = input.Config
-		svClusterConfig = config.InfraConfig.ManagementClusterConfig
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = input.ClusterProxy.GetClient()
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 

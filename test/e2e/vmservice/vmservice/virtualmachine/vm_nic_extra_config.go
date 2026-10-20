@@ -15,7 +15,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -341,9 +340,8 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 
-		vmNamespace   string
-		linuxVMIName  string
-		vCenterClient *vim25.Client
+		vmNamespace  string
+		linuxVMIName string
 	)
 
 	BeforeEach(func() {
@@ -375,7 +373,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		)
 		DeferCleanup(cancelPodWatches)
 
-		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+		vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 		DeferCleanup(func() {
 			if vCenterClient != nil {
 				vcenter.LogoutVimClient(vCenterClient)

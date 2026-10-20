@@ -59,7 +59,6 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	var (
 		input            SpecInput
 		config           *e2eConfig.E2EConfig
-		clusterProxy     framework.ClusterProxyInterface
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 		linuxVMIName     string
@@ -79,7 +78,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
-		clusterProxy = input.ClusterProxy
+		clusterProxy := input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.K8sWorkloadMgmtAPICapabilityName)

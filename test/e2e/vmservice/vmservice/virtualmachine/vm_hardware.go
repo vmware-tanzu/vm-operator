@@ -93,11 +93,52 @@ type testSpec struct {
 	hardware vmopv1.VirtualMachineHardwareSpec
 
 	// precreatePVCs, when true, creates the PVCs before the VirtualMachine
-	// instead of relying on the embedded PVC documents in the VM manifest.
-	// The VM manifest places the VirtualMachine document ahead of its PVCs,
-	// so admission would otherwise see the referenced PVC as not-yet-existing
-	// and skip PVC-dependent validation (e.g. ReadWriteMany sharing checks).
+	// instead of creating the VM first. Otherwise admission would see the
+	// referenced PVC as not-yet-existing and skip PVC-dependent validation
+	// (e.g. ReadWriteMany sharing checks).
 	precreatePVCs bool
+}
+
+// createHardwareVMWithPVCs preserves the fixture's admission ordering: some
+// hardware tests require PVCs to exist before the VM, while others create the
+// VM first. Deferred cleanup deletes the VM before its PVCs in either case.
+func createHardwareVMWithPVCs(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	clusterProxy framework.ClusterProxyInterface,
+	params manifestbuilders.VirtualMachineYaml,
+	precreatePVCs bool) {
+
+	GinkgoHelper()
+
+	client := clusterProxy.GetClient()
+	vm, err := manifestbuilders.VirtualMachineA5(params)
+	Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+	claims, err := manifestbuilders.PersistentVolumeClaims(params.PVCs)
+	Expect(err).NotTo(HaveOccurred(), "failed to build PVCs")
+
+	// Register this before the VM cleanup so the VM is deleted first.
+	DeferCleanup(func(ctx context.Context) {
+		for _, claim := range claims {
+			_ = client.Delete(ctx, claim)
+		}
+	})
+
+	if precreatePVCs {
+		By("Pre-creating the PVCs so admission can resolve them when the VM is created")
+		for _, claim := range claims {
+			Expect(client.Create(ctx, claim)).To(Succeed(), "failed to create PVC %s", claim.Name)
+		}
+	}
+
+	vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, false,
+		vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "batchattach", params.Namespace, params.Name))
+
+	if !precreatePVCs {
+		for _, claim := range claims {
+			Expect(client.Create(ctx, claim)).To(Succeed(), "failed to create PVC %s", claim.Name)
+		}
+	}
 }
 
 func waitForVMAndBatchAttach(
@@ -837,17 +878,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			func(specGetter func() testSpec) {
 				spec := specGetter()
 
-				if spec.precreatePVCs {
-					By("Pre-creating the PVCs so admission can resolve them when the VM is created")
-
-					for _, pvc := range spec.pvcs {
-						pvcYaml := manifestbuilders.GetPersistentVolumeClaimYaml(pvc)
-						pvcsYamls = append(pvcsYamls, pvcYaml)
-						Expect(clusterProxy.CreateWithArgs(ctx, pvcYaml)).To(Succeed(), "failed to create PVC %s", pvc.ClaimName)
-					}
-				}
-
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
@@ -855,17 +886,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             spec.pvcs,
 					Hardware:         &spec.hardware,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				if spec.precreatePVCs {
-					// The VM manifest embeds the same PVC documents again; the VM
-					// is a genuine create, but re-declaring the pre-created PVCs
-					// must be an idempotent apply rather than a failing create.
-					Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine")
-				} else {
-					Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine")
-				}
+				}, spec.precreatePVCs)
 
 				By("Waiting for the VirtualMachine to be created")
 
@@ -3441,7 +3462,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					},
 				}
 
-				vmYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				By("Creating non-encrypted VM with physical-sharing SCSI controller")
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
@@ -3449,12 +3471,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
 					Hardware:         &hardware,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				By("Creating non-encrypted VM with physical-sharing SCSI controller")
-				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(),
-					"expected webhook to accept VM with physical-sharing controller and non-encrypted storage")
+				}, false)
 
 				By("Waiting for the VM to power on with shared PVCs attached")
 				volumeNames := make([]string, len(pvcs))

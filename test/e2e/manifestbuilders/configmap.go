@@ -16,9 +16,9 @@ type ConfigMap struct {
 	Name      string `json:"name,omitempty"`
 }
 
-// goscCloudConfig is the cloud-init user-data used by both
-// GetConfigMapYamlGOSC and GetConfigMapYamlOvfEnv, which sends the same
-// content base64-encoded under an "OvfEnv" key naming convention.
+// goscCloudConfig is the cloud-init user-data used by CloudConfigMap and
+// OvfEnvConfigMap, the latter of which sends the same content base64-encoded
+// under an "OvfEnv" key naming convention.
 const goscCloudConfig = `#cloud-config
 ssh_pwauth: true
 users:
@@ -34,12 +34,6 @@ write_files:
     path: /helloworld
 `
 
-// GetConfigMapYamlGOSC returns a ConfigMap whose user-data is a plaintext
-// cloud-init configuration.
-func GetConfigMapYamlGOSC(cm ConfigMap) []byte {
-	return ToYAML(CloudConfigMap(cm))
-}
-
 // CloudConfigMap returns a ConfigMap containing plaintext cloud-init user-data.
 func CloudConfigMap(cm ConfigMap) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
@@ -51,13 +45,6 @@ func CloudConfigMap(cm ConfigMap) *corev1.ConfigMap {
 	}
 }
 
-// GetConfigMapYamlOvfEnv returns a ConfigMap whose user-data is the same
-// cloud-init configuration as GetConfigMapYamlGOSC, but base64-encoded, as
-// vSphere delivers it through the guestinfo.ovfEnv OVF property.
-func GetConfigMapYamlOvfEnv(cm ConfigMap) []byte {
-	return ToYAML(OvfEnvConfigMap(cm))
-}
-
 // OvfEnvConfigMap returns a ConfigMap containing base64-encoded cloud-init user-data for OVF delivery.
 func OvfEnvConfigMap(cm ConfigMap) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
@@ -67,13 +54,6 @@ func OvfEnvConfigMap(cm ConfigMap) *corev1.ConfigMap {
 			"user-data": base64.StdEncoding.EncodeToString([]byte(goscCloudConfig)),
 		},
 	}
-}
-
-// GetConfigMapYamlVAppConfig returns a ConfigMap whose values are vApp
-// property template expressions evaluated by VM Operator's guest
-// customization engine, not by this package. They are literal strings here.
-func GetConfigMapYamlVAppConfig(cm ConfigMap) []byte {
-	return ToYAML(VAppConfigMap(cm))
 }
 
 // VAppConfigMap returns a ConfigMap containing vApp property template expressions.

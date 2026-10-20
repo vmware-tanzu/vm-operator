@@ -16,75 +16,16 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
-type Network struct {
-	Name string `json:"name,omitempty"`
-	Type string `json:"type,omitempty"`
-}
-type NetworkA2 struct {
-	Interfaces []InterfaceSpec `json:"interfaces,omitempty"`
-}
-type InterfaceSpec struct {
-	Name       string `json:"name,omitempty"`
-	APIVersion string `json:"apiVersion,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-}
+// Bootstrap is the subset of the VM bootstrap configuration that the E2E
+// suite sets through VirtualMachineYaml.
 type Bootstrap struct {
-	CloudInit  *CloudInit  `json:"cloudInit,omitempty"`
-	Sysprep    *Sysprep    `json:"sysprep,omitempty"`
-	VAppConfig *VAppConfig `json:"vAppConfig,omitempty"`
-	LinuxPrep  *LinuxPrep  `json:"linuxPrep,omitempty"`
+	Sysprep *Sysprep `json:"sysprep,omitempty"`
 }
 
-type Cdrom struct {
-	Name                string                        `json:"name,omitempty"`
-	ImageName           string                        `json:"imageName,omitempty"`
-	ImageKind           string                        `json:"imageKind,omitempty"`
-	Connected           bool                          `json:"connected,omitempty"`
-	AllowGuestControl   bool                          `json:"allowGuestControl,omitempty"`
-	ControllerBusNumber *int32                        `json:"controllerBusNumber,omitempty"`
-	ControllerType      *vmopv1.VirtualControllerType `json:"controllerType,omitempty"`
-	UnitNumber          *int32                        `json:"unitNumber,omitempty"`
-}
-
-type CloudInit struct {
-	RawCloudConfig *KeySelector `json:"rawCloudConfig,omitempty"`
-	CloudConfig    *string      `json:"cloudConfig,omitempty"`
-}
-
+// Sysprep holds an inline sysprep, which is decoded into its typed API
+// representation.
 type Sysprep struct {
-	RawSysprep *KeySelector `json:"rawSysprep,omitempty"`
-	Sysprep    *string      `json:"sysprep,omitempty"`
-}
-
-type VAppConfig struct {
-	RawProperties *string                            `json:"rawProperties,omitempty"`
-	Properties    *[]KeyValueOrSecretKeySelectorPair `json:"properties,omitempty"`
-}
-
-type LinuxPrep struct {
-	HardwareClockIsUTC     bool   `json:"hardwareClockIsUTC,omitempty"`
-	TimeZone               string `json:"timeZone,omitempty"`
-	CustomizeAtNextPowerOn *bool  `json:"customizeAtNextPowerOn,omitempty"`
-}
-
-type KeySelector struct {
-	Key  string `json:"key,omitempty"`
-	Name string `json:"name,omitempty"`
-}
-
-type KeyValueOrSecretKeySelectorPair struct {
-	Key   string                   `json:"key"`
-	Value ValueOrSecretKeySelector `json:"value,omitempty"`
-}
-
-// Only have Value for simplicity.
-type ValueOrSecretKeySelector struct {
-	Value string `json:"value,omitempty"`
-}
-
-type Crypto struct {
-	EncryptionClassName   string `json:"encryptionClassName,omitempty"`
-	UseDefaultKeyProvider bool   `json:"useDefaultKeyProvider,omitempty"`
+	Sysprep *string `json:"sysprep,omitempty"`
 }
 
 type PVC struct {
@@ -105,55 +46,18 @@ type PVC struct {
 }
 
 type VirtualMachineYaml struct {
-	Namespace        string            `json:"namespace,omitempty"`
-	Name             string            `json:"name,omitempty"`
-	Labels           map[string]string `json:"labels,omitempty"`
-	Annotations      map[string]string `json:"annotations,omitempty"`
-	ImageName        string            `json:"image_name,omitempty"`
-	VMClassName      string            `json:"vm_class_name,omitempty"`
-	StorageClassName string            `json:"storage_class_name,omitempty"`
-	ResourcePolicy   string            `json:"resource_policy,omitempty"`
-	Network          Network           `json:"network,omitempty"`
-	NetworkA2        NetworkA2         `json:"network_a2,omitempty"`
-	Transport        string            `json:"transport,omitempty"`
-	ConfigMapName    string            `json:"config_map_name,omitempty"`
-	SecretName       string            `json:"secret_name,omitempty"`
-	PowerState       string            `json:"power_state,omitempty"`
-	PowerOffMode     string            `json:"power_off_mode,omitempty"`
-	Bootstrap        Bootstrap         `json:"bootstrap,omitempty"`
-	// Deprecated: For v1alpha5, use Hardware.Cdrom instead.
-	Cdrom               []Cdrom                            `json:"cdrom,omitempty"`
-	GuestID             string                             `json:"guest_id,omitempty"`
-	PVCNames            []string                           `json:"pvc_names,omitempty"`
-	Crypto              *Crypto                            `json:"crypto,omitempty"`
-	GroupName           string                             `json:"groupName,omitempty"`
-	CurrentSnapshotName string                             `json:"currentSnapshotName,omitempty"`
-	PVCs                []PVC                              `json:"pvcs,omitempty"`
-	Affinity            *vmopv1.AffinitySpec               `json:"affinity,omitempty"`
-	Hardware            *vmopv1.VirtualMachineHardwareSpec `json:"hardware,omitempty"`
-	Policies            []vmopv1.PolicySpec                `json:"policies,omitempty"`
-}
-
-// GetVirtualMachineYaml returns a v1alpha1 VirtualMachine YAML manifest.
-func GetVirtualMachineYaml(vmYaml VirtualMachineYaml) []byte {
-	return ToYAML(VirtualMachineA1(vmYaml))
-}
-
-// GetVirtualMachineYamlA2 returns a v1alpha2 VirtualMachine YAML manifest.
-func GetVirtualMachineYamlA2(vmYaml VirtualMachineYaml) []byte {
-	return ToYAML(must(VirtualMachineA2(vmYaml)))
-}
-
-// GetVirtualMachineWithMultiNetworkYamlA2 returns a v1alpha2 VirtualMachine
-// YAML manifest with one network interface per vmYaml.NetworkA2.Interfaces
-// entry.
-func GetVirtualMachineWithMultiNetworkYamlA2(vmYaml VirtualMachineYaml) []byte {
-	return GetVirtualMachineYamlA2(vmYaml)
-}
-
-// GetVirtualMachineYamlA3 returns a v1alpha3 VirtualMachine YAML manifest.
-func GetVirtualMachineYamlA3(vmYaml VirtualMachineYaml) []byte {
-	return ToYAML(VirtualMachineA3(vmYaml))
+	Namespace        string                             `json:"namespace,omitempty"`
+	Name             string                             `json:"name,omitempty"`
+	ImageName        string                             `json:"image_name,omitempty"`
+	VMClassName      string                             `json:"vm_class_name,omitempty"`
+	StorageClassName string                             `json:"storage_class_name,omitempty"`
+	PowerState       string                             `json:"power_state,omitempty"`
+	PowerOffMode     string                             `json:"power_off_mode,omitempty"`
+	Bootstrap        Bootstrap                          `json:"bootstrap,omitempty"`
+	GuestID          string                             `json:"guest_id,omitempty"`
+	GroupName        string                             `json:"groupName,omitempty"`
+	PVCs             []PVC                              `json:"pvcs,omitempty"`
+	Hardware         *vmopv1.VirtualMachineHardwareSpec `json:"hardware,omitempty"`
 }
 
 // GetVirtualMachineYamlA5 returns a multi-document manifest containing a
@@ -162,15 +66,6 @@ func GetVirtualMachineYamlA3(vmYaml VirtualMachineYaml) []byte {
 func GetVirtualMachineYamlA5(vmYaml VirtualMachineYaml) []byte {
 	return ToYAML(append(
 		[]ctrlclient.Object{must(VirtualMachineA5(vmYaml))},
-		must(persistentVolumeClaimObjects(vmYaml.PVCs))...)...)
-}
-
-// GetVirtualMachineYamlA6 returns a multi-document manifest containing a
-// v1alpha6 VirtualMachine followed by a PersistentVolumeClaim for each entry
-// in vmYaml.PVCs.
-func GetVirtualMachineYamlA6(vmYaml VirtualMachineYaml) []byte {
-	return ToYAML(append(
-		[]ctrlclient.Object{must(VirtualMachineA6(vmYaml))},
 		must(persistentVolumeClaimObjects(vmYaml.PVCs))...)...)
 }
 
@@ -183,16 +78,14 @@ func GetPersistentVolumeClaimYaml(pvc PVC) []byte {
 // objectMeta returns the ObjectMeta shared by all the VirtualMachine builders.
 func objectMeta(vmYaml VirtualMachineYaml) metav1.ObjectMeta {
 	return metav1.ObjectMeta{
-		Name:        vmYaml.Name,
-		Namespace:   vmYaml.Namespace,
-		Labels:      vmYaml.Labels,
-		Annotations: vmYaml.Annotations,
+		Name:      vmYaml.Name,
+		Namespace: vmYaml.Namespace,
 	}
 }
 
 // hasBootstrap returns true if any of the bootstrap providers are specified.
 func (b Bootstrap) hasBootstrap() bool {
-	return b.CloudInit != nil || b.Sysprep != nil || b.VAppConfig != nil || b.LinuxPrep != nil
+	return b.Sysprep != nil
 }
 
 // unmarshalInline decodes an inline YAML snippet, such as an inline cloud

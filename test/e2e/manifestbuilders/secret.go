@@ -17,7 +17,7 @@ type Secret struct {
 }
 
 // GetSecretYamlCloudConfig returns a Secret whose user-data is a plaintext
-// cloud-init configuration, the same content as GetConfigMapYamlGOSC.
+// cloud-init configuration, the same content as CloudConfigMap.
 func GetSecretYamlCloudConfig(secret Secret) []byte {
 	return ToYAML(CloudConfigSecret(secret))
 }
@@ -34,7 +34,7 @@ func CloudConfigSecret(secret Secret) *corev1.Secret {
 }
 
 // seedDataCloudConfig is the cloud-init user-data of
-// GetSecretYamlCloudConfigSeedData.
+// SeedDataCloudConfigSecret.
 const seedDataCloudConfig = `#cloud-config
 ssh_pwauth: true
 users:
@@ -83,13 +83,6 @@ runcmd:
   - [/usr/local/bin/vmop-seed.sh]
 `
 
-// GetSecretYamlCloudConfigSeedData returns a cloud-config Secret that, in
-// addition to the default user, seeds checksummed random data on the boot disk
-// and on the first data disk.
-func GetSecretYamlCloudConfigSeedData(secret Secret) []byte {
-	return ToYAML(SeedDataCloudConfigSecret(secret))
-}
-
 // SeedDataCloudConfigSecret returns a cloud-config Secret that seeds checksummed data on the boot and first data disks.
 func SeedDataCloudConfigSecret(secret Secret) *corev1.Secret {
 	return &corev1.Secret{
@@ -99,12 +92,6 @@ func SeedDataCloudConfigSecret(secret Secret) *corev1.Secret {
 			"user-data": seedDataCloudConfig,
 		},
 	}
-}
-
-// GetSecretYamlInlineCloudInitData returns a Secret with inline data
-// referenced by cloud-init bootstrap secret key selectors.
-func GetSecretYamlInlineCloudInitData(secret Secret) []byte {
-	return ToYAML(InlineCloudInitSecret(secret))
 }
 
 // InlineCloudInitSecret returns the Secret referenced by inline cloud-init key selectors.
@@ -137,13 +124,6 @@ func InlineSysprepSecret(secret Secret) *corev1.Secret {
 	}
 }
 
-// GetSecretYamlOvfEnv returns a Secret whose user-data is the same
-// cloud-init configuration as GetSecretYamlCloudConfig, but base64-encoded,
-// as vSphere delivers it through the guestinfo.ovfEnv OVF property.
-func GetSecretYamlOvfEnv(secret Secret) []byte {
-	return ToYAML(OvfEnvSecret(secret))
-}
-
 // OvfEnvSecret returns a Secret containing base64-encoded cloud-init user-data for OVF delivery.
 func OvfEnvSecret(secret Secret) *corev1.Secret {
 	return &corev1.Secret{
@@ -153,13 +133,6 @@ func OvfEnvSecret(secret Secret) *corev1.Secret {
 			"user-data": base64.StdEncoding.EncodeToString([]byte(goscCloudConfig)),
 		},
 	}
-}
-
-// GetSecretYamlVAppConfig returns a Secret whose values are vApp property
-// template expressions evaluated by VM Operator's guest customization
-// engine, not by this package. They are literal strings here.
-func GetSecretYamlVAppConfig(secret Secret) []byte {
-	return ToYAML(VAppConfigSecret(secret))
 }
 
 // VAppConfigSecret returns a Secret containing vApp property template expressions.
@@ -174,14 +147,6 @@ func VAppConfigSecret(secret Secret) *corev1.Secret {
 			"management_gateway": `{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}`,
 		},
 	}
-}
-
-// GetSecretYamlSysprepConfig returns a Secret whose unattend value is a
-// sysprep answer file with template expressions evaluated by VM Operator's
-// guest customization engine, not by this package. It is a literal string
-// here.
-func GetSecretYamlSysprepConfig(secret Secret) []byte {
-	return ToYAML(SysprepSecret(secret))
 }
 
 // SysprepSecret returns a Secret containing a Sysprep answer file with guest customization templates.

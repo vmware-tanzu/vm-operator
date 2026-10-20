@@ -278,7 +278,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		// NOTE: This VM is intentionally not encrypted with the EncryptionClass
 		// above. Before the Go templates were removed, this test passed
-		// Crypto{EncryptionClassName: class.Name} to GetVirtualMachineYamlA2,
+		// Crypto{EncryptionClassName: class.Name} to the old GetVirtualMachineYamlA2,
 		// but the v1alpha2 template (and later the typed A2 builder) never
 		// rendered spec.crypto, so the setting was silently ignored. Only the
 		// v1alpha3 template emitted it. The VM has always been created without

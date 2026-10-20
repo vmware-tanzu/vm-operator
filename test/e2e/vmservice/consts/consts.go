@@ -13,8 +13,7 @@ const (
 
 	DefaultVDSNetworkName = "primary"
 
-	WCP  = "wcp"
-	KIND = "kind"
+	WCP = "wcp"
 
 	VMServiceCLName = "vmservice"
 

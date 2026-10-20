@@ -122,8 +122,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		specName = "register-vm"
 
 		// restoreDiskOnlyIntervalSpec selects a longer
-		// "wait-virtual-machine-condition-update" interval (see wcp.yaml /
-		// kind.yaml) for the "Restore disk only" spec, whose boot-disk
+		// "wait-virtual-machine-condition-update" interval (see wcp.yaml) for
+		// the "Restore disk only" spec, whose boot-disk
 		// promotion is a live Storage vMotion and has been observed taking
 		// well over the "default" interval's budget under datastore
 		// contention. Only that spec's WaitForBackupToComplete call uses

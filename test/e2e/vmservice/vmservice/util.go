@@ -1298,19 +1298,18 @@ func DeleteVMGroup(
 
 func CreateVMGroupPub(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	params manifestbuilders.VirtualMachineGroupPublishRequestYaml,
 	errMsg string,
 ) {
-	vmGroupPubYaml := manifestbuilders.GetVirtualMachineGroupPublishRequestYaml(params)
-	framework.Logf("Create VirtualMachineGroupPublishRequest:\n%s", string(vmGroupPubYaml))
+	vmGroupPub := manifestbuilders.VirtualMachineGroupPublishRequestA5(params)
+	framework.Logf("Create VirtualMachineGroupPublishRequest: %s/%s", params.Namespace, params.Name)
 
-	if len(errMsg) == 0 {
-		Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmGroupPubYaml)).To(Succeed())
+	err := vmSvcClusterProxy.GetClient().Create(ctx, vmGroupPub)
+	if errMsg == "" {
+		Expect(err).To(Succeed())
 	} else {
-		_, stderr, err := vmSvcClusterProxy.CreateRawWithArgs(ctx, vmGroupPubYaml)
-		Expect(err).To(HaveOccurred())
-		Expect(string(stderr)).To(ContainSubstring(errMsg))
+		Expect(err).To(MatchError(ContainSubstring(errMsg)))
 	}
 }
 

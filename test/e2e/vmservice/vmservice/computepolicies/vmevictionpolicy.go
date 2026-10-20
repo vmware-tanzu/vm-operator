@@ -81,7 +81,6 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 	var (
 		input           SpecInput
-		clusterProxy    *common.VMServiceClusterProxy
 		svClusterClient ctrlclient.Client
 		adminClient     ctrlclient.Client
 		vCenterClient   *vim25.Client
@@ -91,10 +90,6 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		vmName     string
 		matchLabel map[string]string
 		suffix     string
-
-		evacuationPolicy    *vspherepolv1.AutomaticVMEvictionPolicy
-		restartPolicy       *vspherepolv1.BestEffortRestartPolicy
-		policyNameToVMTagID map[string]string
 	)
 
 	BeforeEach(func() {
@@ -108,7 +103,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(),
 			"Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy := input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = clusterProxy.GetClient()
 
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMEvictionCapabilityName)
@@ -152,8 +147,6 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		matchLabel = map[string]string{
 			"vmoperator.vmware.com/e2e-vm-eviction-test": suffix,
 		}
-		evacuationPolicy = nil
-		restartPolicy = nil
 	})
 
 	It("Should tag a matching VM and surface the policy in status.policies",
@@ -162,11 +155,11 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction", suffix)
 
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the test label")
-			evacuationPolicy, _ = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			evacuationPolicy, _ := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID, nil)
 
-			policyNameToVMTagID = map[string]string{
+			policyNameToVMTagID := map[string]string{
 				evacuationPolicy.Name: tagID,
 			}
 
@@ -195,7 +188,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			nonMatchingLabel := map[string]string{
 				"vmoperator.vmware.com/e2e-vm-eviction-test": capiutil.RandomString(6),
 			}
-			evacuationPolicy, _ = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			evacuationPolicy, _ := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-widen-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, nonMatchingLabel, tagID, nil)
 
@@ -237,7 +230,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-restart", suffix)
 
 			By("Creating an Optional BestEffortRestartPolicy matching the test label")
-			restartPolicy, _ = createBestEffortRestartPolicy(ctx, adminClient, input,
+			restartPolicy, _ := createBestEffortRestartPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-restart-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, tagID, nil)
 
@@ -267,7 +260,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			nonMatchingLabel := map[string]string{
 				"vmoperator.vmware.com/e2e-vm-eviction-test": capiutil.RandomString(6),
 			}
-			restartPolicy, _ = createBestEffortRestartPolicy(ctx, adminClient, input,
+			restartPolicy, _ := createBestEffortRestartPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-restart-no-match-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, nonMatchingLabel, tagID, nil)
 
@@ -289,13 +282,12 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-restart-mixed", suffix)
 
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the test label")
-			var infraPolicyNames []string
-			evacuationPolicy, infraPolicyNames = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			evacuationPolicy, infraPolicyNames := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mixed-policy-%s", suffix),
-				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, infraPolicyNames)
+				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, nil)
 
 			By("Creating an Optional BestEffortRestartPolicy matching the same label")
-			restartPolicy, _ = createBestEffortRestartPolicy(ctx, adminClient, input,
+			restartPolicy, _ := createBestEffortRestartPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-restart-mixed-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
 
@@ -326,11 +318,10 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-restart-both-mandatory", suffix)
 
 			By("Creating a Mandatory AutomaticVMEvictionPolicy and a Mandatory BestEffortRestartPolicy, both matching the test label")
-			var infraPolicyNames []string
-			evacuationPolicy, infraPolicyNames = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			evacuationPolicy, infraPolicyNames := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-both-mandatory-policy-%s", suffix),
-				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, infraPolicyNames)
-			restartPolicy, _ = createBestEffortRestartPolicy(ctx, adminClient, input,
+				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, nil)
+			restartPolicy, _ := createBestEffortRestartPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-restart-both-mandatory-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, restartTagID, infraPolicyNames)
 
@@ -360,11 +351,10 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-restart-both-optional", suffix)
 
 			By("Creating an Optional AutomaticVMEvictionPolicy and an Optional BestEffortRestartPolicy, both matching the test label")
-			var infraPolicyNames []string
-			evacuationPolicy, infraPolicyNames = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			evacuationPolicy, infraPolicyNames := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-both-optional-policy-%s", suffix),
-				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, evictionTagID, infraPolicyNames)
-			restartPolicy, _ = createBestEffortRestartPolicy(ctx, adminClient, input,
+				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, evictionTagID, nil)
+			restartPolicy, _ := createBestEffortRestartPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-restart-both-optional-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
 
@@ -395,7 +385,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			tagID1 := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-update-1", suffix)
 
 			By("Creating a Mandatory AutomaticVMEvictionPolicy tagging the VM with the first real vSphere tag")
-			evacuationPolicy, _ = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			evacuationPolicy, _ := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-update-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID1, nil)
 
@@ -446,7 +436,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-delete", suffix)
 
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the test label")
-			evacuationPolicy, _ = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			evacuationPolicy, _ := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-delete-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, tagID, nil)
 
@@ -468,7 +458,6 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			By("Deleting the AutomaticVMEvictionPolicy")
 			Expect(adminClient.Delete(ctx, evacuationPolicy)).
 				To(Succeed(), "failed to delete AutomaticVMEvictionPolicy %q", evacuationPolicy.Name)
-			evacuationPolicy = nil
 
 			By("Verifying the VM's tag and status.policies entry are removed")
 			vmservice.VerifyVMTagsAndPolicyAssignment(
@@ -490,7 +479,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-avep", suffix)
-			evacuationPolicy, _ = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mm-avep-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, nil)
 
@@ -529,14 +518,13 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-ber-avep", suffix)
-			var infraPolicyNames []string
-			evacuationPolicy, infraPolicyNames = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			_, infraPolicyNames := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mm-ber-avep-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, nil)
 
 			By("Creating an Optional BestEffortRestartPolicy matching the VM's label")
 			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-ber", suffix)
-			restartPolicy, _ = createBestEffortRestartPolicy(ctx, adminClient, input,
+			createBestEffortRestartPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mm-ber-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
 
@@ -586,7 +574,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-pin-avep", suffix)
-			evacuationPolicy, _ = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mm-pin-avep-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, nil)
 
@@ -651,14 +639,13 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-pin-ber-avep", suffix)
-			var infraPolicyNames []string
-			evacuationPolicy, infraPolicyNames = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			_, infraPolicyNames := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mm-pin-ber-avep-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, nil)
 
 			By("Creating an Optional BestEffortRestartPolicy matching the VM's label")
 			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-pin-ber", suffix)
-			restartPolicy, _ = createBestEffortRestartPolicy(ctx, adminClient, input,
+			restartPolicy, _ := createBestEffortRestartPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mm-pin-ber-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
 
@@ -723,14 +710,13 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-unpin-avep", suffix)
-			var infraPolicyNames []string
-			evacuationPolicy, infraPolicyNames = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			_, infraPolicyNames := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mm-unpin-avep-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeMandatory, matchLabel, evictionTagID, nil)
 
 			By("Creating an Optional BestEffortRestartPolicy matching the VM's label")
 			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-unpin-ber", suffix)
-			restartPolicy, _ = createBestEffortRestartPolicy(ctx, adminClient, input,
+			restartPolicy, _ := createBestEffortRestartPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mm-unpin-ber-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, restartTagID, infraPolicyNames)
 
@@ -802,7 +788,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		func() {
 			By("Creating an Optional AutomaticVMEvictionPolicy matching the VMs' label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-nowait-avep", suffix)
-			evacuationPolicy, _ = createAutomaticVMEvictionPolicy(ctx, adminClient, input,
+			evacuationPolicy, _ := createAutomaticVMEvictionPolicy(ctx, adminClient, input,
 				fmt.Sprintf("vm-eviction-mm-nowait-avep-policy-%s", suffix),
 				vspherepolv1.PolicyEnforcementModeOptional, matchLabel, evictionTagID, nil)
 

@@ -736,48 +736,50 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			createVMWithAffinityAndAntiAffinityFunc = func(vmName, affinityTier string, antiAffinityTiers []string) {
 				GinkgoHelper()
 
-				vmParameters := manifestbuilders.VirtualMachineYaml{
-					Namespace:        tmpNamespaceName,
-					Name:             vmName,
-					GroupName:        vmgRootName,
-					Labels:           map[string]string{"tier": affinityTier},
-					ImageName:        tmpNamespaceVMIName,
-					VMClassName:      clusterResources.VMClassName,
-					StorageClassName: clusterResources.StorageClassName,
-					Affinity: &vmopv1.AffinitySpec{
-						VMAffinity: &vmopv1.VMAffinitySpec{
-							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{
-											"tier": affinityTier,
-										},
-									},
-									TopologyKey: "topology.kubernetes.io/zone",
-								},
-							},
-						},
-						VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
-							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Key:      "tier",
-												Operator: metav1.LabelSelectorOpIn,
-												Values:   antiAffinityTiers,
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: tmpNamespaceName,
+						Name:      vmName,
+						Labels:    map[string]string{"tier": affinityTier},
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						GroupName:    vmgRootName,
+						ImageName:    tmpNamespaceVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						Affinity: &vmopv1a5.AffinitySpec{
+							VMAffinity: &vmopv1a5.VMAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: map[string]string{
+												"tier": affinityTier,
 											},
 										},
+										TopologyKey: "topology.kubernetes.io/zone",
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
+								},
+							},
+							VMAntiAffinity: &vmopv1a5.VMAntiAffinitySpec{
+								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{
+									{
+										LabelSelector: &metav1.LabelSelector{
+											MatchExpressions: []metav1.LabelSelectorRequirement{
+												{
+													Key:      "tier",
+													Operator: metav1.LabelSelectorOpIn,
+													Values:   antiAffinityTiers,
+												},
+											},
+										},
+										TopologyKey: "topology.kubernetes.io/zone",
+									},
 								},
 							},
 						},
 					},
 				}
-				vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-				e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vm.Name)
 			}
 
 			getVMZoneFunc = func(vmName string) string {
@@ -1059,34 +1061,36 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				By("Creating each VM with a different pinned zone and host affinity only to itself")
 
 				for _, vmName := range vmMemberNames {
-					vmParameters := manifestbuilders.VirtualMachineYaml{
-						Namespace: tmpNamespaceName,
-						Name:      vmName,
-						GroupName: vmgRootName,
-						Labels: map[string]string{
-							"topology.kubernetes.io/zone": pinnedZones[vmName],
-							"vm":                          vmName,
+					vm := &vmopv1a5.VirtualMachine{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: tmpNamespaceName,
+							Name:      vmName,
+							Labels: map[string]string{
+								"topology.kubernetes.io/zone": pinnedZones[vmName],
+								"vm":                          vmName,
+							},
 						},
-						ImageName:        tinyVMIName,
-						VMClassName:      clusterResources.VMClassName,
-						StorageClassName: clusterResources.StorageClassName,
-						PowerState:       "PoweredOff",
-						Affinity: &vmopv1.AffinitySpec{
-							VMAffinity: &vmopv1.VMAffinitySpec{
-								RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
-									{
-										LabelSelector: &metav1.LabelSelector{
-											MatchLabels: map[string]string{"vm": vmName},
+						Spec: vmopv1a5.VirtualMachineSpec{
+							GroupName:    vmgRootName,
+							ImageName:    tinyVMIName,
+							ClassName:    clusterResources.VMClassName,
+							StorageClass: clusterResources.StorageClassName,
+							PowerState:   vmopv1a5.VirtualMachinePowerStateOff,
+							Affinity: &vmopv1a5.AffinitySpec{
+								VMAffinity: &vmopv1a5.VMAffinitySpec{
+									RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{
+										{
+											LabelSelector: &metav1.LabelSelector{
+												MatchLabels: map[string]string{"vm": vmName},
+											},
+											TopologyKey: "kubernetes.io/hostname",
 										},
-										TopologyKey: "kubernetes.io/hostname",
 									},
 								},
 							},
 						},
 					}
-					vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-					e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
-					Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+					Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vm.Name)
 				}
 
 				By("Waiting for all VMs to be created")

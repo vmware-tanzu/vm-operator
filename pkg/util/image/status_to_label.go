@@ -46,8 +46,8 @@ func SyncStatusToLabels(
 	// Set capability labels.
 	kp := vmopv1.VirtualMachineImageCapabilityLabel
 	capKeys := map[string]struct{}{}
-	for _, cap := range status.Capabilities {
-		k := kp + cap
+	for _, capability := range status.Capabilities {
+		k := kp + capability
 		if len(validation.IsQualifiedName(k)) == 0 {
 			labels[k] = "true"
 			capKeys[k] = struct{}{}

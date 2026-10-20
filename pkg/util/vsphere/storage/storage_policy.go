@@ -326,11 +326,11 @@ func parseConstraints(
 	status *infrav1.StoragePolicyStatus) error {
 
 	for _, sp := range c.SubProfiles {
-		for _, cap := range sp.Capability {
-			switch cap.Id.Namespace {
+		for _, capability := range sp.Capability {
+			switch capability.Id.Namespace {
 			case "com.vmware.storage.storageformat":
-				if cap.Id.Id == "SectorSize" {
-					for _, ci := range cap.Constraint {
+				if capability.Id.Id == "SectorSize" {
+					for _, ci := range capability.Constraint {
 						for _, pi := range ci.PropertyInstance {
 							if pi.Id == "SectorSize" {
 								switch pi.Value {
@@ -348,8 +348,8 @@ func parseConstraints(
 					}
 				}
 			case "com.vmware.storage.volumeallocation":
-				if cap.Id.Id == "VolumeAllocationType" {
-					for _, ci := range cap.Constraint {
+				if capability.Id.Id == "VolumeAllocationType" {
+					for _, ci := range capability.Constraint {
 						for _, pi := range ci.PropertyInstance {
 							if pi.Id == "VolumeAllocationType" {
 								switch pi.Value {
@@ -369,8 +369,8 @@ func parseConstraints(
 					}
 				}
 			case "VSAN":
-				if cap.Id.Id == "proportionalCapacity" {
-					for _, ci := range cap.Constraint {
+				if capability.Id.Id == "proportionalCapacity" {
+					for _, ci := range capability.Constraint {
 						for _, pi := range ci.PropertyInstance {
 							if pi.Id == "proportionalCapacity" {
 								v, ok := pi.Value.(int32)

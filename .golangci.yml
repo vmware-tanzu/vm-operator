@@ -40,6 +40,7 @@ linters:
   - gocognit          # 43
   - goconst
   - gomoddirectives   # 9
+  - gomodguard       # Deprecated; gomodguard_v2 is enabled by default.
   - inamedparam       # 11
   - interfacebloat    # 2
   - ireturn           # 50

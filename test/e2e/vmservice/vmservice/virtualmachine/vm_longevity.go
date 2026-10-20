@@ -23,7 +23,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -52,7 +51,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 		input                 VMLongevityInput
 		wcpClient             wcp.WorkloadManagementAPI
 		config                *e2eConfig.E2EConfig
-		clusterProxy          *common.VMServiceClusterProxy
+		clusterProxy          wcpframework.WCPClusterProxyInterface
 		svClusterConfig       *e2eConfig.ManagementClusterConfig
 		svClusterClient       ctrlclient.Client
 		clusterResources      *e2eConfig.Resources
@@ -77,7 +76,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 		wcpClient = input.WCPClient
 		config = input.Config
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		svClusterConfig = config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = clusterProxy.GetClient()

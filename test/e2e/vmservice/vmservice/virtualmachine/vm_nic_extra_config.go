@@ -30,7 +30,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -338,7 +337,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 	var (
 		input            VMNICExtraConfigSpecInput
 		config           *e2eConfig.E2EConfig
-		clusterProxy     *common.VMServiceClusterProxy
+		clusterProxy     framework.ClusterProxyInterface
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 
@@ -360,11 +359,11 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(),
 			"Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, input.ClusterProxy.(*common.VMServiceClusterProxy), consts.TelcoVMServiceAPICapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, input.ClusterProxy, consts.TelcoVMServiceAPICapabilityName)
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 		vmNamespace = input.WCPNamespaceName
 

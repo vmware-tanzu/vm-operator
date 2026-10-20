@@ -824,7 +824,7 @@ func WaitForBackupToComplete(
 	ctx context.Context,
 	vmName string,
 	vmNamespace string,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	config *config.E2EConfig,
 	intervalOpts *vmoperator.IntervalOptions,
 ) *vmopv1.VirtualMachine {
@@ -1083,7 +1083,7 @@ func DeleteVMResource(
 func InvokeRegisterVM(
 	ctx context.Context,
 	vmMoID, vmNamespace string,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	wcpClient wcp.WorkloadManagementAPI) (*types.TaskInfo, error) {
 	By("Invoke the RegisterVM API")
 
@@ -1109,7 +1109,7 @@ func VerifyPostRegisterVM(
 	vmName, vmNamespace string,
 	bootstrapResourceYAML []byte,
 	expectedRestoredPVCCount int,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client,
 	wcpClient wcp.WorkloadManagementAPI) {
@@ -1282,7 +1282,7 @@ func CreateVMGroup(
 
 func DeleteVMGroup(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	params manifestbuilders.VirtualMachineGroupYaml,
 ) {
@@ -1325,7 +1325,7 @@ func UpdateVMGroupPub(
 
 func CreateVMSnapshot(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	params manifestbuilders.VirtualMachineSnapshotYaml,
 ) {
 	vmSnapshot := &vmopv1.VirtualMachineSnapshot{
@@ -1358,7 +1358,7 @@ func CreateVMSnapshot(
 
 func CreateSnapshotInVC(
 	ctx context.Context,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	vmSnapshotName string,
 	vmName string,
 	vmNamespace string,
@@ -1401,7 +1401,7 @@ func UpdateVMSnapshot(
 
 func RevertVMSnapshot(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
 	currentSnapshot *vmopv1.VirtualMachineSnapshotReference,
@@ -1426,7 +1426,7 @@ func RevertVMSnapshot(
 
 func UpdateVMRestartMode(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
 	restartMode vmopv1.VirtualMachinePowerOpMode,
@@ -1449,7 +1449,7 @@ func UpdateVMRestartMode(
 
 func UpdateVMPowerOffMode(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
 	powerOffMode vmopv1.VirtualMachinePowerOpMode,

@@ -22,7 +22,6 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vslm"
@@ -149,7 +148,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		svClusterClient               ctrlclient.Client
 		vmServiceBackupRestoreEnabled bool
 		incrementalRestoreEnabled     bool
-		linuxImageDisplayName         string
 		linuxVMIName                  string
 	)
 
@@ -168,7 +166,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = clusterProxy.GetClient()
 
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(config.InfraConfig.ManagementClusterConfig.Resources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(config.InfraConfig.ManagementClusterConfig.Resources)
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
@@ -178,18 +176,17 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 	Context("Authorization test", func() {
 		var (
-			vCenterHostname                    string
-			authTestWCPClient                  wcp.WorkloadManagementAPI
-			vimClient                          *vim25.Client
-			user                               *vcenter.User
-			testUserWithoutPrivilege           = "test-user-without-privilege"
-			password                           = "Password!23"
-			testUserWithoutPrivilegeWithDomain = "test-user-without-privilege@vsphere.local"
+			authTestWCPClient wcp.WorkloadManagementAPI
+			user              *vcenter.User
 		)
 
 		BeforeEach(func() {
+			testUserWithoutPrivilege := "test-user-without-privilege"
+			password := "Password!23"
+			testUserWithoutPrivilegeWithDomain := "test-user-without-privilege@vsphere.local"
+
 			vCenterAdminCreds := dcli.VCenterUserCredentials{Username: testbed.AdminUsername, Password: testbed.AdminPassword}
-			vCenterHostname = vcenter.GetVCPNIDFromKubeconfig(context.TODO(), clusterProxy.GetKubeconfigPath())
+			vCenterHostname := vcenter.GetVCPNIDFromKubeconfig(context.TODO(), clusterProxy.GetKubeconfigPath())
 			Expect(vCenterHostname).NotTo(BeZero(), "Unable to determine VC PNID")
 
 			sshCommandRunner, _, _ := testutils.GetHelpersFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -202,7 +199,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			authTestWCPClient, err = wcp.NewWCPAPIClient(vCenterHostname, testUserWithoutPrivilegeWithDomain, password, testbed.RootUsername, testbed.RootPassword)
 			Expect(err).NotTo(HaveOccurred())
-			vimClient, err = vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
+			vimClient, err := vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
 			Expect(err).NotTo(HaveOccurred())
 			err = vcenter.AddToGroup(ctx, vimClient, testUserWithoutPrivilege, "ReadOnlyUsers")
 			Expect(err).NotTo(HaveOccurred())

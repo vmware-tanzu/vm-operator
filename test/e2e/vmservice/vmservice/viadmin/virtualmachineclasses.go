@@ -36,10 +36,8 @@ const VMClassInvalidArg = "Server error: com.vmware.vapi.std.errors.InvalidArgum
 
 func VIAdminVMClassSpec(ctx context.Context, inputGetter func() VIAdminVMClassSpecInput) {
 	var (
-		input                                                               VIAdminVMClassSpecInput
 		wcpClient                                                           wcp.WorkloadManagementAPI
 		createSpecE2eTestBestEffortSmall, createSpecE2eTestGuaranteedXSmall wcp.VMClassSpec
-		createSpecE2eTestGuaranteedXSmallVirtualDevicesVGPUs                wcp.VMClassSpec
 		vmClassAsConfigDaynDateFssEnabled                                   bool
 		namespacedVMClassFSSEnabled                                         bool
 		vmImageRegistryEnabled                                              bool
@@ -47,7 +45,7 @@ func VIAdminVMClassSpec(ctx context.Context, inputGetter func() VIAdminVMClassSp
 	)
 
 	BeforeEach(func() {
-		input = inputGetter()
+		input := inputGetter()
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 		wcpClient = input.WCPClient
 		config = input.Config
@@ -113,6 +111,8 @@ func VIAdminVMClassSpec(ctx context.Context, inputGetter func() VIAdminVMClassSp
 
 		// Add a new block here so we can skip vGPU related tests by setting TEST_SKIP to vGPU.
 		Context("VM classes with vGPU", func() {
+			var createSpecE2eTestGuaranteedXSmallVirtualDevicesVGPUs wcp.VMClassSpec
+
 			BeforeEach(func() {
 				// Configure vGPUs on ESX hosts if configuration is available
 				esxConfig := vmservice.NewESXConfigFromEnv()

@@ -43,7 +43,6 @@ type VIAdminNamespaceRoleSpecInput struct {
 
 func VIAdminNamespaceRoleSpec(ctx context.Context, inputGetter func() VIAdminNamespaceRoleSpecInput) {
 	var (
-		input        VIAdminNamespaceRoleSpecInput
 		clusterProxy wcpframework.WCPClusterProxyInterface
 		config       *e2eConfig.E2EConfig
 		nsContext    wcpframework.NamespaceContext
@@ -52,7 +51,7 @@ func VIAdminNamespaceRoleSpec(ctx context.Context, inputGetter func() VIAdminNam
 	BeforeEach(func() {
 		var err error
 
-		input = inputGetter()
+		input := inputGetter()
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 		clusterProxy = input.ClusterProxy
 		config = input.Config

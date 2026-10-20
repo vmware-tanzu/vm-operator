@@ -35,12 +35,9 @@ func VIAdminCLSpec(ctx context.Context, inputGetter func() VIAdminCLSpecInput) {
 	)
 
 	var (
-		input        VIAdminCLSpecInput
-		wcpClient    wcp.WorkloadManagementAPI
-		clusterProxy wcpframework.WCPClusterProxyInterface
-		config       *e2eConfig.E2EConfig
-		nsContext    wcpframework.NamespaceContext
-		cls          []string
+		wcpClient wcp.WorkloadManagementAPI
+		nsContext wcpframework.NamespaceContext
+		cls       []string
 	)
 
 	BeforeEach(func() {
@@ -48,11 +45,11 @@ func VIAdminCLSpec(ctx context.Context, inputGetter func() VIAdminCLSpecInput) {
 
 		suffix := capiutil.RandomString(6)
 
-		input = inputGetter()
+		input := inputGetter()
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
-		clusterProxy = input.ClusterProxy
+		clusterProxy := input.ClusterProxy
 		wcpClient = input.WCPClient
-		config = input.Config
+		config := input.Config
 
 		vmsvcSpecs := wcp.NewVMServiceSpecDetails([]string{}, []string{})
 		nsContext, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs,

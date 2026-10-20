@@ -44,7 +44,6 @@ type VIAdminStoragePolicySpecInput struct {
 // compatible with a storage policy in the StoragePolicy status.
 func VIAdminStoragePolicySpec(ctx context.Context, inputGetter func() VIAdminStoragePolicySpecInput) {
 	var (
-		input          VIAdminStoragePolicySpecInput
 		config         *config.E2EConfig
 		svClient       ctrlclient.Client
 		vimClient      *vim25.Client
@@ -52,7 +51,7 @@ func VIAdminStoragePolicySpec(ctx context.Context, inputGetter func() VIAdminSto
 	)
 
 	BeforeEach(func() {
-		input = inputGetter()
+		input := inputGetter()
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 		config = input.Config
 		clusterProxy := input.ClusterProxy

@@ -39,7 +39,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
@@ -1035,24 +1034,26 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 			By("Creating a new VM with explicitly specified the optional policy match by guest ID")
 			vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        tmpNamespaceName,
-				Name:             vmName,
-				GuestID:          linuxImageGuestID,
-				ImageName:        tmpNamespaceVMIName,
-				VMClassName:      clusterResources.VMClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				PowerState:       "PoweredOn",
-				Policies: []vmopv1.PolicySpec{
-					{
-						APIVersion: "vsphere.policy.vmware.com/v1alpha1",
-						Kind:       "ComputePolicy",
-						Name:       opPolicyNameMatchByGuestID,
+			vmToCreate := &vmopv1a5.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: tmpNamespaceName,
+					Name:      vmName,
+				},
+				Spec: vmopv1a5.VirtualMachineSpec{
+					GuestID:      linuxImageGuestID,
+					ImageName:    tmpNamespaceVMIName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+					Policies: []vmopv1a5.PolicySpec{
+						{
+							APIVersion: "vsphere.policy.vmware.com/v1alpha1",
+							Kind:       "ComputePolicy",
+							Name:       opPolicyNameMatchByGuestID,
+						},
 					},
 				},
 			}
-			vmToCreate, err := manifestbuilders.VirtualMachineA5(vmParameters)
-			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
@@ -1061,35 +1062,31 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
 
 			By("Updating the VM's labels and policies to match by label")
-			vmParameters.Labels = matchLabel
-			vmParameters.Policies = []vmopv1.PolicySpec{
+			base := vmToCreate.DeepCopy()
+			vmToCreate.Labels = matchLabel
+			vmToCreate.Spec.Policies = []vmopv1a5.PolicySpec{
 				{
 					APIVersion: "vsphere.policy.vmware.com/v1alpha1",
 					Kind:       "ComputePolicy",
 					Name:       opPolicyNameMatchByLabel,
 				},
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-			e2eframework.Logf("Updating VM's labels and spec.policies:\n%s", string(vmYaml))
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML")
+			Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update VM labels and policies")
 
 			By("Verifying the VM has both mandatory policies (match all and match by label) and optional policies (match by label) and their tags applied")
 			expectedPolicyNames = []string{mandatoryPolicyNameMatchAll, mandatoryPolicyNameMatchByLabel, opPolicyNameMatchByLabel}
 			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
 
 			By("Updating the VM's label to not match the policies and remove the explicit optional policy")
-			vmObj, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
-			Expect(err).NotTo(HaveOccurred(), "failed to get existing VM")
-			vmLabels := vmObj.Labels
+			vmObj := &vmopv1a5.VirtualMachine{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: vmName}, vmObj)).To(Succeed(), "failed to get existing VM")
+			base = vmObj.DeepCopy()
 			for key := range matchLabel {
-				Expect(vmLabels).To(HaveKey(key))
-				delete(vmLabels, key)
+				Expect(vmObj.Labels).To(HaveKey(key))
+				delete(vmObj.Labels, key)
 			}
-			vmParameters.Labels = vmLabels
-			vmParameters.Policies = []vmopv1.PolicySpec{}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-			e2eframework.Logf("Updating VM's labels:\n%s", string(vmYaml))
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply updated VM YAML")
+			vmObj.Spec.Policies = nil
+			Expect(svClusterClient.Patch(ctx, vmObj, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to remove VM policy labels and optional policies")
 
 			By("Verifying the VM has only the mandatory policy (match all) and its tag applied")
 			expectedPolicyNames = []string{mandatoryPolicyNameMatchAll}

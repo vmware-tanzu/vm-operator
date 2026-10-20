@@ -356,11 +356,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 		Context("Inventory Content Library", Ordered, func() {
 			var (
-				inventoryFolderName string
-
-				inventoryFolder *object.Folder
-				inventoryCL     *imgregv1a2.ContentLibrary
-
+				inventoryCL    *imgregv1a2.ContentLibrary
 				nonAdminClient ctrlclient.Client
 			)
 
@@ -389,14 +385,13 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			})
 
 			BeforeEach(func() {
+				var inventoryFolder *object.Folder
+
 				DeferCleanup(func() {
 					if inventoryFolder != nil {
 						vcenter.DeleteFolder(ctx, inventoryFolder)
 
-						inventoryFolderName = ""
 						targetContentLibraryName = ""
-
-						inventoryFolder = nil
 						inventoryCL = nil
 					}
 
@@ -404,13 +399,11 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
 				})
 
-				if inventoryFolder == nil {
-					inventoryFolderName = fmt.Sprintf("%s-%s-%s", vmPubSpecName, "folder", capiutil.RandomString(4))
+				inventoryFolderName := fmt.Sprintf("%s-%s-%s", vmPubSpecName, "folder", capiutil.RandomString(4))
 
-					By("Creating library folder")
-					finder := find.NewFinder(vimClient, false)
-					_, inventoryFolder = createLibraryFolder(ctx, finder, inventoryFolderName)
-				}
+				By("Creating library folder")
+				finder := find.NewFinder(vimClient, false)
+				_, inventoryFolder = createLibraryFolder(ctx, finder, inventoryFolderName)
 
 				if inventoryCL == nil {
 					By("Creating an inventory content library", func() {
@@ -486,10 +479,8 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 		// doesn't need that context's non-admin user and SSO (kubectl-vsphere) login.
 		Context("Requested Capacity Estimation", Ordered, func() {
 			var (
-				inventoryFolderName string
-				inventoryCLName     string
-				inventoryFolder     *object.Folder
-				inventoryCL         *imgregv1a2.ContentLibrary
+				inventoryFolder *object.Folder
+				inventoryCL     *imgregv1a2.ContentLibrary
 			)
 
 			BeforeAll(func() {
@@ -509,12 +500,12 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				Expect(err).NotTo(HaveOccurred())
 
 				By("Creating library folder")
-				inventoryFolderName = fmt.Sprintf("%s-%s-%s", vmPubSpecName, "quota-folder", capiutil.RandomString(4))
+				inventoryFolderName := fmt.Sprintf("%s-%s-%s", vmPubSpecName, "quota-folder", capiutil.RandomString(4))
 				finder := find.NewFinder(vimClient, false)
 				_, inventoryFolder = createLibraryFolder(ctx, finder, inventoryFolderName)
 
 				By("Creating an inventory content library", func() {
-					inventoryCLName = fmt.Sprintf("%s-%s-%s", vmPubSpecName, "quota-cl", capiutil.RandomString(4))
+					inventoryCLName := fmt.Sprintf("%s-%s-%s", vmPubSpecName, "quota-cl", capiutil.RandomString(4))
 					inventoryCL = createInventoryContentLibraryCR(ctx, svClusterClient, imgregv1a2.ResourceNamingStrategyPreferItemSourceID, input.WCPNamespaceName, inventoryCLName, inventoryFolder.Reference().Value, true, true)
 					// Validate CL itself exists and reconciled.
 					validateContentLibraryV2(ctx, svClusterClient, inventoryCL, inventoryFolder, inventoryCLName, input.WCPNamespaceName, "")

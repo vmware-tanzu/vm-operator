@@ -2576,7 +2576,7 @@ func patchVMGroup[T ctrlclient.Object](
 // the given VMs as its members, and returns the group.
 func createVMGroupWithVMs(
 	ctx context.Context,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy framework.ClusterProxyInterface,
 	namespace, groupName string,
 	vms []zonePinnedVM) *vmopv1a5.VirtualMachineGroup {
 

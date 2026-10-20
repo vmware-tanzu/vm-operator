@@ -14,7 +14,6 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
@@ -38,7 +37,7 @@ func VIAdminCLSpec(ctx context.Context, inputGetter func() VIAdminCLSpecInput) {
 	var (
 		input        VIAdminCLSpecInput
 		wcpClient    wcp.WorkloadManagementAPI
-		clusterProxy *common.VMServiceClusterProxy
+		clusterProxy wcpframework.WCPClusterProxyInterface
 		config       *e2eConfig.E2EConfig
 		nsContext    wcpframework.NamespaceContext
 		cls          []string
@@ -51,7 +50,7 @@ func VIAdminCLSpec(ctx context.Context, inputGetter func() VIAdminCLSpecInput) {
 
 		input = inputGetter()
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		wcpClient = input.WCPClient
 		config = input.Config
 

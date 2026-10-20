@@ -33,7 +33,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -77,7 +76,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 	var (
 		input              VMLocationSpecInput
 		config             *e2eConfig.E2EConfig
-		clusterProxy       *common.VMServiceClusterProxy
+		clusterProxy       framework.ClusterProxyInterface
 		svClusterClient    ctrlclient.Client
 		vCenterAdminClient *vim25.Client
 		clusterResources   *e2eConfig.Resources
@@ -105,7 +104,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
 			ctx,

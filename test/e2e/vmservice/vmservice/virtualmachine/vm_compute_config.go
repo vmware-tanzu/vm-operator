@@ -31,7 +31,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -84,7 +83,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 	var (
 		input           VMComputeConfigSpecInput
 		config          *e2eConfig.E2EConfig
-		clusterProxy    *common.VMServiceClusterProxy
+		clusterProxy    framework.ClusterProxyInterface
 		svClusterClient ctrlclient.Client
 		vimClient       *vim25.Client
 		wcpClient       wcp.WorkloadManagementAPI
@@ -106,7 +105,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 
 		config = input.Config
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 		vmNamespace = input.WCPNamespaceName
 		storageClass = config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName

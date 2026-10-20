@@ -14,7 +14,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -45,7 +44,7 @@ func SkipUnlessStretchSupervisorIsEnabled() {
 	}
 }
 
-func SkipUnlessSupervisorCapabilityEnabled(ctx context.Context, vmSvcClusterProxy *common.VMServiceClusterProxy, capabilityName string) {
+func SkipUnlessSupervisorCapabilityEnabled(ctx context.Context, vmSvcClusterProxy framework.ClusterProxyInterface, capabilityName string) {
 	sshCommandRunner, _ := e2essh.NewSSHCommandRunner(
 		vcenter.GetVCPNIDFromKubeconfigFile(ctx, vmSvcClusterProxy.GetKubeconfigPath()),
 		vcenter.VCSSHPort,
@@ -66,7 +65,7 @@ func SkipUnlessSupervisorCapabilityEnabled(ctx context.Context, vmSvcClusterProx
 	}
 }
 
-func SkipUnlessSupervisorHasAtleastOneZoneWithHostCount(ctx context.Context, vmSvcClusterProxy *common.VMServiceClusterProxy, minHostCount int) {
+func SkipUnlessSupervisorHasAtleastOneZoneWithHostCount(ctx context.Context, vmSvcClusterProxy framework.ClusterProxyInterface, minHostCount int) {
 	zoneHostInfos, err := utils.GetHostsPerZone(ctx, vmSvcClusterProxy.GetClient(), vmSvcClusterProxy.GetKubeconfigPath())
 	Expect(err).NotTo(HaveOccurred(), "failed to list zones with hosts")
 

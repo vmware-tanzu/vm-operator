@@ -33,6 +33,8 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -76,9 +78,8 @@ func deletePVCOrIgnore(ctx context.Context, c ctrlclient.Client, namespace, name
 func deleteRegisteredVMAndPVCs(
 	ctx context.Context,
 	svClusterClient ctrlclient.Client,
-	clusterProxy *common.VMServiceClusterProxy,
-	namespace, vmName string,
-	vmYaml []byte) {
+	e2eConfig *config.E2EConfig,
+	namespace, vmName string) {
 
 	var pvcNames []string
 	if vm, err := utils.GetVirtualMachine(ctx, svClusterClient, namespace, vmName); err == nil {
@@ -100,13 +101,22 @@ func deleteRegisteredVMAndPVCs(
 		}
 	}
 
-	_ = clusterProxy.DeleteWithArgs(ctx, vmYaml)
+	// Delete the PVCs even if waiting for the VM to go away fails or times out,
+	// so they do not leak into the shared namespace. A PVC that is still in use
+	// stays Terminating until the VM is gone. The context is detached because
+	// it may already be cancelled, e.g. by the NodeTimeout on the cleanup node.
+	defer func() {
+		pvcCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
 
-	for _, name := range pvcNames {
-		_ = svClusterClient.Delete(ctx, &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		})
-	}
+		for _, name := range pvcNames {
+			_ = svClusterClient.Delete(pvcCtx, &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			})
+		}
+	}()
+
+	vmoperator.DeleteVirtualMachineAndWait(ctx, e2eConfig, svClusterClient, namespace, vmName)
 }
 
 type VIAdminRegisterVMSpecInput struct {
@@ -310,25 +320,22 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
 
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
+			vmToCreate := &vmopv1a2.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: input.WCPNamespaceName},
+				Spec: vmopv1a2.VirtualMachineSpec{
+					ClassName:    resources.VMClassName,
+					StorageClass: resources.StorageClassName,
+					ImageName:    linuxVMIName,
+					PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+					Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{
+							RawCloudConfig: &vmopv1a2common.SecretKeySelector{Key: "user-data", Name: secretName},
 						},
 					},
 				},
-				PowerState: "PoweredOn",
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
+			Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Linux VM")
+			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
 			// End create new VM
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -441,26 +448,30 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			testutils.AssertCreatePVC(svClusterClient, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
 			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, pvcNameA)
 
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
+			vmToCreate := &vmopv1a2.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: input.WCPNamespaceName},
+				Spec: vmopv1a2.VirtualMachineSpec{
+					ClassName:    resources.VMClassName,
+					StorageClass: resources.StorageClassName,
+					ImageName:    linuxVMIName,
+					PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+					Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{
+							RawCloudConfig: &vmopv1a2common.SecretKeySelector{Key: "user-data", Name: secretName},
 						},
 					},
+					Volumes: []vmopv1a2.VirtualMachineVolume{{
+						Name: pvcNameA,
+						VirtualMachineVolumeSource: vmopv1a2.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1a2.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvcNameA},
+							},
+						},
+					}},
 				},
-				PowerState: "PoweredOn",
-				PVCNames:   []string{pvcNameA},
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
+			Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Linux VM")
+			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
 			// End create new VM
 
 			// Wait for IP, a valid moID and the PVC attachment.
@@ -517,7 +528,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			testutils.AssertCreatePVC(svClusterClient, pvcNameB, input.WCPNamespaceName, resources.StorageClassName)
 			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, pvcNameB)
 
-			By(fmt.Sprintf("Updating the VM with two PVCs: '%v'", vmParameters.PVCNames))
+			By(fmt.Sprintf("Updating the VM with two PVCs: '%v'", []string{pvcNameA, pvcNameB}))
 
 			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			Expect(err).ToNot(HaveOccurred())
@@ -661,36 +672,32 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// Create a new VM (copy-n-paste of vmservicee2e.deployVMWithCloudInit)
 			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			vmsvcClusterProxy := input.ClusterProxy.(*common.VMServiceClusterProxy)
 			secretName := vmName + "-cloud-config-data"
 			secret := manifestbuilders.Secret{
 				Namespace: input.WCPNamespaceName,
 				Name:      secretName,
 			}
 			secretToCreate := manifestbuilders.CloudConfigSecret(secret)
-			Expect(vmsvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
+			Expect(clusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
+			vmToCreate := &vmopv1a2.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: input.WCPNamespaceName},
+				Spec: vmopv1a2.VirtualMachineSpec{
+					ClassName:    resources.VMClassName,
+					StorageClass: resources.StorageClassName,
+					ImageName:    linuxVMIName,
+					PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+					Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{
+							RawCloudConfig: &vmopv1a2common.SecretKeySelector{Key: "user-data", Name: secretName},
 						},
 					},
 				},
-				PowerState: "PoweredOn",
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
+			Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Linux VM")
+			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
@@ -896,14 +903,13 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Create a new VM
 			vmNamespace := input.WCPNamespaceName
 			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			vmsvcClusterProxy := input.ClusterProxy.(*common.VMServiceClusterProxy)
 			secretName := vmName + "-cloud-config-data"
 			secret := manifestbuilders.Secret{
 				Namespace: vmNamespace,
 				Name:      secretName,
 			}
 			secretToCreate := manifestbuilders.CloudConfigSecret(secret)
-			Expect(vmsvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
+			Expect(clusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, vmNamespace, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
@@ -911,29 +917,33 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			testutils.AssertCreatePVC(svClusterClient, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
 			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, vmNamespace, pvcNameA)
 
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        vmNamespace,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
+			vmToCreate := &vmopv1a2.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: vmNamespace},
+				Spec: vmopv1a2.VirtualMachineSpec{
+					ClassName:    resources.VMClassName,
+					StorageClass: resources.StorageClassName,
+					ImageName:    linuxVMIName,
+					PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+					Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{
+							RawCloudConfig: &vmopv1a2common.SecretKeySelector{Key: "user-data", Name: secretName},
 						},
 					},
+					Volumes: []vmopv1a2.VirtualMachineVolume{{
+						Name: pvcNameA,
+						VirtualMachineVolumeSource: vmopv1a2.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1a2.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvcNameA},
+							},
+						},
+					}},
 				},
-				PowerState: "PoweredOn",
-				PVCNames:   []string{pvcNameA},
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+			Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Linux VM")
 			// Bounded so a broken vSphere-side disk state left behind by an earlier
 			// assertion failure in this spec fails cleanup fast instead of blocking
 			// the rest of the suite for hours.
-			DeferCleanup(deleteRegisteredVMAndPVCs, svClusterClient, clusterProxy, vmNamespace, vmName, vmYaml, NodeTimeout(3*time.Minute))
+			DeferCleanup(deleteRegisteredVMAndPVCs, svClusterClient, config, vmNamespace, vmName, NodeTimeout(3*time.Minute))
 			// End create new VM
 
 			// Wait for IP, a valid moID and the PVC attachment.
@@ -1277,24 +1287,21 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(clusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
+			vmToCreate := &vmopv1a2.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: input.WCPNamespaceName},
+				Spec: vmopv1a2.VirtualMachineSpec{
+					ClassName:    resources.VMClassName,
+					StorageClass: resources.StorageClassName,
+					ImageName:    linuxVMIName,
+					PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+					Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{
+							RawCloudConfig: &vmopv1a2common.SecretKeySelector{Key: "user-data", Name: secretName},
 						},
 					},
 				},
-				PowerState: "PoweredOn",
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+			Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Linux VM")
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -1319,7 +1326,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
 
 			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, expectedVolCount, clusterProxy, config, svClusterClient, wcpClient)
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
+			vmoperator.DeleteVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		})
 	})
 }

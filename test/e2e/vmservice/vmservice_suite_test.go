@@ -24,6 +24,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	conformancetestdata "k8s.io/kubernetes/test/conformance/testdata"
@@ -33,6 +34,7 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -371,7 +373,6 @@ func deferCleanupSuiteVM(client ctrlclient.Client, ns, vmName string) {
 
 // deployWindowsVMWithSysprep deploys a Windows VM with the minimal Sysprep config passed.
 func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string) {
-	vmsvcClusterProxy := svClusterProxy.(*common.VMServiceClusterProxy)
 	secretName := "sysprep-data"
 	secret := manifestbuilders.Secret{
 		Namespace: ns,
@@ -381,29 +382,31 @@ func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string)
 	// Check if the secret already exists.
 	secretObj := corev1.Secret{}
 
-	err := vmsvcClusterProxy.GetClient().Get(ctx,
+	err := svClusterProxy.GetClient().Get(ctx,
 		types.NamespacedName{Namespace: ns, Name: secretName}, &secretObj)
 	if err == nil {
 		return
 	}
 
 	secretToCreate := manifestbuilders.SysprepSecret(secret)
-	Expect(vmsvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with Sysprep data")
+	Expect(svClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with Sysprep data")
 
-	vmParameters := manifestbuilders.VirtualMachineYaml{
-		Namespace:        ns,
-		Name:             vmName,
-		VMClassName:      config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
-		StorageClassName: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
-		ImageName:        vmiName,
-		Transport:        "Sysprep",
-		SecretName:       secretName,
-		PowerState:       "poweredOn",
-		PowerOffMode:     "Hard",
+	vmToCreate := &vmopv1a1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: ns},
+		Spec: vmopv1a1.VirtualMachineSpec{
+			ClassName:    config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
+			StorageClass: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
+			ImageName:    vmiName,
+			PowerState:   vmopv1a1.VirtualMachinePoweredOn,
+			PowerOffMode: "Hard",
+			VmMetadata: &vmopv1a1.VirtualMachineMetadata{
+				SecretName: secretName,
+				Transport:  "Sysprep",
+			},
+		},
 	}
-	deferCleanupSuiteVM(vmsvcClusterProxy.GetClient(), ns, vmName)
-	vmYaml := manifestbuilders.GetVirtualMachineYaml(vmParameters)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Windows VM", string(vmYaml))
+	deferCleanupSuiteVM(svClusterProxy.GetClient(), ns, vmName)
+	Expect(svClusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Windows VM")
 }
 
 // deployWindowsVMWithInlineSysprep deploys a Windows VM whose Sysprep answer
@@ -458,14 +461,13 @@ func deployWindowsVMWithInlineSysprep(ctx context.Context, ns, vmName, vmiName s
 		},
 	}
 	deferCleanupSuiteVM(vmsvcClusterProxy.GetClient(), ns, vmName)
-	vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Windows VM with inline Sysprep", string(vmYaml))
+	vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
+	Expect(err).NotTo(HaveOccurred(), "failed to build Windows VM with inline Sysprep")
+	Expect(svClusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Windows VM with inline Sysprep")
 }
 
 // deployVMWithCloudInit deploys a VM with the default cloud-init config passed.
 func deployVMWithCloudInit(ctx context.Context, ns, vmName, vmiName string) {
-	vmsvcClusterProxy := svClusterProxy.(*common.VMServiceClusterProxy)
-
 	secretName := vmName + "-cloud-config-data"
 	secret := manifestbuilders.Secret{
 		Namespace: ns,
@@ -475,27 +477,30 @@ func deployVMWithCloudInit(ctx context.Context, ns, vmName, vmiName string) {
 	// Check if the secret already exists.
 	secretObj := corev1.Secret{}
 
-	err := vmsvcClusterProxy.GetClient().Get(ctx,
+	err := svClusterProxy.GetClient().Get(ctx,
 		types.NamespacedName{Namespace: ns, Name: secretName}, &secretObj)
 	if err == nil {
 		return
 	}
 
 	secretToCreate := manifestbuilders.CloudConfigSecret(secret)
-	Expect(vmsvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
+	Expect(svClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 
-	vmParameters := manifestbuilders.VirtualMachineYaml{
-		Namespace:        ns,
-		Name:             vmName,
-		ImageName:        vmiName,
-		VMClassName:      config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
-		StorageClassName: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
-		Transport:        "CloudInit",
-		SecretName:       secretName,
-		PowerState:       "poweredOn",
+	vmToCreate := &vmopv1a1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: ns},
+		Spec: vmopv1a1.VirtualMachineSpec{
+			ClassName:    config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
+			StorageClass: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
+			ImageName:    vmiName,
+			PowerState:   vmopv1a1.VirtualMachinePoweredOn,
+			VmMetadata: &vmopv1a1.VirtualMachineMetadata{
+				SecretName: secretName,
+				Transport:  "CloudInit",
+			},
+		},
 	}
-	vmYaml := manifestbuilders.GetVirtualMachineYaml(vmParameters)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM:\n%s", string(vmYaml))
+
+	Expect(svClusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create VM")
 }
 
 func deployJumpboxPodVM(ctx context.Context) {

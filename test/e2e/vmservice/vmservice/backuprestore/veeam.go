@@ -32,6 +32,8 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -353,21 +355,29 @@ func (t *testEnv) createVM(ctx context.Context, vmName string, secret *corev1.Se
 		_ = t.client.Delete(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: pvcName, Namespace: ns}})
 	})
 
-	vmYaml := manifestbuilders.GetVirtualMachineYamlA2(manifestbuilders.VirtualMachineYaml{
-		Namespace:        ns,
-		Name:             vmName,
-		VMClassName:      resources.VMClassName,
-		StorageClassName: resources.StorageClassName,
-		ImageName:        t.linuxVMIName,
-		Bootstrap: manifestbuilders.Bootstrap{
-			CloudInit: &manifestbuilders.CloudInit{
-				RawCloudConfig: &manifestbuilders.KeySelector{Key: "user-data", Name: secret.Name},
+	vmToCreate := &vmopv1a2.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: ns},
+		Spec: vmopv1a2.VirtualMachineSpec{
+			ClassName:    resources.VMClassName,
+			StorageClass: resources.StorageClassName,
+			ImageName:    t.linuxVMIName,
+			PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{
+					RawCloudConfig: &vmopv1a2common.SecretKeySelector{Key: "user-data", Name: secret.Name},
+				},
 			},
+			Volumes: []vmopv1a2.VirtualMachineVolume{{
+				Name: pvcName,
+				VirtualMachineVolumeSource: vmopv1a2.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1a2.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvcName},
+					},
+				},
+			}},
 		},
-		PowerState: string(vmopv1.VirtualMachinePowerStateOn),
-		PVCNames:   []string{pvcName},
-	})
-	Expect(t.clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM:\n%s", string(vmYaml))
+	}
+	Expect(t.client.Create(ctx, vmToCreate)).To(Succeed(), "failed to create VM")
 	DeferCleanup(func(ctx SpecContext) {
 		deleteVMAndPVCs(ctx, t.client, ns, vmName)
 	})

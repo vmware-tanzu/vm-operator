@@ -387,8 +387,8 @@ func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string)
 		return
 	}
 
-	secretYaml := manifestbuilders.GetSecretYamlSysprepConfig(secret)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with Sysprep data", string(secretYaml))
+	secretToCreate := manifestbuilders.SysprepSecret(secret)
+	Expect(vmsvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with Sysprep data")
 
 	vmParameters := manifestbuilders.VirtualMachineYaml{
 		Namespace:        ns,
@@ -481,8 +481,8 @@ func deployVMWithCloudInit(ctx context.Context, ns, vmName, vmiName string) {
 		return
 	}
 
-	secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+	secretToCreate := manifestbuilders.CloudConfigSecret(secret)
+	Expect(vmsvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 
 	vmParameters := manifestbuilders.VirtualMachineYaml{
 		Namespace:        ns,

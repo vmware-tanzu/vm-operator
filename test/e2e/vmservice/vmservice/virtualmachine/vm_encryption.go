@@ -60,18 +60,17 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 	)
 
 	var (
-		wcpClient                            wcp.WorkloadManagementAPI
-		config                               *e2eConfig.E2EConfig
-		clusterProxy                         *common.VMServiceClusterProxy
-		svClusterClient                      ctrlclient.Client
-		vCenterClient                        *vim25.Client
-		cryptoManager                        *crypto.ManagerKmip
-		clusterResources                     *e2eConfig.Resources
-		tmpNamespaceName                     string
-		vmName                               string
-		vmiName                              string
-		createSpecE2eTestBestEffortSmallVTPM wcp.VMClassSpec
-		byokFSSEnabled                       bool
+		wcpClient        wcp.WorkloadManagementAPI
+		config           *e2eConfig.E2EConfig
+		clusterProxy     *common.VMServiceClusterProxy
+		svClusterClient  ctrlclient.Client
+		vCenterClient    *vim25.Client
+		cryptoManager    *crypto.ManagerKmip
+		clusterResources *e2eConfig.Resources
+		tmpNamespaceName string
+		vmName           string
+		vmiName          string
+		byokFSSEnabled   bool
 	)
 
 	BeforeEach(func() {
@@ -204,11 +203,10 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Create VM Class with vTPM and ensure namespace has access")
 
-		createSpecE2eTestBestEffortSmallVTPM = vmservice.CreateSpecE2eVMClassVTPMConfigSpec()
+		createSpecE2eTestBestEffortSmallVTPM := vmservice.CreateSpecE2eVMClassVTPMConfigSpec()
 		DeferCleanup(func() {
 			if createSpecE2eTestBestEffortSmallVTPM.ID != "" {
 				vmservice.VerifyVMClassDeletion(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID)
-				createSpecE2eTestBestEffortSmallVTPM.ID = ""
 			}
 		})
 		vmservice.VerifyVMClassCreate(wcpClient, createSpecE2eTestBestEffortSmallVTPM, createSpecE2eTestBestEffortSmallVTPM)
@@ -267,11 +265,10 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Create VM Class with vTPM and ensure namespace has access")
 
-		createSpecE2eTestBestEffortSmallVTPM = vmservice.CreateSpecE2eVMClassVTPMConfigSpec()
+		createSpecE2eTestBestEffortSmallVTPM := vmservice.CreateSpecE2eVMClassVTPMConfigSpec()
 		DeferCleanup(func() {
 			if createSpecE2eTestBestEffortSmallVTPM.ID != "" {
 				vmservice.VerifyVMClassDeletion(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID)
-				createSpecE2eTestBestEffortSmallVTPM.ID = ""
 			}
 		})
 		vmservice.VerifyVMClassCreate(wcpClient, createSpecE2eTestBestEffortSmallVTPM, createSpecE2eTestBestEffortSmallVTPM)

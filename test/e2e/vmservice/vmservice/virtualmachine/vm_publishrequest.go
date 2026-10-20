@@ -40,7 +40,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/testutils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -70,7 +69,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			input            VMPublishRequestSpecInput
 			wcpClient        wcp.WorkloadManagementAPI
 			config           *e2eConfig.E2EConfig
-			clusterProxy     *common.VMServiceClusterProxy
+			clusterProxy     framework.ClusterProxyInterface
 			svClusterConfig  *e2eConfig.ManagementClusterConfig
 			svClusterClient  ctrlclient.Client
 			clusterResources *e2eConfig.Resources
@@ -93,7 +92,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 			wcpClient = input.WCPClient
 			config = input.Config
-			clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+			clusterProxy = input.ClusterProxy
 			svClusterConfig = config.InfraConfig.ManagementClusterConfig
 			clusterResources = svClusterConfig.Resources
 
@@ -155,7 +154,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 			It("should set default values for source VM name and target item", func() {
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, "", "", "fake-cl")
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				createVMPublishRequest(ctx, *config, clusterProxy, vmPubReqBuilder)
 
 				Expect(vmoperator.GetVirtualMachinePublishRequestSourceName(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)).To(Equal(vmPublishRequestName))
 				Expect(vmoperator.GetVirtualMachinePublishRequestTargetItemName(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)).To(Equal(vmPublishRequestName + "-image"))
@@ -175,7 +174,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
 
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, "fake-vm", vmPubTargetItemName, targetLocationK8sCLName)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				createVMPublishRequest(ctx, *config, clusterProxy, vmPubReqBuilder)
 
 				vmPubCondition := metav1.Condition{
 					Type:   vmopv1.VirtualMachinePublishRequestConditionSourceValid,
@@ -187,7 +186,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 			It("should have expected condition when target location content library does not exist", func() {
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, "non-existing-content-library")
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				createVMPublishRequest(ctx, *config, clusterProxy, vmPubReqBuilder)
 
 				vmPubCondition := metav1.Condition{
 					Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
@@ -211,7 +210,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				Expect(err).NotTo(HaveOccurred(), "failed to get the CL that is attached to the namespace")
 
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				createVMPublishRequest(ctx, *config, clusterProxy, vmPubReqBuilder)
 
 				vmPubCondition := metav1.Condition{
 					Type:   vmopv1.VirtualMachinePublishRequestConditionTargetValid,
@@ -235,7 +234,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 				By("Publishing the VM to the target content library")
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				createVMPublishRequest(ctx, *config, clusterProxy, vmPubReqBuilder)
 
 				By("Waiting for the publish request to report Complete=True")
 				vmPubCondition := metav1.Condition{
@@ -249,7 +248,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					By("Publishing the VM again with the same target item name to trigger duplicate detection")
 					dupPublishRequestName := fmt.Sprintf("%s-dup", vmPublishRequestName)
 					dupPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, dupPublishRequestName, input.LinuxVMName, vmPubTargetItemName, targetLocationK8sCLName)
-					createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, dupPubReqBuilder)
+					createVMPublishRequest(ctx, *config, clusterProxy, dupPubReqBuilder)
 					DeferCleanup(func() {
 						vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
 						vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
@@ -321,7 +320,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				vAppPubReqName := fmt.Sprintf("%s-vapp", vmPublishRequestName)
 				vAppTargetItemName := fmt.Sprintf("%s-vapp-item", vmPubTargetItemName)
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vAppPubReqName, sourceVMName, vAppTargetItemName, targetLocationK8sCLName)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				createVMPublishRequest(ctx, *config, clusterProxy, vmPubReqBuilder)
 				DeferCleanup(func() {
 					vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, vAppPubReqName)
 					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vAppPubReqName)
@@ -425,7 +424,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			It("should publish the VM to an inventory library, deploy from the published image, and reject a duplicate publish", Label("smoke"), func() {
 				// Publish the VM to the inventory library.
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, inventoryCL.Name)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				createVMPublishRequest(ctx, *config, clusterProxy, vmPubReqBuilder)
 
 				// Publishing to an Inventory library clones the source VM as a
 				// template via vSphere's CloneVM_Task, which can take far longer
@@ -468,7 +467,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				// Register cleanup for the duplicate publish request.
 				dupPublishRequestName := fmt.Sprintf("%s-%s", vmPubSpecName, capiutil.RandomString(4))
 				dupPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, dupPublishRequestName, input.LinuxVMName, vmPubTargetItemName, inventoryCL.Name)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, dupPubReqBuilder)
+				createVMPublishRequest(ctx, *config, clusterProxy, dupPubReqBuilder)
 				DeferCleanup(func() {
 					vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
 					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, dupPublishRequestName)
@@ -551,7 +550,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 
 				By("Issuing a publish request against the inventory content library")
 				vmPubReqBuilder := generateVMPublishRequestBuilder(input.WCPNamespaceName, vmPublishRequestName, input.LinuxVMName, vmPubTargetItemName, inventoryCL.Name)
-				createVMPublishRequest(ctx, *config, svClusterClient, *clusterProxy, vmPubReqBuilder)
+				createVMPublishRequest(ctx, *config, clusterProxy, vmPubReqBuilder)
 				DeferCleanup(func() {
 					vmoperator.DeleteVirtualMachinePublishRequest(ctx, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
 					vmoperator.WaitForVirtualMachinePublishRequestToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, vmPublishRequestName)
@@ -671,12 +670,11 @@ func generateVMPublishRequestBuilder(
 func createVMPublishRequest(
 	ctx context.Context,
 	config e2eConfig.E2EConfig,
-	client ctrlclient.Client,
-	clusterProxy common.VMServiceClusterProxy,
+	clusterProxy framework.ClusterProxyInterface,
 	vmPubReqBuilder manifestbuilders.VirtualMachinePublishRequestYaml) {
-	vmPubReqYaml := manifestbuilders.GetVirtualMachinePublishRequestYaml(vmPubReqBuilder)
-	e2eframework.Logf("%v", string(vmPubReqYaml))
-	Expect(clusterProxy.CreateWithArgs(ctx, vmPubReqYaml)).NotTo(HaveOccurred(), "failed to create VirtualMachinePublishRequest")
+	client := clusterProxy.GetClient()
+	vmPubReq := manifestbuilders.VirtualMachinePublishRequestA2(vmPubReqBuilder)
+	Expect(client.Create(ctx, vmPubReq)).NotTo(HaveOccurred(), "failed to create VirtualMachinePublishRequest")
 
 	namespace, name := vmPubReqBuilder.Namespace, vmPubReqBuilder.Name
 	Eventually(func() bool {
@@ -801,7 +799,7 @@ func validateContentLibraryV2(ctx context.Context, svClusterClient ctrlclient.Cl
 func setupNonAdminUserForTests(
 	ctx context.Context,
 	vimClient *vim25.Client,
-	svClusterProxy *common.VMServiceClusterProxy) (*vcenter.User, ctrlclient.Client) {
+	svClusterProxy framework.ClusterProxyInterface) (*vcenter.User, ctrlclient.Client) {
 
 	By("Creating non-admin user and assign it to SupervisorProviderAdministrators group")
 	sshCommandRunner, _, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, svClusterProxy.GetKubeconfigPath())

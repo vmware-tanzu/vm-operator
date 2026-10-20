@@ -71,7 +71,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			wcpClient        wcp.WorkloadManagementAPI
 			config           *e2eConfig.E2EConfig
 			clusterProxy     framework.ClusterProxyInterface
-			svClusterConfig  *e2eConfig.ManagementClusterConfig
 			svClusterClient  ctrlclient.Client
 			clusterResources *e2eConfig.Resources
 			vimClient        *vim25.Client
@@ -94,7 +93,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			wcpClient = input.WCPClient
 			config = input.Config
 			clusterProxy = input.ClusterProxy
-			svClusterConfig = config.InfraConfig.ManagementClusterConfig
+			svClusterConfig := config.InfraConfig.ManagementClusterConfig
 			clusterResources = svClusterConfig.Resources
 
 			// Skip testing if WCP_VM_Image_Registry FSS is not enabled.

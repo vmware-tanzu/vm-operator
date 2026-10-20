@@ -48,20 +48,18 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 	)
 
 	var (
-		input                 VMLongevityInput
-		wcpClient             wcp.WorkloadManagementAPI
-		config                *e2eConfig.E2EConfig
-		clusterProxy          wcpframework.WCPClusterProxyInterface
-		svClusterConfig       *e2eConfig.ManagementClusterConfig
-		svClusterClient       ctrlclient.Client
-		clusterResources      *e2eConfig.Resources
-		secondNSContext       wcpframework.NamespaceContext
-		vmName                string
-		classReady            metav1.Condition
-		imageReady            metav1.Condition
-		storageReady          metav1.Condition
-		linuxImageDisplayName string
-		linuxVMIName          string
+		input            VMLongevityInput
+		wcpClient        wcp.WorkloadManagementAPI
+		config           *e2eConfig.E2EConfig
+		clusterProxy     wcpframework.WCPClusterProxyInterface
+		svClusterClient  ctrlclient.Client
+		clusterResources *e2eConfig.Resources
+		secondNSContext  wcpframework.NamespaceContext
+		vmName           string
+		classReady       metav1.Condition
+		imageReady       metav1.Condition
+		storageReady     metav1.Condition
+		linuxVMIName     string
 	)
 
 	BeforeEach(func() {
@@ -77,10 +75,10 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 		wcpClient = input.WCPClient
 		config = input.Config
 		clusterProxy = input.ClusterProxy
-		svClusterConfig = config.InfraConfig.ManagementClusterConfig
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = clusterProxy.GetClient()
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 

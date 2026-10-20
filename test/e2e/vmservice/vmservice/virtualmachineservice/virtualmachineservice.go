@@ -46,12 +46,10 @@ func VirtualMachineServiceSpec(ctx context.Context, inputGetter func() SpecInput
 	var (
 		input            SpecInput
 		config           *e2eConfig.E2EConfig
-		clusterProxy     framework.ClusterProxyInterface
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 
-		linuxImageDisplayName string
-		linuxVMIName          string
+		linuxVMIName string
 
 		selectorKey   string
 		vmServiceName string
@@ -70,12 +68,12 @@ func VirtualMachineServiceSpec(ctx context.Context, inputGetter func() SpecInput
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
-		clusterProxy = input.ClusterProxy
+		clusterProxy := input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		suffix := capiutil.RandomString(4)

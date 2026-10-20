@@ -131,10 +131,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 						ImageName:    linuxVMIName,
 						ClassName:    clusterResources.VMClassName,
 						StorageClass: clusterResources.StorageClassName,
-						Reserved: &vmopv1.VirtualMachineReservedSpec{
-							ResourcePolicyName: clusterResources.VMResourcePolicyName,
-						},
-						PowerState: powerState,
+						PowerState:   powerState,
 					},
 				},
 			},

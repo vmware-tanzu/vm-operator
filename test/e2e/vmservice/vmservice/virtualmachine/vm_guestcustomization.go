@@ -519,7 +519,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			Name:             vmName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
 		v1a2vmParameters = manifestbuilders.VirtualMachineYaml{
@@ -527,7 +526,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			Name:             vmName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
 		v1a5vmParameters = manifestbuilders.VirtualMachineYaml{
@@ -535,7 +533,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			Name:             vmName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))

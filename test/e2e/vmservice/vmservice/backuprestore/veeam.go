@@ -358,7 +358,6 @@ func (t *testEnv) createVM(ctx context.Context, vmName string, secretYaml []byte
 		Name:             vmName,
 		VMClassName:      resources.VMClassName,
 		StorageClassName: resources.StorageClassName,
-		ResourcePolicy:   resources.VMResourcePolicyName,
 		ImageName:        t.linuxVMIName,
 		Bootstrap: manifestbuilders.Bootstrap{
 			CloudInit: &manifestbuilders.CloudInit{

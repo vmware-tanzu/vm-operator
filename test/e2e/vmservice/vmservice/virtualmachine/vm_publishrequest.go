@@ -345,9 +345,6 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 						PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
 					},
 				}
-				if clusterResources.VMResourcePolicyName != "" {
-					vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
-				}
 				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, deployedVMName)
 

@@ -114,9 +114,6 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 						PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
 					},
 				}
-				if clusterResources.VMResourcePolicyName != "" {
-					vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
-				}
 				vmoperator.CreateVirtualMachine(ctx, config, input.ClusterProxy, vmToCreate, false)
 
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
@@ -135,11 +132,10 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 						Name:      vmName,
 					},
 					Spec: vmopv1a1.VirtualMachineSpec{
-						ImageName:          linuxVMIName,
-						ClassName:          clusterResources.VMClassName,
-						StorageClass:       clusterResources.StorageClassName,
-						ResourcePolicyName: clusterResources.VMResourcePolicyName,
-						PowerState:         vmopv1a1.VirtualMachinePoweredOn,
+						ImageName:    linuxVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a1.VirtualMachinePoweredOn,
 					},
 				}
 				vmoperator.CreateVirtualMachine(ctx, config, input.ClusterProxy, vmToCreate, false)

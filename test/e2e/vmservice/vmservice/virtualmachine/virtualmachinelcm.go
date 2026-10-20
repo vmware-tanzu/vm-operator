@@ -169,9 +169,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				PowerState:   vmopv1a2.VirtualMachinePowerStateOff,
 			},
 		}
-		if clusterResources.VMResourcePolicyName != "" {
-			vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
-		}
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -279,9 +276,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
 			},
 		}
-		if clusterResources.VMResourcePolicyName != "" {
-			vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
-		}
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -337,9 +331,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
 			},
 		}
-		if clusterResources.VMResourcePolicyName != "" {
-			vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
-		}
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -371,7 +362,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			ImageName:        linuxVMIName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOff",
 		}
 		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
@@ -453,7 +443,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			ImageName:        vmiName,
 			VMClassName:      clusterResources.VMClassName,
 			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 		}
 
@@ -530,9 +519,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
 			},
 		}
-		if clusterResources.VMResourcePolicyName != "" {
-			vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
-		}
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		By("Verify that we have a single VirtualMachine with expected condition")
@@ -574,9 +560,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				StorageClass: clusterResources.StorageClassName,
 				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
 			},
-		}
-		if clusterResources.VMResourcePolicyName != "" {
-			vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
 		}
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
@@ -648,9 +631,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				StorageClass: clusterResources.StorageClassName,
 				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
 			},
-		}
-		if clusterResources.VMResourcePolicyName != "" {
-			vmToCreate.Spec.Reserved = &vmopv1a2.VirtualMachineReservedSpec{ResourcePolicyName: clusterResources.VMResourcePolicyName}
 		}
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
@@ -1056,7 +1036,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				ImageName:        tmpNamespaceVMIName,
 				VMClassName:      clusterResources.VMClassName,
 				StorageClassName: clusterResources.StorageClassName,
-				ResourcePolicy:   clusterResources.VMResourcePolicyName,
 				PowerState:       "PoweredOn",
 				Policies: []vmopv1.PolicySpec{
 					{

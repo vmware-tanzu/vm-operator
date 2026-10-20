@@ -152,7 +152,6 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 			VMClassName:      clusterResources.VMClassName,
 			ImageName:        linuxVMIName,
 			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
 			PowerState:       "PoweredOn",
 			Bootstrap: manifestbuilders.Bootstrap{
 				CloudInit: &manifestbuilders.CloudInit{

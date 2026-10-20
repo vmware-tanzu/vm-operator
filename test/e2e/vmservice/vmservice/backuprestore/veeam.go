@@ -165,9 +165,9 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 			ns := input.WCPNamespaceName
 			vmName := fmt.Sprintf("%s-existing-%s", specName, capiutil.RandomString(4))
 			secretName := vmName + "-cloud-config"
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfigSeedData(manifestbuilders.Secret{Namespace: ns, Name: secretName})
+			secret := manifestbuilders.SeedDataCloudConfigSecret(manifestbuilders.Secret{Namespace: ns, Name: secretName})
 
-			vm := t.createVM(ctx, vmName, secretYaml, secretName)
+			vm := t.createVM(ctx, vmName, secret)
 
 			By("Wait for the guest to seed data on the boot and data disks")
 			vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
@@ -338,14 +338,14 @@ func (t *testEnv) ensureVCenterRegistered(ctx context.Context) {
 // cloud-config Secret, waits until VM Operator has backfilled the boot disk as
 // a PVC and written an up-to-date backup, and returns the VM. Everything it
 // creates is deleted when the test ends.
-func (t *testEnv) createVM(ctx context.Context, vmName string, secretYaml []byte, secretName string) *vmopv1.VirtualMachine {
+func (t *testEnv) createVM(ctx context.Context, vmName string, secret *corev1.Secret) *vmopv1.VirtualMachine {
 	ns := t.input.WCPNamespaceName
 	pvcName := vmName + "-data"
 	resources := t.config.InfraConfig.ManagementClusterConfig.Resources
 
-	Expect(t.clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the cloud-config Secret")
+	Expect(t.client.Create(ctx, secret)).To(Succeed(), "failed to create the cloud-config Secret")
 	DeferCleanup(func(ctx SpecContext) {
-		_ = t.client.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: ns}})
+		_ = t.client.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secret.Name, Namespace: ns}})
 	})
 
 	testutils.AssertCreatePVC(t.clusterProxy.GetClient(), pvcName, ns, resources.StorageClassName)
@@ -361,7 +361,7 @@ func (t *testEnv) createVM(ctx context.Context, vmName string, secretYaml []byte
 		ImageName:        t.linuxVMIName,
 		Bootstrap: manifestbuilders.Bootstrap{
 			CloudInit: &manifestbuilders.CloudInit{
-				RawCloudConfig: &manifestbuilders.KeySelector{Key: "user-data", Name: secretName},
+				RawCloudConfig: &manifestbuilders.KeySelector{Key: "user-data", Name: secret.Name},
 			},
 		},
 		PowerState: string(vmopv1.VirtualMachinePowerStateOn),
@@ -430,9 +430,9 @@ type lostVM struct {
 func (t *testEnv) restoreLostVM(ctx context.Context, vmName string) lostVM {
 	ns := t.input.WCPNamespaceName
 	secretName := vmName + "-cloud-config"
-	secretYaml := manifestbuilders.GetSecretYamlCloudConfigSeedData(manifestbuilders.Secret{Namespace: ns, Name: secretName})
+	secret := manifestbuilders.SeedDataCloudConfigSecret(manifestbuilders.Secret{Namespace: ns, Name: secretName})
 
-	vm := t.createVM(ctx, vmName, secretYaml, secretName)
+	vm := t.createVM(ctx, vmName, secret)
 	oldMoID := vm.Status.UniqueID
 
 	By("Wait for the guest to seed data on the boot and data disks")

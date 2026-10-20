@@ -37,33 +37,48 @@ write_files:
 // GetConfigMapYamlGOSC returns a ConfigMap whose user-data is a plaintext
 // cloud-init configuration.
 func GetConfigMapYamlGOSC(cm ConfigMap) []byte {
-	return ToYAML(&corev1.ConfigMap{
+	return ToYAML(CloudConfigMap(cm))
+}
+
+// CloudConfigMap returns a ConfigMap containing plaintext cloud-init user-data.
+func CloudConfigMap(cm ConfigMap) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
 		TypeMeta:   typeMeta("v1", "ConfigMap"),
 		ObjectMeta: configMapObjectMeta(cm),
 		Data: map[string]string{
 			"user-data": goscCloudConfig,
 		},
-	})
+	}
 }
 
 // GetConfigMapYamlOvfEnv returns a ConfigMap whose user-data is the same
 // cloud-init configuration as GetConfigMapYamlGOSC, but base64-encoded, as
 // vSphere delivers it through the guestinfo.ovfEnv OVF property.
 func GetConfigMapYamlOvfEnv(cm ConfigMap) []byte {
-	return ToYAML(&corev1.ConfigMap{
+	return ToYAML(OvfEnvConfigMap(cm))
+}
+
+// OvfEnvConfigMap returns a ConfigMap containing base64-encoded cloud-init user-data for OVF delivery.
+func OvfEnvConfigMap(cm ConfigMap) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
 		TypeMeta:   typeMeta("v1", "ConfigMap"),
 		ObjectMeta: configMapObjectMeta(cm),
 		Data: map[string]string{
 			"user-data": base64.StdEncoding.EncodeToString([]byte(goscCloudConfig)),
 		},
-	})
+	}
 }
 
 // GetConfigMapYamlVAppConfig returns a ConfigMap whose values are vApp
 // property template expressions evaluated by VM Operator's guest
 // customization engine, not by this package. They are literal strings here.
 func GetConfigMapYamlVAppConfig(cm ConfigMap) []byte {
-	return ToYAML(&corev1.ConfigMap{
+	return ToYAML(VAppConfigMap(cm))
+}
+
+// VAppConfigMap returns a ConfigMap containing vApp property template expressions.
+func VAppConfigMap(cm ConfigMap) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
 		TypeMeta:   typeMeta("v1", "ConfigMap"),
 		ObjectMeta: configMapObjectMeta(cm),
 		Data: map[string]string{
@@ -72,7 +87,7 @@ func GetConfigMapYamlVAppConfig(cm ConfigMap) []byte {
 			"management_ip":      `{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}`,
 			"management_gateway": `{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}`,
 		},
-	})
+	}
 }
 
 func configMapObjectMeta(cm ConfigMap) metav1.ObjectMeta {

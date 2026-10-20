@@ -137,11 +137,11 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		vm2Name = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		secretName = fmt.Sprintf("%s-%s", "secret", capiutil.RandomString(4))
 
-		secretYaml := manifestbuilders.GetSecretYamlCloudConfig(manifestbuilders.Secret{
+		secret := manifestbuilders.CloudConfigSecret(manifestbuilders.Secret{
 			Namespace: input.WCPNamespaceName,
 			Name:      secretName,
 		})
-		Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create secret: %s", string(secretYaml))
+		Expect(svClusterClient.Create(ctx, secret)).To(Succeed(), "failed to create Secret %s/%s", secret.Namespace, secret.Name)
 		vmservice.VerifySecretCreation(ctx, config, svClusterClient, input.WCPNamespaceName, secretName)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)

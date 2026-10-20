@@ -304,8 +304,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Namespace: input.WCPNamespaceName,
 				Name:      secretName,
 			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+			secretToCreate := manifestbuilders.CloudConfigSecret(secret)
+			Expect(clusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
@@ -432,8 +432,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Namespace: input.WCPNamespaceName,
 				Name:      secretName,
 			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+			secretToCreate := manifestbuilders.CloudConfigSecret(secret)
+			Expect(clusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
@@ -667,8 +667,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Namespace: input.WCPNamespaceName,
 				Name:      secretName,
 			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+			secretToCreate := manifestbuilders.CloudConfigSecret(secret)
+			Expect(vmsvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
@@ -902,8 +902,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Namespace: vmNamespace,
 				Name:      secretName,
 			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+			secretToCreate := manifestbuilders.CloudConfigSecret(secret)
+			Expect(vmsvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, vmNamespace, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
@@ -1273,8 +1273,8 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Namespace: input.WCPNamespaceName,
 				Name:      secretName,
 			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data")
+			secretToCreate := manifestbuilders.CloudConfigSecret(secret)
+			Expect(clusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
 			vmParameters := manifestbuilders.VirtualMachineYaml{

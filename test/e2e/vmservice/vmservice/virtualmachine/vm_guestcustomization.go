@@ -394,8 +394,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		svClusterConfig               *e2eConfig.ManagementClusterConfig
 		svClusterClient               ctrlclient.Client
 		clusterResources              *e2eConfig.Resources
-		configMapYaml                 []byte
-		secretYaml                    []byte
 		vmName                        string
 		configMapName                 string
 		secretName                    string
@@ -407,46 +405,48 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		linuxImageDisplayName         string
 	)
 
-	createAndVerifyConfigMap := func(ctx context.Context, transport string) []byte {
-		// Create and apply ConfigMap yaml.
+	createAndVerifyConfigMap := func(ctx context.Context, transport string) *corev1.ConfigMap {
+		// Create the ConfigMap.
 		configMap := manifestbuilders.ConfigMap{
 			Namespace: input.WCPNamespaceName,
 			Name:      configMapName,
 		}
+		var configMapObj *corev1.ConfigMap
 		if transport == cloudInitTransport {
-			configMapYaml = manifestbuilders.GetConfigMapYamlGOSC(configMap)
+			configMapObj = manifestbuilders.CloudConfigMap(configMap)
 		} else if transport == ovfEnvTransport {
-			configMapYaml = manifestbuilders.GetConfigMapYamlOvfEnv(configMap)
+			configMapObj = manifestbuilders.OvfEnvConfigMap(configMap)
 		} else if transport == vAppConfigTransport {
-			configMapYaml = manifestbuilders.GetConfigMapYamlVAppConfig(configMap)
+			configMapObj = manifestbuilders.VAppConfigMap(configMap)
 		}
 
-		Expect(clusterProxy.CreateWithArgs(ctx, configMapYaml)).To(Succeed(), "failed to create configmap", string(configMapYaml))
+		Expect(svClusterClient.Create(ctx, configMapObj)).To(Succeed(), "failed to create configmap")
 		vmservice.VerifyConfigMapCreation(ctx, config, svClusterClient, input.WCPNamespaceName, configMapName)
 
-		return configMapYaml
+		return configMapObj
 	}
 
-	createAndVerifySecret := func(ctx context.Context, transport string) []byte {
-		// Create and apply Secret yaml.
+	createAndVerifySecret := func(ctx context.Context, transport string) *corev1.Secret {
+		// Create the Secret.
 		secret := manifestbuilders.Secret{
 			Namespace: input.WCPNamespaceName,
 			Name:      secretName,
 		}
+		var secretObj *corev1.Secret
 		if transport == cloudInitTransport {
-			secretYaml = manifestbuilders.GetSecretYamlCloudConfig(secret)
+			secretObj = manifestbuilders.CloudConfigSecret(secret)
 		} else if transport == ovfEnvTransport {
-			secretYaml = manifestbuilders.GetSecretYamlOvfEnv(secret)
+			secretObj = manifestbuilders.OvfEnvSecret(secret)
 		} else if transport == vAppConfigTransport {
-			secretYaml = manifestbuilders.GetSecretYamlVAppConfig(secret)
+			secretObj = manifestbuilders.VAppConfigSecret(secret)
 		} else if transport == inlineCloudInit {
-			secretYaml = manifestbuilders.GetSecretYamlInlineCloudInitData(secret)
+			secretObj = manifestbuilders.InlineCloudInitSecret(secret)
 		}
 
-		Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create secret", string(secretYaml))
+		Expect(svClusterClient.Create(ctx, secretObj)).To(Succeed(), "failed to create secret")
 		vmservice.VerifySecretCreation(ctx, config, svClusterClient, input.WCPNamespaceName, secretName)
 
-		return secretYaml
+		return secretObj
 	}
 
 	// createAndVerifyVM creates the VM. v1a2 also supports v1a3.
@@ -539,7 +539,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 	})
 
 	Context("CloudInit", func() {
-		var bootstrapYAML []byte
+		var bootstrapResource ctrlclient.Object
 
 		BeforeEach(func() {
 			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
@@ -554,7 +554,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 		When("ConfigMap is used to provide raw cloud-init config", func() {
 			BeforeEach(func() {
-				bootstrapYAML = createAndVerifyConfigMap(ctx, cloudInitTransport)
+				bootstrapResource = createAndVerifyConfigMap(ctx, cloudInitTransport)
 				vmParameters.ConfigMapName = configMapName
 				createAndVerifyVM(ctx, vmParameters)
 			})
@@ -566,14 +566,14 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				verifyLoginAndRunCmds(ctx, vmIp, cmds, expectedOutput)
 
 				if vmServiceBackupRestoreEnabled {
-					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, vmParameters.Name, vmParameters.Namespace, bootstrapYAML, clusterProxy, config, svClusterClient, wcpClient)
+					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, vmParameters.Name, vmParameters.Namespace, bootstrapResource, clusterProxy, config, svClusterClient, wcpClient)
 				}
 			})
 		})
 
 		When("Secret is used to provide raw cloud-init config", func() {
 			BeforeEach(func() {
-				bootstrapYAML = createAndVerifySecret(ctx, cloudInitTransport)
+				bootstrapResource = createAndVerifySecret(ctx, cloudInitTransport)
 				v1a2vmParameters.Bootstrap.CloudInit.RawCloudConfig = &manifestbuilders.KeySelector{
 					Key:  "user-data",
 					Name: secretName,
@@ -588,14 +588,14 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				verifyLoginAndRunCmds(ctx, vmIp, cmds, expectedOutput)
 
 				if vmServiceBackupRestoreEnabled {
-					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2vmParameters.Name, v1a2vmParameters.Namespace, bootstrapYAML, clusterProxy, config, svClusterClient, wcpClient)
+					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2vmParameters.Name, v1a2vmParameters.Namespace, bootstrapResource, clusterProxy, config, svClusterClient, wcpClient)
 				}
 			})
 		})
 
 		When("InlineCloudConfig is used to provide cloud-init config", func() {
 			BeforeEach(func() {
-				bootstrapYAML = createAndVerifySecret(ctx, inlineCloudInit)
+				bootstrapResource = createAndVerifySecret(ctx, inlineCloudInit)
 
 				inlinedCloudConfig := fmt.Sprintf(`
         defaultUserEnabled: true
@@ -629,7 +629,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				verifyLoginAndRunCmds(ctx, vmIp, cmds, expectedOutput)
 
 				if vmServiceBackupRestoreEnabled {
-					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2vmParameters.Name, v1a2vmParameters.Namespace, bootstrapYAML, clusterProxy, config, svClusterClient, wcpClient)
+					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2vmParameters.Name, v1a2vmParameters.Namespace, bootstrapResource, clusterProxy, config, svClusterClient, wcpClient)
 				}
 			})
 		})

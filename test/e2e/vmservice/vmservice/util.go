@@ -1006,7 +1006,7 @@ func UnregisterPVCVolumes(
 func DeleteVMResource(
 	ctx context.Context,
 	vmName, vmNamespace string,
-	bootstrapResourceYAML []byte,
+	bootstrapResource ctrlclient.Object,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client) string {
@@ -1070,9 +1070,9 @@ func DeleteVMResource(
 
 	vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
 
-	if bootstrapResourceYAML != nil {
+	if bootstrapResource != nil {
 		By("Delete the bootstrap resource")
-		Expect(clusterProxy.DeleteWithArgs(ctx, bootstrapResourceYAML)).To(Succeed(), "failed to delete VM bootstrap resource")
+		Expect(clusterProxy.GetClient().Delete(ctx, bootstrapResource)).To(Succeed(), "failed to delete VM bootstrap resource")
 	}
 
 	return vmMoID
@@ -1107,7 +1107,7 @@ func InvokeRegisterVM(
 func VerifyPostRegisterVM(
 	ctx context.Context,
 	vmName, vmNamespace string,
-	bootstrapResourceYAML []byte,
+	bootstrapResource ctrlclient.Object,
 	expectedRestoredPVCCount int,
 	clusterProxy e2eframework.ClusterProxyInterface,
 	config *config.E2EConfig,
@@ -1173,14 +1173,14 @@ func VerifyPostRegisterVM(
 func VerifyRegisterVMOnlyClassicDisk(
 	ctx context.Context,
 	vmName, vmNamespace string,
-	bootstrapResourceYAML []byte,
+	bootstrapResource ctrlclient.Object,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client,
 	wcpClient wcp.WorkloadManagementAPI) {
 	By("Verifying Register VM...")
 
-	vmMoID := DeleteVMResource(ctx, vmName, vmNamespace, bootstrapResourceYAML, clusterProxy, config, svClusterClient)
+	vmMoID := DeleteVMResource(ctx, vmName, vmNamespace, bootstrapResource, clusterProxy, config, svClusterClient)
 
 	taskInfo, err := InvokeRegisterVM(ctx, vmMoID, vmNamespace, clusterProxy, wcpClient)
 
@@ -1197,7 +1197,7 @@ func VerifyRegisterVMOnlyClassicDisk(
 		ctx,
 		vmName,
 		vmNamespace,
-		bootstrapResourceYAML,
+		bootstrapResource,
 		expectedRestoredPVCCount,
 		clusterProxy,
 		config,
@@ -1246,8 +1246,8 @@ func DeployVMWithCloudInit(
 		Namespace: ns,
 		Name:      secretName,
 	}
-	secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+	secretToCreate := manifestbuilders.CloudConfigSecret(secret)
+	Expect(vmSvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 
 	linuxImageDisplayName := GetDefaultImageDisplayName(clusterResources)
 	linuxVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)

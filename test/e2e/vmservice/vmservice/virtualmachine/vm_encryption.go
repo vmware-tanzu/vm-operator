@@ -60,32 +60,22 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 	)
 
 	var (
-		input                                VMEncryptionInput
 		wcpClient                            wcp.WorkloadManagementAPI
 		config                               *e2eConfig.E2EConfig
 		clusterProxy                         *common.VMServiceClusterProxy
-		svClusterConfig                      *e2eConfig.ManagementClusterConfig
 		svClusterClient                      ctrlclient.Client
 		vCenterClient                        *vim25.Client
 		cryptoManager                        *crypto.ManagerKmip
 		clusterResources                     *e2eConfig.Resources
-		tmpNamespaceCtx                      wcpframework.NamespaceContext
 		tmpNamespaceName                     string
 		vmName                               string
 		vmiName                              string
 		createSpecE2eTestBestEffortSmallVTPM wcp.VMClassSpec
 		byokFSSEnabled                       bool
-		defaultKeyProviderID                 string
-		linuxImageDisplayName                string
-		// cleanupNativeKeyProvider removes the native key provider if it was
-		// registered by this suite rather than pre-configured by the testbed.
-		cleanupNativeKeyProvider func()
 	)
 
 	BeforeEach(func() {
-		var err error
-
-		input = inputGetter()
+		input := inputGetter()
 		Expect(input.Config).ToNot(BeNil(), "Invalid argument. input.E2EConfig can't be nil when calling %s spec", specName)
 		Expect(input.Config.InfraConfig).ToNot(BeNil(), "Invalid argument. input.E2EConfig.InfraConfig can't be nil when calling %s spec", specName)
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
@@ -97,7 +87,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		wcpClient = input.WCPClient
 		config = input.Config
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
-		svClusterConfig = config.InfraConfig.ManagementClusterConfig
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = clusterProxy.GetClient()
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
@@ -109,11 +99,12 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		})
 
 		cryptoManager = crypto.NewManagerKmip(vCenterClient)
-		defaultKeyProviderID, err = cryptoManager.GetDefaultKmsClusterID(ctx, nil, true)
+		defaultKeyProviderID, err := cryptoManager.GetDefaultKmsClusterID(ctx, nil, true)
 		Expect(err).NotTo(HaveOccurred(), "failed to get default Key Provider ID")
 
 		By("Ensure native key provider exists (create via WCP if not pre-configured)")
-		cleanupNativeKeyProvider, err = vcenter.EnsureNativeKeyProvider(ctx, vCenterClient, wcpClient, nativeKeyProviderID)
+		// Remove the native key provider if this test registered it.
+		cleanupNativeKeyProvider, err := vcenter.EnsureNativeKeyProvider(ctx, vCenterClient, wcpClient, nativeKeyProviderID)
 		Expect(err).NotTo(HaveOccurred(), "failed to ensure native key provider %q", nativeKeyProviderID)
 		DeferCleanup(cleanupNativeKeyProvider)
 		DeferCleanup(func(ctx context.Context) {
@@ -124,7 +115,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		byokFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSBYOK"))
 
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 
 		vmName = fmt.Sprintf("%s-vm-%s", specName, capiutil.RandomString(4))
 
@@ -136,7 +127,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
 
 		tmpNamespaceName = fmt.Sprintf("%s-ns-%s", specName, capiutil.RandomString(4))
-		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
+		tmpNamespaceCtx, err := clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
 		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace %s", tmpNamespaceName)
 		DeferCleanup(func() {
 			if tmpNamespaceCtx.GetNamespace() != nil {

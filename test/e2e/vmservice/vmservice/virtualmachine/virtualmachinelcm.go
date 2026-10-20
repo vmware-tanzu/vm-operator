@@ -1098,17 +1098,11 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		var (
 			tmpNamespaceName         string
 			tmpNamespaceVMIName      string
-			mandatoryComputePolicyID string
-			optionalComputePolicyID  string
 			mandatoryInfraPolicyName string
 			optionalInfraPolicyName  string
-			tagCategoryID            string
 			mandatoryHostTagID       string
 			mandatoryVMTagID         string
-			optionalHostTagID        string
 			optionalVMTagID          string
-			hostID                   string
-			existingVMName           string
 		)
 
 		BeforeEach(func() {
@@ -1132,7 +1126,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 			By("Creating tag category for placement policies")
 			tagCategoryName := fmt.Sprintf("placement-policy-test-%s", tmpNamespaceName)
-			tagCategoryID, err = input.WCPClient.CreateTagCategory(tagCategoryName, "Tag category for placement policy E2E test")
+			tagCategoryID, err := input.WCPClient.CreateTagCategory(tagCategoryName, "Tag category for placement policy E2E test")
 			Expect(err).NotTo(HaveOccurred(), "failed to create tag category")
 			Expect(tagCategoryID).NotTo(BeEmpty(), "tag category ID should be returned")
 
@@ -1149,7 +1143,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 			By("Creating optional policy tags")
 			optionalHostTagName := fmt.Sprintf("optional-host-tag-%s", tmpNamespaceName)
-			optionalHostTagID, err = input.WCPClient.CreateTag(optionalHostTagName, "Optional host tag", tagCategoryID)
+			optionalHostTagID, err := input.WCPClient.CreateTag(optionalHostTagName, "Optional host tag", tagCategoryID)
 			Expect(err).NotTo(HaveOccurred(), "failed to create optional host tag")
 			Expect(optionalHostTagID).NotTo(BeEmpty(), "optional host tag ID should be returned")
 
@@ -1162,7 +1156,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			hostIDs, err := input.WCPClient.ListHostIDs()
 			Expect(err).NotTo(HaveOccurred(), "failed to list host IDs")
 			Expect(hostIDs).NotTo(BeEmpty(), "at least one host should be available")
-			hostID = hostIDs[0]
+			hostID := hostIDs[0]
 
 			By("Assigning tags to the host")
 			Expect(input.WCPClient.AssignTagsToHost([]string{mandatoryHostTagID, optionalHostTagID}, hostID)).To(Succeed(), "failed to assign tags to host")
@@ -1175,7 +1169,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				VMTagID:     mandatoryVMTagID,
 				Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
 			}
-			mandatoryComputePolicyID, err = input.WCPClient.CreateComputePolicy(mandatoryComputePolicySpec)
+			mandatoryComputePolicyID, err := input.WCPClient.CreateComputePolicy(mandatoryComputePolicySpec)
 			Expect(err).NotTo(HaveOccurred(), "failed to create mandatory compute policy")
 			Expect(mandatoryComputePolicyID).NotTo(BeEmpty(), "mandatory compute policy ID should be returned")
 
@@ -1187,7 +1181,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 				VMTagID:     optionalVMTagID,
 				Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
 			}
-			optionalComputePolicyID, err = input.WCPClient.CreateComputePolicy(optionalComputePolicySpec)
+			optionalComputePolicyID, err := input.WCPClient.CreateComputePolicy(optionalComputePolicySpec)
 			Expect(err).NotTo(HaveOccurred(), "failed to create optional compute policy")
 			Expect(optionalComputePolicyID).NotTo(BeEmpty(), "optional compute policy ID should be returned")
 
@@ -1292,7 +1286,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		When("policies are applied retroactively", func() {
 			It("should create PolicyEvaluation for existing VMs", func() {
 				By("Creating a VM before applying new policies")
-				existingVMName = fmt.Sprintf("existing-vm-%s", capiutil.RandomString(4))
+				existingVMName := fmt.Sprintf("existing-vm-%s", capiutil.RandomString(4))
 				vmToCreate := &vmopv1a5.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: tmpNamespaceName,

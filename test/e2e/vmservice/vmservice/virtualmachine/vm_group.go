@@ -729,7 +729,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 	Context("Group placement with affinity and anti-affinity", func() {
 		var (
 			tmpNamespaceName    string
-			tmpNamespaceCtx     wcpframework.NamespaceContext
 			tmpNamespaceVMIName string
 
 			createVMWithAffinityAndAntiAffinityFunc = func(vmName, affinityTier string, antiAffinityTiers []string) {
@@ -810,7 +809,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			clIDs := []string{vmserviceCLID}
 			vmClassNames := []string{clusterResources.VMClassName}
 			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
-			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)), input.ArtifactFolder)
+			tmpNamespaceCtx, err := clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)), input.ArtifactFolder)
 			Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
 			Expect(tmpNamespaceCtx.GetNamespace()).ToNot(BeNil(), "namespace should not be nil")
 			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
@@ -1287,7 +1286,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		When("VMs have both AF/AAF and IaaS Policies applied", func() {
 			var (
 				tagManager        *tags.Manager
-				tagIDs            []string
 				policyNames       []string
 				policyNameToTagID map[string]string
 			)
@@ -1311,7 +1309,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 				By("Creating 3 new tags under the tag category")
 
-				tagIDs = make([]string, 3)
+				tagIDs := make([]string, 3)
 				for i := range tagIDs {
 					tagIDs[i], err = input.WCPClient.CreateTag(fmt.Sprintf("tag-%s-%d", capiutil.RandomString(4), i+1), "test-tag", tagCategoryID)
 					Expect(err).NotTo(HaveOccurred(), "failed to create tag")
@@ -1476,7 +1474,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		var (
 			tmpNamespaceName    string
-			tmpNamespaceCtx     wcpframework.NamespaceContext
 			tmpNamespaceVMIName string
 
 			// topologyKey is the topology key used by the affinity terms of
@@ -1849,7 +1846,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			clIDs := []string{vmserviceCLID}
 			vmClassNames := []string{clusterResources.VMClassName}
 			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
-			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)), input.ArtifactFolder)
+			tmpNamespaceCtx, err := clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6)), input.ArtifactFolder)
 			Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
 			Expect(tmpNamespaceCtx.GetNamespace()).ToNot(BeNil(), "namespace should not be nil")
 			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name

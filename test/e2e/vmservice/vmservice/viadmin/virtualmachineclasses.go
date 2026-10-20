@@ -19,7 +19,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/kubectl"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	config "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
@@ -52,7 +51,7 @@ func VIAdminVMClassSpec(ctx context.Context, inputGetter func() VIAdminVMClassSp
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 		wcpClient = input.WCPClient
 		config = input.Config
-		clusterProxy := input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy := input.ClusterProxy
 		svClusterClient := clusterProxy.GetClient()
 		namespacedVMClassFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSNamespacedVMClass"))
 		vmImageRegistryEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMImageRegistry"))

@@ -1236,21 +1236,22 @@ func LabelVM(ctx context.Context, config *config.E2EConfig, clusterProxy *common
 // DeployVMWithCloudInit deploys a VM with the default cloud-init config passed.
 func DeployVMWithCloudInit(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	e2eConfig *config.E2EConfig,
 	clusterResources *config.Resources,
 	ns, vmName, groupName string,
 	pvcs []manifestbuilders.PVC) {
+	client := vmSvcClusterProxy.GetClient()
 	secretName := "cloud-config-data-" + capiutil.RandomString(4)
 	secret := manifestbuilders.Secret{
 		Namespace: ns,
 		Name:      secretName,
 	}
 	secretToCreate := manifestbuilders.CloudConfigSecret(secret)
-	Expect(vmSvcClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
+	Expect(client.Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 
 	linuxImageDisplayName := GetDefaultImageDisplayName(clusterResources)
-	linuxVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)
+	linuxVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, client, ns, linuxImageDisplayName)
 
 	vmParameters := manifestbuilders.VirtualMachineYaml{
 		Namespace:        ns,
@@ -1265,9 +1266,15 @@ func DeployVMWithCloudInit(
 		vmParameters.GroupName = groupName
 	}
 
-	vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-	framework.Logf("Create VirtualMachine:\n%s", string(vmYaml))
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM:\n%s", string(vmYaml))
+	vm, err := manifestbuilders.VirtualMachineA5(vmParameters)
+	Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+	claims, err := manifestbuilders.PersistentVolumeClaims(pvcs)
+	Expect(err).NotTo(HaveOccurred(), "failed to build PVCs")
+
+	Expect(client.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s/%s", ns, vmName)
+	for _, claim := range claims {
+		Expect(client.Create(ctx, claim)).To(Succeed(), "failed to create PVC %s/%s", claim.Namespace, claim.Name)
+	}
 }
 
 func CreateVMGroup(

@@ -19,7 +19,6 @@ import (
 
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
@@ -56,7 +55,7 @@ func VIAdminStoragePolicySpec(ctx context.Context, inputGetter func() VIAdminSto
 		input = inputGetter()
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 		config = input.Config
-		clusterProxy := input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy := input.ClusterProxy
 		svClient = clusterProxy.GetClient()
 		kubeconfigPath = clusterProxy.GetKubeconfigPath()
 		vimClient = vcenter.NewVimClientFromKubeconfig(ctx, kubeconfigPath)

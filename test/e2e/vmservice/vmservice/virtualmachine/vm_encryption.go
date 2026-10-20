@@ -25,11 +25,11 @@ import (
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/testutils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
@@ -257,17 +257,22 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(err).ToNot(HaveOccurred())
 
 		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
 
 		By("Create Encryption Class")
 
-		class := manifestbuilders.EncryptionClass{
-			Namespace:   tmpNamespaceName,
-			Name:        nativeKeyProviderID,
-			KeyProvider: nativeKeyProviderID,
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nativeKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: nativeKeyProviderID,
+			},
 		}
-		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider) // TODO: should not need to have a default provider set
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider) // TODO: should not need to have a default provider set
 
 		By("Create VM Class with vTPM and ensure namespace has access")
 
@@ -321,17 +326,22 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(err).ToNot(HaveOccurred())
 
 		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
 
 		By("Create Encryption Class")
 
-		class := manifestbuilders.EncryptionClass{
-			Namespace:   tmpNamespaceName,
-			Name:        standardKeyProviderID,
-			KeyProvider: standardKeyProviderID,
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
 		}
-		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider) // Required when using encryption storage policy
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider) // Required when using encryption storage policy
 
 		By("Create VM using invalid encryption class name")
 
@@ -365,7 +375,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
-		Expect(cryptoStatus.ProviderID).To(Equal(class.KeyProvider))
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
 	})
 
 	It("Create an Encrypted VirtualMachine using an encryption key id", Label("experimental"), FlakeAttempts(3), func() {
@@ -378,21 +388,26 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(err).ToNot(HaveOccurred())
 
 		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
 
 		By("Create Encryption Class with invalid key")
 
 		keyID, err := cryptoManager.GenerateKey(ctx, standardKeyProviderID)
 		Expect(err).ToNot(HaveOccurred())
 
-		class := manifestbuilders.EncryptionClass{
-			Namespace:   tmpNamespaceName,
-			Name:        standardKeyProviderID,
-			KeyProvider: standardKeyProviderID,
-			KeyID:       keyID + "-invalid",
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+				KeyID:       keyID + "-invalid",
+			},
 		}
-		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider)
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider)
 
 		By("Create PVC using encryption class")
 
@@ -440,15 +455,15 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		By("Update encryption class using valid key")
 
-		class.KeyID = keyID
-		ecYaml = manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.ApplyWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to update EncryptionClass:\n %s", string(ecYaml))
+		base := class.DeepCopy()
+		class.Spec.KeyID = keyID
+		Expect(adminClient.Patch(ctx, class, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update EncryptionClass")
 
 		By("Expect VM to be created using updated encryption class key")
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
-		Expect(cryptoStatus.ProviderID).To(Equal(class.KeyProvider))
-		Expect(cryptoStatus.KeyID).To(Equal(class.KeyID))
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
+		Expect(cryptoStatus.KeyID).To(Equal(class.Spec.KeyID))
 	})
 
 	It("Encrypt VM config and classic disks using encryption storage policy", func() {
@@ -462,16 +477,21 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(err).ToNot(HaveOccurred())
 
 		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
 
 		By("Create Encryption Class for the VM")
 
-		class := manifestbuilders.EncryptionClass{
-			Namespace:   tmpNamespaceName,
-			Name:        nativeKeyProviderID,
-			KeyProvider: nativeKeyProviderID,
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nativeKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: nativeKeyProviderID,
+			},
 		}
-		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
 
 		By("Create VM using encryption storage policy and encryption class")
 
@@ -498,7 +518,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 
 		By("Verify VM config and disks are encrypted")
-		Expect(cryptoStatus.ProviderID).To(Equal(class.KeyProvider))
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
 		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeConfig))
 		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeDisks))
 	})
@@ -512,17 +532,22 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(err).ToNot(HaveOccurred())
 
 		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
 
 		By("Create Encryption Class for the PVC")
 
-		class := manifestbuilders.EncryptionClass{
-			Namespace:   tmpNamespaceName,
-			Name:        standardKeyProviderID,
-			KeyProvider: standardKeyProviderID,
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
 		}
-		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider)
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider)
 
 		By("Create PVC with encryption class annotation")
 
@@ -571,7 +596,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 
 		By("Verify VM is encrypted with the encryption class provider")
-		Expect(cryptoStatus.ProviderID).To(Equal(class.KeyProvider))
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
 		Expect(cryptoStatus.KeyID).NotTo(BeEmpty())
 
 		By("Verify crypto status of volumes reflects volume is encrypted using encryption class from annotation")
@@ -584,7 +609,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 			for _, volume := range vm.Status.Volumes {
 				volumeStatusCrypto := volume.Crypto
 				g.Expect(volumeStatusCrypto).NotTo(BeNil())
-				g.Expect(volumeStatusCrypto.ProviderID).To(Equal(class.KeyProvider))
+				g.Expect(volumeStatusCrypto.ProviderID).To(Equal(class.Spec.KeyProvider))
 				g.Expect(volumeStatusCrypto.KeyID).NotTo(BeEmpty())
 			}
 		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for PVC volume encryption: %s", vmName)
@@ -603,18 +628,23 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(err).ToNot(HaveOccurred())
 
 		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
 
 		useKeyProvider(ctx, config, cryptoManager, standardKeyProviderID)
 
 		By("Create Encryption Class for the VM")
 
-		class := manifestbuilders.EncryptionClass{
-			Namespace:   tmpNamespaceName,
-			Name:        standardKeyProviderID,
-			KeyProvider: standardKeyProviderID,
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
 		}
-		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
 
 		By("Create PVC without encryption class annotation")
 
@@ -658,7 +688,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 
 		By("Verify VM is encrypted")
-		Expect(cryptoStatus.ProviderID).To(Equal(class.KeyProvider))
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
 		Expect(cryptoStatus.KeyID).NotTo(BeEmpty())
 
 		By("Verify crypto status of volumes reflects volume is encrypted using the default key provider")
@@ -685,17 +715,22 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(err).ToNot(HaveOccurred())
 
 		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
 
 		By("Create initial Encryption Class")
 
-		class := manifestbuilders.EncryptionClass{
-			Namespace:   tmpNamespaceName,
-			Name:        standardKeyProviderID,
-			KeyProvider: standardKeyProviderID,
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
 		}
-		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
-		useKeyProvider(ctx, config, cryptoManager, class.KeyProvider)
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider)
 
 		By("Create PVC with encryption class annotation")
 
@@ -742,7 +777,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
-		Expect(cryptoStatus.ProviderID).To(Equal(class.KeyProvider))
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
 		Expect(cryptoStatus.KeyID).NotTo(BeEmpty())
 		initialKeyID := cryptoStatus.KeyID
 
@@ -751,9 +786,9 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		newKeyID, err := cryptoManager.GenerateKey(ctx, standardKeyProviderID)
 		Expect(err).ToNot(HaveOccurred())
 
-		class.KeyID = newKeyID
-		ecYaml = manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.ApplyWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to update EncryptionClass:\n %s", string(ecYaml))
+		base := class.DeepCopy()
+		class.Spec.KeyID = newKeyID
+		Expect(adminClient.Patch(ctx, class, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update EncryptionClass")
 
 		By("Verify VM is re-encrypted with new key")
 		Eventually(func(g Gomega) {
@@ -790,27 +825,35 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(err).ToNot(HaveOccurred())
 
 		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
 
 		By("Create Encryption Class using native key provider for the VM")
 
-		class := manifestbuilders.EncryptionClass{
-			Namespace:   tmpNamespaceName,
-			Name:        nativeKeyProviderID,
-			KeyProvider: nativeKeyProviderID,
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nativeKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: nativeKeyProviderID,
+			},
 		}
-		ecYaml := manifestbuilders.GetEncryptionClassYaml(class)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, ecYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(ecYaml))
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
 		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		By("Create Encryption Class using standard key provider for the PVC")
 
-		pvcClass := manifestbuilders.EncryptionClass{
-			Namespace:   tmpNamespaceName,
-			Name:        standardKeyProviderID,
-			KeyProvider: standardKeyProviderID,
+		pvcClass := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
 		}
-		pvcECYaml := manifestbuilders.GetEncryptionClassYaml(pvcClass)
-		Expect(adminClusterProxy.CreateWithArgs(ctx, pvcECYaml)).Should(Succeed(), "failed to create EncryptionClass:\n %s", string(pvcECYaml))
+		Expect(adminClient.Create(ctx, pvcClass)).Should(Succeed(), "failed to create EncryptionClass %s/%s", pvcClass.Namespace, pvcClass.Name)
 
 		By("Create PVC annotated with the standard key provider encryption class")
 

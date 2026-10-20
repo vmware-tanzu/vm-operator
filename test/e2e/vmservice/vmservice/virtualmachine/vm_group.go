@@ -21,7 +21,6 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -1614,23 +1613,25 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				}
 			}
 
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        tmpNamespaceName,
-				Name:             vmName,
-				GroupName:        vmgRootName,
-				Labels:           labels,
-				ImageName:        tmpNamespaceVMIName,
-				VMClassName:      clusterResources.VMClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				PowerState:       string(vmopv1.VirtualMachinePowerStateOff),
-				Affinity: &vmopv1.AffinitySpec{
-					VMAffinity:     affinityLabelSelector,
-					VMAntiAffinity: antiAffinityLabelSelector,
+			vm := &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: tmpNamespaceName,
+					Name:      vmName,
+					Labels:    labels,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					GroupName:    vmgRootName,
+					ImageName:    tmpNamespaceVMIName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1.VirtualMachinePowerStateOff,
+					Affinity: &vmopv1.AffinitySpec{
+						VMAffinity:     affinityLabelSelector,
+						VMAntiAffinity: antiAffinityLabelSelector,
+					},
 				},
 			}
-			vmYAML := manifestbuilders.GetVirtualMachineYamlA6(vmParameters)
-			e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
-			Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vm.Name)
 		}
 
 		verifyAffinity := func(vmHosts map[string]string, affinedVms []string) {

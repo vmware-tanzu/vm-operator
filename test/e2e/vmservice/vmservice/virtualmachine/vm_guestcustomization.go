@@ -420,7 +420,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		wcpClient                     wcp.WorkloadManagementAPI
 		vm                            *vmopv1a1.VirtualMachine
 		v1a2VM                        *vmopv1a2.VirtualMachine
-		v1a5VM                        *vmopv1a5.VirtualMachine
 		linuxImageDisplayName         string
 	)
 
@@ -538,17 +537,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
 			},
 		}
-		v1a5VM = &vmopv1a5.VirtualMachine{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: input.WCPNamespaceName,
-				Name:      vmName,
-			},
-			Spec: vmopv1a5.VirtualMachineSpec{
-				ClassName:    clusterResources.VMClassName,
-				StorageClass: clusterResources.StorageClassName,
-				PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
-			},
-		}
+
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))
 	})
 
@@ -680,22 +669,29 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		})
 
 		Context("LinuxPrep with CustomizeAtNextPowerOn latch", func() {
-			BeforeEach(func() {
+			It("should successfully deploy VM and set latch to false", func() {
 				imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-
-				v1a5VM.Spec.ImageName = imageName
-				v1a5VM.Spec.Bootstrap = &vmopv1a5.VirtualMachineBootstrapSpec{
-					LinuxPrep: &vmopv1a5.VirtualMachineBootstrapLinuxPrepSpec{
-						HardwareClockIsUTC:     new(true),
-						TimeZone:               "US/Pacific",
-						CustomizeAtNextPowerOn: new(true),
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      vmName,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+						ImageName:    imageName,
+						Bootstrap: &vmopv1a5.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1a5.VirtualMachineBootstrapLinuxPrepSpec{
+								HardwareClockIsUTC:     new(true),
+								TimeZone:               "US/Pacific",
+								CustomizeAtNextPowerOn: new(true),
+							},
+						},
 					},
 				}
-			})
-
-			It("should successfully deploy VM and set latch to false", func() {
-				createAndVerifyVM(ctx, v1a5VM)
-				vmoperator.WaitForLinuxPrepCustomizeNextPowerOnFalse(ctx, config, svClusterClient, input.WCPNamespaceName, v1a5VM.Name)
+				createAndVerifyVM(ctx, vm)
+				vmoperator.WaitForLinuxPrepCustomizeNextPowerOnFalse(ctx, config, svClusterClient, input.WCPNamespaceName, vm.Name)
 			})
 		})
 	})
@@ -897,8 +893,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			// dual-stack IPAM via ipamModes, letting the IPv6 template
 			// functions exercise a real IPv6 address end-to-end instead of
 			// only ever having IPv4 to work with.
-			var vm *vmopv1.VirtualMachine
-
 			BeforeEach(func() {
 				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.WorkloadIPv6CapabilityName)
 			})
@@ -922,7 +916,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("bool-user-configurable-1", `{{ `+constants.V1alpha6IsUsableIP+` "192.168.1.10" }}`),
 					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "10.0.0.0/24" }}`),
 				}
-				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+				vm := buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
 				vmmoid := createAndVerifyVAppConfigVM(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -940,7 +934,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					// Dummy, fixed, IPv6 input -- doesn't depend on the VM's network.
 					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "2001:db8::/64" }}`),
 				}
-				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+				vm := buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
 				vmmoid := createAndVerifyVAppConfigVM(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -958,7 +952,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("string-padding-user-configurable", `{{ `+constants.V1alpha6IP+` "192.168.1.10" }}`),
 					vAppProp("string-empty", `{{ `+constants.V1alpha6FormatIP+` "192.168.1.10/24" "/16" }}`),
 				}
-				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
+				vm := buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
 				vmmoid := createAndVerifyVAppConfigVM(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())

@@ -286,11 +286,6 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 	})
 
 	Context("Across namespaces, VPC Public and Private accessMode", func() {
-		var (
-			secondNamespaceName string
-			secondNamespaceCtx  wcpframework.NamespaceContext
-		)
-
 		It("one VirtualMachine within Private Subnet can communicate to another VM in another ns within Public Subnet", func() {
 			By("Create VM1 using Private Subnet")
 			createSubnetOrSubnetSet(utils.SubnetKind, subnetName, input.WCPNamespaceName, utils.CIDRConfig, true)
@@ -314,13 +309,11 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 
 			By("Create a second namespace")
 
-			secondNamespaceName = fmt.Sprintf("%s-second", input.WCPNamespaceName)
+			secondNamespaceName := fmt.Sprintf("%s-second", input.WCPNamespaceName)
 			clID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
 			vmsvcSpecs := wcp.NewVMServiceSpecDetails([]string{clusterResources.VMClassName}, []string{clID})
 
-			var err error
-
-			secondNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, secondNamespaceName, input.ArtifactFolder)
+			secondNamespaceCtx, err := clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, secondNamespaceName, input.ArtifactFolder)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create a second test WCP namespace")
 			DeferCleanup(clusterProxy.DeleteWCPNamespace, secondNamespaceCtx)
 			wcp.WaitForNamespaceReady(wcpClient, secondNamespaceName)

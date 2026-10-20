@@ -934,19 +934,21 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			for _, vmName := range vmMemberNames {
 				By(fmt.Sprintf("Creating VM %s without a group, with required host affinity to VMs labeled %v", vmName, appLabels))
 
-				vmParameters := manifestbuilders.VirtualMachineYaml{
-					Namespace:        tmpNamespaceName,
-					Name:             vmName,
-					Labels:           appLabels,
-					ImageName:        tmpNamespaceVMIName,
-					VMClassName:      clusterResources.VMClassName,
-					StorageClassName: clusterResources.StorageClassName,
-					PowerState:       "PoweredOn",
-					Affinity:         requiredAffinity(hostTopoKey, appLabels),
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: tmpNamespaceName,
+						Name:      vmName,
+						Labels:    appLabels,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						ImageName:    tmpNamespaceVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+						Affinity:     requiredAffinity(hostTopoKey, appLabels),
+					},
 				}
-				vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-				e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vm.Name)
 
 				// Ungrouped VMs are placed independently, so wait for each VM
 				// to power on and get an IP before creating the next one that
@@ -971,19 +973,21 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			for _, vmName := range vmMemberNames {
 				By(fmt.Sprintf("Creating VM %s without a group, with required host anti-affinity to VMs labeled %v", vmName, appLabels))
 
-				vmParameters := manifestbuilders.VirtualMachineYaml{
-					Namespace:        tmpNamespaceName,
-					Name:             vmName,
-					Labels:           appLabels,
-					ImageName:        tmpNamespaceVMIName,
-					VMClassName:      clusterResources.VMClassName,
-					StorageClassName: clusterResources.StorageClassName,
-					PowerState:       "PoweredOn",
-					Affinity:         requiredAntiAffinity(hostTopoKey, appLabels),
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: tmpNamespaceName,
+						Name:      vmName,
+						Labels:    appLabels,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						ImageName:    tmpNamespaceVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+						Affinity:     requiredAntiAffinity(hostTopoKey, appLabels),
+					},
 				}
-				vmYAML := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-				e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vmName, string(vmYAML))
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vm.Name)
 
 				// Ungrouped VMs are placed independently, so wait for each VM
 				// to power on and get an IP before creating the next one that
@@ -2512,15 +2516,15 @@ type zonePinnedVM struct {
 	// Zone is the zone the VM is pinned to. Empty means the VM is not pinned.
 	Zone     string
 	Labels   map[string]string
-	Affinity *vmopv1.AffinitySpec
+	Affinity *vmopv1a5.AffinitySpec
 }
 
 // preferredAntiAffinity returns an AffinitySpec that prefers the VM to be
 // placed in a different topologyKey domain than the VMs matching matchLabels.
-func preferredAntiAffinity(topologyKey string, matchLabels map[string]string) *vmopv1.AffinitySpec {
-	return &vmopv1.AffinitySpec{
-		VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
-			PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+func preferredAntiAffinity(topologyKey string, matchLabels map[string]string) *vmopv1a5.AffinitySpec {
+	return &vmopv1a5.AffinitySpec{
+		VMAntiAffinity: &vmopv1a5.VMAntiAffinitySpec{
+			PreferredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{{
 				LabelSelector: &metav1.LabelSelector{MatchLabels: matchLabels},
 				TopologyKey:   topologyKey,
 			}},
@@ -2530,10 +2534,10 @@ func preferredAntiAffinity(topologyKey string, matchLabels map[string]string) *v
 
 // requiredAffinity returns an AffinitySpec that requires the VM to be placed in
 // the same topologyKey domain as the VMs matching matchLabels.
-func requiredAffinity(topologyKey string, matchLabels map[string]string) *vmopv1.AffinitySpec {
-	return &vmopv1.AffinitySpec{
-		VMAffinity: &vmopv1.VMAffinitySpec{
-			RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+func requiredAffinity(topologyKey string, matchLabels map[string]string) *vmopv1a5.AffinitySpec {
+	return &vmopv1a5.AffinitySpec{
+		VMAffinity: &vmopv1a5.VMAffinitySpec{
+			RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{{
 				LabelSelector: &metav1.LabelSelector{MatchLabels: matchLabels},
 				TopologyKey:   topologyKey,
 			}},
@@ -2543,10 +2547,10 @@ func requiredAffinity(topologyKey string, matchLabels map[string]string) *vmopv1
 
 // requiredAntiAffinity returns an AffinitySpec that requires the VM to be
 // placed in a different topologyKey domain than the VMs matching matchLabels.
-func requiredAntiAffinity(topologyKey string, matchLabels map[string]string) *vmopv1.AffinitySpec {
-	return &vmopv1.AffinitySpec{
-		VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
-			RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+func requiredAntiAffinity(topologyKey string, matchLabels map[string]string) *vmopv1a5.AffinitySpec {
+	return &vmopv1a5.AffinitySpec{
+		VMAntiAffinity: &vmopv1a5.VMAntiAffinitySpec{
+			RequiredDuringSchedulingPreferredDuringExecution: []vmopv1a5.VMAffinityTerm{{
 				LabelSelector: &metav1.LabelSelector{MatchLabels: matchLabels},
 				TopologyKey:   topologyKey,
 			}},
@@ -2608,7 +2612,7 @@ func createVMGroupWithVMs(
 // topology.kubernetes.io/zone label.
 func createZonePinnedVMs(
 	ctx context.Context,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy framework.ClusterProxyInterface,
 	clusterResources *e2eConfig.Resources,
 	namespace, groupName, imageName string,
 	vms []zonePinnedVM) {
@@ -2622,19 +2626,22 @@ func createZonePinnedVMs(
 			labels[zoneLabelKey] = vm.Zone
 		}
 
-		vmYAML := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
-			Namespace:        namespace,
-			Name:             vm.Name,
-			GroupName:        groupName,
-			Labels:           labels,
-			ImageName:        imageName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			PowerState:       "PoweredOff",
-			Affinity:         vm.Affinity,
-		})
-		e2eframework.Logf("VM YAML:\n%s", string(vmYAML))
-		Expect(clusterProxy.ApplyWithArgs(ctx, vmYAML)).To(Succeed(), "failed to create vm %s:\n %s", vm.Name, string(vmYAML))
+		vmToCreate := &vmopv1a5.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      vm.Name,
+				Labels:    labels,
+			},
+			Spec: vmopv1a5.VirtualMachineSpec{
+				GroupName:    groupName,
+				ImageName:    imageName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a5.VirtualMachinePowerStateOff,
+				Affinity:     vm.Affinity,
+			},
+		}
+		Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create VM %s", vm.Name)
 	}
 }
 

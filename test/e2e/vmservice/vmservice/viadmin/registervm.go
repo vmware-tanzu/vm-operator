@@ -315,7 +315,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Name:             vmName,
 				VMClassName:      resources.VMClassName,
 				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
 				ImageName:        linuxVMIName,
 				Bootstrap: manifestbuilders.Bootstrap{
 					CloudInit: &manifestbuilders.CloudInit{
@@ -447,7 +446,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Name:             vmName,
 				VMClassName:      resources.VMClassName,
 				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
 				ImageName:        linuxVMIName,
 				Bootstrap: manifestbuilders.Bootstrap{
 					CloudInit: &manifestbuilders.CloudInit{
@@ -679,7 +677,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Name:             vmName,
 				VMClassName:      resources.VMClassName,
 				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
 				ImageName:        linuxVMIName,
 				Bootstrap: manifestbuilders.Bootstrap{
 					CloudInit: &manifestbuilders.CloudInit{
@@ -919,7 +916,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Name:             vmName,
 				VMClassName:      resources.VMClassName,
 				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
 				ImageName:        linuxVMIName,
 				Bootstrap: manifestbuilders.Bootstrap{
 					CloudInit: &manifestbuilders.CloudInit{
@@ -1286,7 +1282,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				Name:             vmName,
 				VMClassName:      resources.VMClassName,
 				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
 				ImageName:        linuxVMIName,
 				Bootstrap: manifestbuilders.Bootstrap{
 					CloudInit: &manifestbuilders.CloudInit{

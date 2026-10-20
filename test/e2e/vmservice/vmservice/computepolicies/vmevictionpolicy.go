@@ -925,11 +925,8 @@ func buildVM(
 			ImageName:    imageName,
 			ClassName:    clusterResources.VMClassName,
 			StorageClass: clusterResources.StorageClassName,
-			Reserved: &vmopv1.VirtualMachineReservedSpec{
-				ResourcePolicyName: clusterResources.VMResourcePolicyName,
-			},
-			PowerState: vmopv1.VirtualMachinePowerStateOn,
-			Policies:   policies,
+			PowerState:   vmopv1.VirtualMachinePowerStateOn,
+			Policies:     policies,
 		},
 	}
 }

@@ -356,34 +356,34 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	})
 
 	It("Should create expected resources for a VirtualMachine from poweredOff to poweredOn", Label("smoke"), func() {
-		vmParameters := manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			Name:             vmName,
-			ImageName:        linuxVMIName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			PowerState:       "PoweredOff",
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOff,
+			},
 		}
-		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
-		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
 
 		By("Verify that the VirtualMachine can be powered on and also powered off after")
-		vmParameters.PowerState = poweredOnState
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		e2eframework.Logf("Updating the VM's PowerState to '%v'", vmParameters.PowerState)
-		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to power-on virtualmachine", string(vmYaml))
+		base := vmToCreate.DeepCopy()
+		vmToCreate.Spec.PowerState = vmopv1a2.VirtualMachinePowerStateOn
+		Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to power on VirtualMachine")
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
 		vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 		// Power off the VM and verify that this doesn't cause any issues.
-		vmParameters.PowerState = poweredOffState
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		e2eframework.Logf("Updating the VM's PowerState to '%v'", vmParameters.PowerState)
-		Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to power-off virtualmachine", string(vmYaml))
+		base = vmToCreate.DeepCopy()
+		vmToCreate.Spec.PowerState = vmopv1a2.VirtualMachinePowerStateOff
+		Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to power off VirtualMachine")
 		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
 	})
 

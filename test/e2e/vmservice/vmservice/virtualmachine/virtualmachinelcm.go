@@ -437,17 +437,19 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		// Ensure the Linux VMI name is present in the temp namespace.
 		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
 
-		vmParameters := manifestbuilders.VirtualMachineYaml{
-			Namespace:        tmpNamespaceName,
-			Name:             vmName,
-			ImageName:        vmiName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			PowerState:       "PoweredOn",
+		vmTemplate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
 		}
-
-		vmToCreate, err := manifestbuilders.VirtualMachineA2(vmParameters)
-		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmToCreate := vmTemplate.DeepCopy()
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
@@ -465,13 +467,12 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		// Ensure the Linux VMI name is present in the temp namespace.
 		vmiName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
-		vmParameters.ImageName = vmiName
 
 		// Create a new VM and verify the creation is successful.
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-		vmParameters.Name = vmName
-		vmToCreate, err = manifestbuilders.VirtualMachineA2(vmParameters)
-		Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+		vmToCreate = vmTemplate.DeepCopy()
+		vmToCreate.Name = vmName
+		vmToCreate.Spec.ImageName = vmiName
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)

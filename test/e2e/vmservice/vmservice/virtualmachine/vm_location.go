@@ -54,7 +54,6 @@ type VMLocationSpecInput struct {
 func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput) {
 	const (
 		specName = "vm-location"
-		vmKind   = "VirtualMachine"
 
 		// vmServiceVMMgmtRoleName is the vCenter role WCP grants to the Administrators group
 		// directly on the objects backing a Supervisor Namespace.
@@ -138,17 +137,14 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			ctx, svClusterClient, consts.ExtensionCompatConstraintCapabilityName, asyncSupervisorFSSEnabled)
 
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-	})
-
-	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(
-				ctx, svClusterClient,
-				clusterProxy.GetKubeconfigPath(),
-				input.WCPNamespaceName, vmName, vmKind)
-		}
-
-		vmoperator.VerifyVMDeleted(ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
+		vmoperator.DeferCleanupVirtualMachine(
+			config,
+			svClusterClient,
+			clusterProxy.GetKubeconfigPath(),
+			input.WCPNamespaceName,
+			vmName,
+			false,
+		)
 	})
 
 	// getNsRPAndFolder returns the namespace RP and folder MoIDs for the given zone, read

@@ -649,14 +649,6 @@ func DeleteSubnetOrSubnetSetAndWait(ctx context.Context, config *config.E2EConfi
 	WaitForSubnetOrSubnetSetToBeDeleted(ctx, config, client, ns, subnetName, kind)
 }
 
-// DescribeResourceIfExists logs the output of `kubectl describe <resource>` if
-// the given resource exists. It does not fail the spec if kubectl fails, so it
-// is safe to call ahead of cleanup. New code should prefer
-// DeferCleanupWithDumpOnFailure with DescribeResource.
-func DescribeResourceIfExists(ctx context.Context, _ ctrlclient.Client, kubeconfigPath, ns, resourceName, resource string) {
-	describeResource(ctx, kubeconfigPath, resource, ns, resourceName)
-}
-
 // Utility function to get a image k8s name given its display name.
 func WaitForVirtualMachineImageName(ctx context.Context, config *framework.Config,
 	client ctrlclient.Client, namespace, imageDisplayName string) string {

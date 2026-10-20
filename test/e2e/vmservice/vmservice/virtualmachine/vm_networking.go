@@ -50,13 +50,10 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 	var (
 		input            VMNetworkSpecInput
-		wcpClient        wcp.WorkloadManagementAPI
 		config           *e2eConfig.E2EConfig
 		clusterProxy     *common.VMServiceClusterProxy
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
-		tmpNamespaceCtx  wcpframework.NamespaceContext
-		vmYaml           []byte
 		vmName           string
 
 		linuxImageDisplayName string
@@ -73,7 +70,6 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 
-		wcpClient = input.WCPClient
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
@@ -82,35 +78,9 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		DeferCleanup(cancelPodWatches)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
-		vmYaml = nil
-		tmpNamespaceCtx = wcpframework.NamespaceContext{}
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-	})
-
-	AfterEach(func() {
-		vmNamespaceName := input.WCPNamespaceName
-		if tmpNamespaceCtx.GetNamespace() != nil {
-			vmNamespaceName = tmpNamespaceCtx.GetNamespace().Name
-		}
-
-		if CurrentSpecReport().Failed() {
-			vmoperator.DescribeResourceIfExists(ctx, svClusterClient, clusterProxy.GetKubeconfigPath(), vmNamespaceName, vmName, "vm")
-		}
-
-		// Delete the virtual machine if it was created.
-		if len(vmYaml) > 0 {
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
-			// Verify that virtual machine does not exist.
-			vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespaceName, vmName)
-		}
-
-		// Delete the temporary namespace if it was created.
-		if tmpNamespaceCtx.GetNamespace() != nil {
-			clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
-			wcp.WaitForNamespaceDeleted(wcpClient, tmpNamespaceCtx.GetNamespace().Name)
-		}
 	})
 
 	It("Should allow network interface to be added to VirtualMachine when mutability cap is enabled", Label("smoke"), func() {
@@ -122,8 +92,10 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 			StorageClassName: clusterResources.StorageClassName,
 			PowerState:       "PoweredOff",
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(
+			config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -228,8 +200,10 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 			StorageClassName: clusterResources.StorageClassName,
 			PowerState:       "PoweredOff",
 		}
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
+		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
 		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
+		vmoperator.DeferCleanupVirtualMachine(
+			config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)

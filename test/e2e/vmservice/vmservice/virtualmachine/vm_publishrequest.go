@@ -30,6 +30,7 @@ import (
 	imgregv1a2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
 
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -288,11 +289,11 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				By("Creating a source VM with an explicit vAppConfig property")
 				sourceImageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, vmservice.GetDefaultImageDisplayName(clusterResources))
 
-				expectedVAppProperties := []manifestbuilders.KeyValueOrSecretKeySelectorPair{
+				expectedVAppProperties := []vmopv1a2common.KeyValueOrSecretKeySelectorPair{
 					{
 						Key: "prop-1",
-						Value: manifestbuilders.ValueOrSecretKeySelector{
-							Value: "my-val-1",
+						Value: vmopv1a2common.ValueOrSecretKeySelector{
+							Value: new("my-val-1"),
 						},
 					},
 				}
@@ -302,7 +303,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 					0,
 					len(expectedVAppProperties))
 				for _, p := range expectedVAppProperties {
-					sourceVAppProperties = append(sourceVAppProperties, vAppProp(p.Key, p.Value.Value))
+					sourceVAppProperties = append(sourceVAppProperties, vAppProp(p.Key, *p.Value.Value))
 				}
 
 				sourceVMName := fmt.Sprintf("%s-%s", vmPubSpecName+"-vapp-src", capiutil.RandomString(4))

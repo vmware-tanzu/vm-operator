@@ -67,34 +67,6 @@ func KubectlApplyRawWithArgs(ctx context.Context, kubeconfigPath string, resourc
 	return KubectlRawWithArgs(ctx, kubeconfigPath, "apply", resources, args...)
 }
 
-func KubectlCreate(ctx context.Context, kubeconfigPath string, resources []byte) error {
-	return KubectlCreateWithArgs(ctx, kubeconfigPath, resources)
-}
-
-func KubectlCreateWithArgs(ctx context.Context, kubeconfigPath string, resources []byte, args ...string) error {
-	aargs := append([]string{"create", "--kubeconfig", kubeconfigPath, "-f", "-"}, args...)
-	rbytes := bytes.NewReader(resources)
-	applyCmd := NewCommand(
-		WithCommand("kubectl"),
-		WithArgs(aargs...),
-		WithStdin(rbytes),
-	)
-
-	stdout, stderr, err := applyCmd.Run(ctx)
-	if err != nil {
-		fmt.Println(string(stderr))
-		return err
-	}
-
-	fmt.Println(string(stdout))
-
-	return nil
-}
-
-func KubectlCreateRawWithArgs(ctx context.Context, kubeconfigPath string, resources []byte, args ...string) ([]byte, []byte, error) {
-	return KubectlRawWithArgs(ctx, kubeconfigPath, "create", resources, args...)
-}
-
 func KubectlDelete(ctx context.Context, kubeconfigPath string, resources []byte) error {
 	return KubectlDeleteWithArgs(ctx, kubeconfigPath, resources)
 }
@@ -173,23 +145,6 @@ func KubectlGet(ctx context.Context, kubeconfigPath string, args ...string) ([]b
 
 func KubectlExec(ctx context.Context, kubeconfigPath string, args ...string) ([]byte, error) {
 	aargs := append([]string{"--kubeconfig", kubeconfigPath, "exec"}, args...)
-
-	applyCmd := NewCommand(
-		WithCommand("kubectl"),
-		WithArgs(aargs...),
-	)
-
-	stdout, stderr, err := applyCmd.Run(ctx)
-	if err != nil {
-		fmt.Println(string(stderr))
-		return []byte(""), err
-	}
-
-	return stdout, nil
-}
-
-func KubectlCreateWithoutFile(ctx context.Context, kubeconfigPath string, args ...string) ([]byte, error) {
-	aargs := append([]string{"--kubeconfig", kubeconfigPath, "create"}, args...)
 
 	applyCmd := NewCommand(
 		WithCommand("kubectl"),

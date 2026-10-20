@@ -5,6 +5,7 @@ package virtualmachine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -22,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -614,30 +614,35 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			BeforeEach(func() {
 				bootstrapResource = createAndVerifySecret(ctx, inlineCloudInit)
 
-				inlinedCloudConfig := fmt.Sprintf(`
-        defaultUserEnabled: true
-        ssh_pwauth: true
-        users:
-        - name: vmware
-          lock_passwd: false
-          passwd:
-            name: %s
-            key: vmsvc-pwd
-        runcmd:
-        - [ "ls", "-a", "-l", "/" ]
-        - - echo
-          - "hello, world."
-        write_files:
-        - path: /etc/my-plaintext
-          permissions: '0644'
-          owner: root:root
-          content:
-            name: %s
-            key: hello`, secretName, secretName)
+				content, err := json.Marshal(vmopv1a2common.SecretKeySelector{
+					Name: secretName,
+					Key:  "hello",
+				})
+				Expect(err).NotTo(HaveOccurred(), "failed to encode cloud-init file content reference")
 
-				cloudConfig := &vmopv1a2cloudinit.CloudConfig{}
-				Expect(yaml.UnmarshalStrict([]byte(inlinedCloudConfig), cloudConfig)).To(Succeed(), "failed to decode inline cloud config")
-				v1a2VM.Spec.Bootstrap.CloudInit.CloudConfig = cloudConfig
+				v1a2VM.Spec.Bootstrap.CloudInit.CloudConfig = &vmopv1a2cloudinit.CloudConfig{
+					DefaultUserEnabled: true,
+					SSHPwdAuth:         new(true),
+					Users: []vmopv1a2cloudinit.User{
+						{
+							Name:       "vmware",
+							LockPasswd: new(false),
+							Passwd: &vmopv1a2common.SecretKeySelector{
+								Name: secretName,
+								Key:  "vmsvc-pwd",
+							},
+						},
+					},
+					RunCmd: json.RawMessage(`[["ls", "-a", "-l", "/"], ["echo", "hello, world."]]`),
+					WriteFiles: []vmopv1a2cloudinit.WriteFile{
+						{
+							Path:        "/etc/my-plaintext",
+							Permissions: "0644",
+							Owner:       "root:root",
+							Content:     content,
+						},
+					},
+				}
 			})
 
 			It("should successfully apply customization and be able to register VM from backup", func() {

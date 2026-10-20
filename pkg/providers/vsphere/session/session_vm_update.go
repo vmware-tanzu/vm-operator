@@ -1015,6 +1015,18 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 		configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 	}
 
+	// The boot disk must be extended before the disk is registered as a PVC,
+	// which also happens in doReconfigure. Otherwise a VM that is deployed
+	// powered off never reaches spec.advanced.bootDiskCapacity, since the VM
+	// is not powered on through the update path.
+	currentDisks := object.VirtualDeviceList(moVM.Config.Hardware.Device).
+		SelectByType((*vimtypes.VirtualDisk)(nil))
+	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx, currentDisks)
+	if err != nil {
+		return err
+	}
+	configSpec.DeviceChange = append(configSpec.DeviceChange, diskDeviceChanges...)
+
 	// Change block tracking is not part of the class-based resize diff, but it
 	// is a spec field that must still be applied while the VM is powered off.
 	// Without this, a CBT change would not take effect until the VM is next

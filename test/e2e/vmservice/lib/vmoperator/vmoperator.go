@@ -1534,14 +1534,15 @@ func EventuallyBootDiskCapacityMatches(
 			if !ok {
 				continue
 			}
-			b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
-			if !ok || b.Uuid != boot.DiskUUID {
+			if !strings.EqualFold(utils.VirtualDiskBackingUUID(disk), boot.DiskUUID) {
 				continue
 			}
 			found = true
 			g.Expect(disk.CapacityInBytes).To(Equal(expected.Value()),
 				"vCenter boot disk capacity is %d bytes, expected %d", disk.CapacityInBytes, expected.Value())
-			g.Expect(b.Parent).To(BeNil(), "boot disk still has a parent")
+			if b, ok := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo); ok {
+				g.Expect(b.Parent).To(BeNil(), "boot disk still has a parent")
+			}
 		}
 		g.Expect(found).To(BeTrue(), "boot disk with UUID %q not found on the vCenter VM", boot.DiskUUID)
 	}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed(),

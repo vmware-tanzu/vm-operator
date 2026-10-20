@@ -174,17 +174,19 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Creating VMs with initially powered off state and spec.GroupName pointing to the VirtualMachineGroup")
 
 			for _, vmName := range vmMemberNames {
-				vmParameters := manifestbuilders.VirtualMachineYaml{
-					Namespace:        input.WCPNamespaceName,
-					Name:             vmName,
-					GroupName:        vmgRootName,
-					ImageName:        linuxVMIName,
-					VMClassName:      clusterResources.VMClassName,
-					StorageClassName: clusterResources.StorageClassName,
-					PowerState:       "PoweredOff",
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      vmName,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						GroupName:    vmgRootName,
+						ImageName:    linuxVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOff,
+					},
 				}
-				vm, err := manifestbuilders.VirtualMachineA5(vmParameters)
-				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", vm.Name)
 			}
 
@@ -296,16 +298,18 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Creating a new standalone VM4 with spec.groupName unset and spec.powerState set to PoweredOn")
 
-			vm4Parameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vm4Name,
-				PowerState:       "PoweredOn",
-				ImageName:        linuxVMIName,
-				VMClassName:      clusterResources.VMClassName,
-				StorageClassName: clusterResources.StorageClassName,
+			vm4 := &vmopv1a5.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: input.WCPNamespaceName,
+					Name:      vm4Name,
+				},
+				Spec: vmopv1a5.VirtualMachineSpec{
+					ImageName:    linuxVMIName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+				},
 			}
-			vm4, err := manifestbuilders.VirtualMachineA5(vm4Parameters)
-			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 			Expect(svClusterClient.Create(ctx, vm4)).To(Succeed(), "failed to create VirtualMachine %s", vm4.Name)
 
 			By("Waiting for VM4 to be created and powered on")
@@ -314,9 +318,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Setting VM4 spec.groupName to the VirtualMachineGroup")
 
-			vm4Parameters.GroupName = vmgRootName
-			vm4Yaml := manifestbuilders.GetVirtualMachineYamlA5(vm4Parameters)
-			Expect(clusterProxy.ApplyWithArgs(ctx, vm4Yaml)).To(Succeed(), "failed to update VM %q group name:\n %s", vm4Name, string(vm4Yaml))
+			base := vm4.DeepCopy()
+			vm4.Spec.GroupName = vmgRootName
+			Expect(svClusterClient.Patch(ctx, vm4, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update VM %q group name", vm4Name)
 
 			By("Updating VirtualMachineGroup to adopt the existing VM4")
 
@@ -346,17 +350,11 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Changing VM1 spec.powerState directly to PoweredOn")
 
-			vm1Parameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vm1Name,
-				PowerState:       "PoweredOn",
-				GroupName:        vmgRootName,
-				VMClassName:      clusterResources.VMClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				ImageName:        linuxVMIName,
-			}
-			vm1Yaml := manifestbuilders.GetVirtualMachineYamlA5(vm1Parameters)
-			Expect(clusterProxy.ApplyWithArgs(ctx, vm1Yaml)).To(Succeed(), "failed to update VM %q power state:\n %s", vm1Name, string(vm1Yaml))
+			vm1 := &vmopv1a5.VirtualMachine{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vm1Name}, vm1)).To(Succeed())
+			base = vm1.DeepCopy()
+			vm1.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOn
+			Expect(svClusterClient.Patch(ctx, vm1, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update VM %q power state", vm1Name)
 
 			By("Waiting for VM1 to be powered on")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name, "PoweredOn")
@@ -407,16 +405,18 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Creating VMs powered on directly, without a group")
 
 			for _, vmName := range vmMemberNames {
-				vmParameters := manifestbuilders.VirtualMachineYaml{
-					Namespace:        input.WCPNamespaceName,
-					Name:             vmName,
-					ImageName:        linuxVMIName,
-					VMClassName:      clusterResources.VMClassName,
-					StorageClassName: clusterResources.StorageClassName,
-					PowerState:       "PoweredOn",
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      vmName,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						ImageName:    linuxVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+					},
 				}
-				vm, err := manifestbuilders.VirtualMachineA5(vmParameters)
-				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", vm.Name)
 			}
 
@@ -607,32 +607,36 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Creating VM1 in the root group with powered off")
 
-			vm1Parameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vm1Name,
-				GroupName:        vmgRootName,
-				ImageName:        linuxVMIName,
-				VMClassName:      clusterResources.VMClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				PowerState:       "PoweredOff",
+			vm1 := &vmopv1a5.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: input.WCPNamespaceName,
+					Name:      vm1Name,
+				},
+				Spec: vmopv1a5.VirtualMachineSpec{
+					GroupName:    vmgRootName,
+					ImageName:    linuxVMIName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a5.VirtualMachinePowerStateOff,
+				},
 			}
-			vm1, err := manifestbuilders.VirtualMachineA5(vm1Parameters)
-			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 			Expect(svClusterClient.Create(ctx, vm1)).To(Succeed(), "failed to create VirtualMachine %s", vm1.Name)
 
 			By("Creating VM2 in the child group")
 
-			vm2Parameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vm2Name,
-				GroupName:        vmgChildName,
-				ImageName:        linuxVMIName,
-				VMClassName:      clusterResources.VMClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				PowerState:       "PoweredOff",
+			vm2 := &vmopv1a5.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: input.WCPNamespaceName,
+					Name:      vm2Name,
+				},
+				Spec: vmopv1a5.VirtualMachineSpec{
+					GroupName:    vmgChildName,
+					ImageName:    linuxVMIName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a5.VirtualMachinePowerStateOff,
+				},
 			}
-			vm2, err := manifestbuilders.VirtualMachineA5(vm2Parameters)
-			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 			Expect(svClusterClient.Create(ctx, vm2)).To(Succeed(), "failed to create VirtualMachine %s", vm2.Name)
 
 			By("Waiting for all VMs to exist")

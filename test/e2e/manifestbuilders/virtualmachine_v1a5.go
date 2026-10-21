@@ -8,15 +8,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1a5sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha5/sysprep"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
 // VirtualMachineA5 returns the v1alpha5 VirtualMachine described by vmYaml.
 // The PVCs referenced by vmYaml.PVCs are not included; see
-// PersistentVolumeClaims. An error is returned if an inline cloud config or
-// sysprep cannot be decoded.
-func VirtualMachineA5(vmYaml VirtualMachineYaml) (*vmopv1a5.VirtualMachine, error) {
+// PersistentVolumeClaims.
+func VirtualMachineA5(vmYaml VirtualMachineYaml) *vmopv1a5.VirtualMachine {
 	vm := &vmopv1a5.VirtualMachine{
 		TypeMeta:   typeMeta(vmopv1a5.GroupVersion.String(), "VirtualMachine"),
 		ObjectMeta: objectMeta(vmYaml),
@@ -29,14 +27,6 @@ func VirtualMachineA5(vmYaml VirtualMachineYaml) (*vmopv1a5.VirtualMachine, erro
 			PowerState:   vmopv1a5.VirtualMachinePowerState(vmYaml.PowerState),
 			Hardware:     hardwareToV1A5(vmYaml.Hardware),
 		},
-	}
-
-	if vmYaml.Bootstrap.hasBootstrap() {
-		bootstrap, err := bootstrapA5(vmYaml.Bootstrap)
-		if err != nil {
-			return nil, err
-		}
-		vm.Spec.Bootstrap = bootstrap
 	}
 
 	for _, pvc := range vmYaml.PVCs {
@@ -65,25 +55,7 @@ func VirtualMachineA5(vmYaml VirtualMachineYaml) (*vmopv1a5.VirtualMachine, erro
 		vm.Spec.Volumes = append(vm.Spec.Volumes, v)
 	}
 
-	return vm, nil
-}
-
-func bootstrapA5(in Bootstrap) (*vmopv1a5.VirtualMachineBootstrapSpec, error) {
-	out := &vmopv1a5.VirtualMachineBootstrapSpec{}
-
-	if sp := in.Sysprep; sp != nil {
-		sysprep, err := unmarshalInline[vmopv1a5sysprep.Sysprep](sp.Sysprep)
-		if err != nil {
-			return nil, err
-		}
-		if sysprep != nil {
-			out.Sysprep = &vmopv1a5.VirtualMachineBootstrapSysprepSpec{
-				Sysprep: sysprep,
-			}
-		}
-	}
-
-	return out, nil
+	return vm
 }
 
 // VirtualMachineYaml.Hardware uses the v1alpha6 type, but VirtualMachineA5 must

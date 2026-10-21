@@ -10,7 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // PersistentVolumeClaim returns the PersistentVolumeClaim described by pvc.
@@ -61,18 +60,6 @@ func PersistentVolumeClaims(pvcs []PVC) ([]*corev1.PersistentVolumeClaim, error)
 			return nil, err
 		}
 		out = append(out, obj)
-	}
-	return out, nil
-}
-
-func persistentVolumeClaimObjects(pvcs []PVC) ([]ctrlclient.Object, error) {
-	objs, err := PersistentVolumeClaims(pvcs)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ctrlclient.Object, len(objs))
-	for i := range objs {
-		out[i] = objs[i]
 	}
 	return out, nil
 }

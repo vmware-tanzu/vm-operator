@@ -42,6 +42,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 009 | [virtualmachinereplicaset](specs/009-virtualmachinereplicaset/) | `VirtualMachineReplicaSet` Functional Test Coverage (`tds.md`/`test-plan.md` in place of `spec.md`/`plan.md`) | In Progress | vmop-1701 |
 | 010 | [veeam-e2e-backup-restore](specs/010-veeam-e2e-backup-restore/) | Use Veeam for Backup/Restore E2E Tests | In Progress | vmop-4013 |
 | 011 | [snapshot-disk-list](specs/011-snapshot-disk-list/) | Expose Disk List in VirtualMachineSnapshot (CSI Backup API) | In Review | vmop-52730 |
+| 012 | [vmclass-v2](specs/012-vmclass-v2/) | Flex VM Classes (`VirtualMachineClass` v2) — range-based classes, `governs`, zones, `externalID`, reserved profiles; replaces `VirtualMachineConfigPolicy`; design in WIKI page 3118085463 | In Progress | vmop-4034, vmop-4038, vmop-4039, vmop-4040, vmop-4041, vmop-4201, vmop-4312 |
 
 ### Finding the right spec
 

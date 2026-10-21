@@ -93,7 +93,7 @@ var _ = Describe("Manifest builders", func() {
 			func() []byte { return mb.GetVirtualMachineSnapshotYaml(mb.VirtualMachineSnapshotYaml{Name: "s"}) },
 			"vmoperator.vmware.com/v1alpha5", "VirtualMachineSnapshot"),
 		Entry("Secret",
-			func() []byte { return mb.GetSecretYamlCloudConfig(mb.Secret{Name: "s", Namespace: "my-ns"}) },
+			func() []byte { return mb.ToYAML(mb.CloudConfigSecret(mb.Secret{Name: "s", Namespace: "my-ns"})) },
 			"v1", "Secret"),
 		Entry("SecurityPolicy",
 			func() []byte { return mb.GetSecurityPolicyYaml(mb.SecurityPolicy{Name: "sp", Namespace: "my-ns"}) },
@@ -154,7 +154,7 @@ var _ = Describe("Manifest builders", func() {
 			Fail("key " + key + " not found in data or stringData")
 		},
 		Entry("Secret CloudConfig user-data", func() []byte {
-			return mb.GetSecretYamlCloudConfig(mb.Secret{Name: "s", Namespace: "my-ns"})
+			return mb.ToYAML(mb.CloudConfigSecret(mb.Secret{Name: "s", Namespace: "my-ns"}))
 		}, "user-data", "#cloud-config\nssh_pwauth: true\nusers:\n  - name: vmware\n"+
 			"    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n"+
 			"    # Password set to Admin!23\n    passwd: '$1$salt$SOC33fVbA/ZxeIwD5yw1u1'\n"+

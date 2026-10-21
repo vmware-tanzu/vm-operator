@@ -16,13 +16,8 @@ type Secret struct {
 	Name      string `json:"name,omitempty"`
 }
 
-// GetSecretYamlCloudConfig returns a Secret whose user-data is a plaintext
-// cloud-init configuration, the same content as CloudConfigMap.
-func GetSecretYamlCloudConfig(secret Secret) []byte {
-	return ToYAML(CloudConfigSecret(secret))
-}
-
-// CloudConfigSecret returns a Secret containing plaintext cloud-init user-data.
+// CloudConfigSecret returns a Secret containing plaintext cloud-init user-data,
+// the same content as CloudConfigMap.
 func CloudConfigSecret(secret Secret) *corev1.Secret {
 	return &corev1.Secret{
 		TypeMeta:   typeMeta("v1", "Secret"),

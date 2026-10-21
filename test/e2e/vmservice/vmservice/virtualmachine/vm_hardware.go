@@ -514,11 +514,17 @@ func (b *bootDiskCapacityVM) vCenterBootDisk(
 }
 
 // createVMWithCapacitySetDuringSnapshot creates a powered off linked-clone VM
-// and leaves it with spec.advanced.bootDiskCapacity set but not applied,
-// because the capacity was set while the VM had a snapshot. To do this it
-// creates the VM with disk promotion disabled and no capacity, takes a
-// snapshot, sets the capacity, and deletes the snapshot. The spec is skipped if
-// the boot disk is not a linked clone, ie. Fast Deploy is not used.
+// with a snapshot, and sets spec.advanced.bootDiskCapacity while the VM has the
+// snapshot. To do this it creates the VM with disk promotion disabled and no
+// capacity, takes a snapshot, and sets the capacity. The snapshot is kept. The
+// spec is skipped if the boot disk is not a linked clone, ie. Fast Deploy is
+// not used.
+//
+// NOTE: The snapshot is not deleted because vmop-4398 must be fixed first. A
+// snapshot of a linked clone makes the snapshot delta disk register as a PVC
+// that stays Pending, and the deleted snapshot then stays on the CSI finalizer
+// cns.vmware.com/syncvolume. Once vmop-4398 is fixed, use deleteSnapshot to
+// cover the scenario where the snapshot is removed before power on.
 func (b *bootDiskCapacityVM) createVMWithCapacitySetDuringSnapshot(ctx context.Context) {
 	GinkgoHelper()
 
@@ -555,6 +561,19 @@ func (b *bootDiskCapacityVM) createVMWithCapacitySetDuringSnapshot(ctx context.C
 		g.Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 		g.Expect(b.vCenterBootDisk(g, ctx, vm).CapacityInBytes).To(Equal(b.imageCapacity.Value()))
 	}, b.config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed())
+
+}
+
+// deleteSnapshot deletes the snapshot taken by
+// createVMWithCapacitySetDuringSnapshot and waits until it is gone.
+//
+// NOTE: This is only used by the pending specs. It cannot pass until vmop-4398
+// is fixed, since the snapshot stays on the CSI finalizer
+// cns.vmware.com/syncvolume.
+func (b *bootDiskCapacityVM) deleteSnapshot(ctx context.Context) {
+	GinkgoHelper()
+
+	snapshotName := b.name + "-snap"
 
 	By("Deleting the snapshot")
 	Expect(utils.DeleteVirtualMachineSnapshot(ctx, b.client, b.namespace, snapshotName)).To(Succeed())
@@ -2190,7 +2209,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}
 			})
 
-			It("Should power on a VM whose spec.advanced.bootDiskCapacity is larger than the image", Label("boot-disk-capacity", "experimental"), func() {
+			It("Should power on a VM whose spec.advanced.bootDiskCapacity is larger than the image", Label("boot-disk-capacity"), func() {
 				bootDiskVM.createPoweredOnVM(ctx)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
@@ -2201,7 +2220,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			// The VM never powers on, so the capacity cannot be applied by the
 			// power on reconcile. The boot disk must still be extended before it
 			// is registered as a PVC.
-			It("Should extend the boot disk of a VM deployed powered off", Label("boot-disk-capacity", "experimental"), func() {
+			It("Should extend the boot disk of a VM deployed powered off", Label("boot-disk-capacity"), func() {
 				bootDiskVM.createPoweredOffVMWithCapacity(ctx)
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the requested size")
@@ -2213,14 +2232,18 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			// Only the boot disk is extended. The other disks keep the size of
 			// the image and, like the boot disk, end up as PVCs.
-			It("Should extend only the boot disk of a multi-disk image", Label("boot-disk-capacity", "experimental"), func() {
+			It("Should extend only the boot disk of a multi-disk image", Label("boot-disk-capacity"), func() {
 				bootDiskVM.imageName = findMultiDiskImage(ctx, svClusterClient, vmSvcNamespace)
 				vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterClient, vmSvcNamespace, bootDiskVM.imageName)
 				bootDiskVM.imageCapacity = imageBootDiskCapacity(ctx, svClusterClient, vmSvcNamespace, bootDiskVM.imageName)
 				bootDiskVM.desiredCapacity = extendedBootDiskCapacity(ctx, svClusterClient, vmSvcNamespace, bootDiskVM.imageName)
 
 				bootDiskVM.createPoweredOnVM(ctx)
-				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+				// The image may not have VMware Tools, so the VM may never get
+				// an IP address. Do not wait for one.
+				vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmSvcNamespace, vmName)
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the requested size")
 				vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, bootDiskVM.desiredCapacity)
@@ -2239,7 +2262,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			// Once the boot disk has a PVC, the PVC is the source of truth for
 			// its size, so a later change to the field is ignored.
-			It("Should ignore a raised spec.advanced.bootDiskCapacity once the boot disk has a PVC", Label("boot-disk-capacity", "experimental"), func() {
+			It("Should ignore a raised spec.advanced.bootDiskCapacity once the boot disk has a PVC", Label("boot-disk-capacity"), func() {
 				bootDiskVM.createPoweredOnVM(ctx)
 				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 				bootVolName, _ := vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
@@ -2295,7 +2318,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			// size of the image and the PVC is created with that size. A linked
 			// clone is required, since a full clone can be registered as a PVC
 			// before or after the field is set, which races with the capacity.
-			It("Should ignore spec.advanced.bootDiskCapacity set after the VM is created", Label("boot-disk-capacity", "experimental"), func() {
+			It("Should ignore spec.advanced.bootDiskCapacity set after the VM is created", Label("boot-disk-capacity"), func() {
 				bootDiskVM.createPoweredOffVM(ctx, "")
 
 				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
@@ -2308,6 +2331,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Powering on the Virtual Machine")
 				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the image size")
@@ -2316,7 +2340,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			// The disk is never promoted when promotion is disabled, so it stays
 			// a linked clone without a PVC and the capacity is not applied.
-			It("Should ignore spec.advanced.bootDiskCapacity set after the VM is created when disk promotion is disabled", Label("boot-disk-capacity", "experimental"), func() {
+			It("Should ignore spec.advanced.bootDiskCapacity set after the VM is created when disk promotion is disabled", Label("boot-disk-capacity"), func() {
 				bootDiskVM.createPoweredOffVM(ctx, vmopv1.VirtualMachinePromoteDisksModeDisabled)
 
 				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
@@ -2342,7 +2366,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			// VM is then powered on, the disk is extended before the PVC is
 			// created and the final size is the new capacity. This spec waits
 			// for the PVC first, so it always sees the image size.
-			It("Should ignore spec.advanced.bootDiskCapacity set after the boot disk has a PVC when the disk is promoted offline", Label("boot-disk-capacity", "experimental"), func() {
+			It("Should ignore spec.advanced.bootDiskCapacity set after the boot disk has a PVC when the disk is promoted offline", Label("boot-disk-capacity"), func() {
 				bootDiskVM.createPoweredOffVM(ctx, vmopv1.VirtualMachinePromoteDisksModeOffline)
 				vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, vmName, metav1.Condition{
 					Type:   vmopv1.VirtualMachineDiskPromotionSynced,
@@ -2354,17 +2378,37 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Powering on the Virtual Machine")
 				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the image size")
 				vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, bootDiskVM.imageCapacity)
 			})
 
+			// The VM has a snapshot, so the boot disk has a snapshot and the
+			// capacity is not applied. The helper asserts the VM stays powered
+			// off and the boot disk stays at the image size.
+			//
+			// NOTE: The VM is not powered on. A VM with a snapshot has its boot
+			// disk registered as a PVC that stays Pending, and the VM does not
+			// power on while the registration is pending. The snapshot is also
+			// not deleted. Both need vmop-4398 to be fixed. The pending specs
+			// below cover the scenarios that power on and delete the snapshot.
+			It("Should ignore spec.advanced.bootDiskCapacity set while the VM has a snapshot", Label("boot-disk-capacity"), func() {
+				bootDiskVM.createVMWithCapacitySetDuringSnapshot(ctx)
+			})
+
 			// The snapshot is deleted before power on, so the disk is a linked
 			// clone again. The capacity is not applied, the disk is promoted
 			// online, and the PVC is created with the size of the image.
-			It("Should ignore spec.advanced.bootDiskCapacity set while the VM had a snapshot when the disk is promoted online", Label("boot-disk-capacity", "experimental"), func() {
+			//
+			// NOTE: Pending until vmop-4398 is fixed. The deleted snapshot stays
+			// on the CSI finalizer cns.vmware.com/syncvolume. The disk promotion
+			// of a VM with a snapshot is also wrong until vmop-4399 is fixed.
+			PIt("Should ignore spec.advanced.bootDiskCapacity set while the VM had a snapshot when the disk is promoted online", Label("boot-disk-capacity"), func() {
 				bootDiskVM.createVMWithCapacitySetDuringSnapshot(ctx)
+				bootDiskVM.deleteSnapshot(ctx)
 				bootDiskVM.powerOnWithPromoteDisksMode(ctx, vmopv1.VirtualMachinePromoteDisksModeOnline)
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the image size")
@@ -2375,8 +2419,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			// stays a linked clone without a PVC, and the capacity is not
 			// applied. Once the disk is promoted it is a full clone, and the
 			// capacity is applied before the disk is registered as a PVC.
-			It("Should apply spec.advanced.bootDiskCapacity set while the VM had a snapshot once the disk is promoted offline", Label("boot-disk-capacity", "experimental"), func() {
+			//
+			// NOTE: Pending until vmop-4398 is fixed. See the spec above.
+			PIt("Should apply spec.advanced.bootDiskCapacity set while the VM had a snapshot once the disk is promoted offline", Label("boot-disk-capacity"), func() {
 				bootDiskVM.createVMWithCapacitySetDuringSnapshot(ctx)
+				bootDiskVM.deleteSnapshot(ctx)
 				bootDiskVM.powerOnWithPromoteDisksMode(ctx, vmopv1.VirtualMachinePromoteDisksModeOffline)
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 
@@ -2395,6 +2442,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Powering on the Virtual Machine")
 				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 
 				// NOTE: The capacity is applied here even though the field was not
@@ -2407,8 +2455,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			// The snapshot is deleted before power on and promotion stays
 			// disabled, so the disk stays a linked clone without a PVC and the
 			// capacity is not applied.
-			It("Should ignore spec.advanced.bootDiskCapacity set while the VM had a snapshot when disk promotion stays disabled", Label("boot-disk-capacity", "experimental"), func() {
+			//
+			// NOTE: Pending until vmop-4398 is fixed. See the spec above.
+			PIt("Should ignore spec.advanced.bootDiskCapacity set while the VM had a snapshot when disk promotion stays disabled", Label("boot-disk-capacity"), func() {
 				bootDiskVM.createVMWithCapacitySetDuringSnapshot(ctx)
+				bootDiskVM.deleteSnapshot(ctx)
 
 				By("Powering on the Virtual Machine")
 				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))

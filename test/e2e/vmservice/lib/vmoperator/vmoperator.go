@@ -1466,10 +1466,11 @@ func EventuallyBootDiskStoragePolicyMatchesVMStorageClass(
 		"Timed out waiting for boot disk storage policy to match spec.storageClass on VirtualMachine %s/%s", namespace, name)
 }
 
-// EventuallyBootDiskCapacityMatches polls until the VM is powered on and the
-// boot disk capacity agrees in all three places: the vCenter virtual disk, the
-// boot disk PVC's spec.resources.requests.storage, and the PV bound to the PVC
-// (status.capacity). The boot disk PVC must be Bound.
+// EventuallyBootDiskCapacityMatches polls until the boot disk capacity agrees
+// in all three places: the vCenter virtual disk, the boot disk PVC's
+// spec.resources.requests.storage, and the PV bound to the PVC
+// (status.capacity). The boot disk PVC must be Bound. The VM can be powered
+// on or off.
 //
 // Only call this when the AllDisksArePVCs capability is enabled.
 func EventuallyBootDiskCapacityMatches(
@@ -1486,8 +1487,6 @@ func EventuallyBootDiskCapacityMatches(
 		vm, err := utils.GetVirtualMachine(ctx, k8sClient, namespace, name)
 		g.Expect(err).NotTo(HaveOccurred())
 
-		g.Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn),
-			"VirtualMachine %s/%s is not powered on", namespace, name)
 		g.Expect(vm.Status.UniqueID).NotTo(BeEmpty())
 
 		bootVol := findBootDiskVolume(vm.Spec.Volumes)

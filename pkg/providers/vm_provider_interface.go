@@ -84,6 +84,10 @@ type VirtualMachineProviderInterface interface {
 	// VSphereClient returns the provider's vSphere client.
 	VSphereClient(context.Context) (*client.Client, error)
 
+	// VSphereClientReplaced returns a channel that is closed when the provider discards its vSphere client
+	// because the vCenter PNID or credentials changed. Callers holding the old client should re-fetch it.
+	VSphereClientReplaced() <-chan struct{}
+
 	// DeleteSnapshot deletes a snapshot from a virtual machine.
 	DeleteSnapshot(ctx context.Context, vmSnapshot *vmopv1.VirtualMachineSnapshot,
 		vm *vmopv1.VirtualMachine, removeChildren bool, consolidate *bool) (bool, error)

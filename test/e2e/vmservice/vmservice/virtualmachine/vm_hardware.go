@@ -112,8 +112,7 @@ func createHardwareVMWithPVCs(
 	GinkgoHelper()
 
 	client := clusterProxy.GetClient()
-	vm, err := manifestbuilders.VirtualMachineA5(params)
-	Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
+	vm := manifestbuilders.VirtualMachineA5(params)
 	claims, err := manifestbuilders.PersistentVolumeClaims(params.PVCs)
 	Expect(err).NotTo(HaveOccurred(), "failed to build PVCs")
 

@@ -257,7 +257,7 @@ vmoperator.WaitForVirtualMachineCreation(ctx, config, clusterProxy.GetClient(), 
 
 #### Manifest Builders (`manifestbuilders`)
 
-Keep the existing builders where they decode inline cloud-init/Sysprep YAML or assemble VM/PVC manifest bundles. Avoid introducing `VirtualMachineYaml` just to rename API fields. The typed A5/A6 constructors build only the VM; create any PVCs separately. Use `manifestbuilders.ToYAML` when a test specifically needs a YAML document, such as a kubectl validation test.
+Keep the existing builders where they assemble VM/PVC manifest bundles. Avoid introducing `VirtualMachineYaml` just to rename API fields, and set bootstrap configuration with typed API literals rather than inline YAML. The typed `VirtualMachineA5` constructor builds only the VM; build its PVCs with `PersistentVolumeClaims` and create them separately. Use `manifestbuilders.ToYAML` when a test specifically needs a YAML document, such as a kubectl validation test.
 
 #### Infrastructure Access (`infrastructure/vsphere`)
 ```go

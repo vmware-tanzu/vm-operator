@@ -638,7 +638,7 @@ func createSnapshotVM(
 	imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, client, ns,
 		vmservice.GetDefaultImageDisplayName(clusterResources))
 
-	vm, err := manifestbuilders.VirtualMachineA5(manifestbuilders.VirtualMachineYaml{
+	vm := manifestbuilders.VirtualMachineA5(manifestbuilders.VirtualMachineYaml{
 		Namespace:        ns,
 		Name:             vmName,
 		ImageName:        imageName,
@@ -646,7 +646,6 @@ func createSnapshotVM(
 		StorageClassName: clusterResources.StorageClassName,
 		PVCs:             pvcs,
 	})
-	Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachine")
 	claims, err := manifestbuilders.PersistentVolumeClaims(pvcs)
 	Expect(err).NotTo(HaveOccurred(), "failed to build PVCs")
 

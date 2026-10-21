@@ -102,12 +102,6 @@ func InlineCloudInitSecret(secret Secret) *corev1.Secret {
 	}
 }
 
-// GetSecretYamlInlineSysprepData returns a Secret with inline data
-// referenced by sysprep bootstrap secret key selectors.
-func GetSecretYamlInlineSysprepData(secret Secret) []byte {
-	return ToYAML(InlineSysprepSecret(secret))
-}
-
 // InlineSysprepSecret returns the Secret referenced by inline Sysprep key selectors.
 func InlineSysprepSecret(secret Secret) *corev1.Secret {
 	return &corev1.Secret{

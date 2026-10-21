@@ -69,13 +69,6 @@ var _ = Describe("Manifest builders", func() {
 			Expect(docs[0].Object).ToNot(HaveKey("status"))
 			Expect(docs[0].Object["metadata"]).ToNot(HaveKey("creationTimestamp"))
 		},
-		Entry("VirtualMachine v1alpha2",
-			func() []byte {
-				vm, err := mb.VirtualMachineA2(minimalVM())
-				Expect(err).ToNot(HaveOccurred())
-				return mb.ToYAML(vm)
-			},
-			"vmoperator.vmware.com/v1alpha2", "VirtualMachine"),
 		Entry("VirtualMachine v1alpha5",
 			func() []byte { return mb.GetVirtualMachineYamlA5(minimalVM()) },
 			"vmoperator.vmware.com/v1alpha5", "VirtualMachine"),
@@ -161,7 +154,7 @@ var _ = Describe("Manifest builders", func() {
 			"    shell: /bin/bash\nwrite_files:\n  - content: |\n      VMSVC Says Hello World\n"+
 			"    path: /helloworld\n"),
 		Entry("Secret InlineSysprepData vmsvc-pwd", func() []byte {
-			return mb.GetSecretYamlInlineSysprepData(mb.Secret{Name: "s", Namespace: "my-ns"})
+			return mb.ToYAML(mb.InlineSysprepSecret(mb.Secret{Name: "s", Namespace: "my-ns"}))
 		}, "vmsvc-pwd", "vmware"),
 	)
 
@@ -202,17 +195,9 @@ var _ = Describe("Manifest builders", func() {
 			p.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
 			filler.Fill(p.Hardware)
 
-			vm, err := mb.VirtualMachineA5(p)
-			Expect(err).ToNot(HaveOccurred())
+			vm := mb.VirtualMachineA5(p)
 
 			Expect(toJSON(vm.Spec.Hardware)).To(MatchJSON(toJSON(p.Hardware)))
 		}
-	})
-
-	It("returns an error for an invalid inline sysprep", func() {
-		p := minimalVM()
-		p.Bootstrap.Sysprep = &mb.Sysprep{Sysprep: new("notAField: true")}
-		_, err := mb.VirtualMachineA2(p)
-		Expect(err).To(MatchError(ContainSubstring("notAField")))
 	})
 })

@@ -70,7 +70,7 @@ var _ = Describe("Manifest builders", func() {
 			Expect(docs[0].Object["metadata"]).ToNot(HaveKey("creationTimestamp"))
 		},
 		Entry("VirtualMachine v1alpha5",
-			func() []byte { return mb.GetVirtualMachineYamlA5(minimalVM()) },
+			func() []byte { return mb.ToYAML(mb.VirtualMachineA5(minimalVM())) },
 			"vmoperator.vmware.com/v1alpha5", "VirtualMachine"),
 		Entry("PersistentVolumeClaim",
 			func() []byte {
@@ -102,26 +102,6 @@ var _ = Describe("Manifest builders", func() {
 			"rules": [{"direction": "in", "action": "allow"}]
 		}`))
 	})
-
-	DescribeTable("render the VirtualMachine followed by its PersistentVolumeClaims",
-		func(manifest func(mb.VirtualMachineYaml) []byte, apiVersion string) {
-			p := minimalVM()
-			p.PVCs = []mb.PVC{
-				{VolumeName: "vol-1", ClaimName: "claim-1", Namespace: "my-ns", RequestSize: "1Gi"},
-				{VolumeName: "vol-2", ClaimName: "claim-2", Namespace: "my-ns", RequestSize: "2Gi"},
-			}
-
-			docs := parseDocs(manifest(p))
-			Expect(docs).To(HaveLen(3))
-			Expect(docs[0].GetAPIVersion()).To(Equal(apiVersion))
-			Expect(docs[0].GetKind()).To(Equal("VirtualMachine"))
-			for i, name := range []string{"claim-1", "claim-2"} {
-				Expect(docs[i+1].GetKind()).To(Equal("PersistentVolumeClaim"))
-				Expect(docs[i+1].GetName()).To(Equal(name))
-			}
-		},
-		Entry("v1alpha5", mb.GetVirtualMachineYamlA5, "vmoperator.vmware.com/v1alpha5"),
-	)
 
 	It("renders VirtualMachineGroupPublishRequest virtualMachines as a list", func() {
 		docs := parseDocs(mb.GetVirtualMachineGroupPublishRequestYaml(mb.VirtualMachineGroupPublishRequestYaml{

@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
@@ -43,17 +42,8 @@ type VirtualMachineYaml struct {
 	Hardware         *vmopv1.VirtualMachineHardwareSpec `json:"hardware,omitempty"`
 }
 
-// GetVirtualMachineYamlA5 returns a multi-document manifest containing a
-// v1alpha5 VirtualMachine followed by a PersistentVolumeClaim for each entry
-// in vmYaml.PVCs.
-func GetVirtualMachineYamlA5(vmYaml VirtualMachineYaml) []byte {
-	return ToYAML(append(
-		[]ctrlclient.Object{VirtualMachineA5(vmYaml)},
-		must(persistentVolumeClaimObjects(vmYaml.PVCs))...)...)
-}
-
 // GetPersistentVolumeClaimYaml returns a PersistentVolumeClaim YAML manifest
-// from the same PVC fields used by GetVirtualMachineYamlA5.
+// from the same PVC fields used by VirtualMachineA5.
 func GetPersistentVolumeClaimYaml(pvc PVC) []byte {
 	return ToYAML(must(PersistentVolumeClaim(pvc)))
 }

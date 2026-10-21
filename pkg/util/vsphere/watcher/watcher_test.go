@@ -229,12 +229,18 @@ var _ = Describe("Start", func() {
 		var tErr *net.OpError
 		switch {
 		case errors.As(urlErr.Err, &tErr):
-			ExpectWithOffset(1, tErr.Op).To(Equal("dial"))
+			// Closing the server can fail a new dial or a write on an
+			// existing connection.
+			ExpectWithOffset(1, tErr.Op).To(BeElementOf("dial", "write"))
 			ExpectWithOffset(1, tErr.Net).To(Equal("tcp"))
 			ExpectWithOffset(1, tErr.Err).To(HaveOccurred())
 			var sysErr *os.SyscallError
 			ExpectWithOffset(1, errors.As(tErr.Err, &sysErr)).To(BeTrue())
-			ExpectWithOffset(1, sysErr.Syscall).To(Equal("connect"))
+			expectedSyscall := "connect"
+			if tErr.Op == "write" {
+				expectedSyscall = "write"
+			}
+			ExpectWithOffset(1, sysErr.Syscall).To(Equal(expectedSyscall))
 		default:
 			ExpectWithOffset(1, urlErr.Err).To(HaveOccurred())
 		}

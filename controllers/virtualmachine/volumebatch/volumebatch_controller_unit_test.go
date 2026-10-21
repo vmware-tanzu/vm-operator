@@ -1895,7 +1895,7 @@ func unitTestsConcurrentStatusUpdates() {
 				Expect(freshVM.Status.Volumes).To(HaveLen(1))
 				freshVM.Status.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
 
-				return helper.Patch(ctx, freshVM)
+				return helper.Patch(ctx, freshVM, patch.WithStatusOptimisticLock{})
 			}
 
 			It("does not lose the concurrently-written ControllerType, and converges on retry", func() {
@@ -1904,7 +1904,7 @@ func unitTestsConcurrentStatusUpdates() {
 				round1VM, round1Helper := reconcileAndFetch()
 				Expect(round1VM.Status.Volumes[0].Attached).To(BeFalse())
 				Expect(round1VM.Status.Volumes[0].ControllerType).To(BeEmpty())
-				Expect(round1Helper.Patch(ctx, round1VM)).To(Succeed())
+				Expect(round1Helper.Patch(ctx, round1VM, patch.WithStatusOptimisticLock{})).To(Succeed())
 
 				simulateAttach()
 
@@ -1927,7 +1927,7 @@ func unitTestsConcurrentStatusUpdates() {
 				// ControllerType - is part of this patch. It must fail with
 				// a conflict rather than silently overwrite the concurrent
 				// write.
-				err := staleHelper.Patch(ctx, staleVM)
+				err := staleHelper.Patch(ctx, staleVM, patch.WithStatusOptimisticLock{})
 				Expect(err).To(HaveOccurred(),
 					"the stale patch must be rejected rather than silently overwrite the concurrently-written ControllerType")
 				Expect(getControllerType()).To(Equal(vmopv1.VirtualControllerTypeSCSI),
@@ -1939,7 +1939,7 @@ func unitTestsConcurrentStatusUpdates() {
 				// already has ControllerType set, so its own carry-forward
 				// preserves it.
 				retryVM, retryHelper := reconcileAndFetch()
-				Expect(retryHelper.Patch(ctx, retryVM)).To(Succeed())
+				Expect(retryHelper.Patch(ctx, retryVM, patch.WithStatusOptimisticLock{})).To(Succeed())
 				Expect(getControllerType()).To(Equal(vmopv1.VirtualControllerTypeSCSI),
 					"ControllerType must still be present after the volume batch controller's retry")
 			})

@@ -222,28 +222,23 @@ if !apiequality.Semantic.DeepEqual(base.Spec, obj.Spec) ||
   types already are — `test/builder/fake.go` `KnownObjectTypes`) so the fake
   client enforces the spec/status split and catches a missing status write.
 
-### Same pattern through `pkg/patch.Helper`: `StatusOptimisticLocker`
+### Same pattern through `pkg/patch.Helper`: `WithStatusOptimisticLock`
 
-The fan-in problem above also shows up when the shared list lives on an object that is itself a **primary reconciled object of more than one controller**, going through `patch.Helper` rather than a direct `client.Patch`/`client.Status().Patch` call. There is no single call site to hand-edit in that case — `NewReconciler`/`Reconcile` in every controller calls the same shared helper — so `pkg/patch` exposes a marker interface instead of requiring every caller to duplicate the base/diff/skip/lock block:
+When multiple controllers read-modify-write the same status list through `patch.Helper`, opt in at **every writer's** patch call:
 
 ```go
-// StatusOptimisticLocker is implemented by API types whose status may be
-// independently read-modify-written by more than one controller.
-type StatusOptimisticLocker interface {
-    OptimisticallyLockStatus() bool
+if err := patchHelper.Patch(ctx, obj, patch.WithStatusOptimisticLock{}); err != nil {
+    return err
 }
 ```
 
-A type that implements this (returning `true`) gets its status subresource patched with `client.MergeFromWithOptimisticLock` automatically, on every `patch.Helper.Patch` call, from any controller. `VirtualMachine` implements it because `Status.Volumes` is independently written by the `virtualmachine`, `volumebatch`, and `volume` controllers.
+The `virtualmachine`, `volumebatch`, and legacy `volume` controllers all use this option because they independently update `VirtualMachine.Status.Volumes`. The main VM controller's deferred patch also covers unmanaged-disk registration cleanup and snapshot restore's status reset. Readiness probing only changes conditions, which have their own merge and optimistic-lock retry logic; ReplicaSet labeling only changes metadata. Neither needs this status option.
 
-**Which mechanism to reach for:**
+The helper patches locked status before its other writes can advance the original resourceVersion, and skips an empty status patch. A conflict must trigger a fresh read and reconciliation; retrying the same computed list against a newer resourceVersion can still discard another writer's changes.
 
-| Situation | Mechanism |
-|---|---|
-| Fanning out from your own reconcile to a child/side object you create or upsert directly (one specific call site) | Ad hoc `client.MergeFromWithOptimisticLock` at that call site — see `controllers/configtarget`'s owner-reference upsert onto `VirtualMachineConfigOptions`, and `controllers/virtualmachineconfigoptions`'s `Status.HardwareVersions` upsert onto `VirtualMachineGuestOptions` |
-| More than one controller treats the object as its own primary reconciled object via `patch.Helper` | Implement `pkg/patch.StatusOptimisticLocker` on the type — see `VirtualMachine` / `Status.Volumes` |
+For direct child-object writes, use `client.MergeFromWithOptimisticLock` at the write itself, as shown above. For helper-based status writes, use `patch.WithStatusOptimisticLock{}`. New writers of a shared status list must opt in too.
 
-Do **not** make every type implement this by default: the precondition is on the whole object, not the at-risk field, so any concurrent writer to *any* part of the object (an unrelated annotation, a different status field) forces a conflict on a type that doesn't actually have a second status writer — that conflict surfaces as a genuine reconcile error (not a free requeue) and rate-limited backoff, since the deferred `patchHelper.Patch` error becomes a plain returned error, not one of the `pkg/errors` sentinel types. Only opt in types that have a genuinely shared status list.
+Do **not** enable this option for every status patch: the resourceVersion precondition covers the whole object, so concurrent annotation, spec, or unrelated status writes can also cause conflicts. A deferred patch conflict returns as a reconcile error with rate-limited backoff. The option locks all non-condition status changes in that call, rather than only the shared list.
 
 ## VM Update Reconcile Order
 

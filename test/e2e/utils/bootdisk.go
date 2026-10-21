@@ -187,7 +187,7 @@ func diskDeviceKeyByUUID(
 
 	for _, dev := range object.VirtualDeviceList(vmMO.Config.Hardware.Device).SelectByType((*vimtypes.VirtualDisk)(nil)) {
 		disk := dev.(*vimtypes.VirtualDisk)
-		if uuid := virtualDiskBackingUUID(disk); strings.ToLower(uuid) == normalised {
+		if uuid := VirtualDiskBackingUUID(disk); strings.ToLower(uuid) == normalised {
 			return disk.Key, nil
 		}
 	}
@@ -195,9 +195,9 @@ func diskDeviceKeyByUUID(
 	return 0, fmt.Errorf("no virtual disk with UUID %q found on VM %s", diskUUID, vmMoID)
 }
 
-// virtualDiskBackingUUID extracts the UUID from the most common virtual disk
+// VirtualDiskBackingUUID extracts the UUID from the most common virtual disk
 // backing types used on WCP supervisor clusters.
-func virtualDiskBackingUUID(disk *vimtypes.VirtualDisk) string {
+func VirtualDiskBackingUUID(disk *vimtypes.VirtualDisk) string {
 	switch b := disk.Backing.(type) {
 	case *vimtypes.VirtualDiskFlatVer2BackingInfo:
 		return b.Uuid

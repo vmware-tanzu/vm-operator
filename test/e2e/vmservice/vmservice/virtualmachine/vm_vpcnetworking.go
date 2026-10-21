@@ -328,14 +328,17 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 			// status. That is a second, namespace-readiness reason (on top of
 			// the general one in the VMVPCSpec doc comment) why this secret
 			// create keeps an explicit Eventually despite being a plain
-			// corev1 object.
+			// corev1 object. AlreadyExists is ignored because an earlier
+			// attempt's create may have landed even though it reported an
+			// error, and the secret name is random in a new namespace.
 			By("Create a secret in the second namespace with cloud-init config")
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(manifestbuilders.Secret{
+			secret := manifestbuilders.CloudConfigSecret(manifestbuilders.Secret{
 				Namespace: secondNamespaceName,
 				Name:      secretName,
 			})
 			Eventually(func(g Gomega) {
-				g.Expect(clusterProxy.ApplyWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create secret: %s", string(secretYaml))
+				g.Expect(ctrlclient.IgnoreAlreadyExists(svClusterClient.Create(ctx, secret.DeepCopy()))).To(Succeed(),
+					"failed to create Secret %s/%s", secret.Namespace, secret.Name)
 			}, config.GetIntervals("default", "wait-secret-creation")...).Should(Succeed(), "Timed out in creating the Secret")
 			vmservice.VerifySecretCreation(ctx, config, svClusterClient, secondNamespaceName, secretName)
 

@@ -106,7 +106,7 @@ func GCVirtualMachineConfigOptions(ctx context.Context, c client.Client,
 
 ### What GC does NOT cover
 
-- `VirtualMachineConfigPolicy` objects when their owning `Zone` is deleted. This involves namespace-scoped objects and Zone finaliser semantics; deferred.
+- The experimental `VirtualMachineConfigPolicy` API is removed by vmop-4318. Startup cleanup deletes its CRD and all policy objects; no Zone-specific policy GC is needed.
 
 `VirtualMachineGuestOptions.status.hardwareVersions` listMap entries for a hardware version no longer reported by that version's `VirtualMachineConfigOptions` reconcile *are* pruned (vmop-3932): the `VirtualMachineConfigOptions` controller tracks the guest OS IDs live in its own `QueryConfigOptionEx` result and removes its hardware version's stale entry from every `VirtualMachineGuestOptions` not in that set, deleting the object outright once no hardware-version entries remain. See `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go` (`garbageCollectGuestOptions`).
 
@@ -146,9 +146,9 @@ The following work is already checked in on the repository's `main` branch:
 
 | Artifact | Status |
 |----------|--------|
-| Go types for `ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions`, `VirtualMachineConfigPolicy` | **Done** |
+| Go types for `ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions` | **Done** |
 | `zz_generated.deepcopy.go` | **Done** (regen required for the `ConfigTarget` additions in vmop-3797) |
-| CRD manifests for the four above | **Done** (`config_target_*.yaml` regen required for the `ConfigTarget` additions in vmop-3797) |
+| CRD manifests for the three above | **Done** (`config_target_*.yaml` regen required for the `ConfigTarget` additions in vmop-3797) |
 | `external/vim/doc/controller-workflows.md` | **Done** |
 | `external/vim/pkg/convert/vim2crd.go` stub | Done (panics "Not Implemented") |
 | `controllers/infra/zone/zone_controller.go` skeleton | Done (177 LOC; does not yet emit child CRs) |
@@ -198,7 +198,7 @@ This Spike (vmop-3794) is intentionally scoped to *answer the question*, not to 
 
 - `ConfigTarget.status` — possible new boolean(s) summarising auto-NUMA and auto-placed-SR-IOV support per cluster, computed from `pciPassthruInfo`, `dvxClasses`, and the existing supported-hardware-version set. The cluster-aggregation pattern is already established by `maxHardwareVersion` and the enriched `sriov` list landed under vmop-3797.
 - The VM admission webhook (Story S9 / vmop-3746) — added create- and update-path checks that read those K8s-object summaries.
-- The `VirtualMachineConfigPolicy` — possibly a tenant-controlled mode for the unplaced-VM edit window.
+- Flex VM Classes (vmop-4034, PR #2067) — future governance rules are specified separately from environment-browser discovery.
 
 Follow-up Stories will be filed against vmop-3331 once the Spike concludes.
 
@@ -258,3 +258,7 @@ Both additions are tracked by the new sub-task vmop-3797 under vmop-3742.
 - Wiki: Research: VM Service: Class Policy and Resize
 - vSphere API: `vim.EnvironmentBrowser.QueryConfigTarget`, `QueryConfigOptionDescriptor`, `QueryConfigOptionEx`
 - govmomi: `github.com/vmware/govmomi/vim25/methods`, `github.com/vmware/govmomi/property`
+
+## Decision: retire config policy independently (vmop-4318)
+
+The unused policy API and its enforcement never shipped. Remove policy creation, types, CRD installation and RBAC now; explicitly delete the experimental CRD on startup because removing an embedded manifest alone does not remove installed CRDs. Preserve the three environment-browser CRDs and their existing capability contract. Class governance, ranges, ExtraConfig matching and lifecycle enforcement belong to the Flex VM Classes specification (vmop-4034, PR #2067); environment-browser completion remains vmop-4319. Neither is a prerequisite for policy removal.

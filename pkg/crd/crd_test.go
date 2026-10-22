@@ -96,10 +96,9 @@ var (
 		"tags.vsphere.policy.vmware.com",
 	}
 
-	externalVIMConfigPolicy = []string{
+	externalEnvironmentBrowser = []string{
 		"configtargets.vim.vmware.com",
 		"virtualmachineconfigoptions.vim.vmware.com",
-		"virtualmachineconfigpolicies.vim.vmware.com",
 		"virtualmachineguestoptions.vim.vmware.com",
 	}
 
@@ -116,7 +115,7 @@ var (
 		externalBYOK,
 		externalVSpherePolicy,
 		externalTagAPI,
-		externalVIMConfigPolicy,
+		externalEnvironmentBrowser,
 		externalVMEviction,
 		externalControlledRebalancing,
 		[]string{storagePoliciesCRD},
@@ -201,6 +200,30 @@ var _ = Describe("Install", func() {
 	JustBeforeEach(func() {
 		Expect(pkgcrd.Install(ctx, client, nil)).To(Succeed())
 	})
+
+	DescribeTable("removes the obsolete policy CRD on upgrade",
+		func(enabled bool) {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VirtualMachineConfigPolicy = enabled
+			})
+			obj := &apiextensionsv1.CustomResourceDefinition{
+				ObjectMeta: metav1.ObjectMeta{Name: "virtualmachineconfigpolicies.vim.vmware.com"},
+			}
+			Expect(client.Create(ctx, obj)).To(Succeed())
+			Expect(pkgcrd.Install(ctx, client, nil)).To(Succeed())
+			err := client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), obj)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			var list apiextensionsv1.CustomResourceDefinitionList
+			Expect(client.List(ctx, &list)).To(Succeed())
+			expected := slices.Clone(basesNonGated)
+			if enabled {
+				expected = append(expected, externalEnvironmentBrowser...)
+			}
+			assertCRDsConsistOf(list.Items, expected...)
+		},
+		Entry("with the environment browser enabled", true),
+		Entry("with the environment browser disabled", false),
+	)
 
 	It("should stop writing after one update with cleanup disabled", func() {
 		// Creation removes disabled feature fields, while updates with cleanup
@@ -962,7 +985,7 @@ var _ = Describe("Install", func() {
 			})
 		})
 
-		When("VM config policy is enabled", func() {
+		When("the environment browser is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 					config.Features.VirtualMachineConfigPolicy = true
@@ -971,7 +994,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalVIMConfigPolicy)...)
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalEnvironmentBrowser)...)
 			})
 		})
 
@@ -1547,6 +1570,60 @@ var _ = Describe(
 	"Install against real API server",
 	Label(testlabels.EnvTest),
 	func() {
+		DescribeTable("removes an installed policy CRD and its objects",
+			func(enabled bool) {
+				ctx := pkgcfg.WithConfig(pkgcfg.Config{
+					Features: pkgcfg.FeatureStates{VirtualMachineConfigPolicy: enabled},
+				})
+				obsolete := &apiextensionsv1.CustomResourceDefinition{
+					ObjectMeta: metav1.ObjectMeta{Name: "virtualmachineconfigpolicies.vim.vmware.com"},
+					Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+						Group: "vim.vmware.com",
+						Names: apiextensionsv1.CustomResourceDefinitionNames{
+							Plural: "virtualmachineconfigpolicies", Kind: "VirtualMachineConfigPolicy",
+						},
+						Scope: apiextensionsv1.NamespaceScoped,
+						Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{
+							Name: "v1alpha1", Served: true, Storage: true,
+							Schema: &apiextensionsv1.CustomResourceValidation{
+								OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object"},
+							},
+						}},
+					},
+				}
+				Expect(envTestClient.Create(ctx, obsolete)).To(Succeed())
+				DeferCleanup(func() {
+					Expect(ctrlclient.IgnoreNotFound(envTestClient.Delete(ctx, obsolete))).To(Succeed())
+				})
+				policy := &unstructured.Unstructured{}
+				policy.SetAPIVersion("vim.vmware.com/v1alpha1")
+				policy.SetKind("VirtualMachineConfigPolicy")
+				policy.SetName("upgrade-policy")
+				policy.SetNamespace("default")
+				Eventually(func() error {
+					return envTestClient.Create(ctx, policy)
+				}).Should(Succeed())
+
+				Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+				Eventually(func() bool {
+					return apierrors.IsNotFound(envTestClient.Get(ctx,
+						ctrlclient.ObjectKeyFromObject(obsolete), obsolete))
+				}).WithTimeout(30 * time.Second).Should(BeTrue())
+				// Re-installation must not recreate the removed API.
+				Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+				Expect(apierrors.IsNotFound(envTestClient.Get(ctx,
+					ctrlclient.ObjectKeyFromObject(obsolete), obsolete))).To(BeTrue())
+				if enabled {
+					for _, name := range externalEnvironmentBrowser {
+						var crd apiextensionsv1.CustomResourceDefinition
+						Expect(envTestClient.Get(ctx, ctrlclient.ObjectKey{Name: name}, &crd)).To(Succeed())
+					}
+				}
+			},
+			Entry("with the environment browser enabled", true),
+			Entry("with the environment browser disabled", false),
+		)
+
 		DescribeTable("should skip writes after API server defaulting and convergence",
 			func(cleanup, enabled bool) {
 				ctx := pkgcfg.WithConfig(pkgcfg.Config{

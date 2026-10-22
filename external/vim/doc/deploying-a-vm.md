@@ -9,7 +9,7 @@ The vSphere [`EnvironmentBrowser`](https://developer.broadcom.com/xapis/vsphere-
 | `QueryConfigOption` / `QueryConfigOptionEx` | `VirtualMachineConfigOptions` (per hardware version) and `VirtualMachineGuestOptions` (per guest ID) | Cluster |
 | `QueryConfigTarget` | `ConfigTarget` | Cluster |
 
-`VirtualMachineConfigPolicy` has **no VMODL equivalent**. It is described in its own section below.
+The unused `VirtualMachineConfigPolicy` API is removed (vmop-4318). Governance is specified separately by Flex VM Classes (vmop-4034, PR #2067).
 
 ## Resource names
 
@@ -20,9 +20,8 @@ These APIs use predictable **`metadata.name`** values (and matching `spec` ident
 | **configtarget** | `ConfigTarget` | The vSphere cluster **managed object ID** (MoID) | `cluster-1`, `cluster-2`, `cluster-3` |
 | **vmconfigoption** | `VirtualMachineConfigOptions` | The **hardware version** string | `vmx-22`, `vmx-19` |
 | **vmguestoption** | `VirtualMachineGuestOptions` | **Lowercased** guest ID (DNS-safe label) | `otherlinux64`, `windows2022srv64` |
-| **vmconfigpolicy** | `VirtualMachineConfigPolicy` | The **zone** name for that policy | `us-east-1`, `us-west-2` |
 
-`kubectl` short names, where registered, are **`vmconfigoptions`**, **`vmguestoptions`**, and **`vmconfigpolicy`** (note the plural **s** on the first two). For `ConfigTarget`, the registered plural resource name is **`configtargets`** (for example `kubectl get configtargets cluster-1`); some clients also accept the singular form **`configtarget`**.
+`kubectl` short names, where registered, are **`vmconfigoptions`** and **`vmguestoptions`** (note the plural **s** on the first two). For `ConfigTarget`, the registered plural resource name is **`configtargets`** (for example `kubectl get configtargets cluster-1`); some clients also accept the singular form **`configtarget`**.
 
 ## VirtualMachineConfigOptions
 
@@ -58,21 +57,6 @@ Clients typically combine **`VirtualMachineConfigOptions`** (hardware version + 
 
 `NumCPUs`, **`numCPUCores`**, and similar fields here describe **what the cluster (or chosen compute path) exposes in aggregate**, not tenant policy for a single VM.
 
-## VirtualMachineConfigPolicy
-
-`VirtualMachineConfigPolicy` is **namespace-scoped** (short name: `vmconfigpolicy`). It is **not** a projection of a single vSphere method; think of it as a **namespace-scoped companion to `ConfigTarget`** whose fields are interpreted **per virtual machine**.
-
-There is **one `VirtualMachineConfigPolicy` object per zone** in a namespace. Each object is **named after that zone** (for example `us-east-1`, `us-west-1`). If namespace `my-namespace-1` spans three zones—`us-west-1`, `us-east-1`, and `us-south-1`—then there are **three** policy objects in that namespace. Validators and placement-aware components **must consider every zone’s policy** when deciding whether a configuration is allowed: **all zone policies in the namespace are consulted**, and the outcome depends on whether **any** of them permits the requested VM configuration (for example, at least one zone allows the requested memory, CPU, devices, and ExtraConfig rules so the VM could legally run there). If **no** zone’s policy allows the request, admission or scheduling should reject it.
-
-Where `ConfigTarget` status describes cluster inventory (for example, logical CPUs available to run workloads), policy fields such as **`memory`** (`ResourceQuantityRange`), **`numCPUCores`**, **`numNUMANodes`**, and **`numSimultaneousThreads`** (`IntRange`) express **what one VM is allowed to use under that zone’s policy**, not totals across hosts in the cluster.
-
-The spec also carries information **not** modeled on `ConfigTarget`, including:
-
-- **`extraConfig`** — allow and deny lists for ExtraConfig keys (fixed, regex, or glob matching; denied keys override allowed).
-- VM-oriented capability toggles such as **`latencySensitivityLevels`**, **`cpuLockedToMaxSupported`**, **`memoryLockedToMaxSupported`**, **`hugePagesSupported`**, **`iommuSupported`**, **`rssSupported`**, **`udpRSSSupported`**, **`lroSupported`**, and **`txRxThreadModels`**.
-
-Device-related fields are embedded via **`ConfigTargetDevices`**: passthrough, vGPU, SR-IOV, and the same device families as on `ConfigTarget`, so administrators can **expose a subset** of what the cluster supports and attach **per-zone, namespace-local** policy to those devices.
-
 ## Workflows
 
 ### Creating a VM with configuration validation
@@ -101,47 +85,6 @@ The following scenario walks through how a user leverages these APIs when deploy
 
 5. They decide to create the VM with **16 GiB** of memory and **2** disks.
 
-6. The Kubernetes API server receives the `VirtualMachine` create request and routes it to the VM resource’s validation webhook.
+6. They inspect the target cluster's `ConfigTarget` to understand its discovered hardware and devices. These objects describe capabilities; they do not impose tenant governance.
 
-7. Namespace `my-namespace-1` has three zones, so there are three policies: **`VirtualMachineConfigPolicy`** objects **`us-west-1`**, **`us-east-1`**, and **`us-south-1`**. The webhook **lists or fetches every** `vmconfigpolicy` in the namespace and evaluates whether **any** zone’s policy permits the VM. Here, **`spec.memory.max`** is **8 Gi** **per VM** in **each** zone.
-
-8. The request asks for **16 Gi**. **None** of the three zone policies allows that much memory for a single VM, so **no** zone would accept the configuration. The webhook rejects the request and the API server returns an error to `kubectl`.
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant kc as kubectl
-    participant api as K8s API Server
-    participant wh as VM Validation Webhook
-    participant vmco as VirtualMachineConfigOptions<br/>(vmx-22)
-    participant vmgo as VirtualMachineGuestOptions<br/>(otherlinux64)
-    participant vcp as VirtualMachineConfigPolicy<br/>(per zone)
-
-    User->>kc: kubectl get vmconfigoptions vmx-22 -oyaml
-    kc->>api: GET .../virtualmachineconfigoptions/vmx-22
-    api->>vmco: read resource
-    vmco-->>api: status.guestOSIdentifiers
-    api-->>kc: YAML
-    kc-->>User: OtherLinux64 listed
-
-    User->>kc: kubectl get vmguestoptions otherlinux64 -oyaml
-    kc->>api: GET .../virtualmachineguestoptions/otherlinux64
-    api->>vmgo: read resource
-    vmgo-->>api: status.hardwareVersions[vmx-22]
-    api-->>kc: YAML
-    kc-->>User: supportedMinMem, recommendedMem, supportedNumDisks, ...
-
-    User->>kc: kubectl apply -f vm.yaml<br/>ns: my-namespace-1<br/>(guestID: OtherLinux64, hwVersion: vmx-22,<br/>memory: 16Gi, disks: 2)
-    kc->>api: POST .../namespaces/my-namespace-1/virtualmachines
-
-    api->>wh: AdmissionReview (CREATE VirtualMachine)
-    wh->>api: LIST .../namespaces/my-namespace-1/virtualmachineconfigpolicies
-    api->>vcp: read us-west-1, us-east-1, us-south-1
-    vcp-->>api: each spec.memory.max = 8Gi
-
-    Note over wh: All zone policies consulted<br/>no zone permits 16Gi per VM
-
-    wh-->>api: AdmissionResponse: denied
-    api-->>kc: 422 Unprocessable Entity
-    kc-->>User: Error: memory not allowed by any zone policy in namespace
-```
+7. They create the VM using the existing VM API. VM Class governance and its create, update and power-on rules will be implemented under the separate Flex VM Classes spec. This removal does not add replacement admission behavior.

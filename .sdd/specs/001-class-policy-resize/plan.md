@@ -6,12 +6,13 @@
 - **Date**: 2026-05-13
 - **Spec**: [`./sdd/specs/001-class-policy-resize/spec.md`](spec.md)
 - **Epic**: vmop-3331
+- **Scope update (vmop-4318)**: `VirtualMachineConfigPolicy` and its admission enforcement are superseded by Flex VM Classes (`VirtualMachineClass` v2, vmop-4034; specification proposed in PR #2067). This spec covers environment-browser discovery and hardware feasibility; the class spec owns governance, ranges, ExtraConfig rules, and create/update/power-on enforcement. Policy removal (vmop-4318) is independent of the class spec and environment-browser completion (vmop-4319).
 
 ---
 
 ## Summary
 
-Implement the four-CRD policy + environment-browser pipeline within the `github.com/vmware-tanzu/vm-operator` codebase, developed on branch `feature/vm-config-options-api` of the `akutz/vm-operator` fork. The `Zone` controller fans out to `ConfigTarget` and `VirtualMachineConfigPolicy`; the `ConfigTarget` controller fans out to `VirtualMachineConfigOptions` (per HW version), walks the cluster's ESX hosts in-place to aggregate per-host data onto `ConfigTarget.status`, and garbage-collects stale `VirtualMachineConfigOptions`. The `VirtualMachineConfigOptions` controller fans out to `VirtualMachineGuestOptions`. The VM admission webhook enforces the namespace policy and reads `ConfigTarget.status.maxHardwareVersion` / `status.sriov` for hardware-version and SR-IOV feasibility checks.
+Implement the three-CRD environment-browser pipeline within the `github.com/vmware-tanzu/vm-operator` codebase, developed on branch `feature/vm-config-options-api` of the `akutz/vm-operator` fork. The `Zone` controller fans out to `ConfigTarget`; the `ConfigTarget` controller fans out to `VirtualMachineConfigOptions` (per HW version), walks the cluster's ESX hosts in-place to aggregate per-host data onto `ConfigTarget.status`, and garbage-collects stale `VirtualMachineConfigOptions`. The `VirtualMachineConfigOptions` controller fans out to `VirtualMachineGuestOptions`. The VM admission webhook reads `ConfigTarget.status.maxHardwareVersion` / `status.sriov` for hardware-version and SR-IOV feasibility checks.
 
 ---
 
@@ -60,7 +61,6 @@ external/vim/api/v1alpha1/
 │                                                  hostMoID, active, maxVFs, numVFs,
 │                                                  dvxClass{,CheckpointSupported,SwDmaTracingSupported}
 ├── virtualmachine_config_options_*.go   EXISTS — no changes to types
-├── virtualmachine_config_policy_types.go EXISTS — no changes to types
 ├── virtualmachine_guest_options_types.go EXISTS — no changes to types
 └── zz_generated.deepcopy.go            REGEN — pick up the ConfigTarget extensions
 
@@ -72,14 +72,12 @@ external/vim/doc/
 
 controllers/
 ├── infra/zone/
-│   └── zone_controller.go              MODIFY — fan out ConfigTarget + VMConfigPolicy
+│   └── zone_controller.go              MODIFY — fan out ConfigTarget
 ├── configtarget/
 │   ├── configtarget_controller.go      NEW — cluster-scope + per-host iteration
 │   └── gc.go                           NEW — GC stale VirtualMachineConfigOptions
 ├── virtualmachineconfigoptions/
 │   └── vmconfigoptions_controller.go   NEW
-├── virtualmachineconfigpolicy/
-│   └── vmconfigpolicy_controller.go    NEW
 └── controllers.go                      MODIFY — register new controllers
 
 webhooks/
@@ -89,20 +87,15 @@ webhooks/
 │       └── configtarget_validator.go   NEW — immutable spec.id; valid cluster MoID format for metadata.name
 ├── virtualmachineconfigoptions/
 │   └── validation_webhook.go           NEW
-├── virtualmachineconfigpolicy/
-│   ├── validation_webhook.go           NEW
-│   └── defaulting_webhook.go           NEW
 └── virtualmachine/
-    └── validation_webhook.go           MODIFY — add policy + ConfigTarget capability checks
+    └── validation_webhook.go           MODIFY — add ConfigTarget capability checks
 
 pkg/
 ├── config/capabilities/
 │   └── capabilities.go                 MODIFY — add CapabilityVirtualMachineConfigPolicy
-├── providers/vsphere/
+└── providers/vsphere/
 │   └── environment_browser.go          NEW — QueryConfigTarget, QueryConfigOptionDescriptor,
 │                                              QueryConfigOptionEx, per-host PropertyCollector
-└── vmconfig/policy/
-    └── policy_reconciler.go            NEW — ConfigTarget→policy spec sync logic
 
 config/rbac/
 └── role.yaml                           MODIFY — add new resources
@@ -110,12 +103,10 @@ config/rbac/
 test/
 ├── unit/
 │   ├── configtarget/                   NEW
-│   ├── virtualmachineconfigoptions/    NEW
-│   └── virtualmachineconfigpolicy/     NEW
+│   └── virtualmachineconfigoptions/    NEW
 └── intg/
     ├── configtarget/                   NEW
-    ├── virtualmachineconfigoptions/    NEW
-    └── virtualmachineconfigpolicy/     NEW
+    └── virtualmachineconfigoptions/    NEW
 
 test/e2e/vmservice/
 └── configpolicy/
@@ -136,8 +127,8 @@ Before any code begins, the following wiki documents must be updated or created 
 |-------|--------|--------|
 | A1 (vmop-3733) | Wiki page ID: 2453059721 | Apply Appendix A from `vim-api-jira.md` |
 | A2 (vmop-3734) | Wiki pages ID: 2453059723, 2453060275 | Add SR-IOV EB limitation + `ConfigTarget.status` aggregation pattern (`maxHardwareVersion`, enriched `sriov`) |
-| A3 (vmop-3735) | New child of 2453059710 | Author Design: VirtualMachineConfigPolicy |
-| A4 (vmop-3736) | New child of 2453059710 | Author TDS: VirtualMachineConfigPolicy |
+| A3 (vmop-3735) | New child of 2453059710 | Update environment-browser design; governance moves to the Flex VM Classes spec |
+| A4 (vmop-3736) | New child of 2453059710 | Update environment-browser TDS; omit retired policy controller/webhooks |
 | A5 (vmop-3737) | Pages under 2453059710 | Stakeholder sign-off; move to Approved folder |
 
 ### Phase 1 — Foundations (code)
@@ -146,12 +137,12 @@ Before any code begins, the following wiki documents must be updated or created 
 
 - Add `CapabilityVirtualMachineConfigPolicy` to `pkg/config/capabilities/capabilities.go`.
 - Wire a feature gate in `pkg/config/capabilities/` that controls controller registration and webhook short-circuit.
-- Install the four `vim.vmware.com` CRDs (`ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions`, `VirtualMachineConfigPolicy`) via the Supervisor chart install hook and `config/crd/external-crds/`. No `HostSystem` CRD exists.
+- Install the three `vim.vmware.com` CRDs (`ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions`) via the Supervisor chart install hook and `config/crd/external-crds/`. No `HostSystem` CRD exists.
 
 **Key contracts**:
 ```go
 // pkg/config/capabilities/capabilities.go
-const CapabilityVirtualMachineConfigPolicy = "supports_vm_config_policy"
+const CapabilityVirtualMachineConfigPolicy = "supports_vm_service_vm_config_policy"
 ```
 
 ```go
@@ -159,7 +150,6 @@ const CapabilityVirtualMachineConfigPolicy = "supports_vm_config_policy"
 if featuregate.VirtualMachineConfigPolicy.Enabled() {
     must(controllers.AddConfigTargetController(mgr))
     must(controllers.AddVirtualMachineConfigOptionsController(mgr))
-    must(controllers.AddVirtualMachineConfigPolicyController(mgr))
     // ...
 }
 ```
@@ -171,8 +161,7 @@ Authored at `external/vim/doc/integration-guide.md`. Covers:
 - Role of each CRD (scope, name conventions, owner).
 - `ConfigTarget.status` capability surface: `maxHardwareVersion`, `sriov` (per-host entries with `hostMoID`, DVX class fields), and how the admission webhook reads it.
 - Per-host iteration inside the `ConfigTarget` controller (PropertyCollector RPC strategy, partial-failure handling).
-- `VirtualMachineConfigPolicy.spec.syncMode` semantics.
-- Worked example: tenant policy denying an unsupported HW version.
+- Worked example: inspecting hardware and guest options; governance is specified by Flex VM Classes.
 
 ### Phase 2 — Implementation (code; may proceed in parallel once Phase 1 is merged)
 
@@ -206,8 +195,7 @@ Modify `controllers/infra/zone/zone_controller.go`:
 
 1. Derive unique cluster MoIDs from `zone.spec.namespace.poolMoIDs`.
 2. For each cluster MoID: `CreateOrPatch` a `ConfigTarget` with `metadata.name = clusterMoID`.
-3. `CreateOrPatch` a `VirtualMachineConfigPolicy` with `spec.zone = zone.metadata.name`, defaulting `spec.syncMode = ConfigTarget` **only on create**.
-4. Do **not** delete `ConfigTarget` or `VirtualMachineConfigPolicy` when a pool is removed from `spec.namespace.poolMoIDs` (deletion is deferred to a follow-up).
+3. Do **not** delete `ConfigTarget` when a pool is removed from `spec.namespace.poolMoIDs` (deletion is deferred to a follow-up).
 
 #### I3. ConfigTarget controller (Story S5 / vmop-3742)
 
@@ -251,33 +239,19 @@ No standalone controller; reconciled by the `VirtualMachineConfigOptions` contro
 - RBAC, manifest registration.
 - Integration + E2E tests for the listMap merge.
 
-#### I6. VirtualMachineConfigPolicy controller (Story S8 / vmop-3745)
+#### I6. Remove the unused policy API (vmop-4318)
 
-New controller `controllers/virtualmachineconfigpolicy/`:
+Remove policy fan-out, policy-only API types, generated deepcopy methods, the CRD manifest, installation references, and policy RBAC. `pkg/crd.Install` deletes an already-installed experimental policy CRD, including its objects, independently of the environment-browser gate and `CRDCleanupEnabled`. This API and its enforcement were unreleased; no conversion or policy migration is needed. Use the existing CRD permissions and propagate cleanup failures.
 
-1. Watch `VirtualMachineConfigPolicy` in tenant namespaces.
-2. If `spec.syncMode = ConfigTarget`:
-   - Find the `ConfigTarget` for the policy's zone's cluster MoID.    - Copy relevant status fields (capacity limits, security flags, devices) into
-     `policy.spec.*`.
-3. If `spec.syncMode = Disabled`: set `Ready=True` with reason `SyncDisabled`; do not modify `spec`.
-4. Never overwrite `spec.extraConfig`, `spec.latencySensitivityLevels`, or other non-ConfigTarget-derived fields during sync.
+Retain `Features.VirtualMachineConfigPolicy` and `CapabilityVirtualMachineConfigPolicy` (`supports_vm_service_vm_config_policy`) as the environment-browser gate. Renaming that integration contract or changing browser behavior belongs to separate work.
 
-**Defaulting webhook** (`webhooks/virtualmachineconfigpolicy/defaulting_webhook.go`):
-- `spec.syncMode` → `ConfigTarget`
-- `spec.createMode / updateMode / powerOnMode` → `Allow`
-- `spec.vmClassMode` → `AsPolicy`
+Keep the discovery E2E suite and replace policy creation assertions with a check that the policy CRD is absent after installation or upgrade. Test startup cleanup with the browser enabled and disabled. The Flex VM Classes specification in PR #2067 remains independent and owns the replacement governance design.
 
-**Validation webhook**:
-- `spec.zone` must reference an existing `Zone`.
-- `extraConfig.allowed / denied` entries must have non-empty `key` and valid `type` enum.
-
-#### I7. VM admission webhook policy enforcement (Story S9 / vmop-3746)
+#### I7. VM admission hardware feasibility (Story S9 / vmop-3746)
 
 Modify `webhooks/virtualmachine/validation_webhook.go`:
 
-1. **Mode enforcement** (S9.a): On create/update/power-on, load the namespace's `VirtualMachineConfigPolicy`; apply `createMode`, `updateMode`, `powerOnMode`. Respect `vmClassMode`: if `AsPolicy`, bypass policy for VM Class-derived config.
-2. **ExtraConfig enforcement** (S9.b): Walk `vm.spec.advancedProperties` (or the relevant ExtraConfig field); apply `Denied` list first, then `Allowed` list. `Fixed` → exact match; `Regex` → regexp; `Glob` → filepath.Match semantics.
-3. **Hardware-version check** (S9.c): Resolve the VM's zone to a cluster MoID (same derivation the policy controller uses), `Get` the cluster's `ConfigTarget`, and reject if the VM's effective hardware version exceeds `ConfigTarget.status.maxHardwareVersion`.
+Resolve the VM's zone to a cluster MoID, read that cluster's `ConfigTarget`, and reject an effective hardware version above `status.maxHardwareVersion`. This remaining feasibility work is separate from vmop-4318. Governance and ExtraConfig enforcement belong to the Flex VM Classes spec.
 
 **Key API flow** (S9.c):
 ```go
@@ -384,7 +358,6 @@ No per-host CRD is created; the per-host data is owned entirely by `ConfigTarget
 |----------|-------|
 | `configtargets` | get, list, watch, create, update, patch, delete |
 | `virtualmachineconfigoptions` | get, list, watch, create, update, patch, delete |
-| `virtualmachineconfigpolicy` | get, list, watch, create, update, patch |
 | `virtualmachineguestoptions` | get, list, watch, create, update, patch, delete |
 | `zones` | get, list, watch |
 

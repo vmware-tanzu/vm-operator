@@ -399,25 +399,6 @@ var _ = Describe(
 				}).WithTimeout(30 * time.Second).Should(Succeed())
 			})
 
-			It("creates one VirtualMachineConfigPolicy per zone", func() {
-				Eventually(func(g Gomega) {
-					var list topologyv1.ZoneList
-					g.Expect(vcSimCtx.Client.List(ctx, &list, ctrlclient.InNamespace(nsInfo.Namespace))).To(Succeed())
-					g.Expect(list.Items).ToNot(BeEmpty())
-
-					for i := range list.Items {
-						z := &list.Items[i]
-
-						var policy vimv1.VirtualMachineConfigPolicy
-						g.Expect(vcSimCtx.Client.Get(ctx,
-							ctrlclient.ObjectKey{Name: z.Name, Namespace: z.Namespace},
-							&policy)).To(Succeed())
-						g.Expect(policy.Spec.Zone).To(Equal(z.Name))
-						g.Expect(policy.Spec.SyncMode).To(Equal(vimv1.VirtualMachineConfigPolicySyncModeConfigTarget))
-					}
-				}).WithTimeout(30 * time.Second).Should(Succeed())
-			})
-
 			It("is idempotent: ConfigTarget UID is stable across reconciles", func() {
 				var clusterMoID string
 

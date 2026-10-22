@@ -122,10 +122,10 @@ const (
 	CapabilityKeyWorkloadIPv6 = "supports_workload_ipv6"
 
 	// CapabilityKeyVirtualMachineConfigPolicy is the name of the capability key
-	// defined in the Supervisor capabilities CRD. It gates the
-	// VirtualMachineConfigPolicy controllers, webhooks, and associated CRDs
-	// (ConfigTarget, VirtualMachineConfigOptions, VirtualMachineConfigPolicy,
-	// VirtualMachineGuestOptions).
+	// defined in the Supervisor capabilities CRD. It gates the environment-browser
+	// controllers, webhooks, and CRDs (ConfigTarget, VirtualMachineConfigOptions,
+	// VirtualMachineGuestOptions). The key retains its original name after the
+	// unused VirtualMachineConfigPolicy API was removed.
 	CapabilityKeyVirtualMachineConfigPolicy = "supports_vm_service_vm_config_policy"
 
 	// CapabilityKeyWorkloadNetworkConfiguration is the name of the capability

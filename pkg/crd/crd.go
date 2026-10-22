@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -91,6 +92,18 @@ func Install( //nolint:gocyclo
 	externalCRDs, err := UnstructuredExternal()
 	if err != nil {
 		return fmt.Errorf("failed to read embedded crd external bases: %w", err)
+	}
+
+	// The policy API was never released. Remove it, including any experimental
+	// policy objects, on upgrade regardless of the environment-browser gate.
+	const policyCRDName = "virtualmachineconfigpolicies.vim.vmware.com"
+	var policyCRD apiextensionsv1.CustomResourceDefinition
+	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: policyCRDName}, &policyCRD); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get obsolete config policy CRD: %w", err)
+		}
+	} else if err := k8sClient.Delete(ctx, &policyCRD); ctrlclient.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("failed to delete obsolete config policy CRD: %w", err)
 	}
 
 	crds := slices.Concat(baseCRDs, externalCRDs)
@@ -530,7 +543,6 @@ func Install( //nolint:gocyclo
 		// case "WebConsoleRequest":
 		case "ConfigTarget",
 			"VirtualMachineConfigOptions",
-			"VirtualMachineConfigPolicy",
 			"VirtualMachineGuestOptions":
 			if err := updateOrDeleteUnstructured(
 				ctx,

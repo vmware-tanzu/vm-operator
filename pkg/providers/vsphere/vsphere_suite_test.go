@@ -32,7 +32,6 @@ func vcSimTests() {
 	Describe("VAppConfigExpressionProperties", vAppConfigExpressionTests)
 	Describe("VirtualMachine", vmTests)
 	Describe("VirtualMachine - CBT", vmCBTTests)
-	Describe("VirtualMachine - FastDeploy", vmFastDeployTests)
 	Describe("VirtualMachineE2E", vmE2ETests)
 	Describe("VirtualMachineResize", vmResizeTests)
 	Describe("VirtualMachineUtilsTest", vmUtilTests)

@@ -52,6 +52,9 @@ func fastDeploy(
 	srcFilePaths := createArgs.FilePaths
 	logger.Info("Got source file paths", "srcFilePaths", srcFilePaths)
 
+	srcDiskPaths := createArgs.DiskPaths
+	logger.Info("Got source disk paths", "srcDiskPaths", srcDiskPaths)
+
 	dstDiskFormat := pkgutil.GetPreferredDiskFormat(
 		createArgs.Datastores[0].DiskFormats...)
 	logger.Info("Got destination disk format", "dstDiskFormat", dstDiskFormat)
@@ -184,73 +187,11 @@ func fastDeploy(
 		}
 	}()
 
-	var (
-		disks                      []*vimtypes.VirtualDisk
-		diskSpecs                  []*vimtypes.VirtualDeviceConfigSpec
-		srcDiskPaths               []string
-		dstDiskPaths               []string
-		dstDiskPathToSrcDiskPath   = map[string]string{}
-		dstDiskPathToDiskSpecIndex = map[string]int{}
-	)
-
-	for i := range createArgs.ConfigSpec.DeviceChange {
-		dc := createArgs.ConfigSpec.DeviceChange[i].GetVirtualDeviceConfigSpec()
-		if d, ok := dc.Device.(*vimtypes.VirtualDisk); ok {
-			if bfb, ok := d.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo); ok {
-				if d.VDiskId == nil {
-
-					d.VirtualDiskFormat = string(dstDiskFormat)
-					fb := bfb.GetVirtualDeviceFileBackingInfo()
-					fb.Datastore = &createArgs.Datastores[0].MoRef
-
-					disks = append(disks, d)
-					diskSpecs = append(diskSpecs, dc)
-
-					if fileName := fb.FileName; fileName != "" {
-						// If the disk already has a file name associated with
-						// it, then use that file name to check the map of
-						// cached file names to find the disk's cached path.
-						cachedFilePath := createArgs.CachedFileNames[fileName]
-						if cachedFilePath == "" {
-							return nil, fmt.Errorf(
-								"failed to find cached file for %q", fileName)
-						}
-
-						// The srcDiskPaths list is only made up of disks
-						// that are to be deployed with the VM. There may
-						// be a cached disk that is not actually used in the
-						// VM, but we do not care about that disk.
-						srcDiskPaths = append(srcDiskPaths, cachedFilePath)
-
-						// Construct the destination disk path for this disk
-						// that derives from a cached disk.
-						dstDiskPath := fmt.Sprintf(
-							"%s/disk-%d.vmdk",
-							vmDirPath,
-							len(dstDiskPaths))
-						dstDiskPaths = append(dstDiskPaths, dstDiskPath)
-						dstDiskPathToDiskSpecIndex[dstDiskPath] = len(diskSpecs) - 1
-
-						// Make it possible for subsequent functions to
-						// query the path of the cached disk from the
-						// newly constructed dstDiskPath.
-						dstDiskPathToSrcDiskPath[dstDiskPath] = cachedFilePath
-
-						// Update the disk's file path to use the newly
-						// constructed dstDiskPath.
-						fb.FileName = dstDiskPath
-					}
-				}
-			}
-		}
+	dstDiskPaths := make([]string, len(srcDiskPaths))
+	for i := 0; i < len(dstDiskPaths); i++ {
+		dstDiskPaths[i] = fmt.Sprintf("%s/disk-%d.vmdk", vmDirPath, i)
 	}
-
-	logger.Info("Got disks", "disks", disks)
-	logger.Info("Got disk specs", "diskSpecs", diskSpecs)
-	logger.Info("Got source disk paths", "srcDiskPaths", srcDiskPaths)
 	logger.Info("Got destination disk paths", "dstDiskPaths", dstDiskPaths)
-	logger.Info("Got destination disk paths to source disk paths map",
-		"dstDiskPathToSrcDiskPath", dstDiskPathToSrcDiskPath)
 
 	dstFilePaths := make([]string, len(srcFilePaths))
 	for i := 0; i < len(dstFilePaths); i++ {
@@ -261,6 +202,44 @@ func fastDeploy(
 		dstFilePaths[i] = path.Join(vmDirPath, name)
 	}
 	logger.Info("Got destination file paths", "dstFilePaths", dstFilePaths)
+
+	var (
+		disks     []*vimtypes.VirtualDisk
+		diskSpecs []*vimtypes.VirtualDeviceConfigSpec
+	)
+	for i := range createArgs.ConfigSpec.DeviceChange {
+		dc := createArgs.ConfigSpec.DeviceChange[i].GetVirtualDeviceConfigSpec()
+		if d, ok := dc.Device.(*vimtypes.VirtualDisk); ok {
+			d.VirtualDiskFormat = string(dstDiskFormat)
+			disks = append(disks, d)
+			diskSpecs = append(diskSpecs, dc)
+		}
+	}
+	logger.Info("Got disk specs", "diskSpecs", diskSpecs)
+
+	// Update the disks with their expected file names.
+	j := 0
+	for i := range disks {
+		d := disks[i]
+		if bfb, ok := d.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo); ok {
+			fb := bfb.GetVirtualDeviceFileBackingInfo()
+			fb.Datastore = &createArgs.Datastores[0].MoRef
+
+			if fb.FileName != "" {
+				if j >= len(dstDiskPaths) {
+					return nil, fmt.Errorf("invalid disk count")
+				}
+
+				// Only set the file name if it was non-empty
+				// already, otherwise this was a disk entry
+				// from the OVF that was meant to be an empty
+				// disk.
+				fb.FileName = dstDiskPaths[j]
+				j++
+			}
+		}
+	}
+	logger.Info("Got disks", "disks", disks)
 
 	// Copy any non-disk files to the target directory.
 	for i := range dstFilePaths {
@@ -364,9 +343,7 @@ func fastDeploy(
 			createArgs.Datastores[0].MoRef,
 			disks,
 			diskSpecs,
-			srcDiskPaths,
-			dstDiskPathToSrcDiskPath,
-			dstDiskPathToDiskSpecIndex)
+			srcDiskPaths)
 	}
 
 	return fastDeployDirect(
@@ -391,9 +368,7 @@ func fastDeployLinked(
 	datastoreRef vimtypes.ManagedObjectReference,
 	disks []*vimtypes.VirtualDisk,
 	diskSpecs []*vimtypes.VirtualDeviceConfigSpec,
-	srcDiskPaths []string,
-	dstDiskPathToSrcDiskPath map[string]string,
-	dstDiskPathToDiskSpecIndex map[string]int) (*vimtypes.ManagedObjectReference, error) {
+	srcDiskPaths []string) (*vimtypes.ManagedObjectReference, error) {
 
 	logger := pkglog.FromContextOrDefault(ctx).WithName("fastDeployLinked")
 
@@ -422,48 +397,63 @@ func fastDeployLinked(
 		"diskSpecs", diskSpecs,
 		"len(diskSpecs)", len(diskSpecs))
 
+	j := 0
 	for i := range disks {
-		if bfb, ok := disks[i].Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo); ok {
-			fb := bfb.GetVirtualDeviceFileBackingInfo()
-
-			// Point the disk to its parent.
-			srcDiskPath := dstDiskPathToSrcDiskPath[fb.FileName]
-			if srcDiskPath != "" {
-				if diskSpecIndex, ok := dstDiskPathToDiskSpecIndex[fb.FileName]; ok {
-					if b := diskSpecs[diskSpecIndex].Backing; b != nil {
-						// Linked clones do not fully support encryption, so remove
-						// the possible crypto information from this child disk.
-						b.Crypto = nil
-					}
+		switch tBack := disks[i].Backing.(type) {
+		case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+			if tBack.FileName != "" {
+				if diskSpecs[j].Backing != nil {
+					// Linked clones do not fully support encryption, so remove
+					// the possible crypto information from this child disk.
+					diskSpecs[j].Backing.Crypto = nil
 				}
 
-				switch tBack := disks[i].Backing.(type) {
-				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-					tBack.Parent = &vimtypes.VirtualDiskFlatVer2BackingInfo{
-						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-							Datastore: &datastoreRef,
-							FileName:  srcDiskPath,
-						},
-						DiskMode:        string(vimtypes.VirtualDiskModePersistent),
-						ThinProvisioned: ptr.To(true),
-					}
-				case *vimtypes.VirtualDiskSeSparseBackingInfo:
-					tBack.Parent = &vimtypes.VirtualDiskSeSparseBackingInfo{
-						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-							Datastore: &datastoreRef,
-							FileName:  srcDiskPath,
-						},
-						DiskMode: string(vimtypes.VirtualDiskModePersistent),
-					}
-				case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-					tBack.Parent = &vimtypes.VirtualDiskSparseVer2BackingInfo{
-						VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
-							Datastore: &datastoreRef,
-							FileName:  srcDiskPath,
-						},
-						DiskMode: string(vimtypes.VirtualDiskModePersistent),
-					}
+				// Point the disk to its parent.
+				tBack.Parent = &vimtypes.VirtualDiskFlatVer2BackingInfo{
+					VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+						Datastore: &datastoreRef,
+						FileName:  srcDiskPaths[j],
+					},
+					DiskMode:        string(vimtypes.VirtualDiskModePersistent),
+					ThinProvisioned: ptr.To(true),
 				}
+				j++
+			}
+		case *vimtypes.VirtualDiskSeSparseBackingInfo:
+			if tBack.FileName != "" {
+				if diskSpecs[j].Backing != nil {
+					// Linked clones do not fully support encryption, so remove
+					// the possible crypto information from this child disk.
+					diskSpecs[j].Backing.Crypto = nil
+				}
+
+				// Point the disk to its parent.
+				tBack.Parent = &vimtypes.VirtualDiskSeSparseBackingInfo{
+					VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+						Datastore: &datastoreRef,
+						FileName:  srcDiskPaths[j],
+					},
+					DiskMode: string(vimtypes.VirtualDiskModePersistent),
+				}
+				j++
+			}
+		case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+			if tBack.FileName != "" {
+				if diskSpecs[j].Backing != nil {
+					// Linked clones do not fully support encryption, so remove
+					// the possible crypto information from this child disk.
+					diskSpecs[j].Backing.Crypto = nil
+				}
+
+				// Point the disk to its parent.
+				tBack.Parent = &vimtypes.VirtualDiskSparseVer2BackingInfo{
+					VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+						Datastore: &datastoreRef,
+						FileName:  srcDiskPaths[j],
+					},
+					DiskMode: string(vimtypes.VirtualDiskModePersistent),
+				}
+				j++
 			}
 		}
 	}
@@ -487,17 +477,28 @@ func fastDeployDirect(
 
 	for i := range diskSpecs {
 		if d, ok := diskSpecs[i].Device.(*vimtypes.VirtualDisk); ok {
-			if d.VDiskId == nil {
-				if bfb, ok := d.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo); ok {
-					fb := bfb.GetVirtualDeviceFileBackingInfo()
-					if fb.FileName == "" {
-						diskSpecs[i].FileOperation = vimtypes.VirtualDeviceConfigSpecFileOperationCreate
-					} else {
-						diskSpecs[i].FileOperation = ""
-					}
+			switch tBack := d.Backing.(type) {
+			case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+				if tBack.FileName == "" {
+					diskSpecs[i].FileOperation = vimtypes.VirtualDeviceConfigSpecFileOperationCreate
+				} else {
+					diskSpecs[i].FileOperation = ""
+				}
+			case *vimtypes.VirtualDiskSeSparseBackingInfo:
+				if tBack.FileName == "" {
+					diskSpecs[i].FileOperation = vimtypes.VirtualDeviceConfigSpecFileOperationCreate
+				} else {
+					diskSpecs[i].FileOperation = ""
+				}
+			case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+				if tBack.FileName == "" {
+					diskSpecs[i].FileOperation = vimtypes.VirtualDeviceConfigSpecFileOperationCreate
+				} else {
+					diskSpecs[i].FileOperation = ""
 				}
 			}
 		}
+
 	}
 
 	// Copy each disk into the VM directory.

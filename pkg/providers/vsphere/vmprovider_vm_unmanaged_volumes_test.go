@@ -360,7 +360,6 @@ func unmanagedVolumesTests() {
 							ID:       ctx.ContentLibraryItem1Disk1Path,
 							Type:     vmopv1.VirtualMachineImageCacheFileTypeDisk,
 							DiskType: vmopv1.VolumeTypeClassic,
-							Name:     "disk0.vmdk",
 						},
 						{
 							ID:   ctx.ContentLibraryItem1NVRAMPath,

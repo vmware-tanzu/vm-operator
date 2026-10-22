@@ -189,6 +189,12 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMa
 	}
 }
 
+func Convert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha4_VirtualMachineVolumeSource(
+	in *vmopv1.VirtualMachineVolumeSource, out *VirtualMachineVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha4_VirtualMachineVolumeSource(in, out, s)
+}
+
 func Convert_v1alpha6_VirtualMachineBootstrapSpec_To_v1alpha4_VirtualMachineBootstrapSpec(
 	in *vmopv1.VirtualMachineBootstrapSpec, out *VirtualMachineBootstrapSpec, s apiconversion.Scope) error {
 
@@ -463,6 +469,7 @@ func restore_v1alpha6_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 			dstVol.SharingMode = srcVol.SharingMode
 			dstVol.UnitNumber = srcVol.UnitNumber
 			dstVol.Removable = srcVol.Removable
+			dstVol.VirtualMachineSnapshotDisk = srcVol.VirtualMachineSnapshotDisk
 		}
 	}
 }

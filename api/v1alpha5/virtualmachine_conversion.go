@@ -14,6 +14,12 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
+func Convert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(
+	in *vmopv1.VirtualMachineVolumeSource, out *VirtualMachineVolumeSource, s apiconversion.Scope) error {
+
+	return autoConvert_v1alpha6_VirtualMachineVolumeSource_To_v1alpha5_VirtualMachineVolumeSource(in, out, s)
+}
+
 func Convert_v1alpha6_VirtualMachineNetworkSpec_To_v1alpha5_VirtualMachineNetworkSpec(
 	in *vmopv1.VirtualMachineNetworkSpec, out *VirtualMachineNetworkSpec, s apiconversion.Scope) error {
 
@@ -223,6 +229,20 @@ func restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, src *vmopv1.VirtualMachi
 	dst.Spec.MemoryAdvanced = src.Spec.MemoryAdvanced
 }
 
+func restore_v1alpha6_VirtualMachineVolumes(dst, src []vmopv1.VirtualMachineVolume) {
+	srcVolMap := map[string]*vmopv1.VirtualMachineVolume{}
+	for i := range src {
+		vol := &src[i]
+		srcVolMap[vol.Name] = vol
+	}
+	for i := range dst {
+		dstVol := &dst[i]
+		if srcVol, ok := srcVolMap[dstVol.Name]; ok {
+			dstVol.VirtualMachineSnapshotDisk = srcVol.VirtualMachineSnapshotDisk
+		}
+	}
+}
+
 // restore_v1alpha6_VirtualMachineAffinityRequiredDuringExecution restores the
 // RequiredDuringSchedulingRequiredDuringExecution field on VMAffinity and
 // VMAntiAffinity, which does not exist in v1alpha5.
@@ -278,6 +298,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineCPUAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineAffinityRequiredDuringExecution(dst, restored)
+	restore_v1alpha6_VirtualMachineVolumes(dst.Spec.Volumes, restored.Spec.Volumes)
 
 	// END RESTORE
 

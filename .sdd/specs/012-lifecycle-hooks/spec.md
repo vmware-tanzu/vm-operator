@@ -62,7 +62,8 @@ A DevOps user creates a `VirtualMachine` in a namespace where a `LifecycleHook` 
 
 1. **Given** a `VirtualMachine` with no `LifecycleState` yet and a `LifecycleHook` registered for the `Create` stage on `(vmoperator.vmware.com, VirtualMachine)` in its namespace, **When** VM Operator reconciles the VM for the first time, **Then** VM Operator pauses before creating the VM — no vSphere VM is created, the VM's `Create`-stage condition is `status=False`, and `reason=HooksBlocked`.
 2. **Given** the `Create` stage is paused and its hooks have reported ready (`HooksReady=True`), **When** VM Operator reconciles the VM, **Then** VM Operator resumes, the `Create`-stage condition becomes `True`, and the VM is created in vSphere on that same or a subsequent reconcile.
-3. **Given** no `LifecycleHook` exists for the `Create` stage in the VM's namespace, **When** VM Operator reconciles a newly created VM, **Then** VM Operator proceeds to create the VM in vSphere without pausing and without creating any lifecycle resource, identical to today's behavior.
+3. **Given** the `Create` stage was released and the vSphere create then fails, **When** VM Operator retries the create, **Then** it does not pause again and the hooks do not re-run.
+4. **Given** no `LifecycleHook` exists for the `Create` stage in the VM's namespace, **When** VM Operator reconciles a newly created VM, **Then** VM Operator proceeds to create the VM in vSphere without pausing and without creating any lifecycle resource, identical to today's behavior.
 
 ---
 
@@ -119,7 +120,7 @@ A DevOps user needs to tell, from the VM object alone, whether any stage is curr
 
 ## Resolved decisions
 
-- **Stages**: all four stages are `Reentrant` and `blocking=true`; the gate treats them uniformly, so hooks must be idempotent, and `Delete` resolves before `ResourceDelete`.
+- **Stages**: all four stages are `Reentrant` and `blocking=true`, and `Delete` resolves before `ResourceDelete`. A retry of a released `Create`, `Delete` or `ResourceDelete` action does not pause again; a retried power operation does, so `PowerStateChange` hooks must be idempotent.
 - **Create trigger**: "VM exists" is decided by the vCenter lookup (`getVM`), not `Status.UniqueID`, so a `Status` reset never re-runs `Create`.
 - **Readiness and conditions**: VM Operator mirrors only `HooksReady` and exposes four per-stage conditions (`status=False` with `reason=HooksBlocked`, `True`, or absent, with absent treated as `True`).
 - **`LifecycleState` ownership**: VM Operator creates it once at first reconcile from `LifecycleSubscribedStages`; the Lifecycle Operator owns it afterwards, and a missing entry means "no hook".

@@ -48,6 +48,7 @@ external/lifecycle/                  # new module, vendored types only
     lifecyclestate_types.go          # Get/Create/Patch target
     lifecyclesubscribedstages_types.go  # cached List only
     lifecyclehook_types.go           # envtest fixtures only
+    naming.go                        # LifecycleStateName, vendored
     zz_generated.deepcopy.go
 
 pkg/lifecycle/
@@ -133,15 +134,16 @@ Envtest needs no extra wiring: `test/builder/test_suite.go` loads all of `config
 |---|---|---|---|---|---|
 | `nil` | — | — | — | condition `True` | `true` |
 | found | absent | — | — | condition `True` | `true` |
+| found | present | `false`, `workflowResumed=true`; stage `Create`, `Delete` or `ResourceDelete` | any | **retry** of a released action: no write; condition `True` | `true` |
 | found | present | `false` | present | **reset pending**: do not pause; condition `False`/`HooksBlocked`; wait for the watch | `false` |
-| found | present | `false` | absent | pause: patch `workflowPaused=true`, `workflowResumed=false`; condition `False`/`HooksBlocked` | `false` |
+| found | present | `false` | absent | pause: patch `(true, false)`; condition `False`/`HooksBlocked` | `false` |
 | found | present | `true` | absent, or `HooksReady` not `True` | condition stays `False`/`HooksBlocked` | `false` |
-| found | present | `true` | `HooksReady=True` | resume: patch `workflowPaused=false`, `workflowResumed=false` (ResourceDelete: same write also removes `lifecycleStateFinalizer`); condition `True` | `true` |
+| found | present | `true` | `HooksReady=True` | release: patch `(false, true)` (ResourceDelete: same write also removes `lifecycleStateFinalizer`); condition `True` | `true` |
 
-- **Pause** always writes `workflowResumed=false`: a user resume `(false, true)` may still be in place, and `(true, true)` is rejected by the Lifecycle Operator's webhook.
-- **Resume** `(false, false)` cues the Lifecycle Operator to remove the status entry; the next reach then starts a fresh pass. Every stage is `Reentrant`; the gate never branches on stage type.
+- **Switches** follow the Lifecycle Operator's transition table: pause → `(true, false)`, release → `(false, true)`; admission rejects anything else.
+- **Retry row**: the call site reaches `Create`, `Delete` and `ResourceDelete` again only while the released action is still pending, so `(false, true)` there is a retry. `PowerStateChange` repeats, so it pauses again.
 - **Waiting** (reset pending, paused-not-ready) relies on the `LifecycleState` status watch; there is no timed requeue (model.md "Wakeups").
-- **ResourceDelete resumes and releases in one write**, because a separate release patch would conflict with the Lifecycle Operator's status-entry removal (model.md "Releasing at `ResourceDelete`").
+- **ResourceDelete releases and removes the finalizer in one write**, because a separate release patch would conflict with the Lifecycle Operator's status-entry removal (model.md "Releasing at `ResourceDelete`").
 - A condition is written only when its checkpoint is reached; consumers treat absent as `True`.
 - VM Operator never adds or repairs `spec.stages[]` entries. Day-2 hooks are the Lifecycle Operator's: it patches the stage into an existing `LifecycleState`, or creates the object.
 
@@ -162,30 +164,30 @@ Envtest needs no extra wiring: `test/builder/test_suite.go` loads all of `config
 - **Ordering**: `ReconcileDelete` is straight-line, so ResourceDelete is never evaluated before Delete resolves.
 - **No vSphere VM on delete**: `DeleteVirtualMachine` already returns `nil` when `getVM` finds nothing, before the gate. The Delete stage therefore passes, and a stage left paused by an earlier checkpoint (such as Create) is simply dropped. `ResourceDelete` is still evaluated, and releasing VM Operator's finalizer lets GC remove the `LifecycleState`.
 - **`SkipDeletePlatformResourceKey`**: the vSphere VM is only unregistered, so Delete is not evaluated; ResourceDelete still is.
-- **Retries**: a retried vSphere delete re-pauses Delete, and a failed VM finalizer patch after ResourceDelete resumed re-pauses ResourceDelete; hooks must be idempotent.
+- **Retries**: a retried vSphere create or delete, or a failed VM finalizer patch, after release does not pause again (retry row). A retried power operation does; `PowerStateChange` hooks must be idempotent.
 
 ### 3. Helpers
 
 **`ReconcileLifecycleState(ctx, k8sClient, vm) (*lifecyclev1.LifecycleState, error)`** — runs on every pass that reaches the Create checkpoint:
 
 1. Capability off → `nil`.
-2. `GetLifecycleState` finds the object (below) → return it; a stale object → its error.
+2. `GetLifecycleState` finds the object (below) → return it; a binding mismatch → its error.
 3. Cached `List` of `LifecycleSubscribedStages` in the namespace, selected by `lifecycle.vcfa.vmware.com/target-group=vmoperator.vmware.com` and `lifecycle.vcfa.vmware.com/target-kind=VirtualMachine`. Union the `spec.stages[]` of all matches; no match → `nil` (G5).
-4. `Create` the `LifecycleState`, named `vm-<vm.Name>`, with `controllerutil.SetControllerReference(vm, state, scheme, controllerutil.WithBlockOwnerDeletion(false))`, `lifecycleStateFinalizer`, `spec.target`, and every listed stage at `(false, false)`. Return the created object.
+4. `Create` the `LifecycleState`, named `LifecycleStateName("VirtualMachine", vm.UID)`, with `controllerutil.SetControllerReference(vm, state, scheme, controllerutil.WithBlockOwnerDeletion(false))`, the `target-group`/`target-kind` labels, `lifecycleStateFinalizer`, and every listed stage at `(false, false)`. Return the created object.
 5. `AlreadyExists` after a cached `NotFound` (cache behind) → `pkgerr.RequeueError{After: time.Second}`, never `nil`. The controller's catch-all case emits one `ReconcileNormalFailure` warning for it.
 
 - Never `List`s or watches `LifecycleHook`.
 
 **`GetLifecycleState(ctx, k8sClient, vm)`** — used by step 2 and by the other three call sites:
 
-- A cached `Get` of `vm-<vm.Name>` in the VM's namespace. The Lifecycle Operator uses the same name for a day-2 object (model.md "`LifecycleState`"). VM names are DNS labels of at most 63 characters, so the prefixed name always fits.
+- A cached `Get` of `LifecycleStateName("VirtualMachine", vm.UID)` in the VM's namespace, the name the Lifecycle Operator also uses.
 - `NotFound` → `nil`.
-- `spec.target.uid` ≠ `vm.UID` → **stale**: a leftover of an earlier VM with the same name, awaiting GC. Return a plain error, so the VM retries with backoff until GC removes it; its stages are never read.
+- Binding: labels, and the single controller owner reference matching the VM's group, kind, name and UID; terminating only if it carries `lifecycleStateFinalizer`. A mismatch returns a plain error (retried with backoff); its stages are never read.
 - Capability off → `nil`.
 
 **`ReleaseLifecycleState(ctx, k8sClient, apiReader, vm, state)`**:
 
-- Removes only `lifecycleStateFinalizer`, under the optimistic lock; no-op if already absent (ResourceDelete's resume write removes it when that stage has a hook).
+- Removes only `lifecycleStateFinalizer`, under the optimistic lock; no-op if already absent (ResourceDelete's release write removes it when that stage has a hook).
 - Capability off: one `Get` through `apiReader` (no informer is started); `NotFound` or `meta.IsNoMatchError` → no-op. Without this, a `LifecycleState` created while the capability was on would block VM and namespace deletion.
 - Never deletes the `LifecycleState`; GC or the namespace controller does.
 
@@ -244,36 +246,36 @@ Per `testing-standards.md`: one `_test.go` and one `_suite_test.go` per package,
   - No `LifecycleSubscribedStages`, or only ones for another `(group, kind)` → `nil`, nothing created.
   - Hooks present → object created with the finalizer, `controller: true`, `blockOwnerDeletion: false`, and every listed stage at `(false, false)`, and returned; a second call returns the cached object with no write.
   - Cache `NotFound` but `Create` returns `AlreadyExists` → `RequeueError`, never `nil`.
-  - `GetLifecycleState` gets `vm-<vm.Name>`: `NotFound` → `nil`; matching `spec.target.uid` → returned; another UID (stale) → error and its stages never read, from both `GetLifecycleState` and `ReconcileLifecycleState`.
+  - `GetLifecycleState` gets `virtualmachine-<vm.UID>`: `NotFound` → `nil`; matching binding → returned; wrong labels, owner kind/UID, or terminating without the finalizer → error and its stages never read, from both `GetLifecycleState` and `ReconcileLifecycleState`. A VM recreated with the same name gets its own State.
 - **`ReconcileStage`**, every table row:
   - `nil` → proceed, condition `True`; entry absent → proceed, no write.
   - Pause → `(true, false)`, also when starting from `(false, true)`.
   - Reset pending → no patch, no requeue.
   - Paused and `HooksReady` absent, `False`, or any non-`True` reason → blocked.
-  - Resume → `(false, false)`, condition `True`, `state` carries the new `resourceVersion`; next reach re-pauses once the status entry is gone and waits while it is present.
+  - Release → `(false, true)`, condition `True`, `state` carries the new `resourceVersion`. Next reach: `PowerStateChange` re-pauses once the status entry is gone and waits while it is present; `Create`/`Delete`/`ResourceDelete` proceed with no write.
   - Create then pause in one pass with no intermediate read.
-  - ResourceDelete resume also removes the finalizer in the same write, other finalizers kept; a day-2 object without the finalizer resumes normally.
-  - A stale-copy or concurrently-modified pause/resume → `409` returned, not retried internally.
+  - ResourceDelete release also removes the finalizer in the same write, other finalizers kept; a day-2 object without the finalizer releases normally.
+  - A stale-copy or concurrently-modified pause/release → `409` returned, not retried internally.
 - **`ReleaseLifecycleState`**: removes only VM Operator's finalizer under the lock; absent or `nil` → no patch; a concurrent writer's finalizer → conflict, theirs kept. Capability off → one `APIReader` `Get` and the finalizer removed; `NotFound` or no-match → no-op.
 - **Capability off**: the four stage call sites make zero `LifecycleState`/`LifecycleSubscribedStages` calls (call-counting fake); a leftover `False` condition is removed at its checkpoint.
 - **`statusChangedPredicate`**: `Create`/`Generic` and spec-only `Update` filtered; status `Update` and `Delete` pass.
 
 `pkg/providers/vsphere/vmprovider_vm_test.go`:
 
-- **Create**: no hook → creates; blocked → `ErrHooksBlocked`, no vSphere create, condition blocked; `foundVM != nil`, including a wiped `Status` after revert, never reaches the gate.
-- **Delete**: blocked → `ErrHooksBlocked`, `virtualmachine.DeleteVirtualMachine` not called; resumed or no entry → unchanged; no vSphere VM → returns `nil` before the gate.
+- **Create**: no hook → creates; blocked → `ErrHooksBlocked`, no vSphere create, condition blocked; `foundVM != nil`, including a wiped `Status` after revert, never reaches the gate; a failed create after release retries without pausing.
+- **Delete**: blocked → `ErrHooksBlocked`, `virtualmachine.DeleteVirtualMachine` not called; released or no entry → unchanged; a failed delete after release retries without pausing; no vSphere VM → returns `nil` before the gate.
 - **PowerStateChange**: blocked power-on and power-off issue no power task while the rest of the update, including snapshot create, still runs; the two directions pause independently.
 
 `controllers/virtualmachine/virtualmachine/*_test.go`:
 
-- **ResourceDelete**: VM finalizer kept while blocked; evaluated only after Delete resolved; `ReleaseLifecycleState` called once, before `RemoveFinalizer`; a failed VM finalizer patch after resume pauses `ResourceDelete` again (at-least-once).
+- **ResourceDelete**: VM finalizer kept while blocked; evaluated only after Delete resolved; `ReleaseLifecycleState` called once, before `RemoveFinalizer`; a failed VM finalizer patch after release retries without pausing `ResourceDelete` again.
 - **Events**: none while a stage is blocked; one `DeleteSuccess` across the sequence; an unsupported-connection-state `NoRequeueError` still emits `DeleteFailure`.
 
 ### Integration (`testlabels.EnvTest`)
 
-The Lifecycle Operator is stood in by test code (tier 1), or by `test/builder/fakelifecycle` (tier 2), which mirrors `LifecycleHook` create/delete into `LifecycleSubscribedStages` and into a new or existing `LifecycleState`'s `spec.stages[]`. Neither tier computes `HooksReady`; tests set it directly.
+The Lifecycle Operator is stood in by test code (tier 1), or by `test/builder/fakelifecycle` (tier 2), which mirrors `LifecycleHook` create/delete into `LifecycleSubscribedStages` and into a new or existing `LifecycleState`'s `spec.stages[]`, and rejects non-canonical State names and switch transitions outside the Lifecycle Operator's table. Neither tier computes `HooksReady`; tests set it directly.
 
-- **Watch** (tier 1): a `HooksReady` flip re-queues the owning VM; VM Operator's own `spec` write does not; the Lifecycle Operator creating a status entry after a pause does; removing a status entry after a resume does.
+- **Watch** (tier 1): a `HooksReady` flip re-queues the owning VM; VM Operator's own `spec` write does not; the Lifecycle Operator creating a status entry after a pause does; removing a status entry after a release does.
 - **Sequencing** (tier 1): hooks on all four stages; the VM never passes a stage before its `HooksReady` flip; ResourceDelete is not paused until Delete resolves; the `LifecycleState` is gone once both finalizers clear.
 - **Initialization** (tier 1): `LifecycleSubscribedStages` lists `Create` and `Delete` → the object created at the Create checkpoint already carries the `Delete` entry.
 - **Day 2** (tier 2): VM created with no hooks; a new `Delete` hook makes `fakelifecycle` create the `LifecycleState`; deleting the VM blocks on Delete.

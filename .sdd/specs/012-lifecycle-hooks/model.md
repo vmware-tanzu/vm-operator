@@ -69,12 +69,12 @@ The coordination surface VM Operator reads and writes at each stage checkpoint.
 |---|---|---|---|
 | `metadata.ownerReferences` | object | **VM Operator** (on create) | Points at the owning `VirtualMachine`, `controller: true` — this is what makes Kubernetes' garbage collector delete `LifecycleState` automatically the moment the VM is deleted. |
 | `metadata.finalizers` | []string | **VM Operator** | VM Operator adds its own finalizer at creation and removes it only after the `ResourceDelete` stage resolves. Exists solely so that neither the GC cascade (normal VM delete) nor the namespace controller's direct sweep (namespace delete) can remove the object out from under an in-progress check — see "Namespace-deletion protection" below. |
-| `metadata.name` | string | Whoever creates it | Always `vm-<VirtualMachine name>`, including when the Lifecycle Operator creates it for a day-2 hook, because VM Operator looks it up by this name. |
-| `spec.target.{apiVersion,kind,name,namespace,uid}` | object | VM Operator (on create) | Identifies the `VirtualMachine` this state tracks. VM Operator checks `uid` after every lookup: a different UID means a stale object left by an earlier VM with the same name. |
+| `metadata.name` | string | Whoever creates it | `virtualmachine-<VM UID>`, from the vendored `LifecycleStateName` helper both creators use. |
+| `metadata.labels[target-group]`, `[target-kind]` | string | Whoever creates it | `vmoperator.vmware.com` / `VirtualMachine`. With the controller owner reference, this is the binding VM Operator verifies after every lookup; a mismatch is retried, never treated as "no hook". |
 | `spec.stages[].name` | string | VM Operator (at creation), Lifecycle Operator (day 2) | Stage name. VM Operator seeds one entry per stage listed in `LifecycleSubscribedStages` when it creates the object; the Lifecycle Operator adds entries for hooks registered later. **Entry presence is VM Operator's signal that a hook exists for the stage**; a missing entry means no hook and VM Operator proceeds. |
-| `spec.stages[].workflowPaused` | bool | **VM Operator** | Set `true` when VM Operator reaches this stage and pauses; set back to `false` on resume (in the same write that resets `workflowResumed`), which is what lets a `Reentrant` stage pause again on its next pass. |
-| `spec.stages[].workflowResumed` | bool | **VM Operator** | Reset to `false` together with `workflowPaused` when VM Operator resumes. Together the `(false, false)` write is the cue for the Lifecycle Operator to complete the cycle by removing that stage's `status.stages[]` entry. Also written `false` in the pause write (`(true, false)`), because a user resume (`(false, true)`) may still be in place and `(true, true)` is rejected by the Lifecycle Operator's webhook. VM Operator never writes `status`. |
-| `status.stages[]` | list | **Lifecycle Operator** | Per-stage status. An entry is created by the Lifecycle Operator once the stage is paused and **removed by the Lifecycle Operator after VM Operator resumes** (the `(false, false)` write above). The removal is the acknowledgement that the pass is complete. VM Operator reads `conditions[HooksReady]` from an entry, and uses the entry's *presence* only to detect that a previous pass has not been cleaned up yet (see "Next cycle of a `Reentrant` stage"); it never uses presence as a signal that a hook exists — `spec.stages[]` entry presence does that. |
+| `spec.stages[].workflowPaused` | bool | **VM Operator** | `true` on pause, `false` on release. |
+| `spec.stages[].workflowResumed` | bool | **VM Operator** | `true` on release, `(true, false)` → `(false, true)`; cleared by the next pause, → `(true, false)`. The Lifecycle Operator's admission rejects any other transition. VM Operator never writes `status`. |
+| `status.stages[]` | list | **Lifecycle Operator** | Per-stage status. An entry is created by the Lifecycle Operator once the stage is paused and **removed by the Lifecycle Operator once the stage is released**. The removal is the acknowledgement that the pass is complete. VM Operator reads `conditions[HooksReady]` from an entry, and uses the entry's *presence* only to detect that a previous pass has not been cleaned up yet (see "Next cycle of a `Reentrant` stage"); it never uses presence as a signal that a hook exists — `spec.stages[]` entry presence does that. |
 | `status.stages[].conditions[type=WorkflowPaused]` | condition | Lifecycle Operator | Mirrors `spec.stages[].workflowPaused`. |
 | `status.stages[].conditions[type=HooksReady]` | condition | Lifecycle Operator | `True` = every registered hook for this stage has completed — **VM Operator's sole resume signal**. VM Operator treats any non-`True` value identically (waiting); it does not branch on `reason` (`HooksPending`, `HookFailed`, timed-out, etc.) — see "Hooks-not-ready handling" below. |
 | `status.stages[].hooks[].lifecycleHookRef` / `.state` / `.message` | object | Lifecycle Operator | Per-hook progress (`Pending`\|`InProgress`\|`Succeeded`\|`Failed`), including timeout handling. Entirely internal to the Lifecycle Operator's bookkeeping — VM Operator does not read this field. |
@@ -82,40 +82,40 @@ The coordination surface VM Operator reads and writes at each stage checkpoint.
 **VM Operator's read/write contract per stage checkpoint** (`ReconcileLifecycleState` and `ReconcileStage`; decision table in `plan.md` §1):
 
 1. **Before the first create (a no-op on every later reconcile once the object exists):** `ReconcileLifecycleState` creates the `LifecycleState` (owner reference + finalizer) with every stage `LifecycleSubscribedStages` lists for `VirtualMachine` in `spec.stages[]`, each at `workflowPaused=false`, in one write, and hands the created object to the Create gate; if none are listed it creates nothing. This is the only place `LifecycleSubscribedStages` is ever read.
-2. Obtain the `LifecycleState` for the VM: at the Create checkpoint, the object `ReconcileLifecycleState` returned; at the other three, `GetLifecycleState`. Both `Get` it by name, `vm-<vm name>`, and treat it as stale (not this VM's) when `spec.target.uid` is not the VM's UID.
+2. Obtain the `LifecycleState` for the VM: at the Create checkpoint, the object `ReconcileLifecycleState` returned; at the other three, `GetLifecycleState`. Both `Get` it by name, `virtualmachine-<vm UID>`, and verify the binding.
 3. **No object, or found with no entry for this stage**: no hook for this stage. Mark the condition `True` and proceed. VM Operator does not read `LifecycleSubscribedStages` here and does not add or repair entries — the Lifecycle Operator creates `LifecycleState` or patches the stage in when a hook is registered (day 2). No `LifecycleState` traffic at all in the common, zero-hook case (spec G5).
 4. **Found, entry present**:
+   - `(false, true)` at `Create`, `Delete` or `ResourceDelete`: a retry of an already-released action. Condition `True`, proceed, no write.
    - `workflowPaused=false` and a `status.stages[]` entry for the stage **still exists**: a previous pass has not been cleaned up yet, so any `HooksReady=True` on it is stale. Do not pause. Set this stage's VM condition to `status=False`, `reason=HooksBlocked` and exit; the watch fires when the entry is removed.
-   - `workflowPaused=false` and **no** `status.stages[]` entry: a fresh pass. Patch `workflowPaused=true` and `workflowResumed=false` together, set this stage's VM condition to `status=False`, `reason=HooksBlocked`, and exit (rely on the watch below).
-   - `workflowPaused=true`: check `status.stages[stage].conditions[HooksReady]`. `True` → patch `workflowPaused=false` and `workflowResumed=false` together, set this stage's condition `True`, proceed. Absent or not `True` → keep the condition `False`/`HooksBlocked` and exit without error/requeue.
+   - `workflowPaused=false` and **no** `status.stages[]` entry: a fresh pass. Patch `(true, false)`, set this stage's VM condition to `status=False`, `reason=HooksBlocked`, and exit (rely on the watch below).
+   - `workflowPaused=true`: check `status.stages[stage].conditions[HooksReady]`. `True` → release: patch `(false, true)`, set this stage's condition `True`, proceed. Absent or not `True` → keep the condition `False`/`HooksBlocked` and exit without error/requeue.
 5. VM Operator's controller watches `LifecycleState` updates (mapped back to the owning `VirtualMachine` via its owner reference) so a `HooksReady` flip, or a new entry from a day-2 hook, promptly re-triggers reconciliation instead of waiting for the next poll.
-6. Once the `ResourceDelete` stage resolves (`Proceed=true`), VM Operator removes its own finalizer from `LifecycleState` — in the resume write itself when `ResourceDelete` has a hook (see "Releasing at `ResourceDelete`"), otherwise in a separate patch. VM Operator never issues an explicit `Delete` call on this object anywhere — Kubernetes' garbage collector does that automatically via the owner reference (or, during namespace deletion, the namespace controller does it directly); VM Operator's finalizer only controls *when that already-issued delete is allowed to complete*.
+6. Once the `ResourceDelete` stage resolves (`Proceed=true`), VM Operator removes its own finalizer from `LifecycleState` — in the release write itself when `ResourceDelete` has a hook (see "Releasing at `ResourceDelete`"), otherwise in a separate patch. VM Operator never issues an explicit `Delete` call on this object anywhere — Kubernetes' garbage collector does that automatically via the owner reference (or, during namespace deletion, the namespace controller does it directly); VM Operator's finalizer only controls *when that already-issued delete is allowed to complete*.
 
 ### Next cycle of a `Reentrant` stage
 
-Every stage is `Reentrant`, so after a resume the same checkpoint can be reached again (for example a power-off right after a power-on, or a retried delete). The cycle is closed by this contract:
+Every stage is `Reentrant`, so after a release the same checkpoint can be reached again (for example a power-off right after a power-on, or a retried delete). The cycle is closed by this contract:
 
 1. **Pause.** VM Operator patches `workflowPaused=true` and `workflowResumed=false` in one optimistic-lock write. The Lifecycle Operator creates `status.stages[]` for the stage, runs the hooks, and sets `HooksReady=True` when they finish.
-2. **Resume.** VM Operator sees `HooksReady=True` and patches `workflowPaused=false` and `workflowResumed=false` in one optimistic-lock write, then proceeds with the guarded action.
-3. **Acknowledge.** The Lifecycle Operator sees the stage un-paused while its `status.stages[]` entry still exists and removes that entry. The stage is now back to its seeded state (`(false, false)`, no status entry) and ready for the next pass.
-4. **Next cycle.** On the next reach, VM Operator pauses only once the status entry is gone. While it is still present, VM Operator waits ("reset pending"), because a `HooksReady=True` left on it belongs to the previous pass.
+2. **Release.** VM Operator sees `HooksReady=True` and patches `(false, true)` in one optimistic-lock write, then proceeds with the guarded action.
+3. **Acknowledge.** The Lifecycle Operator sees the stage released and removes its `status.stages[]` entry. The stage rests at `(false, true)`.
+4. **Next cycle.** The checkpoint is reached again only when the guarded action is needed again. At `PowerStateChange`, VM Operator pauses once the status entry is gone and waits while it is present ("reset pending"). At `Create`, `Delete` and `ResourceDelete`, `(false, true)` means a retry of the released action, so VM Operator proceeds without pausing.
 
 Notes:
 
 - **Cache consistency.** `spec` and `status` are on the same object and share one `resourceVersion` stream, so the informer cache never shows a new `spec` with an old `status`. Every `spec.stages[]` write is optimistic-locked, so a write based on a stale snapshot fails with a conflict and is retried on the next reconcile.
 - **Stale copies.** VM Operator decides from whichever copy of `LifecycleState` the checkpoint was given, fresh or cached, and handles both identically:
-  - Rows that write (pause, resume) fail with a `409` on a stale copy and do not proceed that pass. Every path that proceeds after a pause goes through a locked resume, so a stale copy can delay a stage but not let it run early.
+  - Rows that write (pause, release) fail with a `409` on a stale copy and do not proceed that pass. Every path that proceeds after a pause goes through a locked release, so a stale copy can delay a stage but not let it run early.
   - Rows that wait (reset pending, paused and not ready) write nothing; the watch or the requeue brings a fresher copy.
   - Rows that proceed without writing (no object, no entry) are the only ones where staleness matters. "No object" at the Create checkpoint right after VM Operator created the object is caught by `Create` returning `AlreadyExists`, which requeues instead of proceeding (`plan.md` §3). "No entry" from a stale copy is the accepted day-2 race.
-- **Crash after resume.** If VM Operator crashes after the resume write and before the guarded action, the next pass pauses again and the hooks run again. This is at-least-once, which hooks already must tolerate (spec "Resolved decisions").
 - **Wakeups.** Both waits — "reset pending" and paused-but-not-ready — rely on the `LifecycleState` status watch, with no timed requeue: the Lifecycle Operator ends each with a `status` change (removing the entry, or setting `HooksReady=True`). The informer relists after a dropped connection, so a change is not lost, and the VM's periodic resync is the backstop. Both waits require the `LifecycleState` to carry its owner reference to the VM, since that is how the watch finds the VM.
 - **Lifecycle Operator unavailable.** If the Lifecycle Operator is down, a stage that has a `spec.stages[]` entry stays blocked (waiting for `HooksReady`, or for the entry removal) until it returns. VMs with no entry for the stage are unaffected. Turning the `supports_vm_service_lifecycle_hooks` capability off makes every checkpoint a no-op again.
 
 ### Releasing at `ResourceDelete`
 
-`ResourceDelete` is the last stage, and the only one followed by more writes in the same pass: releasing the `LifecycleState` and removing the VM's own finalizer. If releasing were a separate patch after the resume, it would almost always fail:
+`ResourceDelete` is the last stage, and the only one followed by more writes in the same pass: removing VM Operator's finalizer from the `LifecycleState`, then the VM's own finalizer. If the first were a separate patch after the release, it would almost always fail:
 
-1. VM Operator resumes `ResourceDelete` (`(false, false)`).
+1. VM Operator releases `ResourceDelete` (`(false, true)`).
 2. The Lifecycle Operator reacts at once by removing the `status.stages[]` entry, bumping `resourceVersion`.
 3. A separate optimistic-lock patch removing VM Operator's finalizer from the `LifecycleState`, based on the pre-step-2 copy, fails with a `409`, so the VM's own finalizer is not removed either.
 
@@ -154,12 +154,12 @@ Each per-stage condition has exactly one `False` reason (`HooksBlocked`) regardl
 
 | Stage | `type` | `blocking` | Rationale |
 |---|---|---|---|
-| `Create` | `Reentrant` | `true` | Typically reached once per VM lifecycle, but the gate re-evaluates fresh on every reach — e.g. a retry prior to the VM existing in vSphere. |
+| `Create` | `Reentrant` | `true` | Reached once per VM; a retry after release does not pause again. |
 | `PowerStateChange` | `Reentrant` | `true` | Fires on every power-on **and** power-off transition, independently. |
-| `Delete` | `Reentrant` | `true` | Typically reached once, at vSphere-side deletion, but re-evaluates fresh on a retried delete call. |
-| `ResourceDelete` | `Reentrant` | `true` | Typically reached once, as the terminal step of the same delete flow as `Delete`, but re-evaluates fresh on a retried finalizer-removal patch. |
+| `Delete` | `Reentrant` | `true` | Reached once, at vSphere-side deletion; a retry after release does not pause again. |
+| `ResourceDelete` | `Reentrant` | `true` | Reached once, before finalizer removal; a retry after release does not pause again. |
 
-`ReconcileStage`'s decision table (`plan.md` §1) does not branch on `type` at all — every stage is evaluated identically regardless of this field. `type=Reentrant` for all four is what tells the Lifecycle Operator it should remove `status.stages[stage]` after every resume `(false, false)` write so the stage can pause again, not something VM Operator's own gate logic consults.
+`type` is advisory: neither VM Operator nor the Lifecycle Operator branches on it.
 
 ## Capability gating
 
@@ -283,11 +283,10 @@ Created by VM Operator at the VM's first reconcile, seeded with every stage list
 apiVersion: lifecycle.vcfa.vmware.com/v1alpha1
 kind: LifecycleState
 metadata:
-  name: vm-windows-abc123
+  name: virtualmachine-3f1c2b9e-0000-0000-0000-000000000001
   namespace: workload-ns
   labels:
     lifecycle.vcfa.vmware.com/target-group: vmoperator.vmware.com
-    lifecycle.vcfa.vmware.com/target-version: v1alpha6
     lifecycle.vcfa.vmware.com/target-kind: VirtualMachine
   finalizers:
   - lifecycle.vcfa.vmware.com/vm-operator-state
@@ -299,12 +298,6 @@ metadata:
     controller: true
     blockOwnerDeletion: false
 spec:
-  target:
-    apiVersion: vmoperator.vmware.com/v1alpha6
-    kind: VirtualMachine
-    name: windows-abc123
-    namespace: workload-ns
-    uid: 3f1c2b9e-0000-0000-0000-000000000001
   stages:
   - name: Create
     workflowPaused: false
@@ -347,7 +340,7 @@ status:
       lastTransitionTime: "2026-03-25T12:00:05Z"
 ```
 
-**`Create` ready to resume.** `HooksReady` is `True`, which is VM Operator's only resume signal. The Lifecycle Operator sets it for success, failure, and timeout alike, so this example is a failed hook; VM Operator does not read `reason` or `hooks[]`. On its next reconcile, VM Operator patches `workflowPaused=false` and `workflowResumed=false` in one write, then creates the VM. Only the `Create` status entry is shown:
+**`Create` ready to resume.** `HooksReady` is `True`, which is VM Operator's only resume signal. The Lifecycle Operator sets it for success, failure, and timeout alike, so this example is a failed hook; VM Operator does not read `reason` or `hooks[]`. On its next reconcile, VM Operator releases (`(false, true)`) in one write, then creates the VM. Only the `Create` status entry is shown:
 
 ```yaml
 status:

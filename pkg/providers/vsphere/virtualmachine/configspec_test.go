@@ -1098,6 +1098,49 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			})
 		})
 
+		It("should gate zonal rules for pinned standalone VMs and preserve creation and VKS exceptions", func() {
+			vmCtx.VM.Spec.GroupName = ""
+			vmCtx.VM.Labels = map[string]string{corev1.LabelTopologyZone: "zone-a"}
+			vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+				VMAffinity: &vmopv1.VMAffinitySpec{
+					RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+						TopologyKey:   corev1.LabelTopologyZone,
+						LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "db"}},
+					}},
+				},
+			}
+
+			for _, hardAffinity := range []bool{false, true} {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.VMAffinityDuringExecution = true
+					config.Features.VMHardAffinityDuringExecution = hardAffinity
+				})
+				placementSpec, err := virtualmachine.CreateConfigSpecForPlacement(vmCtx, baseConfigSpec, storageClassesToIDs)
+				Expect(err).ToNot(HaveOccurred())
+				if hardAffinity {
+					Expect(placementSpec.VmPlacementPolicies).To(ConsistOf(&vimtypes.VmVmAffinity{
+						PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+						PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+						AffinedVmsTag: vimtypes.TagId{NameId: &vimtypes.TagIdNameId{
+							Tag: "app:db", Category: vmCtx.VM.Namespace,
+						}},
+					}))
+				} else {
+					Expect(placementSpec.VmPlacementPolicies).To(BeEmpty())
+				}
+
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+				Expect(constraints.ConfigureZoneRules).To(Equal(hardAffinity),
+					"creation should include zonal rules only when hard affinity is enabled")
+
+				vmCtx.VM.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
+				placementSpec, err = virtualmachine.CreateConfigSpecForPlacement(vmCtx, baseConfigSpec, storageClassesToIDs)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(placementSpec.VmPlacementPolicies).To(BeEmpty(), "pinned VKS nodes must omit zonal rules")
+				delete(vmCtx.VM.Labels, kubeutil.CAPWClusterRoleLabelKey)
+			}
+		})
+
 		When("VM spec has affinity policies set", func() {
 			Context("required affinity policy with zone topology key", func() {
 				BeforeEach(func() {

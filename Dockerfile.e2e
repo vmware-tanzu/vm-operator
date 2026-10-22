@@ -78,7 +78,7 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
              -o /usr/local/bin/packer-plugin-vsphere main.go
 
 # Runtime stage - minimal image with compiled tests
-FROM ${BASE_IMAGE} AS runtime
+FROM ${BASE_IMAGE} AS runtime-base
 
 # Build information
 ARG BUILD_BRANCH
@@ -211,3 +211,23 @@ USER vmoperator
 
 # Default command
 CMD ["/bin/bash"]
+
+# Optional coverage runner. Report tools are built with the manager's exact Go
+# toolchain, including when gobuild uses a different Go than builder-base.
+# The ordinary runtime target above does not carry these tools or source.
+FROM runtime-base AS runtime-coverage
+USER root
+RUN tdnf install -y python3 && rm -rf /var/cache/tdnf
+COPY bin/coverage/covdata bin/coverage/cover /usr/local/bin/
+COPY bin/coverage/source-revision /vm-operator/coverage-source/revision
+COPY *.go /vm-operator/coverage-source/
+COPY api/ /vm-operator/coverage-source/api/
+COPY controllers/ /vm-operator/coverage-source/controllers/
+COPY pkg/ /vm-operator/coverage-source/pkg/
+COPY services/ /vm-operator/coverage-source/services/
+COPY webhooks/ /vm-operator/coverage-source/webhooks/
+ENV E2E_COVERAGE_SOURCE=/vm-operator/coverage-source
+USER vmoperator
+
+# Keep direct Dockerfile builds, as well as make's default target, unchanged.
+FROM runtime-base AS runtime

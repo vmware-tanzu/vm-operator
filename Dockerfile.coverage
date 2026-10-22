@@ -1,0 +1,7 @@
+# A separate E2E image layered on the normal manager image retains its libc
+# and certificate configuration. Release binaries and tags are not overwritten.
+ARG BASE_IMAGE=vmoperator-controller:latest
+FROM ${BASE_IMAGE}
+COPY bin/coverage/manager /manager
+COPY bin/coverage/coverage-export /coverage-export
+LABEL vmoperator.vmware.com/e2e-coverage="true"

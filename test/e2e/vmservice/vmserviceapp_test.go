@@ -11,7 +11,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmserviceapp"
 )
 
-var _ = Describe("Testing VM Services App Workloads", FlakeAttempts(5), Label("jenkins"), Label("packer"), Label("vmserviceapp"), func() {
+// Each attempt can take up to the Packer build timeout, so keep retries low
+// enough that a bad guest or mirror can't consume the suite timeout.
+var _ = Describe("Testing VM Services App Workloads", FlakeAttempts(3), Label("jenkins"), Label("packer"), Label("vmserviceapp"), func() {
 	ctx := context.TODO()
 	specInputFunc := func() vmserviceapp.SpecInput {
 		return vmserviceapp.SpecInput{

@@ -187,7 +187,7 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyWorkloadIPv6: {
 							Activated: true,
 						},
-						capabilities.CapabilityKeyVirtualMachineConfigPolicy: {
+						capabilities.CapabilityKeyFlexVMClasses: {
 							Activated: true,
 						},
 						capabilities.CapabilityKeyWorkloadNetworkConfiguration: {
@@ -226,7 +226,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMVlanSubinterface = true
 							config.Features.PerNamespaceNetworkProvider = true
 							config.Features.WorkloadIPv6 = true
-							config.Features.VirtualMachineConfigPolicy = true
+							config.Features.FlexVMClasses = true
 							config.Features.WorkloadNetworkConfiguration = true
 							config.Features.VMEviction = true
 							config.Features.ControlledRebalancingPolicy = true
@@ -290,8 +290,8 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
 					})
-					Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
+					Specify(capabilities.CapabilityKeyFlexVMClasses, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.FlexVMClasses).To(BeTrue())
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeTrue())
@@ -365,8 +365,8 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
 					})
-					Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
+					Specify(capabilities.CapabilityKeyFlexVMClasses, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.FlexVMClasses).To(BeTrue())
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeTrue())
@@ -448,7 +448,7 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyWorkloadIPv6: {
 							Activated: false,
 						},
-						capabilities.CapabilityKeyVirtualMachineConfigPolicy: {
+						capabilities.CapabilityKeyFlexVMClasses: {
 							Activated: false,
 						},
 						capabilities.CapabilityKeyWorkloadNetworkConfiguration: {
@@ -524,8 +524,8 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeFalse())
 					})
-					Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
+					Specify(capabilities.CapabilityKeyFlexVMClasses, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.FlexVMClasses).To(BeFalse())
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeFalse())
@@ -614,8 +614,8 @@ var _ = Describe("UpdateCapabilities", func() {
 					Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeFalse())
 					})
-					Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
+					Specify(capabilities.CapabilityKeyFlexVMClasses, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.FlexVMClasses).To(BeFalse())
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeFalse())
@@ -975,17 +975,17 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
 			})
 		})
-		Context(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
+		Context(capabilities.CapabilityKeyFlexVMClasses, func() {
 			BeforeEach(func() {
-				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
-				obj.Status.Supervisor[capabilities.CapabilityKeyVirtualMachineConfigPolicy] = capv1.CapabilityStatus{
+				Expect(pkgcfg.FromContext(ctx).Features.FlexVMClasses).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyFlexVMClasses] = capv1.CapabilityStatus{
 					Activated: true,
 				}
 			})
 			Specify("Enabled", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("VirtualMachineConfigPolicy=true"))
-				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
+				Expect(diff).To(Equal("FlexVMClasses=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.FlexVMClasses).To(BeTrue())
 			})
 		})
 		Context(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
@@ -1151,7 +1151,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyWorkloadIPv6: {
 				Activated: true,
 			},
-			capabilities.CapabilityKeyVirtualMachineConfigPolicy: {
+			capabilities.CapabilityKeyFlexVMClasses: {
 				Activated: true,
 			},
 			capabilities.CapabilityKeyWorkloadNetworkConfiguration: {
@@ -1206,7 +1206,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMVlanSubinterface = true
 					config.Features.PerNamespaceNetworkProvider = true
 					config.Features.WorkloadIPv6 = true
-					config.Features.VirtualMachineConfigPolicy = true
+					config.Features.FlexVMClasses = true
 					config.Features.WorkloadNetworkConfiguration = true
 					config.Features.ExtensionCompatConstraint = true
 					config.Features.VMEviction = true
@@ -1275,8 +1275,8 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
 			})
-			Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
-				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
+			Specify(capabilities.CapabilityKeyFlexVMClasses, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.FlexVMClasses).To(BeTrue())
 			})
 			Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeTrue())
@@ -1321,7 +1321,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMVlanSubinterface = false
 					config.Features.PerNamespaceNetworkProvider = false
 					config.Features.WorkloadIPv6 = false
-					config.Features.VirtualMachineConfigPolicy = false
+					config.Features.FlexVMClasses = false
 					config.Features.WorkloadNetworkConfiguration = false
 					config.Features.ExtensionCompatConstraint = false
 					config.Features.VMEviction = false
@@ -1333,7 +1333,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMHardAffinityDuringExecution=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,FlexVMClasses=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMHardAffinityDuringExecution=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -1389,8 +1389,8 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyWorkloadIPv6, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeFalse())
 			})
-			Specify(capabilities.CapabilityKeyVirtualMachineConfigPolicy, func() {
-				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
+			Specify(capabilities.CapabilityKeyFlexVMClasses, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.FlexVMClasses).To(BeFalse())
 			})
 			Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeFalse())

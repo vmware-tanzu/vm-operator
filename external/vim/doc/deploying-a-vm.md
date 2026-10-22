@@ -9,7 +9,6 @@ The vSphere [`EnvironmentBrowser`](https://developer.broadcom.com/xapis/vsphere-
 | `QueryConfigOption` / `QueryConfigOptionEx` | `VirtualMachineConfigOptions` (per hardware version) and `VirtualMachineGuestOptions` (per guest ID) | Cluster |
 | `QueryConfigTarget` | `ConfigTarget` | Cluster |
 
-The unused `VirtualMachineConfigPolicy` API is removed (vmop-4318). Governance is specified separately by Flex VM Classes (vmop-4034, PR #2067).
 
 ## Resource names
 
@@ -61,9 +60,9 @@ Clients typically combine **`VirtualMachineConfigOptions`** (hardware version + 
 
 ### Creating a VM with configuration validation
 
-The following scenario walks through how a user leverages these APIs when deploying a new virtual machine.
+The following scenario describes a platform administrator using discovery APIs to prepare a VM configuration. Direct environment-browser access is restricted to administrators; tenant governance is defined by the VM Class.
 
-1. The user wants to deploy a VM. They pick a Linux image and choose guest ID `OtherLinux64`.
+1. The administrator wants to deploy a VM. They pick a Linux image and choose guest ID `OtherLinux64`.
 
 2. They target hardware version `vmx-22`.
 
@@ -87,4 +86,4 @@ The following scenario walks through how a user leverages these APIs when deploy
 
 6. They inspect the target cluster's `ConfigTarget` to understand its discovered hardware and devices. These objects describe capabilities; they do not impose tenant governance.
 
-7. They create the VM using the existing VM API. VM Class governance and its create, update and power-on rules will be implemented under the separate Flex VM Classes spec. This removal does not add replacement admission behavior.
+7. They create the VM using the existing VM API. VM Class governance and its create, update and power-on rules will be implemented under the separate Flex VM Classes spec.

@@ -88,7 +88,7 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		_ = imgregv1.AddToScheme(opts.Scheme)
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy {
+	if pkgcfg.FromContext(ctx).Features.FlexVMClasses {
 		_ = vimv1.AddToScheme(opts.Scheme)
 	}
 

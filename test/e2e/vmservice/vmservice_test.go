@@ -10,8 +10,8 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/backuprestore"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/computepolicies"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/configpolicy"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/environmentbrowser"
 	tagcr "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/tag"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachine"
@@ -266,9 +266,9 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
-		Context("CONFIG-POLICY", func() {
-			configpolicy.Spec(context.TODO(), func() configpolicy.SpecInput {
-				return configpolicy.SpecInput{
+		Context("ENVIRONMENT-BROWSER", func() {
+			environmentbrowser.Spec(context.TODO(), func() environmentbrowser.SpecInput {
+				return environmentbrowser.SpecInput{
 					ClusterProxy:     svClusterProxy,
 					Config:           config,
 					WCPNamespaceName: wcpNamespaceName,

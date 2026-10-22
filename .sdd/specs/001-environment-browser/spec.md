@@ -1,4 +1,4 @@
-# Feature Specification: VM Service Class Policy and Resize — Environment Browser Pipeline
+# Feature Specification: Environment Browser
 
 - **Feature branch**: [`feature/vm-config-options-api`](https://github.com/akutz/vm-operator/tree/feature/vm-config-options-api/)
   - **Fork**: `akutz/vm-operator`
@@ -115,17 +115,23 @@ A Supervisor can be brought up or upgraded without enabling the environment-brow
 
 **Acceptance scenarios**:
 
-1. **Given** the capability `CapabilityVirtualMachineConfigPolicy` (`"supports_vm_service_vm_config_policy"`) is `false`, **when** a `Zone` reconciles, **then** no `ConfigTarget` objects are created.
+1. **Given** the capability `CapabilityKeyFlexVMClasses` (`"supports_vm_service_vm_config_policy"`) is `false`, **when** a `Zone` reconciles, **then** no `ConfigTarget` objects are created.
 2. **Given** the capability is disabled, **when** a `VirtualMachine` is admitted, **then** the webhook skips all `ConfigTarget`-based capability checks.
 3. **Given** the capability is re-enabled after being disabled, **when** the first `Zone` reconcile completes, **then** the pipeline restores the full set of objects.
 
 ---
 
-### US7 — Platform engineer: remove the unused config policy (vmop-4318)
+### US7 — Platform admin: restrict environment-browser access (vmop-4319)
 
-1. **Given** a fresh Supervisor installation, **when** VM Operator installs its APIs, **then** no `VirtualMachineConfigPolicy` CRD is installed and Zone reconciliation creates no policies.
-2. **Given** an upgraded Supervisor with an experimental policy CRD, **when** VM Operator installs its APIs, **then** the obsolete CRD and its objects are removed regardless of the environment-browser capability or disabled-feature cleanup setting.
-3. **Given** the environment-browser capability is enabled, **when** a Zone reconciles after policy removal, **then** `ConfigTarget`, `VirtualMachineConfigOptions`, and `VirtualMachineGuestOptions` continue to be created and populated.
+Implementation is tracked by vmop-4319, separately from the policy-removal change.
+
+Environment-browser discovery exposes cluster hardware and inventory. Access to `ConfigTarget`, `VirtualMachineConfigOptions`, and `VirtualMachineGuestOptions` is restricted to platform administrators and the service accounts required by the discovery controllers and admission webhooks. Tenant users, including namespace administrators, must not receive access through namespace roles.
+
+**Acceptance scenarios**:
+
+1. **Given** a platform administrator, **when** they get, list, or watch discovery objects, **then** access succeeds.
+2. **Given** a tenant user or namespace administrator, **when** they get, list, or watch any of the three discovery resources, **then** access is forbidden.
+3. **Given** the environment-browser capability is enabled, **when** its controllers and admission webhooks access discovery objects, **then** their service accounts retain the permissions required for normal operation.
 
 ## Edge cases
 
@@ -139,8 +145,6 @@ A Supervisor can be brought up or upgraded without enabling the environment-brow
 ## Out of scope
 
 - VM governance, hardware ranges, ExtraConfig allow/deny rules, and create/update/power-on enforcement belong to the Flex VM Classes spec (vmop-4034, PR #2067).
-- Environment-browser completion (vmop-4319), including access restrictions and query behavior, is separate from policy removal.
-
 - Sequence diagrams for the per-host iteration *(TDS A4)*.
 - Automatic resize of running VMs *(separate epic)*.
 - Telco-specific extra config fields (VMXNET3, latency sensitivity) *(vmop-3388)*.

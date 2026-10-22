@@ -22,7 +22,7 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 		pkgcfg.UpdateContext(
 			pkgcfg.NewContextWithDefaultConfig(),
 			func(config *pkgcfg.Config) {
-				config.Features.VirtualMachineConfigPolicy = true
+				config.Features.FlexVMClasses = true
 			},
 		),
 	),

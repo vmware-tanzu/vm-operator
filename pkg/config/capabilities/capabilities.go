@@ -121,12 +121,11 @@ const (
 	// the Supervisor capabilities CRD for IPv6 support for VM service workloads.
 	CapabilityKeyWorkloadIPv6 = "supports_workload_ipv6"
 
-	// CapabilityKeyVirtualMachineConfigPolicy is the name of the capability key
+	// CapabilityKeyFlexVMClasses is the name of the capability key
 	// defined in the Supervisor capabilities CRD. It gates the environment-browser
 	// controllers, webhooks, and CRDs (ConfigTarget, VirtualMachineConfigOptions,
-	// VirtualMachineGuestOptions). The key retains its original name after the
-	// unused VirtualMachineConfigPolicy API was removed.
-	CapabilityKeyVirtualMachineConfigPolicy = "supports_vm_service_vm_config_policy"
+	// VirtualMachineGuestOptions).
+	CapabilityKeyFlexVMClasses = "supports_vm_service_vm_config_policy"
 
 	// CapabilityKeyWorkloadNetworkConfiguration is the name of the capability
 	// key defined in the Supervisor capabilities CRD for enabling the
@@ -345,8 +344,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.PerNamespaceNetworkProvider = capStatus.Activated
 		case CapabilityKeyWorkloadIPv6:
 			fs.WorkloadIPv6 = capStatus.Activated
-		case CapabilityKeyVirtualMachineConfigPolicy:
-			fs.VirtualMachineConfigPolicy = capStatus.Activated
+		case CapabilityKeyFlexVMClasses:
+			fs.FlexVMClasses = capStatus.Activated
 		case CapabilityKeyWorkloadNetworkConfiguration:
 			fs.WorkloadNetworkConfiguration = capStatus.Activated
 		case CapabilityKeyExtensionCompatConstraint:

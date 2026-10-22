@@ -1,9 +1,8 @@
 // Copyright (c) 2026 Broadcom. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package configpolicy contains E2E tests for environment-browser discovery.
-// The package name is retained for existing suite registration.
-package configpolicy
+// Package environmentbrowser contains E2E tests for environment-browser discovery.
+package environmentbrowser
 
 import (
 	"context"
@@ -62,7 +61,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		svClusterClient = input.ClusterProxy.GetClient()
 	})
 
-	It("Should no longer expose the VirtualMachineConfigPolicy API after installation or upgrade",
+	It("Should not install the VirtualMachineConfigPolicy API",
 		Label("extended-functional", "experimental"),
 		func() {
 			adminProxy, err := svClusterProxy.NewAdminClusterProxy(ctx)
@@ -77,13 +76,13 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					Name: "virtualmachineconfigpolicies.vim.vmware.com",
 				}, &crd)
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
-					"the obsolete policy CRD and its objects should be removed")
+					"the policy CRD should not be installed")
 			}, input.Config.GetIntervals("default", "wait-vm-config-options-deletion")...).Should(Succeed())
 		})
 
 	Context("When a workload namespace has zones", func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VirtualMachineConfigPolicyCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.FlexVMClassesCapabilityName)
 		})
 
 		It("Should have at least one ConfigTarget derived from the zone's pool MoIDs",
@@ -121,7 +120,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 	Context("When the ConfigTarget controller reconciles a cluster's ConfigTarget", func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VirtualMachineConfigPolicyCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.FlexVMClassesCapabilityName)
 		})
 
 		It("Should populate ConfigTarget.status from QueryConfigTarget and mark Ready=True",

@@ -92,4 +92,4 @@ sequenceDiagram
 
 ## Governance
 
-`VirtualMachineConfigPolicy` is removed (vmop-4318). VM Operator deletes its experimental CRD and objects on upgrade. The environment-browser pipeline keeps its existing capability gate. VM Class governance, resource ranges, ExtraConfig rules and admission enforcement belong to the separate Flex VM Classes specification (vmop-4034, PR #2067).
+TODO: Document how the governing VM Class consumes these discovery APIs to enforce resource ranges, ExtraConfig rules, and lifecycle constraints. This work belongs to the Flex VM Classes specification (vmop-4034, PR #2067).

@@ -1,10 +1,10 @@
-# Implementation Plan: VM Service Class Policy and Resize
+# Implementation Plan: Environment Browser
 
 - **Branch**: [`feature/vm-config-options-api`](https://github.com/akutz/vm-operator/tree/feature/vm-config-options-api/)
   - **Fork**: `akutz/vm-operator`
   - **PR target**: `vmware-tanzu/vm-operator`
 - **Date**: 2026-05-13
-- **Spec**: [`./sdd/specs/001-class-policy-resize/spec.md`](spec.md)
+- **Spec**: [`./sdd/specs/001-environment-browser/spec.md`](spec.md)
 - **Epic**: vmop-3331
 - **Scope update (vmop-4318)**: `VirtualMachineConfigPolicy` and its admission enforcement are superseded by Flex VM Classes (`VirtualMachineClass` v2, vmop-4034; specification proposed in PR #2067). This spec covers environment-browser discovery and hardware feasibility; the class spec owns governance, ranges, ExtraConfig rules, and create/update/power-on enforcement. Policy removal (vmop-4318) is independent of the class spec and environment-browser completion (vmop-4319).
 
@@ -45,7 +45,7 @@ Implement the three-CRD environment-browser pipeline within the `github.com/vmwa
 ### Documentation (specs/)
 
 ```
-specs/001-class-policy-resize/
+specs/001-environment-browser/
 ├── spec.md       — this feature's functional spec (what & why)
 ├── plan.md       — this file (how)
 ├── tasks.md      — ordered task checklist
@@ -92,7 +92,7 @@ webhooks/
 
 pkg/
 ├── config/capabilities/
-│   └── capabilities.go                 MODIFY — add CapabilityVirtualMachineConfigPolicy
+│   └── capabilities.go                 MODIFY — add CapabilityKeyFlexVMClasses
 └── providers/vsphere/
 │   └── environment_browser.go          NEW — QueryConfigTarget, QueryConfigOptionDescriptor,
 │                                              QueryConfigOptionEx, per-host PropertyCollector
@@ -109,8 +109,8 @@ test/
     └── virtualmachineconfigoptions/    NEW
 
 test/e2e/vmservice/
-└── configpolicy/
-    └── configpolicy_test.go            NEW
+└── environmentbrowser/
+    └── environmentbrowser.go            NEW
 ```
 
 There is no `hostsystem_types.go`, no `controllers/hostsystem/`, no `webhooks/hostsystem/`, no `config/rbac/hostsystem_*.yaml`, no `config/crd/external-crds/vim.vmware.com_hostsystems.yaml`, and no `test/intg/hostsystem/`. The earlier draft of this plan included those files; they were removed when the `HostSystem` CRD was consolidated into the `ConfigTarget` controller (see `research.md` Finding 7).
@@ -135,19 +135,19 @@ Before any code begins, the following wiki documents must be updated or created 
 
 #### F1. Capability + feature gate (Story S1 / vmop-3738)
 
-- Add `CapabilityVirtualMachineConfigPolicy` to `pkg/config/capabilities/capabilities.go`.
+- Add `CapabilityKeyFlexVMClasses` to `pkg/config/capabilities/capabilities.go`.
 - Wire a feature gate in `pkg/config/capabilities/` that controls controller registration and webhook short-circuit.
 - Install the three `vim.vmware.com` CRDs (`ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions`) via the Supervisor chart install hook and `config/crd/external-crds/`. No `HostSystem` CRD exists.
 
 **Key contracts**:
 ```go
 // pkg/config/capabilities/capabilities.go
-const CapabilityVirtualMachineConfigPolicy = "supports_vm_service_vm_config_policy"
+const CapabilityKeyFlexVMClasses = "supports_vm_service_vm_config_policy"
 ```
 
 ```go
 // controllers/controllers.go — gated registration
-if featuregate.VirtualMachineConfigPolicy.Enabled() {
+if pkgcfg.FromContext(ctx).Features.FlexVMClasses {
     must(controllers.AddConfigTargetController(mgr))
     must(controllers.AddVirtualMachineConfigOptionsController(mgr))
     // ...
@@ -239,13 +239,15 @@ No standalone controller; reconciled by the `VirtualMachineConfigOptions` contro
 - RBAC, manifest registration.
 - Integration + E2E tests for the listMap merge.
 
-#### I6. Remove the unused policy API (vmop-4318)
+#### I6. Historical policy design (superseded by vmop-4318)
 
-Remove policy fan-out, policy-only API types, generated deepcopy methods, the CRD manifest, installation references, and policy RBAC. `pkg/crd.Install` deletes an already-installed experimental policy CRD, including its objects, independently of the environment-browser gate and `CRDCleanupEnabled`. This API and its enforcement were unreleased; no conversion or policy migration is needed. Use the existing CRD permissions and propagate cleanup failures.
+Earlier drafts introduced `VirtualMachineConfigPolicy` to govern VM configuration. That API and its enforcement never shipped; its types, CRD, Zone fan-out, and RBAC are removed because governance belongs to the Flex VM Classes specification (vmop-4034, PR #2067). No upgrade cleanup or migration is required.
 
-Retain `Features.VirtualMachineConfigPolicy` and `CapabilityVirtualMachineConfigPolicy` (`supports_vm_service_vm_config_policy`) as the environment-browser gate. Renaming that integration contract or changing browser behavior belongs to separate work.
+The environment-browser gate is named `Features.FlexVMClasses` and `CapabilityKeyFlexVMClasses` in Go. Its external capability string remains `supports_vm_service_vm_config_policy` to preserve the Supervisor integration contract.
 
-Keep the discovery E2E suite and replace policy creation assertions with a check that the policy CRD is absent after installation or upgrade. Test startup cleanup with the browser enabled and disabled. The Flex VM Classes specification in PR #2067 remains independent and owns the replacement governance design.
+#### I6.a. Admin-only discovery access (vmop-4319)
+
+Restrict get/list/watch on all three discovery APIs to platform administrators and required service accounts. Audit ClusterRole aggregation and Supervisor authorization so namespace administrators and tenant users do not inherit access. Validate both allowed administrator access and forbidden tenant access in E2E tests while preserving controller and webhook access.
 
 #### I7. VM admission hardware feasibility (Story S9 / vmop-3746)
 
@@ -369,7 +371,7 @@ No per-host CRD is created; the per-host data is owned entirely by `ConfigTarget
 |-------|-----------|----------|
 | Unit | `*_test.go` beside source | beside each controller/webhook/pkg package |
 | Integration | `*_intg_test.go` + `vcsim` | `test/intg/` |
-| E2E | Ginkgo, real Supervisor | `test/e2e/vmservice/configpolicy/` |
+| E2E | Ginkgo, real Supervisor | `test/e2e/vmservice/vmservice/environmentbrowser/` |
 
 **GC must be tested at all three layers** (see `spec.md` US4 scenarios).
 
@@ -384,4 +386,4 @@ No per-host CRD is created; the per-host data is owned entirely by `ConfigTarget
 | Capability disabled mid-deployment | Controllers deregister cleanly; webhook short-circuits |
 | CRD schema break | `spec.id` immutability enforced at webhook, not only at API server level |
 
-**Disable path**: Set `CapabilityVirtualMachineConfigPolicy` to `false` in the capabilities ConfigMap. Controllers stop reconciling. CRDs remain installed (safe to list); existing objects are preserved. Re-enabling resumes reconciliation from current state.
+**Disable path**: Set `CapabilityKeyFlexVMClasses` to `false` in the capabilities ConfigMap. Controllers stop reconciling. CRDs remain installed (safe to list); existing objects are preserved. Re-enabling resumes reconciliation from current state.

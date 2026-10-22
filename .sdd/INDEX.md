@@ -31,7 +31,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | # | Slug | Title | Status | Epic |
 |---|------|-------|--------|------|
 | 000 | [sdd](specs/000-sdd/) | VM Operator Specification Driven Development | In Progress | vmop-3820 |
-| 001 | [class-policy-resize](specs/001-class-policy-resize/) | VM Service Class Policy and Resize — Environment Browser Pipeline; config policy removed by vmop-4318; governance belongs to the separate Flex VM Classes spec (vmop-4034, PR #2067) | In Progress | vmop-3331 |
+| 001 | [environment-browser](specs/001-environment-browser/) | Environment Browser | In Progress | vmop-3331 |
 | 002 | [vm-extraconfig-reconcile](specs/002-vm-extraconfig-reconcile/) | VM ExtraConfig Reconciliation — E2E Coverage (`spec.md`/`plan.md` pending) | In Progress | vmop-3782 |
 | 003 | [compute-config-reconcile](specs/003-compute-config-reconcile/) | VM Compute Configuration Reconciliation | In Review | vmop-3388 |
 | 004 | [nic-extraconfig-reconcile](specs/004-nic-extraconfig-reconcile/) | NIC ExtraConfig Reconciler — E2E Coverage (`spec.md`/`plan.md` pending) | In Progress | vmop-3782 |

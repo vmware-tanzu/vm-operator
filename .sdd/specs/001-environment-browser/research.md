@@ -1,6 +1,6 @@
-# Research: VM Service Class Policy and Resize
+# Research: Environment Browser
 
-- **Feature**: `specs/001-class-policy-resize/`
+- **Feature**: `specs/001-environment-browser/`
 - **Epic**: vmop-3331
 - **Spike**: vmop-3470 (completed; produced `controller-workflows.md` and the v1alpha1 type set)
 
@@ -104,9 +104,7 @@ func GCVirtualMachineConfigOptions(ctx context.Context, c client.Client,
     liveHWVersionKeys sets.Set[string]) error { ... }
 ```
 
-### What GC does NOT cover
-
-- The experimental `VirtualMachineConfigPolicy` API is removed by vmop-4318. Startup cleanup deletes its CRD and all policy objects; no Zone-specific policy GC is needed.
+### Guest-options garbage collection
 
 `VirtualMachineGuestOptions.status.hardwareVersions` listMap entries for a hardware version no longer reported by that version's `VirtualMachineConfigOptions` reconcile *are* pruned (vmop-3932): the `VirtualMachineConfigOptions` controller tracks the guest OS IDs live in its own `QueryConfigOptionEx` result and removes its hardware version's stale entry from every `VirtualMachineGuestOptions` not in that set, deleting the object outright once no hardware-version entries remain. See `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go` (`garbageCollectGuestOptions`).
 
@@ -261,4 +259,4 @@ Both additions are tracked by the new sub-task vmop-3797 under vmop-3742.
 
 ## Decision: retire config policy independently (vmop-4318)
 
-The unused policy API and its enforcement never shipped. Remove policy creation, types, CRD installation and RBAC now; explicitly delete the experimental CRD on startup because removing an embedded manifest alone does not remove installed CRDs. Preserve the three environment-browser CRDs and their existing capability contract. Class governance, ranges, ExtraConfig matching and lifecycle enforcement belong to the Flex VM Classes specification (vmop-4034, PR #2067); environment-browser completion remains vmop-4319. Neither is a prerequisite for policy removal.
+The unused policy API and its enforcement never shipped. Remove policy creation, types, CRD installation and RBAC now; no upgrade cleanup or migration is required for this unreleased API. Preserve the three environment-browser CRDs and their existing capability contract. Class governance, ranges, ExtraConfig matching and lifecycle enforcement belong to the Flex VM Classes specification (vmop-4034, PR #2067); environment-browser completion remains vmop-4319. Neither is a prerequisite for policy removal.

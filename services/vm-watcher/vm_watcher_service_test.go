@@ -148,6 +148,43 @@ var _ = Describe(
 			})
 		})
 
+		When("the vSphere client is replaced without logging out", func() {
+			var (
+				oldVSClient *vsclient.Client
+			)
+			JustBeforeEach(func() {
+				Eventually(func(g Gomega) {
+					vsClientMu.RLock()
+					defer vsClientMu.RUnlock()
+
+					g.Expect(vsClient).ToNot(BeNil())
+					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
+				}, "5s").Should(Succeed())
+
+				func() {
+					vsClientMu.RLock()
+					defer vsClientMu.RUnlock()
+
+					oldVSClient = vsClient
+				}()
+
+				By("the provider replaces its client", func() {
+					provider.ReplaceVSphereClient()
+				})
+			})
+			Specify("the service should be restarted on the new client promptly", func() {
+				// The old session stays valid, so without a replacement signal the
+				// watcher would only restart once its long poll returned.
+				Eventually(func(g Gomega) {
+					vsClientMu.RLock()
+					defer vsClientMu.RUnlock()
+
+					g.Expect(vsClient).ToNot(BeIdenticalTo(oldVSClient))
+					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(2)))
+				}, "30s").Should(Succeed())
+			})
+		})
+
 		When("the credentials are rotated", func() {
 			var (
 				oldUser     string

@@ -117,7 +117,6 @@ E2E_BUILD_TARGET ?= runtime
 # Coverage builds have their own binaries and image; normal release outputs
 # remain untouched. Instrument owned product packages, excluding test helpers.
 COVERAGE_IMAGE ?= vmoperator-controller-coverage
-COVERAGE_BASE_IMAGE ?= $(IMG)
 COVERAGE_IMAGE_FILE ?= $(ARTIFACTS_DIR)/$(COVERAGE_IMAGE)-$(GOOS)_$(GOARCH).tar
 COVERAGE_SOURCE_REVISION ?= $(shell git rev-parse HEAD)
 COVERAGE_PACKAGES ?= github.com/vmware-tanzu/vm-operator,github.com/vmware-tanzu/vm-operator/controllers/...,github.com/vmware-tanzu/vm-operator/pkg/...,github.com/vmware-tanzu/vm-operator/services/...,github.com/vmware-tanzu/vm-operator/webhooks/...,github.com/vmware-tanzu/vm-operator/api/...
@@ -923,8 +922,13 @@ image-build: ## Build container image
 
 .PHONY: image-build-coverage
 image-build-coverage: GOOS=linux
+# Build the regular image unless the caller supplies an existing base.
+ifndef COVERAGE_BASE_IMAGE
+COVERAGE_BASE_IMAGE = $(IMG)
+image-build-coverage: image-build
+endif
 image-build-coverage: manager-coverage-only
-image-build-coverage: ## Build a separate coverage image on an existing manager image
+image-build-coverage: ## Build regular and coverage images (or reuse COVERAGE_BASE_IMAGE)
 	$(CRI_BIN) build -f Dockerfile.coverage --platform "$(GOOS)/$(GOARCH)" \
 	  --build-arg BASE_IMAGE="$(COVERAGE_BASE_IMAGE)" \
 	  -t "$(COVERAGE_IMAGE):$(IMAGE_TAG)" \

@@ -6,16 +6,22 @@ The standard manager image and E2E runtime are unchanged. Coverage uses a separa
 
 ## Build
 
-Build the normal manager image first, then build the coverage layer and runner from the same source checkout:
+Build the coverage manager image and runner from the same source checkout. The coverage target builds the regular manager image first automatically:
 
 ```sh
-GOARCH=amd64 make image-build
 GOARCH=amd64 make image-build-coverage CRI_BIN=docker
 make e2e-image-build CRI_BIN=docker \
   E2E_IMAGE=vmoperator-e2e-coverage E2E_BUILD_TARGET=runtime-coverage
 ```
 
-`COVERAGE_BASE_IMAGE` selects the existing normal manager image. `COVERAGE_IMAGE` and `COVERAGE_IMAGE_FILE` select the separate output image/archive. `manager-coverage-only` creates `bin/coverage/` without replacing the release binaries. The reporter tools are built with the manager's Go toolchain, independently of the toolchain used to compile the E2E test binary.
+To reuse an existing normal manager image instead of rebuilding it, set `COVERAGE_BASE_IMAGE` explicitly:
+
+```sh
+make image-build-coverage GOARCH=amd64 CRI_BIN=docker \
+  COVERAGE_BASE_IMAGE=registry.example/vmoperator-controller:build-id
+```
+
+The base image must match the target architecture and be compatible with the manager build. `COVERAGE_IMAGE` and `COVERAGE_IMAGE_FILE` select the separate output image/archive. `manager-coverage-only` creates `bin/coverage/` without replacing the release binaries. The reporter tools are built with the manager's Go toolchain, independently of the toolchain used to compile the E2E test binary.
 
 Push/load the two coverage images into a registry reachable by both the Supervisor and the E2E runner. Use an immutable image reference for a single build.
 

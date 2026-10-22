@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -27,6 +28,9 @@ const (
 	// This template file exists in the packer-plugin-vsphere repo.
 	// Make sure to update the repo if you are changing this file.
 	jenkinsSpecTemplateName = "jenkins-template.pkr.hcl"
+	// A healthy build takes ~3-11 minutes. Bound it so a stalled guest or
+	// download fails the attempt instead of consuming the suite timeout.
+	jenkinsPackerBuildTimeout = 30 * time.Minute
 )
 
 func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
@@ -97,6 +101,7 @@ func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
 	It("Should successfully run the Jenkins workload using Packer", func() {
 		opts := PackerBuildCmdOpts{
 			TemplateFilePath: templateFilePath,
+			Timeout:          jenkinsPackerBuildTimeout,
 			TemplateVariables: map[string]string{
 				"keep_input_artifact":  "true",
 				"kubeconfig_path":      kubeconfigPath,

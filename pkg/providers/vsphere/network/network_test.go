@@ -175,6 +175,48 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 				Expect(devices).To(BeEmpty())
 			})
 		})
+		Context("unit numbers", func() {
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name:       "eth0",
+						Network:    &common.PartialObjectRef{Name: networkName},
+						UnitNumber: ptr.To(int32(9)),
+					},
+					{
+						Name:    "eth1",
+						Network: &common.PartialObjectRef{Name: networkName},
+					},
+				}
+			})
+
+			Context("feature enabled", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+						config.Features.VMNetworkUnitNumbers = true
+					})
+				})
+
+				It("propagates spec unit numbers into results", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(devices).To(HaveLen(2))
+					Expect(devices[0].InterfaceName).To(Equal("eth0"))
+					Expect(devices[0].UnitNumber).To(Equal(ptr.To(int32(9))))
+					Expect(devices[1].InterfaceName).To(Equal("eth1"))
+					Expect(devices[1].UnitNumber).To(BeNil())
+				})
+			})
+
+			Context("feature disabled", func() {
+				// Default test config: VMNetworkUnitNumbers is false.
+				It("does not populate result unit numbers", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(devices).To(HaveLen(2))
+					Expect(devices[0].UnitNumber).To(BeNil())
+					Expect(devices[1].UnitNumber).To(BeNil())
+				})
+			})
+		})
 	})
 
 	Context("VDS", func() {
@@ -2107,6 +2149,35 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(devices).To(HaveLen(1))
 				Expect(devices[0].MacAddress).To(Equal(expectedMACAddress0))
+			})
+		})
+		Context("Named Network with unit number", func() {
+			BeforeEach(func() {
+				vm.Spec.Network.Interfaces[0].UnitNumber = ptr.To(int32(9))
+			})
+
+			It("returns device without unit number when the feature is disabled", func() {
+				// The JustBeforeEach call runs with the default config: the
+				// VMNetworkUnitNumbers feature is off.
+				Expect(err).ToNot(HaveOccurred())
+				Expect(devices).To(HaveLen(1))
+				Expect(devices[0].UnitNumber).To(BeNil())
+			})
+
+			It("returns device with the spec unit number when the feature is enabled", func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.VMNetworkUnitNumbers = true
+				})
+
+				devices, err = network.CreateNetworkDevices(
+					ctx,
+					vm,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(devices).To(HaveLen(1))
+				Expect(devices[0].UnitNumber).To(Equal(ptr.To(int32(9))))
 			})
 		})
 	})

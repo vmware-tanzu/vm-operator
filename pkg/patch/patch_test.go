@@ -20,11 +20,13 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -353,7 +355,10 @@ func intgTests() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Marking Ready=True")
-					conditions.MarkTrue(obj, vmopv1.ReadyConditionType)
+					// Force distinct transition times without depending on a clock boundary.
+					ready := conditions.TrueCondition(vmopv1.ReadyConditionType)
+					ready.LastTransitionTime = metav1.NewTime(time.Unix(1, 0).UTC())
+					conditions.Set(obj, ready)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj, WithOwnedConditions{Conditions: []string{vmopv1.ReadyConditionType}})).To(Succeed())
@@ -368,7 +373,9 @@ func intgTests() {
 						readyBefore := conditions.Get(obj, vmopv1.ReadyConditionType)
 						readyAfter := conditions.Get(objAfter, vmopv1.ReadyConditionType)
 
-						return cmp.Equal(readyBefore, readyAfter)
+						// Applying the state transition may recalculate LastTransitionTime.
+						return cmp.Equal(readyBefore, readyAfter,
+							cmpopts.IgnoreFields(metav1.Condition{}, "LastTransitionTime"))
 					}, timeout).Should(BeTrue())
 				})
 
@@ -395,7 +402,10 @@ func intgTests() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Marking Ready=True")
-					conditions.MarkTrue(obj, vmopv1.ReadyConditionType)
+					// Force distinct transition times without depending on a clock boundary.
+					ready := conditions.TrueCondition(vmopv1.ReadyConditionType)
+					ready.LastTransitionTime = metav1.NewTime(time.Unix(1, 0).UTC())
+					conditions.Set(obj, ready)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj, WithForceOverwriteConditions{})).To(Succeed())
@@ -410,7 +420,9 @@ func intgTests() {
 						readyBefore := conditions.Get(obj, vmopv1.ReadyConditionType)
 						readyAfter := conditions.Get(objAfter, vmopv1.ReadyConditionType)
 
-						return cmp.Equal(readyBefore, readyAfter)
+						// Applying the state transition may recalculate LastTransitionTime.
+						return cmp.Equal(readyBefore, readyAfter,
+							cmpopts.IgnoreFields(metav1.Condition{}, "LastTransitionTime"))
 					}, timeout).Should(BeTrue())
 				})
 			})

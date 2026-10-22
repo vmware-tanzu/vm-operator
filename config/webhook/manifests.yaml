@@ -174,7 +174,6 @@ webhooks:
     operations:
     - CREATE
     - UPDATE
-    - DELETE
     resources:
     - tags
   sideEffects: None

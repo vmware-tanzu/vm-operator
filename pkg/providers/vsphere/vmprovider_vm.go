@@ -75,6 +75,7 @@ import (
 	vmconfextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/extraconfig"
 	vmconfnetworkextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/networkextraconfig"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
+	vmconfvmtags "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/vmtags"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
 
@@ -336,6 +337,12 @@ func (vs *vSphereVMProvider) CleanupVirtualMachine(
 		return providers.ErrReconcileInProgress
 	}
 
+	if pkgcfg.FromContext(ctx).Features.TaggingAPI {
+		if err := vmconfvmtags.ReleaseOwnership(ctx, vs.k8sClient, vm); err != nil {
+			return err
+		}
+	}
+
 	vmCtx := pkgctx.NewVirtualMachineContext(
 		pkgctx.WithVCOpID(ctx, vm, "cleanupVM"),
 		vm,
@@ -377,6 +384,12 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 		// If the VM is already being reconciled in a goroutine then it cannot
 		// be deleted yet.
 		return providers.ErrReconcileInProgress
+	}
+
+	if pkgcfg.FromContext(ctx).Features.TaggingAPI {
+		if err := vmconfvmtags.ReleaseOwnership(ctx, vs.k8sClient, vm); err != nil {
+			return err
+		}
 	}
 
 	vmCtx := pkgctx.NewVirtualMachineContext(

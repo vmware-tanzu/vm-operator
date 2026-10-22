@@ -46,6 +46,7 @@ variables:
   EnvFSSPodVMOnStretchedSupervisor: "FSS_PODVMONSTRETCHEDSUPERVISOR"
   EnvFSSBYOK: "FSS_WCP_VMSERVICE_BYOK"
   EnvWorkloadIsolation: "FSS_WCP_WORKLOAD_DOMAIN_ISOLATION"
+  EnvFSSTaggingAPI: "FSS_WCP_VMSERVICE_TAGGING_API"
   # E2E Namespace used for the VM service tests. If not set, a random namespace will be created.
   E2ENamespace: "${E2E_NAMESPACE:-}"
 
@@ -105,6 +106,8 @@ intervals:
   default/wait-policy-evaluation-creation: ["3m", "10s"]
   default/wait-policy-evaluation-compliant: ["2m", "10s"]
   default/wait-policy-evaluation-update: ["3m", "10s"]
+  default/wait-vm-affinity-tag-applied: ["60s", "10s"]
+  default/wait-tag-cr-deleted: ["3m", "10s"]
   default/wait-maintenance-mode: ["5m", "10s"]
 
   default/wait-config-target-condition-update: ["5m", "10s"]

@@ -60,11 +60,32 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		svClusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = input.ClusterProxy.GetClient()
-
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VirtualMachineConfigPolicyCapabilityName)
 	})
 
+	It("Should no longer expose the VirtualMachineConfigPolicy API after installation or upgrade",
+		Label("extended-functional", "experimental"),
+		func() {
+			adminProxy, err := svClusterProxy.NewAdminClusterProxy(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			defer adminProxy.Dispose(ctx)
+			adminClient, err := adminProxy.GetAdminClient()
+			Expect(err).ToNot(HaveOccurred())
+
+			Eventually(func(g Gomega) {
+				var crd apiextensionsv1.CustomResourceDefinition
+				err := adminClient.Get(ctx, ctrlclient.ObjectKey{
+					Name: "virtualmachineconfigpolicies.vim.vmware.com",
+				}, &crd)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+					"the obsolete policy CRD and its objects should be removed")
+			}, input.Config.GetIntervals("default", "wait-vm-config-options-deletion")...).Should(Succeed())
+		})
+
 	Context("When a workload namespace has zones", func() {
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VirtualMachineConfigPolicyCapabilityName)
+		})
+
 		It("Should have at least one ConfigTarget derived from the zone's pool MoIDs",
 			Label("extended-functional", "experimental"),
 			func() {
@@ -96,28 +117,13 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					}
 				}
 			})
-
-		It("Should no longer expose the VirtualMachineConfigPolicy API after installation or upgrade",
-			Label("extended-functional", "experimental"),
-			func() {
-				adminProxy, err := svClusterProxy.NewAdminClusterProxy(ctx)
-				Expect(err).ToNot(HaveOccurred())
-				defer adminProxy.Dispose(ctx)
-				adminClient, err := adminProxy.GetAdminClient()
-				Expect(err).ToNot(HaveOccurred())
-
-				Eventually(func(g Gomega) {
-					var crd apiextensionsv1.CustomResourceDefinition
-					err := adminClient.Get(ctx, ctrlclient.ObjectKey{
-						Name: "virtualmachineconfigpolicies.vim.vmware.com",
-					}, &crd)
-					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
-						"the obsolete policy CRD and its objects should be removed")
-				}, input.Config.GetIntervals("default", "wait-vm-config-options-deletion")...).Should(Succeed())
-			})
 	})
 
 	Context("When the ConfigTarget controller reconciles a cluster's ConfigTarget", func() {
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VirtualMachineConfigPolicyCapabilityName)
+		})
+
 		It("Should populate ConfigTarget.status from QueryConfigTarget and mark Ready=True",
 			Label("core-functional", "experimental"),
 			func() {

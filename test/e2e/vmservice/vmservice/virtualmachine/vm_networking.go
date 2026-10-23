@@ -19,8 +19,13 @@ import (
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -82,6 +87,85 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 	})
+
+	DescribeTable("Should configure CloudInit DHCP overrides", Label("extended-functional", "experimental"),
+		func(interfaceDNS bool) {
+			vm, err := manifestbuilders.VirtualMachineA6(manifestbuilders.VirtualMachineYaml{
+				Namespace: input.WCPNamespaceName, Name: vmName, ImageName: linuxVMIName,
+				VMClassName: clusterResources.VMClassName, StorageClassName: clusterResources.StorageClassName,
+				PowerState: string(vmopv1.VirtualMachinePowerStateOn),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+			}
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+				Nameservers: []string{"192.0.2.53"},
+				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{{
+					Name: "eth0", DHCP4: ptr.To(true), DHCP6: ptr.To(false), Gateway4: "None",
+					Routes: []vmopv1.VirtualMachineNetworkRouteSpec{{To: "198.51.100.0/24", Via: "192.0.2.1"}},
+				}},
+			}
+			wantDNS := vm.Spec.Network.Nameservers
+			if interfaceDNS {
+				wantDNS = []string{"192.0.2.54"}
+				vm.Spec.Network.Interfaces[0].Nameservers = wantDNS
+			}
+
+			By("Rejecting mismatched dual-stack overrides at admission")
+			invalidVM := vm.DeepCopy()
+			invalidVM.Spec.Network.Interfaces[0].DHCP6 = ptr.To(true)
+			err = svClusterClient.Create(ctx, invalidVM, ctrlclient.DryRunAll)
+			Expect(err).To(MatchError(ContainSubstring("dual-stack DHCP requires identical DHCP overrides")))
+
+			By("Creating a DHCP VM with explicit DNS and route suppression")
+			vmYaml := manifestbuilders.ToYAML(vm)
+			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed())
+			vmoperator.DeferCleanupVirtualMachine(
+				config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, false)
+			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmMoRef := types.ManagedObjectReference{
+				Type:  "VirtualMachine",
+				Value: vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName),
+			}
+			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			propCollector := property.DefaultCollector(vCenterClient)
+
+			By("Verifying the CloudInit network metadata sent to the guest")
+			Eventually(func(g Gomega) {
+				var vmMO mo.VirtualMachine
+				g.Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.extraConfig"}, &vmMO)).To(Succeed())
+				g.Expect(vmMO.Config).ToNot(BeNil())
+				var encodedMetadata string
+				for _, value := range vmMO.Config.ExtraConfig {
+					if option := value.GetOptionValue(); option.Key == constants.CloudInitGuestInfoMetadata {
+						encodedMetadata, _ = option.Value.(string)
+					}
+				}
+				g.Expect(encodedMetadata).ToNot(BeEmpty())
+				data, err := pkgutil.TryToDecodeBase64Gzip([]byte(encodedMetadata))
+				g.Expect(err).ToNot(HaveOccurred())
+				var metadata struct {
+					Network netplan.Network `json:"network"`
+				}
+				g.Expect(yaml.Unmarshal([]byte(data), &metadata)).To(Succeed())
+				g.Expect(metadata.Network.Ethernets).To(HaveKey("eth0"))
+				eth := metadata.Network.Ethernets["eth0"]
+				g.Expect(eth.Dhcp4).To(HaveValue(BeTrue()))
+				g.Expect(eth.Dhcp4Overrides).ToNot(BeNil())
+				g.Expect(eth.Dhcp4Overrides.UseDNS).To(HaveValue(BeFalse()))
+				g.Expect(eth.Dhcp4Overrides.UseRoutes).To(HaveValue(BeFalse()))
+				g.Expect(eth.Dhcp6Overrides).To(BeNil())
+				g.Expect(eth.Nameservers).ToNot(BeNil())
+				g.Expect(eth.Nameservers.Addresses).To(Equal(wantDNS))
+				g.Expect(eth.Gateway4).To(BeNil())
+				g.Expect(eth.Routes).To(HaveLen(1))
+				g.Expect(eth.Routes[0].To).To(HaveValue(Equal("198.51.100.0/24")))
+			}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(Succeed())
+		},
+		Entry("global nameservers", false),
+		Entry("interface nameservers take precedence", true),
+	)
 
 	It("Should allow network interface to be added to VirtualMachine when mutability cap is enabled", Label("smoke"), func() {
 		vmParameters := manifestbuilders.VirtualMachineYaml{

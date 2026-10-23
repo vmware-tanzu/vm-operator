@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -94,6 +95,13 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMGroupsCapabilityName)
+
+		// Check this before any of the setup below or in the nested
+		// BeforeEach nodes, which create and zone-bind a temporary namespace
+		// that a skipped spec would just throw away.
+		if slices.Contains(CurrentSpecReport().Labels(), consts.HardAffinityDuringExecutionLabel) {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+		}
 
 		svClusterClient = clusterProxy.GetClient()
 		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -918,9 +926,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			Expect(vm2Zone).ToNot(Equal(vm3Zone))
 		})
 
-		It("Should place VMs without a group on the same host using host affinity", Label("experimental"), func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
-
+		It("Should place VMs without a group on the same host using host affinity", Label("experimental", consts.HardAffinityDuringExecutionLabel), func() {
 			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
 			appLabels := map[string]string{"app": vmgRootName}
 
@@ -955,9 +961,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			}
 		})
 
-		It("Should place VMs without a group on different hosts using host anti-affinity", Label("experimental"), func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
-
+		It("Should place VMs without a group on different hosts using host anti-affinity", Label("experimental", consts.HardAffinityDuringExecutionLabel), func() {
 			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
 			appLabels := map[string]string{"app": vmgRootName}
 
@@ -994,7 +998,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			}
 		})
 
-		When("VMs are pinned to zones via the topology zone label", Label("experimental"), func() {
+		When("VMs are pinned to zones via the topology zone label", Label("experimental", consts.HardAffinityDuringExecutionLabel), func() {
 			var (
 				zones       []string
 				tinyVMIName string
@@ -1002,7 +1006,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			BeforeEach(func() {
 				skipper.SkipUnlessStretchSupervisorIsEnabled()
-				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
 
 				namespaceZones, err := utils.ListZonesByNamespace(ctx, input.ClusterProxy.GetClient(), tmpNamespaceName)
 				Expect(err).NotTo(HaveOccurred())
@@ -1937,10 +1940,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					[]string{vm3Name, vm4Name})
 			})
 
-			When("VMs specify requiredDuringSchedulingRequiredDuringExecution", Label("experimental"), func() {
+			When("VMs specify requiredDuringSchedulingRequiredDuringExecution", Label("experimental", consts.HardAffinityDuringExecutionLabel), func() {
 				BeforeEach(func() {
 					skipper.SkipUnlessStretchSupervisorIsEnabled()
-					skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
 				})
 
 				var (

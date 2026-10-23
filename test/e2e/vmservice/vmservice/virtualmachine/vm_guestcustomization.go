@@ -846,7 +846,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				}
 			})
 
-			It("should successfully apply vAppConfig properties to VM", Label("experimental"), func() {
+			It("should successfully apply vAppConfig properties to VM", func() {
 				createAndVerifyVM(ctx, v1a2VM.DeepCopy())
 
 				// Verify that the vAppConfig properties are actually applied to the VM
@@ -961,7 +961,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		})
 	})
 
-	Context("Sysprep", Label(consts.WindowsSysprepLabel, "experimental"), func() {
+	Context("Sysprep", Label(consts.WindowsSysprepLabel), func() {
 
 		// verifyWindowsVMDeployed waits for vmName to exist, power on, and report a
 		// real IPv4 address.

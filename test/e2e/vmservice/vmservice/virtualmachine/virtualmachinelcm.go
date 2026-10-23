@@ -477,7 +477,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 	})
 
-	It("Should verify boot disk storage policy matches VM spec.storageClass after power-on", Label("experimental"), func() {
+	It("Should verify boot disk storage policy matches VM spec.storageClass after power-on", func() {
 		vmToCreate := &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: input.WCPNamespaceName,
@@ -805,7 +805,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		verifyCdromConnectionState(ctx, vmMoRef, propCollector, true, false)
 	})
 
-	It("When deploying VM with many controllers", Label("experimental"), func() {
+	It("When deploying VM with many controllers", func() {
 		tinyCoreImageName := "tiny-core-linux-complex-hw"
 		// Ensure the vmi name is present in the temp namespace.
 		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, tinyCoreImageName)

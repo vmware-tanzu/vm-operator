@@ -1441,6 +1441,26 @@ func unitTestsValidateCreate() {
 		annotationPath := field.NewPath("metadata", "annotations")
 
 		DescribeTable("create", doTest,
+
+			Entry("should allow creating VM with legacy DNS defaults by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Annotations[pkgconst.DNSDefaultsAnnotationKey] = pkgconst.DNSDefaultsLegacy
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should allow creating VM with scoped DNS defaults by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Annotations[pkgconst.DNSDefaultsAnnotationKey] = pkgconst.DNSDefaultsScoped
+					},
+					expectAllowed: true,
+				},
+			),
 			Entry("should disallow creating VM with admin-only annotations set by SSO user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -5817,6 +5837,49 @@ func unitTestsValidateUpdate() {
 		annotationPath := field.NewPath("metadata", "annotations")
 
 		DescribeTable("update", doTest,
+
+			Entry("should allow adding DNS defaults annotation by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Annotations[pkgconst.DNSDefaultsAnnotationKey] = pkgconst.DNSDefaultsLegacy
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should allow changing DNS defaults to scoped by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations[pkgconst.DNSDefaultsAnnotationKey] = pkgconst.DNSDefaultsLegacy
+						ctx.vm.Annotations[pkgconst.DNSDefaultsAnnotationKey] = pkgconst.DNSDefaultsScoped
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should allow changing DNS defaults to legacy by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations[pkgconst.DNSDefaultsAnnotationKey] = pkgconst.DNSDefaultsScoped
+						ctx.vm.Annotations[pkgconst.DNSDefaultsAnnotationKey] = pkgconst.DNSDefaultsLegacy
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("should allow removing DNS defaults annotation by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Annotations[pkgconst.DNSDefaultsAnnotationKey] = pkgconst.DNSDefaultsScoped
+						delete(ctx.vm.Annotations, pkgconst.DNSDefaultsAnnotationKey)
+					},
+					expectAllowed: true,
+				},
+			),
 			Entry("should disallow updating admin-only annotations by SSO user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

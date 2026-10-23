@@ -43,7 +43,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Flex VM Classes capability (vmop-4313)
 
-- [ ] T100 [US12] [vmop-4313] Add the Flex VM Classes capability and gate every new behavior on it; while it is off, class writes with ranges or `governs` are rejected; toggling it on or off takes effect without a restart (test both directions) — `pkg/config/capabilities`, `pkg/config`
+- [ ] T100 [US12] [vmop-4313] Add the Flex VM Classes capability and gate every new behavior on it; v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the Flex VM Classes capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement); toggling it on or off takes effect without a restart (test both directions) — `pkg/config/capabilities`, `pkg/config`
 
 ### Story — Quarantined capability pipeline (vmop-4314)
 
@@ -119,7 +119,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Class validating webhook (vmop-4325)
 
-- [ ] T301 [US1/US2/US9/US12] [vmop-4325] Value-shape rules (T002) not covered by CEL, elevated `configSpec` paths, `externalID` immutable, `existingVMs` required (T003), `parentClassRefs` rejected in Milestone 1, ranges and `governs` rejected while the capability is off — `webhooks/virtualmachineclass/validation`
+- [ ] T301 [US1/US2/US9/US12] [vmop-4325] Value-shape rules (T002) not covered by CEL, elevated `configSpec` paths, `externalID` immutable, `existingVMs` required (T003), `parentClassRefs` rejected in Milestone 1; the new class rules are gated on the capability — `webhooks/virtualmachineclass/validation`
 - [ ] T302 [US2] [vmop-4325] One governing class per zone; a selectable class must fit inside the zone's governing class, including `advanced.extraConfig.default` against `allowed`/`denied` — `webhooks/virtualmachineclass/validation`
 - [ ] T303 [US10] [vmop-4325] A class's default configuration must match its default profile, and every allowed profile must fit within the class's resource and device policy (bounds are not fixed by listing a profile); every name in `reservedProfileName` resolves to a `VirtualMachineReservedProfile` in the namespace; `allowed` is required when `default` is set — `webhooks/virtualmachineclass/validation`
 - [ ] T303a [US10] [vmop-4325] On class update through the v2 path, reject only changes that alter an allocated profile's shape or make the class's default VM invalid for it; tests pin the exact field boundary (T009b) — `webhooks/virtualmachineclass/validation`

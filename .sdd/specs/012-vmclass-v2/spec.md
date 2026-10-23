@@ -176,7 +176,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 
 **Acceptance scenarios**:
 
-1. **Given** a Supervisor without the Flex VM Classes capability, **when** a class or VM is written, **then** the v1alpha6 fields behave as fixed classes do today: no governance, no classless VMs; a class write with a range or `governs` is rejected.
+1. **Given** a Supervisor without the Flex VM Classes capability, **when** a class or VM is written, **then** there is no governance and no classless VMs, and the class write is not rejected for using ranges or `governs`. v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the Flex VM Classes capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement).
 2. **Given** the capability is enabled or disabled, **when** the capability is read by vm-operator, **then** governance, the new webhooks and the class controller turn on or off without a restart.
 3. **Given** the quarantined E2E pipeline, **when** it runs, **then** it runs the Flex VM Classes suites with the capability enabled, separately from the main pipeline.
 

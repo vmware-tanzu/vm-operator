@@ -307,6 +307,36 @@ var _ = Describe("Start", func() {
 		})
 	})
 
+	When("checking if containers are watched", func() {
+		assertIsWatching := func(ref vimtypes.ManagedObjectReference, expected bool) {
+			ok, err := watcher.IsWatching(ctx, ref)
+			ExpectWithOffset(1, err).ToNot(HaveOccurred())
+			ExpectWithOffset(1, ok).To(Equal(expected))
+		}
+
+		Specify("only added containers should be watched", func() {
+			// The watcher was started with cluster1.
+			assertIsWatching(cluster1.Reference(), true)
+			assertIsWatching(cluster2.Reference(), false)
+
+			Expect(watcher.Add(ctx, cluster2.Reference(), idStr(1))).To(Succeed())
+			Expect(watcher.Add(ctx, cluster2.Reference(), idStr(2))).To(Succeed())
+			assertIsWatching(cluster2.Reference(), true)
+
+			// The container is watched until the last ID is removed.
+			Expect(watcher.Remove(ctx, cluster2.Reference(), idStr(1))).To(Succeed())
+			assertIsWatching(cluster2.Reference(), true)
+			Expect(watcher.Remove(ctx, cluster2.Reference(), idStr(2))).To(Succeed())
+			assertIsWatching(cluster2.Reference(), false)
+
+			assertIsWatching(cluster1.Reference(), true)
+			Expect(watcher.Remove(ctx, cluster1.Reference(), idStr(0))).To(Succeed())
+			assertIsWatching(cluster1.Reference(), false)
+
+			assertNoError()
+		})
+	})
+
 	When("one vm has namespace/name information", func() {
 		BeforeEach(func() {
 			addNamespaceName(cluster1vm1, "my-namespace-1", "my-name-1")

@@ -146,3 +146,26 @@ var _ = Describe("Remove", func() {
 		})
 	})
 })
+
+var _ = Describe("IsWatching", func() {
+	When("there is no watcher", func() {
+		It("should fail", func() {
+			ok, err := watcher.IsWatching(
+				watcher.WithContext(pkgcfg.NewContextWithDefaultConfig()),
+				vimtypes.ManagedObjectReference{},
+			)
+			Expect(err).To(MatchError(watcher.ErrNoWatcher))
+			Expect(ok).To(BeFalse())
+		})
+	})
+	When("async signal is disabled", func() {
+		It("should fail", func() {
+			ok, err := watcher.IsWatching(
+				watcher.WithContext(pkgcfg.NewContext()),
+				vimtypes.ManagedObjectReference{},
+			)
+			Expect(err).To(MatchError(watcher.ErrAsyncSignalDisabled))
+			Expect(ok).To(BeFalse())
+		})
+	})
+})

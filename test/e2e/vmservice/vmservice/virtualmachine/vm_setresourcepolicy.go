@@ -83,7 +83,7 @@ func VMSetResourcePolicySpec(ctx context.Context, inputGetter func() VMSetResour
 	})
 
 	Context("Basic", func() {
-		It("Should reconcile the child ResourcePool, Folder, and cluster modules", Label("core-functional", "experimental"), func() {
+		It("Should reconcile the child ResourcePool, Folder, and cluster modules", Label("core-functional"), func() {
 			const (
 				resourcePoolName = "e2e-vmsetrp-resource-pool"
 				folderName       = "e2e-vmsetrp-folder"
@@ -251,7 +251,7 @@ func VMSetResourcePolicySpec(ctx context.Context, inputGetter func() VMSetResour
 			}
 		})
 
-		It("Should remove the cluster modules of a decommissioned Zone", Label("core-functional", "experimental"), func() {
+		It("Should remove the cluster modules of a decommissioned Zone", Label("core-functional"), func() {
 			namespaceZones, err := utils.ListZonesByNamespace(ctx, setup.svClusterClient, setup.nsName)
 			Expect(err).ToNot(HaveOccurred(), "failed to list Zones for namespace %s", setup.nsName)
 

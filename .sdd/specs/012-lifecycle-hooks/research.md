@@ -12,10 +12,9 @@ Per the one-pager's own cross-reference, the API-design doc is the authoritative
 ## Ownership boundary
 
 `LifecycleStages`, `LifecycleHook`, `LifecycleSubscribedStages`, and `LifecycleState` (group `lifecycle.vcfa.vmware.com`) are defined and reconciled by a separate **Lifecycle Operator** — not this repository. The Lifecycle Operator:
-- Copies `LifecycleHookTemplate`/CRD-driven defaults into per-namespace `LifecycleHook` resources (per the one-pager) — out of scope here regardless, since that flow lives entirely in the Lifecycle Operator.
 - Watches `LifecycleHook` create/update/delete and syncs the corresponding entries into every matching `LifecycleState`.
 - Runs the hook timeout timer and flips `LifecycleState` status when a hook's deadline passes.
-- Talks to the separate eventing system (`Subscription`/`Event`, group `eventing.vcfa.vmware.com`) to notify hook owners — entirely out of scope for VM Operator.
+- Has no connection to the separate eventing system (`Subscription`/`Event`, group `eventing.vcfa.vmware.com`).
 
 **VM Operator's role is consumer-only**: at each defined stage checkpoint, look up (or create) the `LifecycleState` for the `VirtualMachine` being reconciled, read `status.stages[].conditions[type=HooksReady]`, and either proceed or pause. VM Operator does not implement the Lifecycle Operator, the CRDs' controllers, or the eventing system. This mirrors how `external/byok`'s `EncryptionClass` is vendored and consumed today without VM Operator owning the BYOK key-management system behind it.
 
@@ -37,7 +36,7 @@ All four stages are `Reentrant` and `blocking=true`, each with its own condition
 | Stage | Held while hooks are pending | Still converges in the same pass | Externally observable state |
 |---|---|---|---|
 | **Create** | the entire provider dispatch — placement, configuration, power, status sync | nothing VM-specific; only the finalizer and the blocked condition are persisted | no vSphere VM exists; `status.uniqueID` empty, `Created` condition absent |
-| **PowerStateChange** | only the power-on / power-off task | every other update step — configuration, devices, networks, volumes, location, status sync | VM exists and is **fully configured**; `Created=True`, `status.powerState` still the pre-transition value |
+| **PowerStateChange** | only the power operation (power on/off, suspend, restart) | every other update step — configuration, devices, networks, volumes, location, status sync | VM exists and is **fully configured**; `Created=True`, `status.powerState` still the pre-transition value |
 | **Delete** | the vSphere delete/unregister, and everything downstream of it on the delete path (PVC owner-reference release, the `ResourceDelete` checkpoint) | nothing — delete reconciliation exits at the checkpoint | VM still present in vSphere; object carries a `DeletionTimestamp` with the finalizer held |
 | **ResourceDelete** | finalizer removal, plus the metrics and prober cleanup that accompany it | nothing — the vSphere VM is already gone and PVC owner references are already released | object stuck in `Terminating` |
 
@@ -100,13 +99,13 @@ The actual cost of this candidate is architectural, not correctness-related: it 
 
 ### Candidate 2 — Framework maintains a new `LifecycleSubscribedStages` CRD; VM Operator copies the stage union from it
 
-Instead of VM Operator computing the union itself, the Lifecycle Operator maintains and reconciles a new resource — scoped to `(namespace, group, kind)` — that precomputes "which stages currently have at least one subscriber" for that target kind. VM Operator reads it as a pure consumer through a cached `List`, without watching it, as it already does for `EncryptionClass`.
+Instead of VM Operator computing the union itself, the Lifecycle Operator maintains and reconciles a new resource — scoped to `(namespace, group, kind)` — that precomputes "which stages currently have at least one subscriber" for that target kind. VM Operator reads it as a pure consumer through a cached `Get` by its deterministic name, without watching it.
 
-This revives a concept the one-pager originally proposed and the API-design doc superseded — see "Discrepancy between the two docs" above, which notes the one-pager's initial resource model included an "Aggregated LifecycleHook"/"Aggregated LifecycleState" concept dropped in favor of the current per-instance `LifecycleState` schema. Reviving it here is deliberate, to close the G5 gap the current schema reopens; it needs the Lifecycle framework team's buy-in, and specifically needs surfacing *why* the aggregated-resource idea was dropped originally, in case that reason still applies.
+This revives a concept the one-pager originally proposed and the API-design doc superseded — see "Discrepancy between the two docs" above, which notes the one-pager's initial resource model included an "Aggregated LifecycleHook"/"Aggregated LifecycleState" concept dropped in favor of the current per-instance `LifecycleState` schema. Reviving it here is deliberate, to close the G5 gap the current schema reopens; the Lifecycle framework has since adopted it.
 
 On race/consistency grounds, Candidate 2 is **no safer or less safe than Candidate 1** — both are reads through a normally-synced `controller-runtime` cache, subject to the same two acceptable properties described above (concurrent-creation races are inherent and self-correcting via watch; already-committed state is reliably visible once synced). The two candidates differ only on ownership: Candidate 2 keeps the matching/aggregation logic where `research.md`'s existing architecture says it belongs — owned by the Lifecycle Operator — so VM Operator never re-implements or risks drifting from it. That is the deciding factor between the two, not correctness or latency.
 
-**Decision**: Candidate 2, on ownership grounds alone. It requires one more vendored CRD and sign-off from the Lifecycle framework team, since it is not one of the four options that team has documented.
+**Decision**: Candidate 2, on ownership grounds alone. It requires one more vendored CRD; the Lifecycle framework's contract now includes it.
 
 ## Prior art in this repo
 

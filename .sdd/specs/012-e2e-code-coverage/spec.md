@@ -15,6 +15,7 @@
 - Collection MUST run for passing and failing suites, preserve the test result, and finish before reporting suite completion. One final reporting job MUST combine available suite artifacts and disclose missing or failed collections.
 - Concurrent suites sharing a Supervisor MUST NOT reset each other's counters or redeploy the operator independently.
 - Periodic snapshots SHOULD retain evidence across operator replacement. Reports MUST disclose incomplete collection; a hard kill between snapshots can lose the most recent activity.
+- Linux coverage collection MUST stream snapshots without a coverage volume, filesystem writes, or `GOCOVERDIR`. The existing E2E runner owns periodic collection and artifact storage. Local IPC MUST restrict peers to the manager's effective UID and PID namespace, including on host-networked Supervisors.
 
 ## Non-goals
 
@@ -33,6 +34,7 @@
 7. Coverage uses isolated provision/setup/suite/teardown jobs with the standard `COV_WL` tag, `-code-cov` names, and `CODE_COVERAGE=enabled` runner setting. They remain quarantined during bring-up so their results do not gate regular recommendations. Coverage jobs are excluded from ordinary workload tags and change-selection policies; existing suite quarantine choices are preserved.
 8. Suites publish raw snapshots and status without generating individual HTML reports. The final reporting job selects the newest cumulative snapshot for each process across suites before merging, validates source and image identity, and writes a consolidated report even when some suites fail. Missing evidence fails completeness validation.
 9. Coverage jobs reuse the existing release build target and canonical build record; no new target registration, component alias, or custom coverage stage is required. The build record adds `COV_WL` while retaining its ordinary tags and gating behavior. Normal and coverage images have distinct names and outputs. Coverage images and report tools are pinned to the same source revision.
+10. Setup changes the manager image and coverage revision annotation without adding volumes, mounts, environment variables, or security settings. The exporter works with a read-only Linux root filesystem, rejects peers from other UIDs or PID namespaces, and preserves valid Go reports after process replacement.
 
 ## Open questions
 

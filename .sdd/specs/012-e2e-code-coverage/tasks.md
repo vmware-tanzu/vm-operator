@@ -18,8 +18,11 @@
 - [ ] T012 Validate the standard stage end to end on both enabled topologies, including access to suite artifacts from the final reporting pod and the desired quarantine behavior.
 - [x] T013 Limit coverage-tool CI to relevant file changes using `.github/workflows/coverage-tools.yml`, with manual dispatch available. Remove the unconditional job from the normal CI workflow.
 - [x] T014 Make `image-build-coverage` build the regular image automatically unless `COVERAGE_BASE_IMAGE` is supplied, and verify build ordering and architecture selection (`Makefile`, `hack/e2e/README.coverage.md`).
+- [ ] T015 Stream in-memory snapshots through authenticated Linux abstract sockets, remove coverage volume setup, and validate read-only operation, peer isolation, Go reports, and the supplied Supervisor.
 
 ## Local validation (2026-10-22)
+
+- Streaming validation passed: 30 native exporter/collector/runner tests, five Linux container tests, and eight Cayman pipeline/build checks. The Linux tests use a read-only filesystem, UID 65534, no added capabilities, and no writable coverage mount. They exercise valid Go output, UID/PID-namespace rejection, helper authentication, and independent managers sharing a network namespace. Native and Linux-focused Go lint passed. These results supersede the earlier 26-test runtime count below.
 
 - The generated graph has 13 quarantined jobs: two provisioning jobs, two setup jobs, six suites (smoke/core/extended on VDS and VDS-SSV), two teardown jobs, and one combined reporter. It depends on the existing canonical release build. Other suites retain their quarantine settings.
 - UTS generation and live metadata validation passed: 51 tests, two policies, zero errors. No new GoBuild target or registration is required. The canonical release build adds `COV_WL` while retaining its ordinary tags and gating behavior.

@@ -114,16 +114,11 @@ class Collector:
         spec = deployment["spec"]["template"]["spec"]
         if not any(c["name"] == self.container for c in spec["containers"]):
             raise ValueError(f"Deployment has no {self.container} container")
-        security = spec.get("securityContext", {})
         patch = {"spec": {"template": {
             "metadata": {"annotations": {"vmoperator.vmware.com/coverage-revision": self.revision}},
             "spec": {
-                "securityContext": {"fsGroup": security.get("fsGroup", 65534)},
-                "volumes": [{"name": "e2e-coverage", "emptyDir": {"sizeLimit": "256Mi"}}],
                 "containers": [{
                     "name": self.container, "image": self.image, "imagePullPolicy": "IfNotPresent",
-                    "env": [{"name": "GOCOVERDIR", "value": "/coverage"}],
-                    "volumeMounts": [{"name": "e2e-coverage", "mountPath": "/coverage"}],
                 }],
             },
         }}}

@@ -61,3 +61,5 @@ jobs:
         python-version: '3.11'
     - name: Test live-process coverage exports and runner lifecycle
       run: python3 -m unittest discover -s hack/e2e/tests -p test_coverage.py -v
+    - name: Test read-only Linux containers and coverage peer isolation
+      run: python3 -m unittest discover -s hack/e2e/tests -p test_coverage_linux.py -v

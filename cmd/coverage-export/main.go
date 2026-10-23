@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	if err := coverage.Export(context.Background(), os.Getenv("GOCOVERDIR"), os.Stdout); err != nil {
+	if err := coverage.Export(context.Background(), os.Stdout); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

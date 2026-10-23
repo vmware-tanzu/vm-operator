@@ -20,6 +20,14 @@ WIKI page 3126842702 describes dedicated coverage workloads and post-run aggrega
 
 Snapshots are cumulative within a manager process. Concurrent suites on one Supervisor overlap: aggregation selects the newest snapshot for each process identity instead of adding repeated cumulative snapshots. Different process identities survive restarts and remain separate merge inputs. Failing tests still contribute valid evidence; missing or failed collection makes the final report explicitly incomplete.
 
+## Streaming without a coverage volume
+
+The user chose periodic collection from the existing runner instead of staging files in the manager pod. Go's `runtime/coverage.WriteMeta` and `WriteCounters` accept writers, so metadata can be cached in memory and counters captured per request, then streamed as tar entries. Go coverage format version 1 embeds the metadata hash at bytes 24–39; matching toolchain integration tests verify that the resulting names and binary contents remain consumable by `covdata` and `cover`.
+
+Linux abstract Unix sockets need no writable mount but ignore filesystem permissions. The exporter checks `SO_PEERCRED` at both ends and requires the same effective UID and PID namespace. The address includes that UID and namespace, preventing collisions between host-networked Supervisor pods. Container tests deliberately connect to another process's address to prove authorization holds independently of address selection. A separate non-Linux implementation uses a protected temporary socket directory for local development.
+
+Leaving `GOCOVERDIR` unset produces Go's startup warning about automatic file output. It does not disable explicit in-memory snapshots. Collection remains every 60 seconds plus a final pass, with only the runner persisting artifacts. Abrupt termination can still lose execution since the last successful export.
+
 ## Validation limits
 
 Local integration tests exercise the real Go exporter and reporting tools with a simulated Kubernetes CLI. They do not establish Supervisor permissions, shared UTS log accessibility, image packaging, rollout behavior, scheduler selection of quarantined jobs, or runtime overhead. Those remain live acceptance checks. Coverage resources are provisional and isolated from ordinary E2E jobs.

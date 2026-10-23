@@ -17,7 +17,7 @@ import (
 // initCoverage runs from main, after Go has initialized its coverage metadata.
 // It is compiled only into the separate E2E manager image.
 func initCoverage() {
-	if _, err := coverage.Start(context.Background(), os.Getenv("GOCOVERDIR")); err != nil {
+	if _, err := coverage.Start(context.Background()); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "start E2E coverage exporter: %v\n", err)
 		os.Exit(1)
 	}

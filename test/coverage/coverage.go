@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,7 +19,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	runtimecoverage "runtime/coverage"
 	"sync"
@@ -29,55 +29,48 @@ import (
 // The coverage build sets it with -ldflags.
 var Revision = "unknown"
 
-// SocketName is the private socket used by the exporter inside the container.
-const SocketName = "export.sock"
-
-// Start serves coverage snapshots on a Unix socket in dir. The caller must
-// provide an existing, writable directory and an atomic coverage build.
+// Start serves in-memory snapshots from an atomic coverage build. On Linux,
+// the private Unix socket needs no writable filesystem or GOCOVERDIR.
 // Closing the returned server stops the listener.
-func Start(ctx context.Context, dir string) (*http.Server, error) {
-	if dir == "" {
-		return nil, fmt.Errorf("GOCOVERDIR must name a writable coverage volume")
-	}
+func Start(ctx context.Context) (*http.Server, error) {
 	// Validate instrumentation immediately, before accepting any requests.
-	if err := runtimecoverage.WriteMetaDir(dir); err != nil {
+	var meta bytes.Buffer
+	if err := runtimecoverage.WriteMeta(&meta); err != nil {
 		return nil, fmt.Errorf("write coverage metadata: %w", err)
+	}
+	if err := runtimecoverage.WriteCounters(io.Discard); err != nil {
+		return nil, fmt.Errorf("validate atomic coverage counters: %w", err)
+	}
+	// Go's version-1 metadata header contains its 16-byte file hash at
+	// offset 24. Use that hash in both filenames, as WriteMetaDir does.
+	// Fail explicitly if a future toolchain changes the format; integration
+	// tests consume these archives with this build's covdata and cover tools.
+	data := meta.Bytes()
+	if len(data) < 56 || string(data[:4]) != "\x00cvm" ||
+		binary.LittleEndian.Uint32(data[4:8]) != 1 {
+		return nil, fmt.Errorf("unsupported Go coverage metadata format")
 	}
 	id := make([]byte, 16)
 	if _, err := rand.Read(id); err != nil {
 		return nil, fmt.Errorf("create coverage process identity: %w", err)
 	}
-	socket := filepath.Join(dir, SocketName)
-	if info, err := os.Lstat(socket); err == nil {
-		if info.Mode()&os.ModeSocket == 0 {
-			return nil, fmt.Errorf("coverage socket path is not a socket: %s", socket)
-		}
-		if err := os.Remove(socket); err != nil {
-			return nil, fmt.Errorf("remove stale coverage socket: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("inspect coverage socket: %w", err)
-	}
-	var listenConfig net.ListenConfig
-	listener, err := listenConfig.Listen(ctx, "unix", socket)
+	listener, err := listen(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listen on coverage socket: %w", err)
 	}
-	if err := os.Chmod(socket, 0600); err != nil {
-		_ = listener.Close()
-		return nil, fmt.Errorf("restrict coverage socket: %w", err)
-	}
-	h := &handler{dir: dir, processID: hex.EncodeToString(id)}
+	h := &handler{metadata: data, metaHash: hex.EncodeToString(data[24:40]), processID: hex.EncodeToString(id)}
 	server := &http.Server{
 		Handler: h, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+		MaxHeaderBytes: 4096,
 	}
 	go func() { _ = server.Serve(listener) }()
 	return server, nil
 }
 
 type handler struct {
-	dir       string
+	metadata  []byte
+	metaHash  string
 	processID string
 	mu        sync.Mutex
 }
@@ -89,75 +82,68 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	data, err := h.snapshot()
+	entries, err := h.snapshot()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-tar")
-	_, _ = w.Write(data)
+	if err := writeArchive(w, entries); err != nil {
+		// Abort the HTTP stream so the helper cannot accept a partial archive.
+		panic(http.ErrAbortHandler)
+	}
 }
 
-func (h *handler) snapshot() ([]byte, error) {
-	dir, err := os.MkdirTemp(h.dir, "snapshot-")
-	if err != nil {
-		return nil, fmt.Errorf("create snapshot directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	if err := runtimecoverage.WriteMetaDir(dir); err != nil {
-		return nil, fmt.Errorf("snapshot metadata: %w", err)
-	}
-	if err := runtimecoverage.WriteCountersDir(dir); err != nil {
+type entry struct {
+	name string
+	data []byte
+}
+
+func (h *handler) snapshot() ([]entry, error) {
+	var counters bytes.Buffer
+	if err := runtimecoverage.WriteCounters(&counters); err != nil {
 		return nil, fmt.Errorf("snapshot counters (requires -covermode=atomic): %w", err)
 	}
+	now := time.Now().UTC()
 	manifest, err := json.Marshal(map[string]string{
 		"revision": Revision, "process_id": h.processID,
-		"go_version": runtime.Version(), "collected_at": time.Now().UTC().Format(time.RFC3339Nano),
+		"go_version": runtime.Version(), "collected_at": now.Format(time.RFC3339Nano),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode snapshot manifest: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "snapshot.json"), manifest, 0600); err != nil {
-		return nil, fmt.Errorf("write snapshot manifest: %w", err)
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("list snapshot files: %w", err)
-	}
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return nil, fmt.Errorf("open snapshot directory: %w", err)
-	}
-	defer func() { _ = root.Close() }()
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
+	return []entry{
+		{name: "covmeta." + h.metaHash, data: h.metadata},
+		{name: fmt.Sprintf("covcounters.%s.%d.%d", h.metaHash, os.Getpid(), now.UnixNano()), data: counters.Bytes()},
+		{name: "snapshot.json", data: manifest},
+	}, nil
+}
+
+func writeArchive(w io.Writer, entries []entry) error {
+	tw := tar.NewWriter(w)
 	for _, entry := range entries {
-		data, err := root.ReadFile(entry.Name())
-		if err != nil {
-			return nil, fmt.Errorf("read snapshot file: %w", err)
+		if err := tw.WriteHeader(&tar.Header{Name: entry.name, Mode: 0600, Size: int64(len(entry.data))}); err != nil {
+			return fmt.Errorf("archive snapshot header: %w", err)
 		}
-		if err := tw.WriteHeader(&tar.Header{Name: entry.Name(), Mode: 0600, Size: int64(len(data))}); err != nil {
-			return nil, fmt.Errorf("archive snapshot header: %w", err)
-		}
-		if _, err := tw.Write(data); err != nil {
-			return nil, fmt.Errorf("archive snapshot content: %w", err)
+		if _, err := tw.Write(entry.data); err != nil {
+			return fmt.Errorf("archive snapshot content: %w", err)
 		}
 	}
 	if err := tw.Close(); err != nil {
-		return nil, fmt.Errorf("finish snapshot archive: %w", err)
+		return fmt.Errorf("finish snapshot archive: %w", err)
 	}
-	return buf.Bytes(), nil
+	return nil
 }
 
 // Export streams a snapshot of the manager process to w through its private
 // Unix socket. The helper itself is built without coverage instrumentation.
-func Export(ctx context.Context, dir string, w io.Writer) error {
+func Export(ctx context.Context, w io.Writer) error {
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		var dialer net.Dialer
-		return dialer.DialContext(ctx, "unix", filepath.Join(dir, SocketName))
+		return dial(ctx)
 	}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/snapshot", nil)
 	if err != nil {
 		return fmt.Errorf("create coverage request: %w", err)

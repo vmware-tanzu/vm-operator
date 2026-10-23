@@ -22,7 +22,7 @@ func exercise() string {
 }
 
 func main() {
-	server, err := coverage.Start(context.Background(), os.Getenv("GOCOVERDIR"))
+	server, err := coverage.Start(context.Background())
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

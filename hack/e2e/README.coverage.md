@@ -4,6 +4,8 @@ Coverage measures the manager running on the Supervisor: controllers, services, 
 
 The standard manager image and E2E runtime are unchanged. Coverage uses a separate manager image built with atomic counters and the `e2e_coverage` tag, plus an E2E runner containing the matching Go reporting executables and source. No Go installation, module download, shell, or tar program is needed inside the manager.
 
+On Linux, replacing the manager image is sufficient to enable export: no coverage volume, mount, or `GOCOVERDIR` setting is needed. The manager captures counters in memory, and `/coverage-export` streams them to the existing test runner through `kubectl exec`. The runner writes artifacts outside the manager pod. Collection uses a Linux abstract Unix socket scoped to the effective UID and PID namespace. Both ends check peer credentials and PID namespace, including when Supervisor pods share host networking; no coverage TCP port is opened.
+
 ## Build
 
 Build the coverage manager image and runner from the same source checkout. The coverage target builds the regular manager image first automatically:
@@ -36,7 +38,15 @@ export E2E_ARTIFACT_FOLDER=/path/to/unique/run-artifacts
 ./hack/e2e/setup-coverage.sh
 ```
 
-Setup patches only the manager container's image, environment, and volume mount; it adds a writable volume and retains the pod's existing filesystem group. It waits for rollout and validates a real snapshot from every replica. The original Deployment is recorded in `coverage-setup/deployment-before.json` for inspection. Coverage deployments are intended for disposable testbeds; setup does not automatically restore the old image.
+Setup patches the manager image, pull policy, and coverage revision annotation. It leaves volumes, mounts, environment variables, and security settings unchanged, waits for rollout, and validates a real snapshot from every replica. The original Deployment is recorded in `coverage-setup/deployment-before.json` for inspection. Coverage deployments are intended for disposable testbeds; setup does not automatically restore the old image.
+
+For a manually deployed coverage image, a single snapshot can also be saved directly:
+
+```sh
+kubectl -n vmware-system-vmop exec MANAGER_POD -c manager -- /coverage-export > snapshot.tar
+```
+
+The archive contains Go metadata, cumulative counters, and build/process identity. The Go runtime may log `warning: GOCOVERDIR not set, no coverage data emitted` at startup. This refers to automatic filesystem output; the explicit in-memory snapshot API still works. Leave `GOCOVERDIR` unset for streamed collection. Local non-Linux development uses a protected socket file under the temporary directory; snapshot data still stays in memory.
 
 Each suite then runs with:
 
@@ -111,8 +121,9 @@ Use the `aggregate` action to combine suites from the same coverage build. Conca
 
 ```sh
 python3 -m unittest discover -s hack/e2e/tests -p test_coverage.py -v
+python3 -m unittest discover -s hack/e2e/tests -p test_coverage_linux.py -v
 ```
 
-These tests build real instrumented Go programs and exercise manager startup, live Unix-socket exports, offline reports, pod ownership, replacement, invalid archives, revision mismatches, test failures, and callback ordering. They need local socket access. The `coverage-tools` GitHub Actions workflow runs the same tests for changes to coverage tooling/tests, runner scripts, manager entry points, build configuration, Go module dependencies, or the workflow itself. It retains the usual PR/main-push branch scope and supports manual dispatch. Unrelated check-ins do not start it.
+These tests build real instrumented Go programs and exercise manager startup, live Unix-socket exports, offline reports, pod ownership, replacement, invalid archives, revision mismatches, test failures, and callback ordering. They need local socket access. The Linux tests additionally need Docker (or `COVERAGE_TEST_CRI=podman`) and build a disposable Python-based test image. They verify read-only operation without added capabilities, rejection of other UIDs and PID namespaces, server authentication, and independent managers sharing a network namespace. The Python test image is separate from manager images. The `coverage-tools` GitHub Actions workflow runs both suites for changes to coverage tooling/tests, runner scripts, manager entry points, build configuration, Go module dependencies, or the workflow itself. It retains the usual PR/main-push branch scope and supports manual dispatch. Unrelated check-ins do not start it.
 
 Live acceptance still requires a sandbox build and disposable Supervisor: run VDS smoke, verify controller/webhook coverage from all replicas, force one test failure and one manager replacement, and confirm artifacts are complete before teardown. Local tests do not establish registry reachability, Supervisor admission compatibility, FIPS-toolchain compatibility, or coverage overhead under real workload.

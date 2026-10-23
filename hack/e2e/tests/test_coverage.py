@@ -6,6 +6,7 @@
 """Exercise real Go coverage exports and the runner without a Supervisor."""
 
 import importlib.util
+import concurrent.futures
 import io
 import json
 import os
@@ -60,16 +61,15 @@ class CoverageTests(unittest.TestCase):
         (self.source / fixture).parent.mkdir(parents=True)
         shutil.copy(ROOT / fixture, self.source / fixture)
         (self.source / "revision").write_text(REVISION)
-        self.volume = self.path / "volume"
-        self.volume.mkdir()
         self.env = mock.patch.dict(os.environ, {
             "E2E_COVERAGE_SOURCE": str(self.source), "E2E_COVERAGE_IMAGE": IMAGE,
             "E2E_COVDATA_TOOL": str(self.binaries / "covdata"),
             "E2E_COVER_TOOL": str(self.binaries / "cover"),
-            "GOCOVERDIR": str(self.volume), "E2E_COVERAGE_INTERVAL": "60",
+            "TMPDIR": str(self.path), "E2E_COVERAGE_INTERVAL": "60",
         })
         self.env.start()
         self.addCleanup(self.env.stop)
+        os.environ.pop("GOCOVERDIR", None)
         self.pod = {
             "metadata": {"name": "manager-1", "uid": "pod-1",
                          "ownerReferences": [{"uid": "rs-1", "controller": True}]},
@@ -140,14 +140,48 @@ class CoverageTests(unittest.TestCase):
         self.assertTrue((self.collector.output / "coverage-raw.tar.gz").is_file())
 
     def test_actual_manager_initializes_export_after_go_coverage_metadata(self):
-        volume = self.path / "actual-manager"
-        volume.mkdir()
+        self.server.terminate()
+        self.server.communicate(timeout=10)
         result = subprocess.run([str(self.binaries / "manager"), "--help"],
-                                env=dict(os.environ, GOCOVERDIR=str(volume)),
                                 capture_output=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
-        self.assertTrue(list(volume.glob("covmeta.*")))
-        self.assertTrue(list(volume.glob("covcounters.*")))
+        self.assertFalse(list(self.path.rglob("covmeta.*")))
+        self.assertFalse(list(self.path.rglob("covcounters.*")))
+
+    def test_streamed_snapshots_need_no_coverage_directory(self):
+        self.assertNotIn("GOCOVERDIR", os.environ)
+        before = set(self.path.rglob("*"))
+        with tarfile.open(fileobj=io.BytesIO(self.snapshot()), mode="r:") as archive:
+            self.assertEqual(len(archive.getnames()), 3)
+            meta = next(n for n in archive.getnames() if n.startswith("covmeta."))
+            digest = archive.extractfile(meta).read()[24:40].hex()
+            self.assertEqual(meta, "covmeta." + digest)
+            self.assertTrue(any(n.startswith("covcounters." + digest + ".")
+                                for n in archive.getnames()))
+        self.assertEqual(set(self.path.rglob("*")), before)
+
+    def test_concurrent_exports_remain_valid_cumulative_snapshots(self):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            snapshots = list(executor.map(lambda _: self.snapshot(), range(8)))
+        for snapshot in snapshots:
+            self.collector.save(snapshot, self.pod)
+        self.assertEqual(len(list(self.collector.raw.iterdir())), 1)
+        self.collector.report()
+
+    def test_second_manager_cannot_displace_live_exporter(self):
+        result = subprocess.run([str(self.binaries / "server")],
+                                capture_output=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.collector.save(self.snapshot(), self.pod)
+
+    def test_hard_kill_allows_restart_and_preserves_exported_data(self):
+        self.collector.save(self.snapshot(), self.pod)
+        self.server.kill()
+        self.server.communicate(timeout=10)
+        self.server = self.start_server()
+        self.collector.save(self.snapshot(), self.pod)
+        self.assertEqual(len(list(self.collector.raw.iterdir())), 2)
+        self.collector.report()
 
     def test_restart_retains_previous_process_snapshot(self):
         self.collector.save(self.snapshot(), self.pod)
@@ -212,9 +246,8 @@ class CoverageTests(unittest.TestCase):
         args = kube.call_args.args
         self.assertEqual(args[:3], ("patch", "deployment", self.collector.deployment))
         patch = json.loads(args[-1])["spec"]["template"]["spec"]
-        self.assertEqual(patch["securityContext"]["fsGroup"], 1234)
-        self.assertEqual([c["name"] for c in patch["containers"]], ["manager"])
-        self.assertEqual(patch["containers"][0]["image"], IMAGE)
+        self.assertEqual(patch, {"containers": [{"name": "manager", "image": IMAGE,
+                                               "imagePullPolicy": "IfNotPresent"}]})
         self.assertIn("rollout", execute.call_args.args[0])
 
     def test_old_run_and_old_revision_cannot_contaminate_reports(self):

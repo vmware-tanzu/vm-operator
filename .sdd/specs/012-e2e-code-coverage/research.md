@@ -30,4 +30,4 @@ Leaving `GOCOVERDIR` unset produces Go's startup warning about automatic file ou
 
 ## Validation limits
 
-Local integration tests exercise the real Go exporter and reporting tools with a simulated Kubernetes CLI. They do not establish Supervisor permissions, shared UTS log accessibility, image packaging, rollout behavior, scheduler selection of quarantined jobs, or runtime overhead. Those remain live acceptance checks. Coverage resources are provisional and isolated from ordinary E2E jobs.
+Local integration tests exercise the real Go exporter and reporting tools with a simulated Kubernetes CLI. Linux container tests additionally establish read-only operation and peer isolation. Direct validation on a VDS Supervisor established manager image packaging, export permissions, image-only setup, rollout, process retention, dry-run webhook activity, and reporting after a synthetic test failure. Shared UTS log accessibility, full GoBuild/runner packaging, complete E2E suites, scheduler selection of quarantined jobs, and instrumentation overhead remain pipeline acceptance checks. Coverage resources are provisional and isolated from ordinary E2E jobs.

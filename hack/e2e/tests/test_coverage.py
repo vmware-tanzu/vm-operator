@@ -7,6 +7,7 @@
 
 import importlib.util
 import concurrent.futures
+import http.server
 import io
 import json
 import os
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -41,7 +43,7 @@ class CoverageTests(unittest.TestCase):
              "-coverpkg=" + coverage.MODULE + "/test/coverage/testdata/server",
              "-ldflags=-X " + coverage.MODULE + "/test/coverage.Revision=" + REVISION,
              "-o", str(cls.binaries / "server"), "./test/coverage/testdata/server"],
-            ["go", "build", "-o", str(cls.binaries / "export"), "./cmd/coverage-export"],
+            ["go", "build", "-o", str(cls.binaries / "manager-normal"), "."],
             ["go", "build", "-o", str(cls.binaries / "covdata"), "cmd/covdata"],
             ["go", "build", "-o", str(cls.binaries / "cover"), "cmd/cover"],
         ]
@@ -66,6 +68,7 @@ class CoverageTests(unittest.TestCase):
             "E2E_COVDATA_TOOL": str(self.binaries / "covdata"),
             "E2E_COVER_TOOL": str(self.binaries / "cover"),
             "TMPDIR": str(self.path), "E2E_COVERAGE_INTERVAL": "60",
+            "E2E_COVERAGE_PORT": "18081",
         })
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -91,17 +94,19 @@ class CoverageTests(unittest.TestCase):
             process.communicate(timeout=10)
 
         self.addCleanup(cleanup)
-        # The fixture writes a line only after the private socket is listening.
+        # The fixture prints the actual loopback address after binding port zero.
         ready = process.stdout.readline()
         if not ready:
             self.fail(process.stderr.read().decode())
+        self.port = int(ready.decode().split()[0].rsplit(":", 1)[1])
         return process
 
     def snapshot(self):
-        return subprocess.check_output([str(self.binaries / "export")])
+        return coverage.download_snapshot(self.port)
 
     def configure_kubectl(self, missing=False):
         state = {
+            "port": self.port,
             "deployment": {"metadata": {"uid": "deployment-1"}, "spec": {
                 "replicas": 2 if missing else 1, "template": self.pod}},
             "replicasets": {"items": [{"metadata": {"uid": "rs-1", "ownerReferences": [
@@ -113,12 +118,28 @@ class CoverageTests(unittest.TestCase):
         kubectl = self.path / "kubectl"
         kubectl.write_text(
             "#!" + sys.executable + "\n"
-            "import json, subprocess, sys\n"
+            "import json, os, signal, sys\n"
             f"state = json.load(open({str(state_path)!r}))\n"
             "if 'get' in sys.argv:\n"
             "    print(json.dumps(state[sys.argv[sys.argv.index('get') + 1]]))\n"
-            "elif 'exec' in sys.argv:\n"
-            f"    sys.exit(subprocess.call([{str(self.binaries / 'export')!r}]))\n"
+            "elif 'port-forward' in sys.argv:\n"
+            "    def record(event):\n"
+            f"        with open({str(self.path / 'forwards.jsonl')!r}, 'a') as f:\n"
+            "            f.write(json.dumps(dict(event=event, pid=os.getpid(), args=sys.argv)) + '\\n')\n"
+            "    def stop(*_):\n"
+            "        raise SystemExit(0)\n"
+            "    signal.signal(signal.SIGTERM, stop)\n"
+            "    record('start')\n"
+            "    try:\n"
+            "        if state.get('forward_error'):\n"
+            "            print('Forbidden: pods/portforward', flush=True)\n"
+            "            sys.exit(1)\n"
+            "        if not state.get('forward_hang'):\n"
+            "            remote = sys.argv[-1].lstrip(':')\n"
+            "            print(f'Forwarding from 127.0.0.1:{state[\"port\"]} -> {remote}', flush=True)\n"
+            "        signal.pause()\n"
+            "    finally:\n"
+            "        record('stop')\n"
             "else:\n"
             "    sys.exit(99)\n"
         )
@@ -143,6 +164,7 @@ class CoverageTests(unittest.TestCase):
         self.server.terminate()
         self.server.communicate(timeout=10)
         result = subprocess.run([str(self.binaries / "manager"), "--help"],
+                                env=dict(os.environ, E2E_COVERAGE_PORT=str(self.port)),
                                 capture_output=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertFalse(list(self.path.rglob("covmeta.*")))
@@ -169,7 +191,7 @@ class CoverageTests(unittest.TestCase):
         self.collector.report()
 
     def test_second_manager_cannot_displace_live_exporter(self):
-        result = subprocess.run([str(self.binaries / "server")],
+        result = subprocess.run([str(self.binaries / "server"), "-port", str(self.port)],
                                 capture_output=True, timeout=10)
         self.assertNotEqual(result.returncode, 0)
         self.collector.save(self.snapshot(), self.pod)
@@ -182,6 +204,116 @@ class CoverageTests(unittest.TestCase):
         self.collector.save(self.snapshot(), self.pod)
         self.assertEqual(len(list(self.collector.raw.iterdir())), 2)
         self.collector.report()
+
+    def test_normal_manager_ignores_coverage_configuration(self):
+        result = subprocess.run([str(self.binaries / "manager-normal"), "--help"],
+                                env=dict(os.environ, E2E_COVERAGE_PORT="invalid"),
+                                capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertNotIn(b"E2E coverage server", result.stderr)
+
+    def test_coverage_manager_rejects_invalid_ports(self):
+        for port in ("0", "65536", "invalid"):
+            with self.subTest(port=port):
+                result = subprocess.run([str(self.binaries / "manager"), "--help"],
+                                        env=dict(os.environ, E2E_COVERAGE_PORT=port),
+                                        capture_output=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b"E2E_COVERAGE_PORT must be between", result.stderr)
+
+    def forward_events(self):
+        return [json.loads(line) for line in (self.path / "forwards.jsonl").read_text().splitlines()]
+
+    def assert_forwards_closed(self):
+        events = self.forward_events()
+        started = {e["pid"] for e in events if e["event"] == "start"}
+        stopped = {e["pid"] for e in events if e["event"] == "stop"}
+        self.assertTrue(started)
+        self.assertEqual(started, stopped)
+        for pid in started:
+            with self.assertRaises(ProcessLookupError):
+                os.kill(pid, 0)
+
+    def change_kube_state(self, **values):
+        path = self.path / "kube.json"
+        state = json.loads(path.read_text())
+        state.update(values)
+        path.write_text(json.dumps(state))
+
+    def test_port_forward_closes_after_successful_collection(self):
+        self.configure_kubectl()
+        with mock.patch.dict(os.environ, {"HTTP_PROXY": "http://127.0.0.1:1", "NO_PROXY": ""}):
+            self.assertEqual(self.collector.collect(), [])
+        self.assert_forwards_closed()
+        for event in self.forward_events():
+            self.assertIn("--address=127.0.0.1", event["args"])
+            self.assertIn("pod/manager-1", event["args"])
+            self.assertIn(":18081", event["args"])
+
+    def test_snapshot_download_rejects_oversize_response(self):
+        with mock.patch.object(coverage, "MAX_ARCHIVE_SIZE", 32):
+            with self.assertRaisesRegex(ValueError, "size limit"):
+                self.snapshot()
+        self.assertTrue(self.snapshot())
+
+    def test_http_errors_and_truncated_responses_fail_download(self):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(self.server.response_status)
+                self.send_header("Content-Length", "100")
+                self.end_headers()
+                self.wfile.write(b"oops")
+                self.close_connection = True
+
+            def log_message(self, *_):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            for status, error in ((503, "HTTP returned 503"), (200, "truncated")):
+                server.response_status = status
+                with self.assertRaisesRegex(RuntimeError, error):
+                    coverage.download_snapshot(server.server_port)
+        finally:
+            server.shutdown()
+            worker.join(timeout=5)
+            server.server_close()
+
+    def test_port_forward_failure_and_http_failure_are_visible_and_cleaned_up(self):
+        self.configure_kubectl()
+        self.change_kube_state(forward_error=True)
+        self.assertIn("Forbidden", ";".join(self.collector.collect()))
+        self.assert_forwards_closed()
+        self.change_kube_state(forward_error=False)
+        with mock.patch.object(coverage, "download_snapshot", side_effect=RuntimeError("HTTP failed")):
+            self.assertIn("HTTP failed", ";".join(self.collector.collect()))
+        self.assert_forwards_closed()
+
+    def test_port_forward_timeout_terminates_and_reaps_process(self):
+        self.configure_kubectl()
+        self.change_kube_state(forward_hang=True)
+        command = [self.collector.kubectl, "port-forward", "pod/manager-1", ":18081"]
+        with self.assertRaisesRegex(RuntimeError, "readiness timed out"):
+            with coverage.port_forward(command, 18081, timeout=0.5):
+                self.fail("unready forward yielded a port")
+        self.assert_forwards_closed()
+
+    def test_collection_follows_replacement_pod(self):
+        self.configure_kubectl()
+        self.assertEqual(self.collector.collect(), [])
+        self.server.terminate()
+        self.server.communicate(timeout=10)
+        self.server = self.start_server()
+        self.pod["metadata"].update(name="manager-2", uid="pod-2")
+        self.pod["status"]["containerStatuses"][0]["containerID"] = "containerd://two"
+        self.configure_kubectl()
+        self.assertEqual(self.collector.collect(), [])
+        self.assertEqual(len(list(self.collector.raw.iterdir())), 2)
+        self.assert_forwards_closed()
+        targets = {arg for e in self.forward_events() for arg in e["args"] if arg.startswith("pod/")}
+        self.assertEqual(targets, {"pod/manager-1", "pod/manager-2"})
 
     def test_restart_retains_previous_process_snapshot(self):
         self.collector.save(self.snapshot(), self.pod)

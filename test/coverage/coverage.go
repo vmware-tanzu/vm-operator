@@ -29,10 +29,14 @@ import (
 // The coverage build sets it with -ldflags.
 var Revision = "unknown"
 
-// Start serves in-memory snapshots from an atomic coverage build. On Linux,
-// the private Unix socket needs no writable filesystem or GOCOVERDIR.
-// Closing the returned server stops the listener.
-func Start(ctx context.Context) (*http.Server, error) {
+// DefaultPort is the loopback HTTP port used by the coverage manager.
+const DefaultPort uint16 = 18081
+
+// Start serves in-memory snapshots from an atomic coverage build on IPv4
+// loopback. Port zero selects an available port for local tests. The endpoint
+// is intentionally unauthenticated and requires no writable filesystem or
+// GOCOVERDIR. Closing the returned server stops the listener.
+func Start(ctx context.Context, port uint16) (*http.Server, error) {
 	// Validate instrumentation immediately, before accepting any requests.
 	var meta bytes.Buffer
 	if err := runtimecoverage.WriteMeta(&meta); err != nil {
@@ -54,12 +58,14 @@ func Start(ctx context.Context) (*http.Server, error) {
 	if _, err := rand.Read(id); err != nil {
 		return nil, fmt.Errorf("create coverage process identity: %w", err)
 	}
-	listener, err := listen(ctx)
+	var config net.ListenConfig
+	listener, err := config.Listen(ctx, "tcp4", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
-		return nil, fmt.Errorf("listen on coverage socket: %w", err)
+		return nil, fmt.Errorf("listen on coverage TCP port: %w", err)
 	}
 	h := &handler{metadata: data, metaHash: hex.EncodeToString(data[24:40]), processID: hex.EncodeToString(id)}
 	server := &http.Server{
+		Addr:    listener.Addr().String(),
 		Handler: h, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
 		MaxHeaderBytes: 4096,
@@ -88,6 +94,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Cache-Control", "no-store")
 	if err := writeArchive(w, entries); err != nil {
 		// Abort the HTTP stream so the helper cannot accept a partial archive.
 		panic(http.ErrAbortHandler)
@@ -131,34 +138,6 @@ func writeArchive(w io.Writer, entries []entry) error {
 	}
 	if err := tw.Close(); err != nil {
 		return fmt.Errorf("finish snapshot archive: %w", err)
-	}
-	return nil
-}
-
-// Export streams a snapshot of the manager process to w through its private
-// Unix socket. The helper itself is built without coverage instrumentation.
-func Export(ctx context.Context, w io.Writer) error {
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return dial(ctx)
-	}}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/snapshot", nil)
-	if err != nil {
-		return fmt.Errorf("create coverage request: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("request manager coverage: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("manager coverage returned %s: %s", resp.Status, body)
-	}
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		return fmt.Errorf("copy manager coverage: %w", err)
 	}
 	return nil
 }

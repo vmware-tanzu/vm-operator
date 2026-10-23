@@ -274,14 +274,12 @@ $(MANAGER):
 manager: prereqs generate lint-go manager-only ## Build manager binary
 
 .PHONY: manager-coverage-only
-manager-coverage-only: ## Build the E2E manager, exporter, and matching report tools
+manager-coverage-only: ## Build the E2E coverage manager and matching report tools
 	@mkdir -p $(BIN_DIR)/coverage
 	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=$(CGO_ENABLED) go build \
 	  -cover -covermode=atomic -coverpkg='$(COVERAGE_PACKAGES)' \
 	  -tags=e2e_coverage -o $(BIN_DIR)/coverage/manager \
 	  -ldflags '$(subst ",,$(BUILDINFO_LDFLAGS)) -X $(PROJECT_SLUG)/test/coverage.Revision=$(COVERAGE_SOURCE_REVISION)' .
-	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build \
-	  -o $(BIN_DIR)/coverage/coverage-export ./cmd/coverage-export
 	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build \
 	  -o $(BIN_DIR)/coverage/covdata cmd/covdata
 	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build \

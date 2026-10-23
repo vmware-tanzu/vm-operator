@@ -3,5 +3,4 @@
 ARG BASE_IMAGE=vmoperator-controller:latest
 FROM ${BASE_IMAGE}
 COPY bin/coverage/manager /manager
-COPY bin/coverage/coverage-export /coverage-export
 LABEL vmoperator.vmware.com/e2e-coverage="true"

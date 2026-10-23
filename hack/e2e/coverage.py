@@ -10,8 +10,11 @@ snapshots without resetting counters. Results describe shared-testbed activity.
 """
 
 import argparse
+from collections import deque
 import concurrent.futures
+import contextlib
 import datetime
+import http.client
 import io
 import json
 import os
@@ -31,6 +34,7 @@ MODULE = "github.com/vmware-tanzu/vm-operator"
 RAW_NAME = re.compile(r"(?:covmeta\.[a-f0-9]+|covcounters\.[a-f0-9]+\.\d+\.\d+)")
 PROCESS_ID = re.compile(r"[a-f0-9]{32}")
 MAX_ARCHIVE_SIZE = 128 * 1024 * 1024
+DEFAULT_PORT = 18081
 
 
 def log(message):
@@ -44,6 +48,70 @@ def execute(command, timeout=45, **kwargs):
         raise RuntimeError(f"{command[0]} failed ({result.returncode}): "
                            f"{result.stderr.decode(errors='replace')[-4096:]}")
     return result.stdout
+
+
+@contextlib.contextmanager
+def port_forward(command, remote_port, timeout=20):
+    """Yield kubectl's allocated loopback port and always reap the forward."""
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               text=True, bufsize=1)
+    ready = threading.Event()
+    lines = deque(maxlen=8)
+    port = None
+
+    def drain():
+        nonlocal port
+        try:
+            for line in iter(lambda: process.stdout.readline(4096), ""):
+                lines.append(line.strip())
+                match = re.match(r"Forwarding from 127\.0\.0\.1:(\d+) -> " + str(remote_port) + r"\s*$", line)
+                if match:
+                    port = int(match[1])
+                    ready.set()
+        finally:
+            ready.set()
+
+    reader = threading.Thread(target=drain, daemon=True)
+    try:
+        reader.start()
+        if not ready.wait(timeout):
+            raise RuntimeError("coverage port-forward readiness timed out")
+        if port is None or process.poll() is not None:
+            raise RuntimeError("coverage port-forward failed: " + "; ".join(lines))
+        yield port
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+        if reader.ident is not None:
+            reader.join(timeout=5)
+        process.stdout.close()
+
+
+def download_snapshot(port):
+    """Fetch a bounded snapshot directly from loopback, without HTTP proxies."""
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    try:
+        connection.request("GET", "/snapshot")
+        response = connection.getresponse()
+        if response.status != 200:
+            detail = response.read(4096).decode(errors="replace")
+            raise RuntimeError(f"coverage HTTP returned {response.status}: {detail}")
+        expected = response.length
+        data = response.read(MAX_ARCHIVE_SIZE + 1)
+        if len(data) > MAX_ARCHIVE_SIZE:
+            raise ValueError("coverage archive exceeds size limit")
+        if expected is not None and len(data) != expected:
+            raise RuntimeError("coverage HTTP response was truncated")
+        return data
+    except (OSError, http.client.HTTPException) as err:
+        raise RuntimeError(f"download coverage snapshot: {err}") from err
+    finally:
+        connection.close()
 
 
 def write_json(path, value):
@@ -99,6 +167,9 @@ class Collector:
         if not self.image:
             raise ValueError("E2E_COVERAGE_IMAGE must identify the tested coverage image")
         self.kubectl = os.environ.get("KUBECTL", "kubectl")
+        self.port = int(os.environ.get("E2E_COVERAGE_PORT", str(DEFAULT_PORT)))
+        if not 1 <= self.port <= 65535:
+            raise ValueError("E2E_COVERAGE_PORT must be between 1 and 65535")
         self.raw = self.output / "raw"
         self.raw.mkdir(parents=True, exist_ok=True)
         self.warnings = []
@@ -200,7 +271,10 @@ class Collector:
         spec = next(c for c in pod["spec"]["containers"] if c["name"] == self.container)
         if spec["image"] != self.image:
             raise RuntimeError(f"{name}: unexpected manager image")
-        archive = self.kube("exec", name, "-c", self.container, "--", "/coverage-export")
+        command = [self.kubectl, "-n", self.namespace, "port-forward", "--address=127.0.0.1",
+                   "--pod-running-timeout=20s", f"pod/{name}", f":{self.port}"]
+        with port_forward(command, self.port) as local_port:
+            archive = download_snapshot(local_port)
         self.save(archive, pod)
 
     def collect(self):

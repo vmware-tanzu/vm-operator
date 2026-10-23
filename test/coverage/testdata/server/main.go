@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -22,12 +23,17 @@ func exercise() string {
 }
 
 func main() {
-	server, err := coverage.Start(context.Background())
+	port := flag.Uint("port", 0, "Loopback port (zero selects an available port)")
+	flag.Parse()
+	if *port > 65535 {
+		os.Exit(1)
+	}
+	server, err := coverage.Start(context.Background(), uint16(*port))
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Println(exercise())
+	fmt.Println(server.Addr, exercise())
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
 	<-done

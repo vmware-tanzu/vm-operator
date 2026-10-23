@@ -3,7 +3,7 @@
 # The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Validate Linux coverage IPC in read-only, unprivileged containers.
+"""Validate coverage HTTP in read-only, unprivileged Linux containers.
 
 Run explicitly with a local Docker-compatible runtime:
   python3 -m unittest discover -s hack/e2e/tests -p test_coverage_linux.py -v
@@ -25,30 +25,9 @@ import uuid
 ROOT = Path(__file__).resolve().parents[3]
 MODULE = "github.com/vmware-tanzu/vm-operator"
 REVISION = "a" * 40
-# Connect directly to the real address, bypassing the helper's namespace/UID
-# selection, to prove the server rejects unauthorized peers.
-REJECTED_PEER = """
-import socket, sys
-with socket.socket(socket.AF_UNIX) as s:
-    s.settimeout(5)
-    s.connect(sys.argv[1].replace('@', '\\0', 1))
-    try:
-        s.sendall(b'GET /snapshot HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n')
-        assert s.recv(1) == b'', 'unauthorized peer received coverage'
-    except (ConnectionResetError, BrokenPipeError):
-        pass
-"""
-SPOOF_SERVER = """
-import os, socket
-address = '\\0vmoperator-coverage.65534.' + os.readlink('/proc/self/ns/pid')
-with socket.socket(socket.AF_UNIX) as s:
-    s.bind(address)
-    s.listen()
-    print('ready', flush=True)
-    while True:
-        conn, _ = s.accept()
-        conn.close()
-"""
+FETCH = ("import sys, urllib.request; "
+         "sys.stdout.buffer.write(urllib.request.urlopen("
+         "'http://127.0.0.1:' + sys.argv[1] + '/snapshot', timeout=10).read())")
 
 
 class LinuxCoverageTests(unittest.TestCase):
@@ -63,27 +42,24 @@ class LinuxCoverageTests(unittest.TestCase):
              else "{{.Host.Arch}}"], text=True).strip()
         arch = {"aarch64": "arm64", "x86_64": "amd64"}.get(arch, arch)
         env = dict(os.environ, GOOS="linux", GOARCH=arch, CGO_ENABLED="0")
-        for name, package, flags in [
-            ("server", "./test/coverage/testdata/server",
-             ["-cover", "-covermode=atomic", "-coverpkg=" + MODULE + "/test/coverage/testdata/server",
-              "-ldflags=-X " + MODULE + "/test/coverage.Revision=" + REVISION]),
-            ("coverage-export", "./cmd/coverage-export", []),
-        ]:
-            subprocess.run(["go", "build", *flags, "-o", str(cls.path / name), package],
-                           cwd=ROOT, env=env, check=True)
-        (cls.path / "Dockerfile").write_text(
-            "FROM python:3.11-alpine\nCOPY server coverage-export /\n")
-        cls.image = "vmop-coverage-ipc-test:" + uuid.uuid4().hex
+        subprocess.run([
+            "go", "build", "-cover", "-covermode=atomic",
+            "-coverpkg=" + MODULE + "/test/coverage/testdata/server",
+            "-ldflags=-X " + MODULE + "/test/coverage.Revision=" + REVISION,
+            "-o", str(cls.path / "server"), "./test/coverage/testdata/server",
+        ], cwd=ROOT, env=env, check=True)
+        (cls.path / "Dockerfile").write_text("FROM python:3.11-alpine\nCOPY server /server\n")
+        cls.image = "vmop-coverage-http-test:" + uuid.uuid4().hex
         subprocess.run([cls.cri, "build", "-q", "-t", cls.image, str(cls.path)], check=True)
         cls.addClassCleanup(subprocess.run, [cls.cri, "image", "rm", cls.image],
                             check=True, stdout=subprocess.DEVNULL)
 
-    def start_container(self, command=None, user="65534:65534", network="none"):
-        name = "vmop-coverage-ipc-" + uuid.uuid4().hex
+    def start_container(self, port=0, network="none"):
+        name = "vmop-coverage-http-" + uuid.uuid4().hex
         process = subprocess.Popen([
             self.cri, "run", "--rm", "--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges", "--network=" + network,
-            "--user=" + user, "--name", name, self.image, *(command or ["/server"]),
+            "--user=65534:65534", "--name", name, self.image, "/server", "-port", str(port),
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         def cleanup():
@@ -94,22 +70,20 @@ class LinuxCoverageTests(unittest.TestCase):
         self.addCleanup(cleanup)
         self.assertTrue(select.select([process.stdout], [], [], 60)[0],
                         "coverage container did not become ready")
-        self.assertTrue(process.stdout.readline(), "coverage container exited before readiness")
-        return name
+        ready = process.stdout.readline()
+        self.assertTrue(ready, "coverage container exited before readiness")
+        address = ready.decode().split()[0]
+        self.assertTrue(address.startswith("127.0.0.1:"))
+        return name, int(address.rsplit(":", 1)[1])
 
-    def export(self, name):
-        return subprocess.check_output([self.cri, "exec", name, "/coverage-export"], timeout=30)
-
-    def address(self, name):
-        return subprocess.check_output([
-            self.cri, "exec", name, "python3", "-c",
-            "import os; print('@vmoperator-coverage.65534.' + os.readlink('/proc/self/ns/pid'))",
-        ], text=True).strip()
+    def export(self, name, port):
+        return subprocess.check_output(
+            [self.cri, "exec", name, "python3", "-c", FETCH, str(port)], timeout=30)
 
     def test_read_only_container_streams_valid_go_coverage(self):
-        name = self.start_container()
+        name, port = self.start_container()
         with tempfile.TemporaryDirectory() as output:
-            with tarfile.open(fileobj=io.BytesIO(self.export(name)), mode="r:") as archive:
+            with tarfile.open(fileobj=io.BytesIO(self.export(name, port)), mode="r:") as archive:
                 self.assertEqual(len(archive.getnames()), 3)
                 for entry in archive:
                     self.assertEqual(Path(entry.name).name, entry.name)
@@ -122,36 +96,46 @@ class LinuxCoverageTests(unittest.TestCase):
         diff = subprocess.check_output([self.cri, "diff", name], text=True).strip()
         self.assertEqual(diff, "", "coverage wrote to the container filesystem")
 
-    def test_server_rejects_other_uid_in_same_pid_namespace(self):
-        name = self.start_container()
-        subprocess.run([self.cri, "exec", "--user=0:0", name, "python3", "-c",
-                        REJECTED_PEER, self.address(name)], check=True, timeout=30)
-        self.assertTrue(self.export(name))
+    def test_server_is_not_reachable_on_non_loopback_interface(self):
+        name, port = self.start_container(network="bridge")
+        check = (
+            "import socket, sys; "
+            "address = socket.gethostbyname(socket.gethostname()); "
+            "assert not address.startswith('127.'); "
+            "s = socket.socket(); s.settimeout(2); "
+            "assert s.connect_ex((address, int(sys.argv[1]))) != 0; s.close()"
+        )
+        subprocess.run([self.cri, "exec", name, "python3", "-c", check, str(port)],
+                       check=True, timeout=30)
+        self.assertTrue(self.export(name, port))
 
-    def test_server_rejects_same_uid_in_different_pid_namespace(self):
-        name = self.start_container()
-        subprocess.run([
+    def test_node_local_endpoint_is_deliberately_unauthenticated(self):
+        name, port = self.start_container()
+        snapshot = subprocess.check_output([
             self.cri, "run", "--rm", "--read-only", "--cap-drop=ALL",
-            "--security-opt=no-new-privileges", "--user=65534:65534",
-            "--network=container:" + name, self.image, "python3", "-c",
-            REJECTED_PEER, self.address(name),
-        ], check=True, timeout=30)
-        self.assertTrue(self.export(name))
+            "--security-opt=no-new-privileges", "--user=0:0",
+            "--network=container:" + name, self.image, "python3", "-c", FETCH, str(port),
+        ], timeout=30)
+        with tarfile.open(fileobj=io.BytesIO(snapshot), mode="r:") as archive:
+            self.assertIn("snapshot.json", archive.getnames())
 
-    def test_helper_rejects_server_with_wrong_uid(self):
-        name = self.start_container(["python3", "-u", "-c", SPOOF_SERVER], user="0:0")
-        result = subprocess.run([self.cri, "exec", "--user=65534:65534", name, "/coverage-export"],
-                                capture_output=True, timeout=30)
+    def test_port_collision_fails_without_displacing_existing_manager(self):
+        name, port = self.start_container(port=18081)
+        result = subprocess.run([
+            self.cri, "run", "--rm", "--read-only", "--cap-drop=ALL",
+            "--network=container:" + name, "--user=65534:65534",
+            self.image, "/server", "-port", str(port),
+        ], capture_output=True, timeout=30)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn(b"authenticate coverage manager", result.stderr)
+        self.assertIn(b"listen on coverage TCP port", result.stderr)
+        self.assertTrue(self.export(name, port))
 
-    def test_managers_sharing_network_have_independent_sockets(self):
-        first = self.start_container()
-        second = self.start_container(network="container:" + first)
-        self.assertNotEqual(self.address(first), self.address(second))
+    def test_managers_sharing_network_can_use_distinct_ports(self):
+        first, port1 = self.start_container(port=18081)
+        second, port2 = self.start_container(port=18082, network="container:" + first)
         identities = []
-        for name in (first, second):
-            with tarfile.open(fileobj=io.BytesIO(self.export(name)), mode="r:") as archive:
+        for name, port in ((first, port1), (second, port2)):
+            with tarfile.open(fileobj=io.BytesIO(self.export(name, port)), mode="r:") as archive:
                 identities.append(json.load(archive.extractfile("snapshot.json"))["process_id"])
         self.assertNotEqual(*identities)
 

@@ -5,7 +5,7 @@
 - **Epic**: TBD; assign epic/story identifiers before merge.
 
 - [x] T001 Create isolated VMOP and Cayman worktrees without commits.
-- [x] T002 Implement test-build runtime snapshots (`main.go`, `main_coverage.go`, `main_no_coverage.go`, `test/coverage/coverage.go`, `cmd/coverage-export/main.go`).
+- [x] T002 Implement test-build runtime snapshots (`main.go`, `main_coverage.go`, `main_no_coverage.go`, `test/coverage/coverage.go`).
 - [x] T003 Add separate instrumented build/image outputs (`Makefile`, `Dockerfile.coverage`, `Dockerfile.e2e`).
 - [x] T004 Implement deployment, collection, reporting, and runner lifecycle (`hack/e2e/coverage.py`, `hack/e2e/run-e2e.sh`).
 - [x] T005 Publish normal and coverage images from the existing Cayman target and generate the standard coverage graph (`vm-operator/Makefile`, `support/uts/bin/generate_coverage.py`, `support/uts/auto_generated/testsuites/vm-operator-code-coverage.json`).
@@ -19,8 +19,15 @@
 - [x] T013 Limit coverage-tool CI to relevant file changes using `.github/workflows/coverage-tools.yml`, with manual dispatch available. Remove the unconditional job from the normal CI workflow.
 - [x] T014 Make `image-build-coverage` build the regular image automatically unless `COVERAGE_BASE_IMAGE` is supplied, and verify build ordering and architecture selection (`Makefile`, `hack/e2e/README.coverage.md`).
 - [x] T015 Stream in-memory snapshots through authenticated Linux abstract sockets, remove coverage volume setup, and validate read-only operation, peer isolation, Go reports, and the supplied Supervisor.
+- [ ] T016 Replace Unix sockets and the export helper with a coverage-only loopback HTTP server and short-lived Kubernetes port-forwards. Update transport lifecycle tests, container tests, builds, documentation, and live validation; this supersedes T015's socket transport and peer-identity policy.
 
-## Local validation (2026-10-22)
+## TCP validation (2026-10-23)
+
+- All 38 native tests and five Linux container tests passed, including real HTTP snapshots and reports, production-build exclusion, invalid port configuration, port conflicts, readiness errors/timeouts, forward cleanup, pod replacement, HTTP errors/truncation, and download size limits. Read-only containers confirm loopback-only binding and the intentionally unauthenticated node-local endpoint.
+- Focused Go lint and eight local Cayman pipeline/build checks passed. The normal Go build selects `main_no_coverage.go`; no production listener is added. The supplied Supervisor permits `pods/portforward`, and TCP port 18081 was available before deployment.
+- Live TCP image and port-forward validation is pending. The results below refer to the earlier Unix-socket implementation.
+
+## Earlier streaming validation (2026-10-22)
 
 - Streaming validation passed: 30 native exporter/collector/runner tests, five Linux container tests, and eight Cayman pipeline/build checks. The Linux tests use a read-only filesystem, UID 65534, no added capabilities, and no writable coverage mount. They exercise valid Go output, UID/PID-namespace rejection, helper authentication, and independent managers sharing a network namespace. Native and Linux-focused Go lint passed. These results supersede the earlier 26-test runtime count below.
 - Built and loaded the Linux/amd64 coverage image from implementation commit `30e7783c00d66c50b9e6c1c9f709f256b752083b`, using the existing regular image as its base. The actual manager image passed a read-only startup check with all capabilities dropped. The supplied VDS Supervisor's single manager replica became ready without `GOCOVERDIR` or a coverage volume. Setup changed only the manager image/pull policy and revision annotation; its rollout preserved snapshots from both old and new processes in a valid report.

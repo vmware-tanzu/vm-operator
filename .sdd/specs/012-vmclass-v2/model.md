@@ -77,7 +77,7 @@ Label: the schema-version label records the last CRD version that wrote the clas
 A reserved profile is a vCenter object that holds one VM shape: vCPU count, CPU reservation and limit (equal), memory reservation and limit (equal), and DirectPath profiles. vCenter DRS places slots of a profile on hosts, gives a powered-on VM that names the profile a free slot, and takes it back at power-off. vm-operator never enforces slot counts.
 
 - `VirtualMachineReservedProfile` is not a vm-operator API type. It is owned by the wcpsvc zone controller, which reconciles each profile's shape and per-zone counts from vCenter and backfills existing allocations. vm-operator only reads it (read RBAC), as it reads the environment-browser objects. A profile name that doesn't resolve is a clear admission failure, with no fallback.
-- In Milestone 1 a class that lists profiles fixes the profile's fields (`min == max`).
+- A class that lists profiles: the class's default configuration must match its default profile, and every allowed profile must fit within the class's resource and device policy; listing a profile does not fix the class's bounds.
 - A VM with a selected profile must match the profile's shape after defaulting, whether or not it names a class. A resize past the profile is rejected at admission.
 - Class edits through the v2 path are rejected only when they change an allocated profile's shape or make the class's default VM invalid for it. The v1 vAPI keeps today's block on update and delete while any Supervisor has capacity for the class.
 

@@ -1069,10 +1069,12 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		reconcileErr = getReconcileErr("backup state", reconcileErr, err)
 	}
 
+	features := pkgcfg.FromContext(vmCtx.Context).Features
+
 	//
 	// 9. Reconcile snapshot revert
 	//
-	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
+	if features.VMSnapshots {
 		if err := vs.reconcileSnapshotRevert(vmCtx, vcVM); err != nil {
 			if pkgerr.IsNoRequeueError(err) {
 				return errOrReconcileErr(reconcileErr, err)
@@ -1090,8 +1092,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			// annotate any queued snapshots so they don't appear stuck with
 			// empty conditions. ReconcileCurrentSnapshot is skipped on this
 			// path, so we set the condition here before exiting early.
-			if pkgcfg.FromContext(vmCtx).Features.VMSnapshots &&
-				pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs &&
+			if features.VMSnapshots && features.AllDisksArePVCs &&
 				!pkgcond.IsTrue(vmCtx.VM, vmconfunmanagedvolsreg.Condition) {
 				if setErr := ReconcileSnapshotWaitForCRVCondition(
 					vmCtx, vs.k8sClient); setErr != nil {
@@ -1124,7 +1125,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	//
 	// 12. Reconcile snapshot create
 	//
-	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
+	if features.VMSnapshots {
 		if err := vs.reconcileCurrentSnapshot(vmCtx, vcVM); err != nil {
 			if pkgerr.IsNoRequeueError(err) {
 				return errOrReconcileErr(reconcileErr, err)

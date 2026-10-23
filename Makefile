@@ -112,6 +112,14 @@ IMG ?= ${IMAGE}:${IMAGE_TAG}
 E2E_BASE_IMAGE ?= mirror.gcr.io/library/photon:5.0
 E2E_IMAGE ?= vmoperator-e2e
 E2E_IMG ?= ${E2E_IMAGE}:${IMAGE_TAG}
+E2E_BUILD_TARGET ?= runtime
+
+# Coverage builds have their own binaries and image; normal release outputs
+# remain untouched. Instrument owned product packages, excluding test helpers.
+COVERAGE_IMAGE ?= vmoperator-controller-coverage
+COVERAGE_IMAGE_FILE ?= $(ARTIFACTS_DIR)/$(COVERAGE_IMAGE)-$(GOOS)_$(GOARCH).tar
+COVERAGE_SOURCE_REVISION ?= $(shell git rev-parse HEAD)
+COVERAGE_PACKAGES ?= github.com/vmware-tanzu/vm-operator,github.com/vmware-tanzu/vm-operator/controllers/...,github.com/vmware-tanzu/vm-operator/pkg/...,github.com/vmware-tanzu/vm-operator/services/...,github.com/vmware-tanzu/vm-operator/webhooks/...,github.com/vmware-tanzu/vm-operator/api/...
 
 E2E_KUBECTL_VERSION ?= v1.36.0
 
@@ -264,6 +272,19 @@ $(MANAGER):
 
 .PHONY: manager
 manager: prereqs generate lint-go manager-only ## Build manager binary
+
+.PHONY: manager-coverage-only
+manager-coverage-only: ## Build the E2E coverage manager and matching report tools
+	@mkdir -p $(BIN_DIR)/coverage
+	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=$(CGO_ENABLED) go build \
+	  -cover -covermode=atomic -coverpkg='$(COVERAGE_PACKAGES)' \
+	  -tags=e2e_coverage -o $(BIN_DIR)/coverage/manager \
+	  -ldflags '$(subst ",,$(BUILDINFO_LDFLAGS)) -X $(PROJECT_SLUG)/test/coverage.Revision=$(COVERAGE_SOURCE_REVISION)' .
+	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build \
+	  -o $(BIN_DIR)/coverage/covdata cmd/covdata
+	GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build \
+	  -o $(BIN_DIR)/coverage/cover cmd/cover
+	@printf '%s\n' '$(COVERAGE_SOURCE_REVISION)' > $(BIN_DIR)/coverage/source-revision
 
 .PHONY: $(WEB_CONSOLE_VALIDATOR) web-console-validator-only
 web-console-validator-only: $(WEB_CONSOLE_VALIDATOR) ## Build web-console-validator binary only
@@ -805,7 +826,7 @@ kind-load: ## Load image into kind cluster
 .PHONY: run
 run: prereqs generate lint-go
 run: ## Run against the configured Kubernetes cluster in $(HOME)/.kube/config
-	go run main.go
+	go run .
 
 ## --------------------------------------
 ## Development - local
@@ -896,6 +917,25 @@ image-build: ## Build container image
 	  -n "$(BUILD_NUMBER)" \
 	  -B "$(BASE_IMAGE)" \
 	  -o "$(IMAGE_FILE)"
+
+.PHONY: image-build-coverage
+image-build-coverage: GOOS=linux
+# Build the regular image unless the caller supplies an existing base.
+ifndef COVERAGE_BASE_IMAGE
+COVERAGE_BASE_IMAGE = $(IMG)
+image-build-coverage: image-build
+endif
+image-build-coverage: manager-coverage-only
+image-build-coverage: ## Build regular and coverage images (or reuse COVERAGE_BASE_IMAGE)
+	$(CRI_BIN) build -f Dockerfile.coverage --platform "$(GOOS)/$(GOARCH)" \
+	  --build-arg BASE_IMAGE="$(COVERAGE_BASE_IMAGE)" \
+	  -t "$(COVERAGE_IMAGE):$(IMAGE_TAG)" \
+	  -t "$(COVERAGE_IMAGE):$(BUILD_NUMBER)" \
+	  $(ADDITIONAL_CRI_BUILD_FLAGS) .
+	@if [ -n "$(COVERAGE_IMAGE_FILE)" ]; then \
+	  mkdir -p "$$(dirname "$(COVERAGE_IMAGE_FILE)")"; \
+	  $(CRI_BIN) save "$(COVERAGE_IMAGE):$(IMAGE_TAG)" -o "$(COVERAGE_IMAGE_FILE)"; \
+	fi
 
 .PHONY: image-build-amd64
 image-build-amd64: GOARCH=amd64
@@ -992,6 +1032,7 @@ e2e-image-build: ## Build E2E test container image
 	fi
 	$(CRI_BIN) build \
 	  -f Dockerfile.e2e \
+	  --target "$(E2E_BUILD_TARGET)" \
 	  -t "$(E2E_IMAGE):$(IMAGE_TAG)" \
 	  -t "$(E2E_IMAGE):$(BUILD_NUMBER)" \
 	  -t "$(E2E_IMAGE):$(IMAGE_VERSION)" \

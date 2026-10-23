@@ -5,6 +5,8 @@
 package storagepolicyquota_test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,12 +18,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/controllers/storage/storagepolicyquota"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -29,6 +33,7 @@ import (
 )
 
 func unitTests() {
+	Describe("Quota CA failure recovery", Label(testlabels.Controller), webhookConfigurationFailureTests)
 	Describe(
 		"Reconcile",
 		Label(
@@ -74,7 +79,7 @@ func unitTestsReconcile() {
 
 		validatingWebhookConfiguration = &admissionv1.ValidatingWebhookConfiguration{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: spqutil.ValidatingWebhookConfigName,
+				Name: pkgconst.ValidatingWebhookConfigurationName,
 			},
 			Webhooks: []admissionv1.ValidatingWebhook{
 				{
@@ -376,4 +381,89 @@ func unitTestsReconcile() {
 			})
 		})
 	})
+}
+
+func webhookConfigurationFailureTests() {
+	DescribeTable("retries failures through normal quota reconciliation",
+		func(stage string) {
+			var injectedError error
+			patchCalls := 0
+			funcs := interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey,
+					obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*admissionv1.ValidatingWebhookConfiguration); ok && injectedError != nil && stage == "get" {
+						return injectedError
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+				List: func(ctx context.Context, c client.WithWatch, list client.ObjectList,
+					opts ...client.ListOption) error {
+					if _, ok := list.(*storagev1.StorageClassList); ok && injectedError != nil && stage == "list" {
+						return injectedError
+					}
+					return c.List(ctx, list, opts...)
+				},
+				Patch: func(ctx context.Context, c client.WithWatch, obj client.Object,
+					patch client.Patch, opts ...client.PatchOption) error {
+					patchCalls++
+					if injectedError != nil && stage == "patch" {
+						return injectedError
+					}
+					return c.Patch(ctx, obj, patch, opts...)
+				},
+			}
+			webhook := &admissionv1.ValidatingWebhookConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Name: pkgconst.ValidatingWebhookConfigurationName},
+				Webhooks: []admissionv1.ValidatingWebhook{{
+					ClientConfig: admissionv1.WebhookClientConfig{CABundle: []byte("old-ca")},
+				}},
+			}
+			quota := &spqv1.StoragePolicyQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "quota", Namespace: "namespace"},
+				Spec:       spqv1.StoragePolicyQuotaSpec{StoragePolicyId: "policy"},
+			}
+			storageClass := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "class"},
+				Parameters: map[string]string{"storagePolicyID": "policy"},
+			}
+			ctx := suite.NewUnitTestContextForControllerWithFuncs(funcs, webhook, quota, storageClass)
+			DeferCleanup(ctx.AfterEach)
+			// Configuration must come from the manager context during reconciliation.
+			managerContext := pkgcfg.NewContextWithDefaultConfig()
+			pkgcfg.SetContext(managerContext, func(config *pkgcfg.Config) { config.Features.VMSnapshots = true })
+			r := storagepolicyquota.NewReconciler(managerContext, ctx.Client, ctx.Logger, ctx.Recorder, ctx.Namespace)
+			req := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(quota)}
+			By("Creating usages with the original CA")
+			_, err := r.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Rotating the CA and injecting a transient API failure")
+			webhook.Webhooks[0].ClientConfig.CABundle = []byte("new-ca")
+			Expect(ctx.Client.Update(ctx, webhook)).To(Succeed())
+			injectedError = errors.New("transient API failure")
+			requests := spqutil.ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(ctx.Client)(ctx, webhook)
+			Expect(requests).To(Equal([]reconcile.Request{req}))
+			_, err = r.Reconcile(ctx, requests[0])
+			Expect(err).To(MatchError(injectedError))
+
+			By("Recovering on retry without another webhook event")
+			injectedError = nil
+			_, err = r.Reconcile(ctx, requests[0])
+			Expect(err).NotTo(HaveOccurred())
+			for _, name := range []string{spqutil.StoragePolicyUsageNameForVM("class"), spqutil.StoragePolicyUsageNameForVMSnapshot("class")} {
+				var usage spqv1.StoragePolicyUsage
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Namespace: quota.Namespace, Name: name}, &usage)).To(Succeed())
+				Expect(usage.Spec.CABundle).To(Equal([]byte("new-ca")))
+			}
+
+			By("Avoiding usage writes once reconciliation has converged")
+			writes := patchCalls
+			_, err = r.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(patchCalls).To(Equal(writes), "a converged quota reconcile must not write usages")
+		},
+		Entry("CA lookup", "get"),
+		Entry("storage class lookup", "list"),
+		Entry("usage patch", "patch"),
+	)
 }

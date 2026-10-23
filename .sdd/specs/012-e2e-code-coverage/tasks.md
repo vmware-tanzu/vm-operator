@@ -19,13 +19,15 @@
 - [x] T013 Limit coverage-tool CI to relevant file changes using `.github/workflows/coverage-tools.yml`, with manual dispatch available. Remove the unconditional job from the normal CI workflow.
 - [x] T014 Make `image-build-coverage` build the regular image automatically unless `COVERAGE_BASE_IMAGE` is supplied, and verify build ordering and architecture selection (`Makefile`, `hack/e2e/README.coverage.md`).
 - [x] T015 Stream in-memory snapshots through authenticated Linux abstract sockets, remove coverage volume setup, and validate read-only operation, peer isolation, Go reports, and the supplied Supervisor.
-- [ ] T016 Replace Unix sockets and the export helper with a coverage-only loopback HTTP server and short-lived Kubernetes port-forwards. Update transport lifecycle tests, container tests, builds, documentation, and live validation; this supersedes T015's socket transport and peer-identity policy.
+- [x] T016 Replace Unix sockets and the export helper with a coverage-only loopback HTTP server and short-lived Kubernetes port-forwards. Update transport lifecycle tests, container tests, builds, documentation, and live validation; this supersedes T015's socket transport and peer-identity policy.
 
 ## TCP validation (2026-10-23)
 
 - All 38 native tests and five Linux container tests passed, including real HTTP snapshots and reports, production-build exclusion, invalid port configuration, port conflicts, readiness errors/timeouts, forward cleanup, pod replacement, HTTP errors/truncation, and download size limits. Read-only containers confirm loopback-only binding and the intentionally unauthenticated node-local endpoint.
 - Focused Go lint and eight local Cayman pipeline/build checks passed. The normal Go build selects `main_no_coverage.go`; no production listener is added. The supplied Supervisor permits `pods/portforward`, and TCP port 18081 was available before deployment.
-- Live TCP image and port-forward validation is pending. The results below refer to the earlier Unix-socket implementation.
+- Built and deployed the Linux/amd64 image from `55e4eae4fe5dda1d14893d2f3b77ead0eb744414`. The actual image starts with a read-only filesystem and all capabilities dropped, and `/coverage-export` is absent. The manager was healthy with zero restarts after deployment; the coverage listener uses `127.0.0.1:18081`.
+- Real Kubernetes port-forwards successfully collected snapshots before and after an image-only setup rollout, preserving both process identities in a report. A server-side dry-run VM webhook update exercised periodic and final collection (three passes at a two-second test interval); the annotation was not persisted. A synthetic exit-7 test retained its failure while final coverage and HTML/profile generation passed. All ten port-forward processes were reaped.
+- Three exports measured 757,760–761,344 bytes and 1.225–1.426 seconds including forwarding setup, download, and cleanup. The runtime default remains 60 seconds. Full E2E suite overhead, complete GoBuild/runner packaging, and shared pipeline artifacts remain unvalidated. The results below refer to the earlier Unix-socket implementation.
 
 ## Earlier streaming validation (2026-10-22)
 

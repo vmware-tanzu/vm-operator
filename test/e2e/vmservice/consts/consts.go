@@ -33,6 +33,13 @@ const (
 	// when a spec carrying this label will actually run.
 	WindowsSysprepLabel = "windows-sysprep"
 
+	// HardAffinityDuringExecutionLabel decorates the VM-GROUP specs that need
+	// VMHardAffinityDuringExecutionCapabilityName. The VM-GROUP suite checks
+	// the capability for these specs before creating and zone-binding a
+	// temporary namespace, so a Supervisor without it skips them in seconds
+	// instead of minutes.
+	HardAffinityDuringExecutionLabel = "hard-affinity-during-execution"
+
 	// VM condition type strings used when waiting on backfill/registration lifecycle.
 	VMUnmanagedVolumesBackfilledCondition = "VirtualMachineUnmanagedVolumesBackfilled"
 	VMUnmanagedVolumesRegisteredCondition = "VirtualMachineUnmanagedVolumesRegistered"

@@ -5,6 +5,7 @@ package virtualmachine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -23,6 +24,11 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a2cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -113,19 +119,33 @@ func buildVAppConfigVM(
 func createAndVerifyVAppConfigVM(
 	ctx context.Context,
 	config *e2eConfig.E2EConfig,
-	svClusterClient ctrlclient.Client,
+	clusterProxy *common.VMServiceClusterProxy,
 	namespace, name string,
 	vm *vmopv1.VirtualMachine,
 ) string {
-	Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create virtualmachine %+v", vm)
+	vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, false)
+	svClusterClient := clusterProxy.GetClient()
 	vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, namespace, name)
 	return vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, namespace, name)
+}
+
+// literalVAppValue returns the inline value of an expected vApp property. The
+// verification below compares against what vCenter reports, so it cannot
+// resolve a value sourced from a Secret; fail with a clear message instead of
+// dereferencing a nil Value.
+func literalVAppValue(prop vmopv1a2common.KeyValueOrSecretKeySelectorPair) string {
+	GinkgoHelper()
+
+	Expect(prop.Value.Value).ToNot(BeNil(),
+		"expected vApp property '%s' must use an inline value; Secret-sourced values cannot be verified", prop.Key)
+
+	return *prop.Value.Value
 }
 
 // verifyVAppConfigs asserts that the vApp properties configured on the VM in
 // vCenter match expectedProperties. It is shared with vm_publishrequest.go,
 // so it does not close over any VMGOSCSpec-local state.
-func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid string, expectedProperties []manifestbuilders.KeyValueOrSecretKeySelectorPair) {
+func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid string, expectedProperties []vmopv1a2common.KeyValueOrSecretKeySelectorPair) {
 	vmMoRef := types.ManagedObjectReference{
 		Type:  string(types.ManagedObjectTypeVirtualMachine),
 		Value: vmmoid,
@@ -167,7 +187,7 @@ func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid 
 				Expect(actualProp.Value).To(BeEmpty(), "password should not be exposed via vAppConfig")
 			case "boolean":
 				// Normalize boolean values - vApp config stores as "True" or "False"
-				expectedLower := strings.ToLower(strings.TrimSpace(expectedProp.Value.Value))
+				expectedLower := strings.ToLower(strings.TrimSpace(literalVAppValue(expectedProp)))
 				Expect(expectedLower).Should(Or(Equal("true"), Equal("false")))
 				switch expectedLower {
 				case "true":
@@ -184,14 +204,15 @@ func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid 
 			default:
 				// For non-boolean properties, do direct string comparison
 				// Note: vApp properties may trim whitespace, so we trim expected values too
-				expectedTrimmed := strings.TrimSpace(expectedProp.Value.Value)
+				expectedTrimmed := strings.TrimSpace(literalVAppValue(expectedProp))
 				Expect(actualProp.Value).To(Equal(expectedTrimmed),
 					fmt.Sprintf("Property '%s' of type %s, should have value '%s', got '%s'", expectedProp.Key, actualProp.Type, expectedTrimmed, actualProp.Value))
 			}
 		} else {
 			// for non-userconfigurable properties, check actualProp.Defaultvalue as actualProp.Value is empty
-			Expect(actualProp.DefaultValue).To(Equal(expectedProp.Value.Value),
-				"Non-UserConfigurable value not as expected for key %s, expected: %s, got: %s", expectedProp.Key, expectedProp.Value.Value, actualProp.DefaultValue)
+			expectedValue := literalVAppValue(expectedProp)
+			Expect(actualProp.DefaultValue).To(Equal(expectedValue),
+				"Non-UserConfigurable value not as expected for key %s, expected: %s, got: %s", expectedProp.Key, expectedValue, actualProp.DefaultValue)
 		}
 	}
 }
@@ -390,87 +411,65 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		input                         VMGOSCSpecInput
 		config                        *e2eConfig.E2EConfig
 		clusterProxy                  *common.VMServiceClusterProxy
-		svClusterConfig               *e2eConfig.ManagementClusterConfig
 		svClusterClient               ctrlclient.Client
 		clusterResources              *e2eConfig.Resources
-		vmYaml                        []byte
-		configMapYaml                 []byte
-		secretYaml                    []byte
 		vmName                        string
 		configMapName                 string
 		secretName                    string
 		vmServiceBackupRestoreEnabled bool
 		wcpClient                     wcp.WorkloadManagementAPI
-		vmParameters                  manifestbuilders.VirtualMachineYaml
-		v1a2vmParameters              manifestbuilders.VirtualMachineYaml
-		v1a5vmParameters              manifestbuilders.VirtualMachineYaml
+		vm                            *vmopv1a1.VirtualMachine
+		v1a2VM                        *vmopv1a2.VirtualMachine
 		linuxImageDisplayName         string
 	)
 
-	createAndVerifyConfigMap := func(ctx context.Context, transport string) []byte {
-		// Create and apply ConfigMap yaml.
+	createAndVerifyConfigMap := func(ctx context.Context, transport string) *corev1.ConfigMap {
+		// Create the ConfigMap.
 		configMap := manifestbuilders.ConfigMap{
 			Namespace: input.WCPNamespaceName,
 			Name:      configMapName,
 		}
+		var configMapObj *corev1.ConfigMap
 		if transport == cloudInitTransport {
-			configMapYaml = manifestbuilders.GetConfigMapYamlGOSC(configMap)
+			configMapObj = manifestbuilders.CloudConfigMap(configMap)
 		} else if transport == ovfEnvTransport {
-			configMapYaml = manifestbuilders.GetConfigMapYamlOvfEnv(configMap)
+			configMapObj = manifestbuilders.OvfEnvConfigMap(configMap)
 		} else if transport == vAppConfigTransport {
-			configMapYaml = manifestbuilders.GetConfigMapYamlVAppConfig(configMap)
+			configMapObj = manifestbuilders.VAppConfigMap(configMap)
 		}
 
-		Expect(clusterProxy.CreateWithArgs(ctx, configMapYaml)).To(Succeed(), "failed to create configmap", string(configMapYaml))
+		Expect(svClusterClient.Create(ctx, configMapObj)).To(Succeed(), "failed to create configmap")
 		vmservice.VerifyConfigMapCreation(ctx, config, svClusterClient, input.WCPNamespaceName, configMapName)
 
-		return configMapYaml
+		return configMapObj
 	}
 
-	createAndVerifySecret := func(ctx context.Context, transport string) []byte {
-		// Create and apply Secret yaml.
+	createAndVerifySecret := func(ctx context.Context, transport string) *corev1.Secret {
+		// Create the Secret.
 		secret := manifestbuilders.Secret{
 			Namespace: input.WCPNamespaceName,
 			Name:      secretName,
 		}
+		var secretObj *corev1.Secret
 		if transport == cloudInitTransport {
-			secretYaml = manifestbuilders.GetSecretYamlCloudConfig(secret)
+			secretObj = manifestbuilders.CloudConfigSecret(secret)
 		} else if transport == ovfEnvTransport {
-			secretYaml = manifestbuilders.GetSecretYamlOvfEnv(secret)
+			secretObj = manifestbuilders.OvfEnvSecret(secret)
 		} else if transport == vAppConfigTransport {
-			secretYaml = manifestbuilders.GetSecretYamlVAppConfig(secret)
+			secretObj = manifestbuilders.VAppConfigSecret(secret)
 		} else if transport == inlineCloudInit {
-			secretYaml = manifestbuilders.GetSecretYamlInlineCloudInitData(secret)
+			secretObj = manifestbuilders.InlineCloudInitSecret(secret)
 		}
 
-		Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create secret", string(secretYaml))
+		Expect(svClusterClient.Create(ctx, secretObj)).To(Succeed(), "failed to create secret")
 		vmservice.VerifySecretCreation(ctx, config, svClusterClient, input.WCPNamespaceName, secretName)
 
-		return secretYaml
+		return secretObj
 	}
 
-	// createAndVerifyVM creates the VM. v1a2 also supports v1a3.
-	createAndVerifyVM := func(ctx context.Context, vmParameters manifestbuilders.VirtualMachineYaml, v1a2 ...bool) {
-		if len(v1a2) == 1 && v1a2[0] {
-			// Create v1alpha2 VM deployment yaml
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		} else {
-			vmYaml = manifestbuilders.GetVirtualMachineYaml(vmParameters)
-		}
-
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-			input.WCPNamespaceName, vmName, false)
-		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-	}
-
-	createAndVerifyVMA5 := func(ctx context.Context, vmParameters manifestbuilders.VirtualMachineYaml) {
-		vmYaml = manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-			input.WCPNamespaceName, vmName, false)
-		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+	createAndVerifyVM := func(ctx context.Context, vm ctrlclient.Object) {
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, false)
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, vm.GetNamespace(), vm.GetName())
 	}
 
 	verifyLoginAndRunCmds := func(ctx context.Context, vmIp string, cmds []string, expectedOutput []string) {
@@ -496,7 +495,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 
 		config = input.Config
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
-		svClusterConfig = config.InfraConfig.ManagementClusterConfig
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		wcpClient = input.WCPClient
 		svClusterClient = clusterProxy.GetClient()
@@ -516,52 +515,53 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		secretName = fmt.Sprintf("%s-%s", "secret", capiutil.RandomString(4))
 
 		// Use default network
-		vmParameters = manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			Name:             vmName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       "PoweredOn",
+		vm = &vmopv1a1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a1.VirtualMachineSpec{
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   "PoweredOn",
+			},
 		}
-		v1a2vmParameters = manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			Name:             vmName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       "PoweredOn",
+		v1a2VM = &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
 		}
-		v1a5vmParameters = manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			Name:             vmName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       "PoweredOn",
-		}
+
 		vmServiceBackupRestoreEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSVMServiceBackupRestore"))
 	})
 
 	Context("CloudInit", func() {
-		var bootstrapYAML []byte
+		var bootstrapResource ctrlclient.Object
 
 		BeforeEach(func() {
 			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
-			vmParameters.ImageName = imageName
-			vmParameters.Transport = cloudInitTransport
-			v1a2vmParameters.ImageName = imageName
-			v1a2vmParameters.Bootstrap = manifestbuilders.Bootstrap{
-				CloudInit: &manifestbuilders.CloudInit{},
+			vm.Spec.ImageName = imageName
+			vm.Spec.VmMetadata = &vmopv1a1.VirtualMachineMetadata{
+				Transport: vmopv1a1.VirtualMachineMetadataTransport(cloudInitTransport),
+			}
+			v1a2VM.Spec.ImageName = imageName
+			v1a2VM.Spec.Bootstrap = &vmopv1a2.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{},
 			}
 		})
 
 		When("ConfigMap is used to provide raw cloud-init config", func() {
 			BeforeEach(func() {
-				bootstrapYAML = createAndVerifyConfigMap(ctx, cloudInitTransport)
-				vmParameters.ConfigMapName = configMapName
-				createAndVerifyVM(ctx, vmParameters)
+				bootstrapResource = createAndVerifyConfigMap(ctx, cloudInitTransport)
+				vm.Spec.VmMetadata.ConfigMapName = configMapName
+				createAndVerifyVM(ctx, vm)
 			})
 
 			It("should successfully apply customization and be able to register VM from backup", Label("smoke"), func() {
@@ -571,19 +571,19 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				verifyLoginAndRunCmds(ctx, vmIp, cmds, expectedOutput)
 
 				if vmServiceBackupRestoreEnabled {
-					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, vmParameters.Name, vmParameters.Namespace, bootstrapYAML, clusterProxy, config, svClusterClient, wcpClient)
+					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, vm.Name, vm.Namespace, bootstrapResource, clusterProxy, config, svClusterClient, wcpClient)
 				}
 			})
 		})
 
 		When("Secret is used to provide raw cloud-init config", func() {
 			BeforeEach(func() {
-				bootstrapYAML = createAndVerifySecret(ctx, cloudInitTransport)
-				v1a2vmParameters.Bootstrap.CloudInit.RawCloudConfig = &manifestbuilders.KeySelector{
+				bootstrapResource = createAndVerifySecret(ctx, cloudInitTransport)
+				v1a2VM.Spec.Bootstrap.CloudInit.RawCloudConfig = &vmopv1a2common.SecretKeySelector{
 					Key:  "user-data",
 					Name: secretName,
 				}
-				createAndVerifyVM(ctx, v1a2vmParameters, true)
+				createAndVerifyVM(ctx, v1a2VM.DeepCopy())
 			})
 
 			It("should successfully apply customization and be able to register VM from backup", func() {
@@ -593,48 +593,55 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				verifyLoginAndRunCmds(ctx, vmIp, cmds, expectedOutput)
 
 				if vmServiceBackupRestoreEnabled {
-					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2vmParameters.Name, v1a2vmParameters.Namespace, bootstrapYAML, clusterProxy, config, svClusterClient, wcpClient)
+					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2VM.Name, v1a2VM.Namespace, bootstrapResource, clusterProxy, config, svClusterClient, wcpClient)
 				}
 			})
 		})
 
 		When("InlineCloudConfig is used to provide cloud-init config", func() {
 			BeforeEach(func() {
-				bootstrapYAML = createAndVerifySecret(ctx, inlineCloudInit)
+				bootstrapResource = createAndVerifySecret(ctx, inlineCloudInit)
 
-				inlinedCloudConfig := fmt.Sprintf(`
-        defaultUserEnabled: true
-        ssh_pwauth: true
-        users:
-        - name: vmware
-          lock_passwd: false
-          passwd:
-            name: %s
-            key: vmsvc-pwd
-        runcmd:
-        - [ "ls", "-a", "-l", "/" ]
-        - - echo
-          - "hello, world."
-        write_files:
-        - path: /etc/my-plaintext
-          permissions: '0644'
-          owner: root:root
-          content:
-            name: %s
-            key: hello`, secretName, secretName)
+				content, err := json.Marshal(vmopv1a2common.SecretKeySelector{
+					Name: secretName,
+					Key:  "hello",
+				})
+				Expect(err).NotTo(HaveOccurred(), "failed to encode cloud-init file content reference")
 
-				v1a2vmParameters.Bootstrap.CloudInit.CloudConfig = &inlinedCloudConfig
+				v1a2VM.Spec.Bootstrap.CloudInit.CloudConfig = &vmopv1a2cloudinit.CloudConfig{
+					DefaultUserEnabled: true,
+					SSHPwdAuth:         new(true),
+					Users: []vmopv1a2cloudinit.User{
+						{
+							Name:       "vmware",
+							LockPasswd: new(false),
+							Passwd: &vmopv1a2common.SecretKeySelector{
+								Name: secretName,
+								Key:  "vmsvc-pwd",
+							},
+						},
+					},
+					RunCmd: json.RawMessage(`[["ls", "-a", "-l", "/"], ["echo", "hello, world."]]`),
+					WriteFiles: []vmopv1a2cloudinit.WriteFile{
+						{
+							Path:        "/etc/my-plaintext",
+							Permissions: "0644",
+							Owner:       "root:root",
+							Content:     content,
+						},
+					},
+				}
 			})
 
 			It("should successfully apply customization and be able to register VM from backup", func() {
-				createAndVerifyVM(ctx, v1a2vmParameters, true)
+				createAndVerifyVM(ctx, v1a2VM.DeepCopy())
 				vmIp := vmoperator.GetVirtualMachineIP(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 				cmds := []string{"cat /etc/my-plaintext"}
 				expectedOutput := []string{"Hello World"}
 				verifyLoginAndRunCmds(ctx, vmIp, cmds, expectedOutput)
 
 				if vmServiceBackupRestoreEnabled {
-					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2vmParameters.Name, v1a2vmParameters.Namespace, bootstrapYAML, clusterProxy, config, svClusterClient, wcpClient)
+					vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2VM.Name, v1a2VM.Namespace, bootstrapResource, clusterProxy, config, svClusterClient, wcpClient)
 				}
 			})
 		})
@@ -644,41 +651,47 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		BeforeEach(func() {
 			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
-			v1a2vmParameters.ImageName = imageName
-			v1a2vmParameters.Bootstrap = manifestbuilders.Bootstrap{
-				LinuxPrep: &manifestbuilders.LinuxPrep{
-					HardwareClockIsUTC: true,
+			v1a2VM.Spec.ImageName = imageName
+			v1a2VM.Spec.Bootstrap = &vmopv1a2.VirtualMachineBootstrapSpec{
+				LinuxPrep: &vmopv1a2.VirtualMachineBootstrapLinuxPrepSpec{
+					HardwareClockIsUTC: new(true),
 					TimeZone:           "US/Pacific",
 				},
 			}
 		})
 
 		It("should successfully deploy VM and be able to register VM from backup", func() {
-			createAndVerifyVM(ctx, v1a2vmParameters, true)
+			createAndVerifyVM(ctx, v1a2VM.DeepCopy())
 
 			if vmServiceBackupRestoreEnabled {
-				vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2vmParameters.Name, v1a2vmParameters.Namespace, nil, clusterProxy, config, svClusterClient, wcpClient)
+				vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2VM.Name, v1a2VM.Namespace, nil, clusterProxy, config, svClusterClient, wcpClient)
 			}
 		})
 
 		Context("LinuxPrep with CustomizeAtNextPowerOn latch", func() {
-			BeforeEach(func() {
-				t := true
+			It("should successfully deploy VM and set latch to false", func() {
 				imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-
-				v1a5vmParameters.ImageName = imageName
-				v1a5vmParameters.Bootstrap = manifestbuilders.Bootstrap{
-					LinuxPrep: &manifestbuilders.LinuxPrep{
-						HardwareClockIsUTC:     true,
-						TimeZone:               "US/Pacific",
-						CustomizeAtNextPowerOn: &t,
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      vmName,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+						ImageName:    imageName,
+						Bootstrap: &vmopv1a5.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1a5.VirtualMachineBootstrapLinuxPrepSpec{
+								HardwareClockIsUTC:     new(true),
+								TimeZone:               "US/Pacific",
+								CustomizeAtNextPowerOn: new(true),
+							},
+						},
 					},
 				}
-			})
-
-			It("should successfully deploy VM and set latch to false", func() {
-				createAndVerifyVMA5(ctx, v1a5vmParameters)
-				vmoperator.WaitForLinuxPrepCustomizeNextPowerOnFalse(ctx, config, svClusterClient, input.WCPNamespaceName, v1a5vmParameters.Name)
+				createAndVerifyVM(ctx, vm)
+				vmoperator.WaitForLinuxPrepCustomizeNextPowerOnFalse(ctx, config, svClusterClient, input.WCPNamespaceName, vm.Name)
 			})
 		})
 	})
@@ -687,16 +700,16 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		BeforeEach(func() {
 			imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
-			v1a2vmParameters.ImageName = imageName
-			v1a2vmParameters.Bootstrap = manifestbuilders.Bootstrap{
+			v1a2VM.Spec.ImageName = imageName
+			v1a2VM.Spec.Bootstrap = &vmopv1a2.VirtualMachineBootstrapSpec{
 				// LinuxPrep is needed here for VM to get a valid IP address.
-				LinuxPrep: &manifestbuilders.LinuxPrep{},
-				VAppConfig: &manifestbuilders.VAppConfig{
-					Properties: &[]manifestbuilders.KeyValueOrSecretKeySelectorPair{
+				LinuxPrep: &vmopv1a2.VirtualMachineBootstrapLinuxPrepSpec{HardwareClockIsUTC: new(false)},
+				VAppConfig: &vmopv1a2.VirtualMachineBootstrapVAppConfigSpec{
+					Properties: []vmopv1a2common.KeyValueOrSecretKeySelectorPair{
 						{
 							Key: "prop-1",
-							Value: manifestbuilders.ValueOrSecretKeySelector{
-								Value: "my-val-1",
+							Value: vmopv1a2common.ValueOrSecretKeySelector{
+								Value: new("my-val-1"),
 							},
 						},
 					},
@@ -705,16 +718,16 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		})
 
 		It("should successfully apply vAppConfig properties to VM and be able to register VM from backup", func() {
-			createAndVerifyVM(ctx, v1a2vmParameters, true)
+			createAndVerifyVM(ctx, v1a2VM.DeepCopy())
 
 			// Verify that the vAppConfig properties are actually applied to the VM
 			vmmoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-			expectedProperties := *v1a2vmParameters.Bootstrap.VAppConfig.Properties
+			expectedProperties := v1a2VM.Spec.Bootstrap.VAppConfig.Properties
 			verifyVAppConfigs(ctx, vCenterClient, vmmoid, expectedProperties)
 
 			if vmServiceBackupRestoreEnabled {
-				vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2vmParameters.Name, v1a2vmParameters.Namespace, nil, clusterProxy, config, svClusterClient, wcpClient)
+				vmservice.VerifyRegisterVMOnlyClassicDisk(ctx, v1a2VM.Name, v1a2VM.Namespace, nil, clusterProxy, config, svClusterClient, wcpClient)
 			}
 		})
 
@@ -724,108 +737,108 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				ovfImageName := "photon-ovf-vapp-properties"
 				imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, ovfImageName)
 
-				v1a2vmParameters.ImageName = imageName
-				v1a2vmParameters.Bootstrap = manifestbuilders.Bootstrap{
+				v1a2VM.Spec.ImageName = imageName
+				v1a2VM.Spec.Bootstrap = &vmopv1a2.VirtualMachineBootstrapSpec{
 					// LinuxPrep is needed here for VM to get a valid IP address.
-					LinuxPrep: &manifestbuilders.LinuxPrep{},
-					VAppConfig: &manifestbuilders.VAppConfig{
-						Properties: &[]manifestbuilders.KeyValueOrSecretKeySelectorPair{
+					LinuxPrep: &vmopv1a2.VirtualMachineBootstrapLinuxPrepSpec{HardwareClockIsUTC: new(false)},
+					VAppConfig: &vmopv1a2.VirtualMachineBootstrapVAppConfigSpec{
+						Properties: []vmopv1a2common.KeyValueOrSecretKeySelectorPair{
 							// Basic property types
 							{
 								Key: "string-valid",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "test-value-updated",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("test-value-updated"),
 								},
 							},
 							{
 								Key: "string-empty",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new(""),
 								},
 							},
 							{
 								Key: "string-trimmed",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "hello-updated",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("hello-updated"),
 								},
 							},
 
 							{
 								Key: "string-padding-user-configurable",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "hello-world",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("hello-world"),
 								},
 							},
 							{
 								Key: "password-valid",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "updated-secret-password",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("updated-secret-password"),
 								},
 							},
 							{
 								Key: "bool-user-configurable-1",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "false",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("false"),
 								},
 							},
 
 							{
 								Key: "bool-user-configurable-2",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "true",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("true"),
 								},
 							},
 
 							{
 								Key: "bool-user-configurable-3",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "False",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("False"),
 								},
 							},
 
 							{
 								Key: "bool-user-configurable-4",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "True",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("True"),
 								},
 							},
 							{
 								Key: "int-user-configurable-1",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "10",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("10"),
 								},
 							},
 
 							{
 								Key: "int-user-configurable-2",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "-10",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("-10"),
 								},
 							},
 
 							{
 								Key: "int-user-configurable-3",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "42",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("42"),
 								},
 							},
 
 							{
 								Key: "int-user-configurable-4",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "-42",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("-42"),
 								},
 							},
 							{
 								Key: "int-positive",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "42",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("42"),
 								},
 							},
 							{
 								Key: "int-negative",
-								Value: manifestbuilders.ValueOrSecretKeySelector{
-									Value: "-42",
+								Value: vmopv1a2common.ValueOrSecretKeySelector{
+									Value: new("-42"),
 								},
 							},
 						},
@@ -834,32 +847,32 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			})
 
 			It("should successfully apply vAppConfig properties to VM", Label("experimental"), func() {
-				createAndVerifyVM(ctx, v1a2vmParameters, true)
+				createAndVerifyVM(ctx, v1a2VM.DeepCopy())
 
 				// Verify that the vAppConfig properties are actually applied to the VM
 				vmmoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 
-				// Get the expected properties from the VM parameters
-				expectedProperties := *v1a2vmParameters.Bootstrap.VAppConfig.Properties
+				// Get the expected properties from the VM fixture.
+				expectedProperties := v1a2VM.Spec.Bootstrap.VAppConfig.Properties
 				// append more props that are present in the ovf, but are user-configurable = false
-				expectedProperties = append(expectedProperties, []manifestbuilders.KeyValueOrSecretKeySelectorPair{
+				expectedProperties = append(expectedProperties, []vmopv1a2common.KeyValueOrSecretKeySelectorPair{
 					{
 						Key: "string-padding",
-						Value: manifestbuilders.ValueOrSecretKeySelector{
-							Value: "hello",
+						Value: vmopv1a2common.ValueOrSecretKeySelector{
+							Value: new("hello"),
 						},
 					},
 					{
 						Key: "bool-true",
-						Value: manifestbuilders.ValueOrSecretKeySelector{
-							Value: "True", // vc converts all booleans to strings with capitalized first letter
+						Value: vmopv1a2common.ValueOrSecretKeySelector{
+							Value: new("True"), // vc converts all booleans to strings with capitalized first letter
 						},
 					},
 					{
 						Key: "bool-false",
-						Value: manifestbuilders.ValueOrSecretKeySelector{
-							Value: "False", // vc converts all booleans to strings with capitalized first letter
+						Value: vmopv1a2common.ValueOrSecretKeySelector{
+							Value: new("False"), // vc converts all booleans to strings with capitalized first letter
 						},
 					},
 				}...)
@@ -880,8 +893,6 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			// dual-stack IPAM via ipamModes, letting the IPv6 template
 			// functions exercise a real IPv6 address end-to-end instead of
 			// only ever having IPv4 to work with.
-			var vm *vmopv1.VirtualMachine
-
 			BeforeEach(func() {
 				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.WorkloadIPv6CapabilityName)
 			})
@@ -905,10 +916,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("bool-user-configurable-1", `{{ `+constants.V1alpha6IsUsableIP+` "192.168.1.10" }}`),
 					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "10.0.0.0/24" }}`),
 				}
-				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-					vm.Namespace, vm.Name, false)
-				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+				vm := buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+				vmmoid := createAndVerifyVAppConfigVM(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				verifyV1alpha6TemplateFunctionProperties(ctx, vCenterClient, vmmoid)
@@ -925,10 +934,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					// Dummy, fixed, IPv6 input -- doesn't depend on the VM's network.
 					vAppProp("int-user-configurable-1", `{{ `+constants.V1alpha6PrefixLength+` "2001:db8::/64" }}`),
 				}
-				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-					vm.Namespace, vm.Name, false)
-				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+				vm := buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, true)
+				vmmoid := createAndVerifyVAppConfigVM(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				verifyV1alpha6RemainingTemplateFunctionsRoundB(ctx, vCenterClient, vmmoid)
@@ -945,10 +952,8 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 					vAppProp("string-padding-user-configurable", `{{ `+constants.V1alpha6IP+` "192.168.1.10" }}`),
 					vAppProp("string-empty", `{{ `+constants.V1alpha6FormatIP+` "192.168.1.10/24" "/16" }}`),
 				}
-				vm = buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-					vm.Namespace, vm.Name, false)
-				vmmoid := createAndVerifyVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vm)
+				vm := buildVAppConfigVM(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, clusterResources, properties, false)
+				vmmoid := createAndVerifyVAppConfigVM(ctx, config, clusterProxy, input.WCPNamespaceName, vmName, vm)
 
 				vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				verifyV1alpha6RemainingTemplateFunctionsRoundC(ctx, vCenterClient, vmmoid)

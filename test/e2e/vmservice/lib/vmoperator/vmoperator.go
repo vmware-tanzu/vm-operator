@@ -494,7 +494,7 @@ func WaitForVirtualMachineToBeDeleted(ctx context.Context, config *config.E2ECon
 		_, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-	}, config.GetIntervals("default", "wait-virtual-machine-deletion")...).Should(Succeed(), "Timed out waiting for VirtualMachine %s to be deleted", vmName)
+	}, config.GetIntervals("default", "wait-virtual-machine-deletion")...).WithContext(ctx).Should(Succeed(), "Timed out waiting for VirtualMachine %s to be deleted", vmName)
 }
 
 // Utility function to ensure that a Subnet/SubnetSet is deleted.

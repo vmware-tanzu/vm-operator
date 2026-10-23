@@ -28,18 +28,6 @@ type VirtualMachineWebConsoleRequestYaml struct {
 	VMName    string `json:"virtualMachineName"`
 }
 
-// GetV1A1WebConsoleRequestYaml returns a v1alpha1 WebConsoleRequest YAML
-// manifest.
-func GetV1A1WebConsoleRequestYaml(vmWebConsoleRequestYaml VirtualMachineWebConsoleRequestYaml) []byte {
-	return ToYAML(WebConsoleRequestA1(vmWebConsoleRequestYaml))
-}
-
-// GetVirtualMachineWebConsoleRequestYaml returns a v1alpha2
-// VirtualMachineWebConsoleRequest YAML manifest.
-func GetVirtualMachineWebConsoleRequestYaml(vmWebConsoleRequestYaml VirtualMachineWebConsoleRequestYaml) []byte {
-	return ToYAML(VirtualMachineWebConsoleRequestA2(vmWebConsoleRequestYaml))
-}
-
 // WebConsoleRequestA1 returns the v1alpha1 WebConsoleRequest described by
 // vmWebConsoleRequestYaml.
 func WebConsoleRequestA1(vmWebConsoleRequestYaml VirtualMachineWebConsoleRequestYaml) *vmopv1a1.WebConsoleRequest {

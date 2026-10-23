@@ -824,7 +824,7 @@ func WaitForBackupToComplete(
 	ctx context.Context,
 	vmName string,
 	vmNamespace string,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	config *config.E2EConfig,
 	intervalOpts *vmoperator.IntervalOptions,
 ) *vmopv1.VirtualMachine {
@@ -1006,7 +1006,7 @@ func UnregisterPVCVolumes(
 func DeleteVMResource(
 	ctx context.Context,
 	vmName, vmNamespace string,
-	bootstrapResourceYAML []byte,
+	bootstrapResource ctrlclient.Object,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client) string {
@@ -1070,9 +1070,9 @@ func DeleteVMResource(
 
 	vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
 
-	if bootstrapResourceYAML != nil {
+	if bootstrapResource != nil {
 		By("Delete the bootstrap resource")
-		Expect(clusterProxy.DeleteWithArgs(ctx, bootstrapResourceYAML)).To(Succeed(), "failed to delete VM bootstrap resource")
+		Expect(clusterProxy.GetClient().Delete(ctx, bootstrapResource)).To(Succeed(), "failed to delete VM bootstrap resource")
 	}
 
 	return vmMoID
@@ -1083,7 +1083,7 @@ func DeleteVMResource(
 func InvokeRegisterVM(
 	ctx context.Context,
 	vmMoID, vmNamespace string,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	wcpClient wcp.WorkloadManagementAPI) (*types.TaskInfo, error) {
 	By("Invoke the RegisterVM API")
 
@@ -1107,9 +1107,9 @@ func InvokeRegisterVM(
 func VerifyPostRegisterVM(
 	ctx context.Context,
 	vmName, vmNamespace string,
-	bootstrapResourceYAML []byte,
+	bootstrapResource ctrlclient.Object,
 	expectedRestoredPVCCount int,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client,
 	wcpClient wcp.WorkloadManagementAPI) {
@@ -1173,14 +1173,14 @@ func VerifyPostRegisterVM(
 func VerifyRegisterVMOnlyClassicDisk(
 	ctx context.Context,
 	vmName, vmNamespace string,
-	bootstrapResourceYAML []byte,
+	bootstrapResource ctrlclient.Object,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client,
 	wcpClient wcp.WorkloadManagementAPI) {
 	By("Verifying Register VM...")
 
-	vmMoID := DeleteVMResource(ctx, vmName, vmNamespace, bootstrapResourceYAML, clusterProxy, config, svClusterClient)
+	vmMoID := DeleteVMResource(ctx, vmName, vmNamespace, bootstrapResource, clusterProxy, config, svClusterClient)
 
 	taskInfo, err := InvokeRegisterVM(ctx, vmMoID, vmNamespace, clusterProxy, wcpClient)
 
@@ -1197,7 +1197,7 @@ func VerifyRegisterVMOnlyClassicDisk(
 		ctx,
 		vmName,
 		vmNamespace,
-		bootstrapResourceYAML,
+		bootstrapResource,
 		expectedRestoredPVCCount,
 		clusterProxy,
 		config,
@@ -1233,62 +1233,25 @@ func LabelVM(ctx context.Context, config *config.E2EConfig, clusterProxy *common
 	return nil
 }
 
-// DeployVMWithCloudInit deploys a VM with the default cloud-init config passed.
-func DeployVMWithCloudInit(
-	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
-	e2eConfig *config.E2EConfig,
-	clusterResources *config.Resources,
-	ns, vmName, groupName string,
-	pvcs []manifestbuilders.PVC) {
-	secretName := "cloud-config-data-" + capiutil.RandomString(4)
-	secret := manifestbuilders.Secret{
-		Namespace: ns,
-		Name:      secretName,
-	}
-	secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
-
-	linuxImageDisplayName := GetDefaultImageDisplayName(clusterResources)
-	linuxVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)
-
-	vmParameters := manifestbuilders.VirtualMachineYaml{
-		Namespace:        ns,
-		Name:             vmName,
-		ImageName:        linuxVMIName,
-		VMClassName:      clusterResources.VMClassName,
-		StorageClassName: clusterResources.StorageClassName,
-		SecretName:       secretName,
-		PVCs:             pvcs,
-	}
-	if groupName != "" {
-		vmParameters.GroupName = groupName
-	}
-
-	vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-	framework.Logf("Create VirtualMachine:\n%s", string(vmYaml))
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM:\n%s", string(vmYaml))
-}
-
 func CreateVMGroup(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	params manifestbuilders.VirtualMachineGroupYaml,
 ) {
-	vmGroupYaml := manifestbuilders.GetVirtualMachineGroupYaml(params)
-	framework.Logf("Create VirtualMachineGroup:\n%s", string(vmGroupYaml))
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmGroupYaml)).To(Succeed())
+	vmGroup := manifestbuilders.VirtualMachineGroupA5(params)
+	framework.Logf("Create VirtualMachineGroup: %s/%s", params.Namespace, params.Name)
+	Expect(vmSvcClusterProxy.GetClient().Create(ctx, vmGroup)).To(Succeed())
 }
 
 func DeleteVMGroup(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	params manifestbuilders.VirtualMachineGroupYaml,
 ) {
-	vmGroupYaml := manifestbuilders.GetVirtualMachineGroupYaml(params)
-	framework.Logf("Delete VirtualMachineGroup:\n%s", string(vmGroupYaml))
-	Expect(vmSvcClusterProxy.Delete(ctx, vmGroupYaml)).To(Succeed())
+	vmGroup := manifestbuilders.VirtualMachineGroupA5(params)
+	framework.Logf("Delete VirtualMachineGroup: %s/%s", params.Namespace, params.Name)
+	Expect(vmSvcClusterProxy.GetClient().Delete(ctx, vmGroup)).To(Succeed())
 
 	Eventually(func() bool {
 		_, err := utils.GetVirtualMachineGroup(ctx, vmSvcClusterProxy.GetClient(), params.Namespace, params.Name)
@@ -1298,19 +1261,18 @@ func DeleteVMGroup(
 
 func CreateVMGroupPub(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	params manifestbuilders.VirtualMachineGroupPublishRequestYaml,
 	errMsg string,
 ) {
-	vmGroupPubYaml := manifestbuilders.GetVirtualMachineGroupPublishRequestYaml(params)
-	framework.Logf("Create VirtualMachineGroupPublishRequest:\n%s", string(vmGroupPubYaml))
+	vmGroupPub := manifestbuilders.VirtualMachineGroupPublishRequestA5(params)
+	framework.Logf("Create VirtualMachineGroupPublishRequest: %s/%s", params.Namespace, params.Name)
 
-	if len(errMsg) == 0 {
-		Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmGroupPubYaml)).To(Succeed())
+	err := vmSvcClusterProxy.GetClient().Create(ctx, vmGroupPub)
+	if errMsg == "" {
+		Expect(err).To(Succeed())
 	} else {
-		_, stderr, err := vmSvcClusterProxy.CreateRawWithArgs(ctx, vmGroupPubYaml)
-		Expect(err).To(HaveOccurred())
-		Expect(string(stderr)).To(ContainSubstring(errMsg))
+		Expect(err).To(MatchError(ContainSubstring(errMsg)))
 	}
 }
 
@@ -1325,7 +1287,7 @@ func UpdateVMGroupPub(
 
 func CreateVMSnapshot(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	params manifestbuilders.VirtualMachineSnapshotYaml,
 ) {
 	vmSnapshot := &vmopv1.VirtualMachineSnapshot{
@@ -1358,7 +1320,7 @@ func CreateVMSnapshot(
 
 func CreateSnapshotInVC(
 	ctx context.Context,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	vmSnapshotName string,
 	vmName string,
 	vmNamespace string,
@@ -1401,7 +1363,7 @@ func UpdateVMSnapshot(
 
 func RevertVMSnapshot(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
 	currentSnapshot *vmopv1.VirtualMachineSnapshotReference,
@@ -1426,7 +1388,7 @@ func RevertVMSnapshot(
 
 func UpdateVMRestartMode(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
 	restartMode vmopv1.VirtualMachinePowerOpMode,
@@ -1449,7 +1411,7 @@ func UpdateVMRestartMode(
 
 func UpdateVMPowerOffMode(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
 	powerOffMode vmopv1.VirtualMachinePowerOpMode,

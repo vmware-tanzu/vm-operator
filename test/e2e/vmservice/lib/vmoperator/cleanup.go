@@ -9,6 +9,7 @@ import (
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -21,6 +22,27 @@ import (
 // for a spec that has failed. A DumpFunc should log problems rather than
 // assert, so that a failure to dump never prevents the cleanup that follows.
 type DumpFunc func(ctx context.Context)
+
+// CreateVirtualMachine creates a typed VirtualMachine and registers failure
+// diagnostics and cleanup before returning. The proxy supplies both the client
+// and the kubeconfig used by kubectl diagnostics, preserving its current context
+// and credentials. The object's API version is preserved.
+// When skipCleanup is true, diagnostics still run on failure.
+func CreateVirtualMachine(
+	ctx context.Context,
+	config *config.E2EConfig,
+	clusterProxy framework.ClusterProxyInterface,
+	vm ctrlclient.Object,
+	skipCleanup bool,
+	extraDumps ...DumpFunc) {
+
+	GinkgoHelper()
+
+	client := clusterProxy.GetClient()
+	Expect(client.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s/%s", vm.GetNamespace(), vm.GetName())
+	DeferCleanupVirtualMachine(config, client, clusterProxy.GetKubeconfigPath(),
+		vm.GetNamespace(), vm.GetName(), skipCleanup, extraDumps...)
+}
 
 // DescribeResource returns a DumpFunc that logs the output of
 // `kubectl describe <resource> -n <ns> <name>`.

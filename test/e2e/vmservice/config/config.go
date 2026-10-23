@@ -65,7 +65,6 @@ type Resources struct {
 	EncryptedImageDisplayName     string `json:"encryptedImageDisplayName,omitempty"`
 	StorageClassName              string `json:"storageClassName,omitempty"`
 	VMClassName                   string `json:"vmClassName,omitempty"`
-	VMResourcePolicyName          string `json:"vmResourcePolicyName,omitempty"`
 	ContentLibrarySubscriptionURL string `json:"contentLibrarySubscriptionURL,omitempty"`
 }
 

@@ -24,6 +24,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	conformancetestdata "k8s.io/kubernetes/test/conformance/testdata"
@@ -33,6 +34,9 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a2sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
@@ -371,7 +375,6 @@ func deferCleanupSuiteVM(client ctrlclient.Client, ns, vmName string) {
 
 // deployWindowsVMWithSysprep deploys a Windows VM with the minimal Sysprep config passed.
 func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string) {
-	vmsvcClusterProxy := svClusterProxy.(*common.VMServiceClusterProxy)
 	secretName := "sysprep-data"
 	secret := manifestbuilders.Secret{
 		Namespace: ns,
@@ -381,30 +384,31 @@ func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string)
 	// Check if the secret already exists.
 	secretObj := corev1.Secret{}
 
-	err := vmsvcClusterProxy.GetClient().Get(ctx,
+	err := svClusterProxy.GetClient().Get(ctx,
 		types.NamespacedName{Namespace: ns, Name: secretName}, &secretObj)
 	if err == nil {
 		return
 	}
 
-	secretYaml := manifestbuilders.GetSecretYamlSysprepConfig(secret)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with Sysprep data", string(secretYaml))
+	secretToCreate := manifestbuilders.SysprepSecret(secret)
+	Expect(svClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with Sysprep data")
 
-	vmParameters := manifestbuilders.VirtualMachineYaml{
-		Namespace:        ns,
-		Name:             vmName,
-		VMClassName:      config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
-		StorageClassName: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
-		ResourcePolicy:   config.InfraConfig.ManagementClusterConfig.Resources.VMResourcePolicyName,
-		ImageName:        vmiName,
-		Transport:        "Sysprep",
-		SecretName:       secretName,
-		PowerState:       "poweredOn",
-		PowerOffMode:     "Hard",
+	vmToCreate := &vmopv1a1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: ns},
+		Spec: vmopv1a1.VirtualMachineSpec{
+			ClassName:    config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
+			StorageClass: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
+			ImageName:    vmiName,
+			PowerState:   vmopv1a1.VirtualMachinePoweredOn,
+			PowerOffMode: "Hard",
+			VmMetadata: &vmopv1a1.VirtualMachineMetadata{
+				SecretName: secretName,
+				Transport:  "Sysprep",
+			},
+		},
 	}
-	deferCleanupSuiteVM(vmsvcClusterProxy.GetClient(), ns, vmName)
-	vmYaml := manifestbuilders.GetVirtualMachineYaml(vmParameters)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Windows VM", string(vmYaml))
+	deferCleanupSuiteVM(svClusterProxy.GetClient(), ns, vmName)
+	Expect(svClusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Windows VM")
 }
 
 // deployWindowsVMWithInlineSysprep deploys a Windows VM whose Sysprep answer
@@ -412,61 +416,64 @@ func deployWindowsVMWithSysprep(ctx context.Context, ns, vmName, vmiName string)
 // a Secret referenced through rawSysprep (see deployWindowsVMWithSysprep).
 // This exercises the v1alpha2 API and the inline-Sysprep-data path.
 func deployWindowsVMWithInlineSysprep(ctx context.Context, ns, vmName, vmiName string) {
-	vmsvcClusterProxy := svClusterProxy.(*common.VMServiceClusterProxy)
+	client := svClusterProxy.GetClient()
 
 	secretName := "inline-sysprep-data"
-	secret := manifestbuilders.Secret{
+	secret := manifestbuilders.InlineSysprepSecret(manifestbuilders.Secret{
 		Namespace: ns,
 		Name:      secretName,
-	}
+	})
+	// The Secret has a fixed name, so it may be left over from an earlier
+	// run in the same namespace.
+	Expect(ctrlclient.IgnoreAlreadyExists(client.Create(ctx, secret))).To(Succeed(), "failed to create the Secret with inline Sysprep data")
 
-	secretYaml := manifestbuilders.GetSecretYamlInlineSysprepData(secret)
-	Expect(vmsvcClusterProxy.ApplyWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with inline Sysprep data", string(secretYaml))
-
-	inlinedSysprep := fmt.Sprintf(`
-        guiUnattended:
-          autoLogon: true
-          autoLogonCount: 1
-          password:
-            name: %s
-            key: vmsvc-pwd
-          timeZone: 004
-        identification:
-          joinWorkgroup: vmware
-        guiRunOnce:
-          commands:
-          - "dir C:"
-          - "echo Hello"
-          - 'C:\sysprep\guestcustutil.exe restoreMountedDevices'
-          - 'C:\sysprep\guestcustutil.exe flagComplete'
-          - 'C:\sysprep\guestcustutil.exe deleteContainingFolder'
-        userData:
-          fullName: "First User"
-          orgName: "Broadcom"`, secretName)
-
-	vmParameters := manifestbuilders.VirtualMachineYaml{
-		Namespace:        ns,
-		Name:             vmName,
-		VMClassName:      config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
-		StorageClassName: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
-		ImageName:        vmiName,
-		PowerState:       "PoweredOn",
-		PowerOffMode:     "Hard",
-		Bootstrap: manifestbuilders.Bootstrap{
-			Sysprep: &manifestbuilders.Sysprep{
-				Sysprep: new(inlinedSysprep),
+	vmToCreate := &vmopv1a2.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: ns},
+		Spec: vmopv1a2.VirtualMachineSpec{
+			ClassName:    config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
+			StorageClass: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
+			ImageName:    vmiName,
+			PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			PowerOffMode: vmopv1a2.VirtualMachinePowerOpModeHard,
+			Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+				Sysprep: &vmopv1a2.VirtualMachineBootstrapSysprepSpec{
+					Sysprep: &vmopv1a2sysprep.Sysprep{
+						GUIUnattended: &vmopv1a2sysprep.GUIUnattended{
+							AutoLogon:      true,
+							AutoLogonCount: 1,
+							Password: &vmopv1a2sysprep.PasswordSecretKeySelector{
+								Name: secretName,
+								Key:  "vmsvc-pwd",
+							},
+							TimeZone: 4,
+						},
+						Identification: &vmopv1a2sysprep.Identification{
+							JoinWorkgroup: "vmware",
+						},
+						GUIRunOnce: vmopv1a2sysprep.GUIRunOnce{
+							Commands: []string{
+								"dir C:",
+								"echo Hello",
+								`C:\sysprep\guestcustutil.exe restoreMountedDevices`,
+								`C:\sysprep\guestcustutil.exe flagComplete`,
+								`C:\sysprep\guestcustutil.exe deleteContainingFolder`,
+							},
+						},
+						UserData: &vmopv1a2sysprep.UserData{
+							FullName: "First User",
+							OrgName:  "Broadcom",
+						},
+					},
+				},
 			},
 		},
 	}
-	deferCleanupSuiteVM(vmsvcClusterProxy.GetClient(), ns, vmName)
-	vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Windows VM with inline Sysprep", string(vmYaml))
+	deferCleanupSuiteVM(client, ns, vmName)
+	Expect(client.Create(ctx, vmToCreate)).To(Succeed(), "failed to create Windows VM with inline Sysprep")
 }
 
 // deployVMWithCloudInit deploys a VM with the default cloud-init config passed.
 func deployVMWithCloudInit(ctx context.Context, ns, vmName, vmiName string) {
-	vmsvcClusterProxy := svClusterProxy.(*common.VMServiceClusterProxy)
-
 	secretName := vmName + "-cloud-config-data"
 	secret := manifestbuilders.Secret{
 		Namespace: ns,
@@ -476,28 +483,30 @@ func deployVMWithCloudInit(ctx context.Context, ns, vmName, vmiName string) {
 	// Check if the secret already exists.
 	secretObj := corev1.Secret{}
 
-	err := vmsvcClusterProxy.GetClient().Get(ctx,
+	err := svClusterProxy.GetClient().Get(ctx,
 		types.NamespacedName{Namespace: ns, Name: secretName}, &secretObj)
 	if err == nil {
 		return
 	}
 
-	secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+	secretToCreate := manifestbuilders.CloudConfigSecret(secret)
+	Expect(svClusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 
-	vmParameters := manifestbuilders.VirtualMachineYaml{
-		Namespace:        ns,
-		Name:             vmName,
-		ImageName:        vmiName,
-		VMClassName:      config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
-		StorageClassName: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
-		ResourcePolicy:   config.InfraConfig.ManagementClusterConfig.Resources.VMResourcePolicyName,
-		Transport:        "CloudInit",
-		SecretName:       secretName,
-		PowerState:       "poweredOn",
+	vmToCreate := &vmopv1a1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: ns},
+		Spec: vmopv1a1.VirtualMachineSpec{
+			ClassName:    config.InfraConfig.ManagementClusterConfig.Resources.VMClassName,
+			StorageClass: config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName,
+			ImageName:    vmiName,
+			PowerState:   vmopv1a1.VirtualMachinePoweredOn,
+			VmMetadata: &vmopv1a1.VirtualMachineMetadata{
+				SecretName: secretName,
+				Transport:  "CloudInit",
+			},
+		},
 	}
-	vmYaml := manifestbuilders.GetVirtualMachineYaml(vmParameters)
-	Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM:\n%s", string(vmYaml))
+
+	Expect(svClusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create VM")
 }
 
 func deployJumpboxPodVM(ctx context.Context) {

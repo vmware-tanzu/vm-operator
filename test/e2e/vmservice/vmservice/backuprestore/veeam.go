@@ -32,6 +32,8 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -165,9 +167,9 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 			ns := input.WCPNamespaceName
 			vmName := fmt.Sprintf("%s-existing-%s", specName, capiutil.RandomString(4))
 			secretName := vmName + "-cloud-config"
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfigSeedData(manifestbuilders.Secret{Namespace: ns, Name: secretName})
+			secret := manifestbuilders.SeedDataCloudConfigSecret(manifestbuilders.Secret{Namespace: ns, Name: secretName})
 
-			vm := t.createVM(ctx, vmName, secretYaml, secretName)
+			vm := t.createVM(ctx, vmName, secret)
 
 			By("Wait for the guest to seed data on the boot and data disks")
 			vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
@@ -338,14 +340,14 @@ func (t *testEnv) ensureVCenterRegistered(ctx context.Context) {
 // cloud-config Secret, waits until VM Operator has backfilled the boot disk as
 // a PVC and written an up-to-date backup, and returns the VM. Everything it
 // creates is deleted when the test ends.
-func (t *testEnv) createVM(ctx context.Context, vmName string, secretYaml []byte, secretName string) *vmopv1.VirtualMachine {
+func (t *testEnv) createVM(ctx context.Context, vmName string, secret *corev1.Secret) *vmopv1.VirtualMachine {
 	ns := t.input.WCPNamespaceName
 	pvcName := vmName + "-data"
 	resources := t.config.InfraConfig.ManagementClusterConfig.Resources
 
-	Expect(t.clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the cloud-config Secret")
+	Expect(t.client.Create(ctx, secret)).To(Succeed(), "failed to create the cloud-config Secret")
 	DeferCleanup(func(ctx SpecContext) {
-		_ = t.client.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: ns}})
+		_ = t.client.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secret.Name, Namespace: ns}})
 	})
 
 	testutils.AssertCreatePVC(t.clusterProxy.GetClient(), pvcName, ns, resources.StorageClassName)
@@ -353,22 +355,29 @@ func (t *testEnv) createVM(ctx context.Context, vmName string, secretYaml []byte
 		_ = t.client.Delete(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: pvcName, Namespace: ns}})
 	})
 
-	vmYaml := manifestbuilders.GetVirtualMachineYamlA2(manifestbuilders.VirtualMachineYaml{
-		Namespace:        ns,
-		Name:             vmName,
-		VMClassName:      resources.VMClassName,
-		StorageClassName: resources.StorageClassName,
-		ResourcePolicy:   resources.VMResourcePolicyName,
-		ImageName:        t.linuxVMIName,
-		Bootstrap: manifestbuilders.Bootstrap{
-			CloudInit: &manifestbuilders.CloudInit{
-				RawCloudConfig: &manifestbuilders.KeySelector{Key: "user-data", Name: secretName},
+	vmToCreate := &vmopv1a2.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: ns},
+		Spec: vmopv1a2.VirtualMachineSpec{
+			ClassName:    resources.VMClassName,
+			StorageClass: resources.StorageClassName,
+			ImageName:    t.linuxVMIName,
+			PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{
+					RawCloudConfig: &vmopv1a2common.SecretKeySelector{Key: "user-data", Name: secret.Name},
+				},
 			},
+			Volumes: []vmopv1a2.VirtualMachineVolume{{
+				Name: pvcName,
+				VirtualMachineVolumeSource: vmopv1a2.VirtualMachineVolumeSource{
+					PersistentVolumeClaim: &vmopv1a2.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvcName},
+					},
+				},
+			}},
 		},
-		PowerState: string(vmopv1.VirtualMachinePowerStateOn),
-		PVCNames:   []string{pvcName},
-	})
-	Expect(t.clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM:\n%s", string(vmYaml))
+	}
+	Expect(t.client.Create(ctx, vmToCreate)).To(Succeed(), "failed to create VM")
 	DeferCleanup(func(ctx SpecContext) {
 		deleteVMAndPVCs(ctx, t.client, ns, vmName)
 	})
@@ -431,9 +440,9 @@ type lostVM struct {
 func (t *testEnv) restoreLostVM(ctx context.Context, vmName string) lostVM {
 	ns := t.input.WCPNamespaceName
 	secretName := vmName + "-cloud-config"
-	secretYaml := manifestbuilders.GetSecretYamlCloudConfigSeedData(manifestbuilders.Secret{Namespace: ns, Name: secretName})
+	secret := manifestbuilders.SeedDataCloudConfigSecret(manifestbuilders.Secret{Namespace: ns, Name: secretName})
 
-	vm := t.createVM(ctx, vmName, secretYaml, secretName)
+	vm := t.createVM(ctx, vmName, secret)
 	oldMoID := vm.Status.UniqueID
 
 	By("Wait for the guest to seed data on the boot and data disks")

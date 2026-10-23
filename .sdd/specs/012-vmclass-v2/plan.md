@@ -31,9 +31,10 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 - [ ] **Controllers are thin.** The governance check is one exported package in `pkg/`, called by the VM webhook, the VM reconciler and placement.
 - [ ] **No direct vSphere calls in controllers.** Compatibility reads only `ConfigTarget` and the options objects.
 - [ ] **Webhooks.** CEL for structural rules (value shapes, `governs.zones` within `spec.zones`); Go for cross-object rules (one governing class per zone, class-vs-class bounds, VM governance, reserved profiles).
+- [ ] **Controllers modify only status (deviation).** The VM reconciler writes VM spec in three places: the same-class resize rewrite, schema upgrade, and the re-default after a class change. Precedent: `pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go`. The spec patch is a separate write with an optimistic lock, not part of the deferred patch helper, so a concurrent user edit fails with a conflict and is retried. Recorded in "Complexity tracking".
 - [ ] **Status.** `observedGeneration` and `Ready` on the class; per-zone conditions in `status.zones`.
 - [ ] **Fan-in writes.** `Zone.status.governingClasses` is written by one controller from many classes: patch with an optimistic lock and skip unchanged writes.
-- [ ] **Feature flags.** Every new behavior checks the capability through `pkgcfg.FromContext(ctx)`.
+- [ ] **Feature flags.** Every new behavior checks the capability through `pkgcfg.FromContext(ctx)`. While the capability is off, class writes with ranges or `governs` are rejected; toggling it takes effect without a restart.
 - [ ] **E2E.** Every user-visible behavior ships with E2E coverage in the same story, in the quarantined capability pipeline until enablement.
 - [ ] **Public repo.** No internal links or ticket IDs other than `vmop-NNN` and `WIKI page NNN`.
 
@@ -48,33 +49,35 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 | Governance | new package under `pkg/`: resolve the governing class, compare a VM or a class with it |
 | Class webhooks | `webhooks/virtualmachineclass/{mutation,validation}` |
 | VM webhooks | `webhooks/virtualmachine/{mutation,validation}` |
-| Class controller | `controllers/virtualmachineclass` |
-| VM reconciler | `pkg/providers/vsphere` (compliance step before power state; reservation from the VM field in `virtualmachine/configspec.go`), `controllers/virtualmachine` |
+| Class controller | `controllers/virtualmachineclass` (including the `ReservedProfileID` reader in `virtualmachineclass_controller.go`) |
+| VM reconciler | `pkg/providers/vsphere` (compliance step before power state; reservation from the VM field in `virtualmachine/configspec.go`), `pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go` (backfill of `spec.reservedProfileName`), `controllers/virtualmachine` |
+| Reserved profiles | remove `VirtualMachineReservedProfile` from `api/v1alpha6`; read RBAC in `config/rbac`; the writer is the wcpsvc zone controller |
 | Placement | `pkg/providers/vsphere/placement` |
-| Zone mirror controller | `controllers/infra/zone` or a new controller |
+| Zone mirror controller | `controllers/infra/zone` |
 | Environment browser | `controllers/vim/*`, `controllers/virtualmachineconfigoptions`, `config/rbac` |
-| Removal | `external/vim/api/v1alpha1/virtualmachine_config_policy_types.go`, `config/crd/external-crds`, `controllers/infra/zone`, `config/rbac`, `test/e2e/vmservice/vmservice/configpolicy` |
+| Removal | `external/vim/api/v1alpha1/virtualmachine_config_policy_types.go`, `config/crd/external-crds`, `controllers/infra/zone`, `config/rbac`, `pkg/config` (`Features.VirtualMachineConfigPolicy`), `test/e2e/vmservice/vmservice/configpolicy` |
 | E2E | `test/e2e/vmservice/` suites, labeled for the quarantined capability pipeline |
 | Docs | `docs/` |
 
 ## API strategy
 
 - **Class.** Every configuration field the class bounds is a typed value: number `{min, max, default}` (`default` required when `min` or `max` is set; an unset bound is open, limited by hardware or a parent class), enum `{allowed, default}`, boolean `{allowOverride, default}`, list `{default, allowed, denied}` with `{type, value}` matchers. `configSpec` keeps only pass-through fields; an elevated path in it is moved for older writers and rejected for writers on v1alpha6.
-- **Reserved capacity.** `reservedProfile` is an enum-shaped governed field of profile names. v1alpha5 `reservedProfileID: X` converts to `{default: X, allowed: [X]}` and back, including for wcpsvc, which writes classes through the v1alpha1 client; wcpsvc needs no change. `reservedProfileID` and `reservedSlots` stay for conversion and the v1 vAPI; `reservedSlots` is informational and read by nothing in vm-operator.
-- **VM.** `spec.reservedProfileName` is filled by the mutation webhook from the class default, like any other default. The extraConfig profile ID is written from the VM field, not from the class. Existing VMs get the field from their class during schema upgrade.
-- **Upgrade.** Conversion writes complete ranges (`min == max == default`); `spec.zones` stays unset (all zones); `externalID` = name; no class governs until an admin adds `governs`.
+- **Reserved capacity.** `reservedProfileName` is an `EnumPolicy` `{default, allowed, required}` of profile names, at the same path as the VM's `spec.reservedProfileName`; `EnumPolicy` was chosen over `ListPolicy` because the VM value is one name and list add/remove/match semantics don't fit a single reservation. Names must resolve to a `VirtualMachineReservedProfile` in the namespace, and `allowed` is required when `default` is set. v1alpha5 `reservedProfileID: X` converts to `{default: X, allowed: [X], required: true}`; down, `reservedProfileID` = `default`; up, a `reservedProfileID` that differs from the annotation's default (an older-API writer such as wcpsvc through the v1alpha1 client changed it) resets the field to `{default: Y, allowed: [Y], required: true}`, otherwise the annotation is restored. `reservedProfileName` is authoritative in the hub; `reservedProfileID` stays only for conversion and the v1 vAPI. `reservedSlots` stays an `int32` with the same name and meaning, deprecated, preserved through conversion and the namespace copy (including zero), never overwritten with observed totals.
+- **Reserved profiles.** `VirtualMachineReservedProfile` leaves vm-operator's v1alpha6 (unshipped, so this is safe) and is owned by the wcpsvc zone controller, which reconciles each profile's shape and per-zone counts from vCenter and backfills existing allocations. vm-operator only reads it. The backfill must land before VM admission relies on it; an unknown profile is a clear failure with no fallback.
+- **VM.** `spec.reservedProfileName` is filled by the mutation webhook from the class default, like any other default; omission inherits the default, explicit `""` selects no profile, and `required: true` rejects an empty value after defaulting. The extraConfig profile ID is written from the VM field, falling back to the class while the field is unset, and removed when the field is empty. Existing VMs get the field from their class during schema upgrade; that unset-to-set write is exempt from the powered-on lock.
+- **Upgrade.** Only conversion fills ranges (`min == max == default`); `spec.zones` stays unset (all zones); `externalID` = name; no class governs until an admin adds `governs`.
 
 ## Controller and webhook impact
 
-- **Class mutating webhook**: complete number ranges, `governs.enforcement: Deny`, the memory lock on a preset class that attaches devices.
-- **Class validating webhook**: value-shape rules, elevated `configSpec` paths, `externalID` immutable, `governs.zones` within `spec.zones`, `existingVMs` required on a governing class with no parent, one governing class per zone, class-vs-class bounds, sticky v2 writes, `parentClassRefs` rejected until Milestone 2, reserved profiles fix the profile's fields.
-- **VM mutating webhook**: fill unset fields from the class, from the image, or from the governing class; fill `reservedProfileName`.
-- **VM validating webhook**: governance, inline-edit rule while `className` is set, the zone rule, hardware compatibility per zone, device memory reservation, reserved-profile match and lock, `DenyPowerOn`.
+- **Class mutating webhook**: `governs.enforcement: Deny`, the memory lock on a preset class that attaches devices.
+- **Class validating webhook**: value-shape rules not expressible in CEL, elevated `configSpec` paths, `externalID` immutable, `existingVMs` required on a governing class with no parent, one governing class per zone, class-vs-class bounds, sticky v2 writes, `parentClassRefs` rejected until Milestone 2, ranges and `governs` rejected while the capability is off, reserved profiles fix the profile's fields and resolve to a `VirtualMachineReservedProfile`, and on edit only changes that alter an allocated profile's shape or invalidate the class's default VM are rejected (the v1 vAPI keeps today's block on update and delete while any Supervisor has capacity for the class). `governs.zones` within `spec.zones` is a CEL rule on the type.
+- **VM mutating webhook**: fill unset fields from the class, from the image, or from the governing class; fill `reservedProfileName`; on a class change (allowed when `VMResize` or `VMResizeCPUMemory` is on, with no annotation), replace every class-supplied field from the new class and clear and re-default the fields it doesn't set.
+- **VM validating webhook**: governance, inline-edit rule while `className` is set (including `reservedProfileName`), the zone rule, hardware compatibility per zone, device memory reservation, reserved-profile match (after defaulting, for class-backed and classless VMs; overhead excluded; a resize past the profile rejected), the powered-on lock on changing one set profile to another, class change of a reserved VM only while powered off. The `DenyPowerOn` power-on rejection ships with compliance (vmop-4041).
 - **Class controller**: per-zone `HardwareCompatible`, `WithinGovernance`, `Governing`, resolved limits; watches `ConfigTarget` and `Zone`.
-- **VM reconciler**: `GovernanceCompliant`, `status.governingClassNames`, withheld power-on for `DenyPowerOn`, same-class resize rewrite, observed fields, the reservation from the VM field.
+- **VM reconciler**: `GovernanceCompliant`, `status.governingClassNames`, withheld power-on for `DenyPowerOn`, same-class resize rewrite, observed fields, the reservation from the VM field (written or removed).
 - **Placement**: only zones that admit the VM and are compatible.
 - **Environment browser**: maximum hardware version; RBAC restricted to admins and vm-operator; no vCenter re-query on resync when the cluster is unchanged.
-- **RBAC**: remove `virtualmachineconfigpolicies`; restrict the three environment-browser CRDs.
+- **RBAC**: remove `virtualmachineconfigpolicies`; restrict the three environment-browser CRDs; read-only access to `virtualmachinereservedprofiles`.
 
 ## Epics and order
 
@@ -82,11 +85,11 @@ Milestone 1 enables governing classes for providers; Milestone 2 adds tenant cla
 
 | Epic | Scope | Depends on |
 |---|---|---|
-| vmop-4038 — API, upgrade and capability | capability, quarantined pipeline, v1alpha6 schema, conversion, VM and Zone API fields, policy removal, environment-browser completion | — |
+| vmop-4038 — API, upgrade and capability | capability, quarantined pipeline, v1alpha6 schema (including removing `VirtualMachineReservedProfile`), conversion, VM and Zone API fields, policy removal, environment-browser completion | — |
 | vmop-4039 — Governance engine and class compatibility | governance package, class `HardwareCompatible`, resolved limits, governance status and Zone mirror | the schema (vmop-4315) |
-| vmop-4201 — Class webhooks and v2 vAPI | class webhooks, vmodl markers, generator hookup and drift checks, v2 class vAPI, wcpsvc changes, Supervisor and nsop integration | the schema; the governance package for class-vs-class bounds |
-| vmop-4040 — VM create and edit | VM defaults, VM governance validation, device memory reservation, zone rule, reserved capacity | the governance package; the VM API fields |
-| vmop-4041 — Compliance, placement and enablement | `GovernanceCompliant`, placement filter, enablement, docs | the VM webhooks |
+| vmop-4201 — Class webhooks and v2 vAPI | class webhooks, vmodl markers, generator hookup and drift checks, v2 class vAPI, wcpsvc changes, the wcpsvc zone controller's `VirtualMachineReservedProfile` writer, Supervisor and nsop integration | the schema; the governance package for class-vs-class bounds |
+| vmop-4040 — VM create and edit | VM defaults, VM governance validation, device memory reservation, zone rule, reserved capacity | the governance package; the VM API fields; the reserved profile writer (vmop-TBD) for reserved capacity |
+| vmop-4041 — Compliance, placement and enablement | `GovernanceCompliant`, the `DenyPowerOn` power-on rejection, placement filter, enablement, docs | the VM webhooks |
 | vmop-4312 — Tenant VM Classes (Milestone 2) | second capability, `parentClassRefs`, class families, v2 vAPI round-trip, enablement | all of Milestone 1 |
 
 **Sequential**: the schema → the governance package → the VM webhooks → compliance and placement → enablement.
@@ -129,3 +132,4 @@ Two-week sprints from 2026-10-20; the sprint covering 2026-12-15 to 2027-01-11 i
 | Deviation | Why | Simpler alternative rejected |
 |---|---|---|
 | `*[]string` zone lists distinguish unset from `[]` | "No zones" and "all zones" must not collapse | A plain list: dropping `[]` would make a class available everywhere |
+| The VM reconciler writes VM spec (same-class resize, schema upgrade, class change re-default) | These values come from the class and must follow it; precedent `vm_schema_upgrade.go`. A separate spec patch with an optimistic lock, apart from the deferred status patch | Asking users to re-apply the class: drift between the class and its VMs, and no backfill on upgrade |

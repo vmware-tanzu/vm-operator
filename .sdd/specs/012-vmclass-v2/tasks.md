@@ -17,16 +17,24 @@ Each open item changes the shape of an API or a check. A task that depends on on
 - [x] T001 A passthrough device requires full memory reservation: the VM webhook enforces it (T405), and fixed classes written through the existing class API keep today's class check
 - [x] T002 Number rule: `default` is required when `min` or `max` is set; an unset bound is open; a fixed size is `min == max == default`
 - [x] T003 `governs.existingVMs` is required on a governing class with no parent; in Milestone 2 only the top class sets it and children inherit it
-- [x] T004 Reserved capacity in Milestone 1: `reservedProfile {default, allowed}` on the class, `spec.reservedProfileName` on the VM, filled by mutation like any default and checked against the class's fixed values; `reservedSlots` kept as is (WIKI page 3118085468)
+- [x] T004 Reserved capacity in Milestone 1: `reservedProfileName {default, allowed, required}` (`EnumPolicy`, not `ListPolicy`, because the VM value is one name) on the class, `spec.reservedProfileName` on the VM, filled by mutation like any default; omission inherits the default, `""` selects no profile, `required: true` rejects empty after defaulting; names must resolve to a `VirtualMachineReservedProfile`, and `allowed` is required when `default` is set (WIKI page 3118085468)
+- [x] T007 Conversion of reserved profiles: `reservedProfileID: X` ↔ `{default: X, allowed: [X], required: true}`; down = `default`; up resets to `{Y, [Y], required: true}` when the ID differs from the annotation's default, otherwise restores the annotation. `reservedProfileName` is authoritative; `reservedProfileID` is kept only for conversion and the v1 vAPI
+- [x] T008 A VM with a selected profile, class-backed or classless, must match the profile's shape after defaulting: CPU count, CPU and memory reservation and limit, device identities and quantities; overhead is not compared. A resize past the profile is rejected at admission
+- [x] T009 `reservedProfileName` is class-supplied on a class-backed VM (inline-edit rule); it can't change from one set value to another while powered on; vm-operator's unset-to-set backfill is exempt. A class change of a reserved VM is allowed only while powered off (per T018)
+- [x] T009a Class change is allowed when `VMResize` or `VMResizeCPUMemory` is on, with no annotation: class-supplied fields are replaced from the new class, fields it doesn't set are cleared and re-defaulted, and the extraConfig profile ID is written or removed from the VM field
+- [x] T009b Class edits: the v1 vAPI keeps today's block on update and delete while any Supervisor has capacity for the class; the v2 path rejects only changes that alter an allocated profile's shape or invalidate the class's default VM (the exact field boundary is a test deliverable of T303a)
+- [x] T009c `reservedSlots` stays `int32` with the same name and meaning, deprecated, preserved through conversion and the namespace copy including zero, never overwritten with observed totals; no annotation migration
+- [x] T009d `VirtualMachineReservedProfile` moves out of vm-operator's API to the wcpsvc zone controller, which reconciles it from vCenter and backfills existing allocations; vm-operator only reads it (T103a, T315)
+- [x] T009e Devices are one `ListPolicy` over the VM's inline vGPU and DirectPath I/O devices; `SetPolicy`, independent count bounds and required entries are deferred
 - [x] T005 The environment-browser demand gate is dropped; the CRDs are restricted to admins instead (T107)
 - [x] T006 `configSpec` keeps its name
 - [ ] T010 Decide who rejects an association zone outside the namespace or the class. Blocks T305 (decided so far: the class in `vmware-system-vmop` carries `spec.zones` and `governs.zones`, the association only narrows them, and `status.zones` covers `spec.zones`)
 - [ ] T011 Decide the hardware version shape: a range with a default, its path, and whether a VM below the minimum is upgraded or rejected. Blocks T103 for that field
 - [ ] T012 Confirm with its owners that the zone's unreserved-DirectPath setting applies to classless VMs and non-reserved classes with devices (working assumption: it does). Affects only T202's reason for that case
-- [ ] T013 Decide whether set is its own value shape or a form of list. Blocks T104 for `SetPolicy`
-- [ ] T014 Reserved capacity follow-ups: RP5 (may `reservedProfileName` change while powered off), RP3, RP8, RC3, RC6, and whether anything outside vm-operator reads `reservedSlots`. RP5 affects T408
+- [ ] T014 Reserved capacity follow-ups: RP3, RP8, RC3 (profile naming across Supervisors and VCFA), and whether anything outside vm-operator reads `reservedSlots`
+- [ ] T018 Ask DRS whether a changed or removed profile ID on reconfigure is honored without a vpxd reload, and what happens to a powered-on VM's slot after a resize. Affects T408 (class change of a reserved VM while powered on)
+- [ ] T019 Decide whether an explicit `""` means "no value" for every enum field, as for `reservedProfileName`. Affects T104 and T400
 - [ ] T015 Get wcp-namespace-operator's sign-off on vAPI page §6.2, and the Supervisor team's decision on default classes (vAPI page O12)
-- [ ] T016 Run the `configSpec` usage survey and choose which leftover fields to elevate first
 - [ ] T017 Design the vpxd config field drift check. Blocks T310
 
 ---
@@ -35,7 +43,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Flex VM Classes capability (vmop-4313)
 
-- [ ] T100 [US12] [vmop-4313] Add the Flex VM Classes capability and gate every new behavior on it — `pkg/config/capabilities`, `pkg/config`
+- [ ] T100 [US12] [vmop-4313] Add the Flex VM Classes capability and gate every new behavior on it; while it is off, class writes with ranges or `governs` are rejected; toggling it on or off takes effect without a restart (test both directions) — `pkg/config/capabilities`, `pkg/config`
 
 ### Story — Quarantined capability pipeline (vmop-4314)
 
@@ -44,13 +52,14 @@ Each open item changes the shape of an API or a check. A task that depends on on
 ### Story — VM Class v1alpha6 schema (vmop-4315)
 
 - [ ] T102 [US1/US9] [vmop-4315] Wire the round-trip annotation into the `VirtualMachineClass` conversion functions before the rest of the schema lands — `api/utilconversion`, `api/v1alpha*/virtualmachineclass_conversion.go`
-- [ ] T103 [US1/US2/US10] [vmop-4315] Reshape `VirtualMachineClass` v1alpha6 in place: `resources` (size, requests, limits), `cpuAdvanced`, `memoryAdvanced`, `bootOptions`, `advanced` (incl. `extraConfig`), `hardware.devices`, `hardware.instanceStorage`, the hardware version (per T011), leftover-only `configSpec`, `zones`, `governs` (`zones`, `enforcement`, `existingVMs`), `externalID`, `reservedProfile`, `parentClassRefs` (reserved, rejected in Milestone 1), `status.zones[]`, the schema-version label — `api/v1alpha6/virtualmachineclass_types.go`
-- [ ] T104 [P] [US1] [vmop-4315] The value types (number range, `EnumPolicy`, `BoolPolicy`, `ListPolicy` with the device form, `SetPolicy` per T013) and their CEL rules, with envtest coverage of every rule — `api/v1alpha6/`
+- [ ] T103 [US1/US2/US10] [vmop-4315] Reshape `VirtualMachineClass` v1alpha6 in place: `resources` (size, requests, limits), `cpuAdvanced`, `memoryAdvanced`, `bootOptions`, `advanced` (incl. `extraConfig`), `hardware.devices`, `hardware.instanceStorage`, the hardware version (per T011), leftover-only `configSpec`, `zones`, `governs` (`zones`, `enforcement`, `existingVMs`), `externalID`, `reservedProfileName`, `parentClassRefs` (reserved, rejected in Milestone 1), `status.zones[]`, the schema-version label — `api/v1alpha6/virtualmachineclass_types.go`
+- [ ] T103a [US10] [vmop-4315] Remove `VirtualMachineReservedProfile` from the vm-operator API and its CRD, and add read-only RBAC for it — `api/v1alpha6/`, `config/crd/`, `config/rbac`
+- [ ] T104 [P] [US1/US2] [vmop-4315] The value types (number range, `EnumPolicy` with `required`, `BoolPolicy`, `ListPolicy` with the device form) and their CEL rules, including `governs.zones` ⊆ `spec.zones`, with envtest coverage of every rule — `api/v1alpha6/`
 - [ ] T105 [vmop-4315] `make generate-go generate-manifests`; commit generated files
 
 ### Story — VM Class upgrade and conversion (vmop-4316)
 
-- [ ] T106 [US1/US9/US10] [vmop-4316] Conversion v1alpha5 and older ↔ v1alpha6: scalars to complete ranges, `hardware.{cpus,memory}` to `resources.size`, `policies.resources` to `resources.requests/limits`, elevated `configSpec` paths moved to typed fields, `externalID` = name, `reservedProfileID: X` ↔ `reservedProfile: {default: X, allowed: [X]}` (including the v1alpha1 path wcpsvc writes through) — `api/v1alpha5/virtualmachineclass_conversion.go`, older versions
+- [ ] T106 [US1/US9/US10] [vmop-4316] Conversion v1alpha5 and older ↔ v1alpha6: scalars to complete ranges, `hardware.{cpus,memory}` to `resources.size`, `policies.resources` to `resources.requests/limits`, elevated `configSpec` paths moved to typed fields, `externalID` = name, reserved profiles per T007 (including the v1alpha1 path wcpsvc writes through), `reservedSlots` preserved including zero. Round-trip test including a multi-entry `allowed` and a changed `reservedProfileID` — `api/v1alpha5/virtualmachineclass_conversion.go`, older versions
 - [ ] T106a [US9] [vmop-4316] Three-state zone test: unset, `[]` and a list survive JSON, conversion, `CreateOrUpdate` and back — envtest
 - [ ] T106b [US1] [vmop-4316] E2E: an existing class and its VMs behave as before after upgrade
 
@@ -58,12 +67,12 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 - [ ] T108 [P] [US3/US6/US10] [vmop-4317] VM API: `spec.reservedProfileName`, `status.governingClassNames`, the `GovernanceCompliant` condition, and the observed fields (firmware, change block tracking, CPU `reservationLockedToMax`, NUMA fixed auto-affinity, SEV, SEV-SNP, TDX, CPU hot-remove, SMC, DirectPath I/O devices) — `api/v1alpha6/virtualmachine_types.go`
 - [ ] T109 [P] [US2] [vmop-4317] `Zone.status.governingClasses` — `external/tanzu-topology/api/v1alpha1/zone.go`; `make generate-external-manifests`
-- [ ] T110 [US10] [vmop-4317] Schema upgrade fills `spec.reservedProfileName` on existing VMs from their class's `reservedProfileID` — `pkg/vmopv1util` schema-upgrade step
+- [ ] T110 [US10] [vmop-4317] Schema upgrade fills `spec.reservedProfileName` on existing VMs from their class's `reservedProfileName.default`; this unset-to-set write is exempt from the powered-on lock — `pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go`
 
 ### Story — Remove VirtualMachineConfigPolicy (vmop-4318)
 
 - [ ] T111 [P] [US11] [vmop-4318] Remove the `Zone` controller's policy fan-out and its tests — `controllers/infra/zone/zone_controller.go`, `zone_controller_test.go`
-- [ ] T112 [P] [US11] [vmop-4318] Remove the policy types and CRD — `external/vim/api/v1alpha1/virtualmachine_config_policy_types.go`, `config/crd/external-crds/`, the embedded CRD list
+- [ ] T112 [P] [US11] [vmop-4318] Remove the policy types, CRD and feature flag — `external/vim/api/v1alpha1/virtualmachine_config_policy_types.go`, `config/crd/external-crds/`, the embedded CRD list, `Features.VirtualMachineConfigPolicy` in `pkg/config`
 - [ ] T113 [P] [US11] [vmop-4318] Remove the `virtualmachineconfigpolicies` RBAC rules — `config/rbac/role.yaml` (from markers)
 - [ ] T114 [US11] [vmop-4318] E2E: remove the policy assertions, keep the environment-browser specs, and assert no policy exists after upgrade — `test/e2e/vmservice/vmservice/configpolicy/`
 
@@ -84,7 +93,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Class hardware compatibility (vmop-4321)
 
-- [ ] T201 [US7] [vmop-4321] Class controller: per-zone `HardwareCompatible` from `ConfigTarget` and the options objects, asynchronous, re-checked as hardware and zones change; never rejects (zones per T010); watch `ConfigTarget` and `Zone` — `controllers/virtualmachineclass`
+- [ ] T201 [US7] [vmop-4321] Class controller: per-zone `HardwareCompatible` from `ConfigTarget` and the options objects, asynchronous, re-checked as hardware and zones change; never rejects (zones per T010); watch `ConfigTarget` and `Zone`. Depends on T115 — `controllers/virtualmachineclass`
 - [ ] T201a [US7] [vmop-4321] E2E: a class with a zone-specific vGPU profile is accepted and reports per-zone `HardwareCompatible`
 
 ### Story — Class resolved limits (vmop-4322)
@@ -94,9 +103,9 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Class governance status (vmop-4323)
 
-- [ ] T203 [US2] [vmop-4323] Class controller: per-zone `WithinGovernance` and `Governing`, re-checked on every reconcile
-- [ ] T204 [US2] [vmop-4323] Zone mirror controller: `Zone.status.governingClasses` from classes; optimistic-lock patch, skip unchanged writes; never read by governance
-- [ ] T205 [vmop-4323] Re-base the `ClassInstance` hash onto typed fields — `controllers/virtualmachineclass`
+- [ ] T203 [US2] [vmop-4323] Class controller: per-zone `WithinGovernance` and `Governing`, re-checked on every reconcile — `controllers/virtualmachineclass`
+- [ ] T204 [US2] [vmop-4323] Zone mirror controller: `Zone.status.governingClasses` from classes; optimistic-lock patch, skip unchanged writes; never read by governance. Depends on T109 — `controllers/infra/zone`
+- [ ] T205 [US4] [vmop-4323] Re-base the `ClassInstance` hash onto typed fields — `controllers/virtualmachineclass`
 - [ ] T205a [US2] [vmop-4323] E2E: narrowing a governing class marks a selectable class `WithinGovernance=False`
 
 ---
@@ -105,14 +114,15 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Class mutating webhook (vmop-4324)
 
-- [ ] T300 [US1/US8] [vmop-4324] Fill complete number ranges, `governs.enforcement: Deny`, and the memory lock on a preset class that attaches devices — `webhooks/virtualmachineclass/mutation`
-- [ ] T300a [US1] [vmop-4324] E2E: a written class reads back with its defaults filled
+- [ ] T300 [US2/US8] [vmop-4324] Fill `governs.enforcement: Deny` and set the memory reservation lock on a preset class that attaches devices; number ranges are not completed — `webhooks/virtualmachineclass/mutation`
+- [ ] T300a [US2/US8] [vmop-4324] E2E: a written governing class reads back with `enforcement: Deny`, and a preset device class with the memory lock set
 
 ### Story — Class validating webhook (vmop-4325)
 
-- [ ] T301 [US1/US2/US9] [vmop-4325] Value-shape rules (T002), elevated `configSpec` paths, `externalID` immutable, `governs.zones` within `spec.zones`, `existingVMs` required (T003), `parentClassRefs` rejected in Milestone 1 — `webhooks/virtualmachineclass/validation`
-- [ ] T302 [US2] [vmop-4325] One governing class per zone; a selectable class must fit inside the zone's governing class, including `advanced.extraConfig.default` against `allowed`/`denied`
-- [ ] T303 [US10] [vmop-4325] A class that lists reserved profiles fixes the profile's fields (`min == max` on vCPU, CPU reservation = limit, memory size, reservation = limit, devices)
+- [ ] T301 [US1/US2/US9/US12] [vmop-4325] Value-shape rules (T002) not covered by CEL, elevated `configSpec` paths, `externalID` immutable, `existingVMs` required (T003), `parentClassRefs` rejected in Milestone 1, ranges and `governs` rejected while the capability is off — `webhooks/virtualmachineclass/validation`
+- [ ] T302 [US2] [vmop-4325] One governing class per zone; a selectable class must fit inside the zone's governing class, including `advanced.extraConfig.default` against `allowed`/`denied` — `webhooks/virtualmachineclass/validation`
+- [ ] T303 [US10] [vmop-4325] A class that lists reserved profiles fixes the profile's fields (`min == max` on vCPU, CPU reservation = limit, memory reservation = limit, devices); every name in `reservedProfileName` resolves to a `VirtualMachineReservedProfile` in the namespace; `allowed` is required when `default` is set — `webhooks/virtualmachineclass/validation`
+- [ ] T303a [US10] [vmop-4325] On class update through the v2 path, reject only changes that alter an allocated profile's shape or make the class's default VM invalid for it; tests pin the exact field boundary (T009b) — `webhooks/virtualmachineclass/validation`
 - [ ] T304 [US9] [vmop-4325] Sticky v2 writes: reject a write through a CRD version older than the class's last-writer label
 - [ ] T305 [US9] [vmop-4325] Namespace-copy checks: the zones belong to the namespace; zones with reserved capacity are included (per T010)
 - [ ] T306 [US2/US9] [vmop-4325] E2E: a second governing class for a zone and a selectable class outside the ceiling are rejected; a v1 write to a v2 class is rejected
@@ -135,7 +145,11 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — wcpsvc class API changes (vmop-4328)
 
-- [ ] T312 [P] [US9] [vmop-4328] The v1 class API fans out to every Supervisor, rejects edits to classes last written through v2, and the namespace API carries per-class zones
+- [ ] T312 [P] [US9/US10] [vmop-4328] The v1 class API fans out to every Supervisor, rejects edits to classes last written through v2, keeps today's update and delete block while any Supervisor has capacity for the class, and the namespace API carries per-class zones; wcpsvc's profile manager builds the configSpec for a flex class from its resolved defaults before extracting the profile
+
+### Story — Zone controller reserved profile writer (vmop-TBD)
+
+- [ ] T315 [P] [US10] [vmop-TBD] The wcpsvc zone controller owns `VirtualMachineReservedProfile`: reconcile each profile's shape and per-zone counts from vCenter, and backfill existing allocations before VM admission relies on it. An unknown profile is a clear failure, with no fallback. Blocks vmop-4334
 
 ### Story — Supervisor and nsop integration (vmop-4329)
 
@@ -148,9 +162,9 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — VM defaults from classes (vmop-4330)
 
-- [ ] T400 [US4/US3/US10] [vmop-4330] VM mutating webhook: on create and on `className` change, write the class's values into the VM spec; for unset governed fields use the image value or the governing default; fill `reservedProfileName` from the class default — `webhooks/virtualmachine/mutation`
-- [ ] T401 [US4] [vmop-4330] VM reconciler: rewrite class-supplied fields for VMs with the same-class resize annotation, with an optimistic-lock patch — `pkg/providers/vsphere`
-- [ ] T402 [US1/US4] [vmop-4330] E2E: a VM that names a ranged class gets its defaults; a classless VM gets the governing defaults
+- [ ] T400 [US4/US3/US10] [vmop-4330] VM mutating webhook: on create and on `className` change (when `VMResize` or `VMResizeCPUMemory` is on, no annotation), write the class's values into the VM spec, clearing and re-defaulting fields the new class doesn't set; for unset governed fields use the image value or the governing default; fill `reservedProfileName` from the class default (omission inherits, `""` = none, per T019 for other enums) — `webhooks/virtualmachine/mutation`
+- [ ] T401 [US4] [vmop-4330] VM reconciler: rewrite class-supplied fields for VMs with the same-class resize annotation, as a spec patch with an optimistic lock separate from the deferred patch helper — `pkg/providers/vsphere`
+- [ ] T402 [US1/US4] [vmop-4330] E2E: a VM that names a ranged class gets its defaults; a classless VM gets the governing defaults; a class change replaces and re-defaults the class-supplied fields
 
 ### Story — VM governance validation (vmop-4331)
 
@@ -159,19 +173,22 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Device memory reservation (vmop-4332)
 
-- [ ] T405 [US8] [vmop-4332] VM validating webhook: memory fully reserved when the effective configuration has a vGPU or DirectPath I/O device (create, and spec changes while attached; not metadata, status or vm-operator writes)
+- [ ] T405 [US8] [vmop-4332] VM validating webhook: memory fully reserved when the effective configuration has a vGPU or DirectPath I/O device (create, and spec changes while attached; not metadata, status or vm-operator writes) — `webhooks/virtualmachine/validation`
 - [ ] T406 [US8] [vmop-4332] E2E: a device VM without full reservation is rejected; a VM of a fixed v1 class is unaffected
 
 ### Story — Zone selection rule (vmop-4333)
 
-- [ ] T407 [US5/US7] [vmop-4333] VM validating webhook: require `spec.zone` when the possible zones don't all have the same governing class, naming the zones and their classes; reject a VM in a zone where its class is `HardwareCompatible=False`, with that zone's reason
+- [ ] T407 [US5/US7] [vmop-4333] VM validating webhook: require `spec.zone` when the possible zones don't all have the same governing class, naming the zones and their classes; reject a VM in a zone where its class is `HardwareCompatible=False`, with that zone's reason. Depends on T201 — `webhooks/virtualmachine/validation`
 - [ ] T407a [US5/US7] [vmop-4333] E2E: a VM without a zone is rejected when its zones are governed differently, and a VM in an incompatible zone is rejected
 
 ### Story — Reserved capacity (vmop-4334)
 
-- [ ] T408 [US10] [vmop-4334] VM validating webhook: `reservedProfileName` must be in the class's (or governing class's) `allowed`; the profile's fields must equal the class's fixed values; the name can't change while the VM is powered on (per T014)
-- [ ] T409 [US10] [vmop-4334] Write the extraConfig profile ID from `spec.reservedProfileName` instead of the class — `pkg/providers/vsphere/virtualmachine/configspec.go`
-- [ ] T410 [US10] [vmop-4334] E2E: a VM of a reserved class keeps its reservation after upgrade; a VM whose shape differs from its profile is rejected
+Depends on the reserved profile writer (vmop-TBD, T315).
+
+- [ ] T408 [US10] [vmop-4334] VM validating webhook: `reservedProfileName` must be in the class's (or governing class's) `allowed`; after defaulting, every VM with a selected profile must match the `VirtualMachineReservedProfile` shape (T008), naming the field and the profile; a resize past the profile is rejected; inline edits on a class-backed VM are rejected; a set value can't change to another while powered on, unset-to-set by vm-operator is allowed; a class change of a reserved VM only while powered off (per T018) — `webhooks/virtualmachine/validation`
+- [ ] T409 [US10] [vmop-4334] Write the extraConfig profile ID from `spec.reservedProfileName`, falling back to the class while the VM field is unset, and remove the key when the field is empty (fixes the stale `resourcepool.vmResourceProfileId` after moving to an unreserved class). Runs after T110 — `pkg/providers/vsphere/virtualmachine/configspec.go`
+- [ ] T411 [US10] [vmop-4334] Move the class controller's `ReservedProfileID` reader to `reservedProfileName` — `controllers/virtualmachineclass/virtualmachineclass_controller.go`
+- [ ] T410 [US10] [vmop-4334] E2E: a VM of a reserved class keeps its reservation after upgrade; a VM whose shape differs from its profile is rejected; a VM moved to an unreserved class loses the profile ID
 
 ---
 
@@ -179,8 +196,8 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — VM governance compliance (vmop-4335)
 
-- [ ] T500 [US6] [vmop-4335] VM reconciler: re-run the governance check once the zone is known, set `GovernanceCompliant` and `status.governingClassNames`, withhold power-on for `DenyPowerOn`; never change power state itself; populate the observed status fields — `pkg/providers/vsphere`
-- [ ] T501 [US6] [vmop-4335] VM validating webhook: reject a user-requested power-on of a non-compliant VM under `DenyPowerOn`
+- [ ] T500 [US6] [vmop-4335] VM reconciler: re-run the governance check once the zone is known, set `GovernanceCompliant` and `status.governingClassNames`, withhold power-on for `DenyPowerOn`; never change power state itself; populate the observed status fields — `pkg/providers/vsphere`, `controllers/virtualmachine`
+- [ ] T501 [US6] [vmop-4335] VM validating webhook: reject a user-requested power-on of a non-compliant VM under `DenyPowerOn` — `webhooks/virtualmachine/validation`
 - [ ] T502 [US6] [vmop-4335] E2E: `AllowOnViolation` and `DenyPowerOn` after a governing class is narrowed; deleting the governing class reports `NoGoverningClass`
 
 ### Story — Governance-aware placement (vmop-4336)

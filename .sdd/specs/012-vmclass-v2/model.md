@@ -14,11 +14,12 @@ Every governable field has one shape. Each shape is a concrete, named Go struct 
 | Shape | Fields | Rules |
 |---|---|---|
 | Number (`Range`) | `min`, `max`, `default` | `default` is required when `min` or `max` is set, and must be within them. An unset bound is open: limited by the hardware, or by a parent class in Milestone 2. A fixed value is `min == max == default`. A wholly absent struct leaves the value to vpxd. |
-| `EnumPolicy` | `allowed`, `default` | Unset `allowed` = all values; `[]` = none. `default` is required when `allowed` has more than one value; with one value, that value is the default. A set `default` must be in `allowed`. |
+| `EnumPolicy` | `allowed`, `default`, `required` | Unset `allowed` = all values; `[]` = none. `default` is required when `allowed` has more than one value; with one value, that value is the default. A set `default` must be in `allowed`. A VM that omits the field inherits `default`; an explicit `""` means no value; `required: true` rejects an empty value after defaulting. [NEEDS CLARIFICATION: whether `""` means "no value" for every enum field or only for `reservedProfileName`.] |
 | `BoolPolicy` | `allowOverride`, `default` | `allowOverride: false` fixes the value and needs a `default`. Otherwise an unset `default` leaves the value to vpxd. |
 | `ListPolicy` | `default`, `allowed`, `denied` | `default` is filled into the VM at admission; the VM may add or remove items within `allowed` and `denied`. Matchers are `{type, value}` with `type` one of `Fixed`, `Regex`, `Glob`. `denied` wins. `allowed` only is closed; `denied` only is open. A class can't require an item. |
-| Device `ListPolicy` | as `ListPolicy`, plus `count` per default item and a `count` range on the total | Dynamic DirectPath I/O matches `{vendorID, deviceID}`. |
-| `SetPolicy` | `default`, `allowed` | For a list taken as one value (`pnumaNodeAffinity`, `cpuFeatureMask`); the VM's set must be a subset of `allowed`. [NEEDS CLARIFICATION: whether set stays its own shape or becomes a form of list.] |
+| Device `ListPolicy` | as `ListPolicy`, plus `count` per default item | One `ListPolicy` over the VM spec's inline vGPU and DirectPath I/O devices. Dynamic DirectPath I/O matches `{vendorID, deviceID}`. Independent count bounds and required entries are deferred. |
+
+A separate `SetPolicy` shape is deferred; lists taken as one value (`pnumaNodeAffinity`, `cpuFeatureMask`) are not governed in Milestone 1.
 
 ## `VirtualMachineClass.spec`
 
@@ -40,8 +41,9 @@ Every governable field has one shape. Each shape is a concrete, named Go struct 
 | `hardware.*` | per field | Settings that aren't in the VM spec but are exposed or checked. |
 | hardware version | Number | [NEEDS CLARIFICATION: shape, path, and upgrade or reject below the minimum.] |
 | `hardware.instanceStorage` | as today | Preset only. |
-| `reservedProfile` | `EnumPolicy` of profile names | See "Reserved capacity". |
-| `reservedProfileID`, `reservedSlots` | string, int32 | Kept for conversion and the v1 vAPI; written by wcpsvc. `reservedSlots` is the namespace's requested slot count summed across zones, for information only. |
+| `reservedProfileName` | `EnumPolicy` of profile names | Same path as the VM's `spec.reservedProfileName`. Every name must resolve to a `VirtualMachineReservedProfile` in the namespace. Unset `allowed` is not "all profiles": `allowed` is required when `default` is set. See "Reserved capacity". |
+| `reservedProfileID` | string | Kept only for conversion and the v1 vAPI; `reservedProfileName` is authoritative. |
+| `reservedSlots` | int32 | Deprecated. Same name and meaning as today: the namespace's desired slot total across zones. Preserved through conversion and the namespace copy, including zero; never overwritten with observed totals. |
 | `configSpec` | `VirtualMachineConfigSpec` | Pass-through settings with no typed field; presets only, never governance. An elevated path is moved for older writers and rejected for v1alpha6 writers. Only the top class of a chain may set it. |
 
 Label: the schema-version label records the last CRD version that wrote the class. A write through an older version is rejected once a newer one has written it. The vAPI shows it as read-only `schemaVersion`.
@@ -59,7 +61,7 @@ Label: the schema-version label records the last CRD version that wrote the clas
 
 | Field | Rules |
 |---|---|
-| `spec.reservedProfileName` | Filled by the mutation webhook from the class's `reservedProfile.default` (or the governing class's), like any other default. Must be in `allowed`. Can't change while the VM is powered on. When set, the VM's CPU count, CPU reservation and limit, memory size, reservation and limit, and devices must equal the profile's. vm-operator writes the vCenter profile ID from this field. |
+| `spec.reservedProfileName` | string. Filled by the mutation webhook from the class's `reservedProfileName.default` (or the governing class's), like any other default; explicit `""` = no profile. Must be in `allowed`. On a class-backed VM it is class-supplied and can't be edited inline; a classless VM sets or inherits it. Can't change from one set value to another while the VM is powered on; vm-operator may set it from unset (schema upgrade). When set, the VM's CPU count, CPU reservation and limit, memory reservation and limit, and device identities and quantities must equal the profile's; overhead is not compared. vm-operator writes the vCenter profile ID from this field and removes it when the field is empty. |
 | `status.governingClassNames` | The classes governing the VM's zone, computed live. |
 | `conditions[GovernanceCompliant]` | `True`/`False`; reason `NoGoverningClass` when the zone has none (False for classless VMs, True for class-backed VMs). |
 | observed status fields | firmware, change block tracking, CPU `reservationLockedToMax`, NUMA fixed auto-affinity, SEV, SEV-SNP, TDX, CPU hot-remove, SMC, DirectPath I/O devices. |
@@ -74,8 +76,10 @@ Label: the schema-version label records the last CRD version that wrote the clas
 
 A reserved profile is a vCenter object that holds one VM shape: vCPU count, CPU reservation and limit (equal), memory reservation and limit (equal), and DirectPath profiles. vCenter DRS places slots of a profile on hosts, gives a powered-on VM that names the profile a free slot, and takes it back at power-off. vm-operator never enforces slot counts.
 
-- In Milestone 1 a class that lists profiles fixes the profile's fields (`min == max`), so checking a VM against the class's fixed values is the same as checking it against the profile.
-- `VirtualMachineReservedProfile` is unchanged in Milestone 1. Later, it can carry the profile's shape and per-zone reserved and used counts, derived from vCenter, without a breaking change.
+- `VirtualMachineReservedProfile` is not a vm-operator API type. It is owned by the wcpsvc zone controller, which reconciles each profile's shape and per-zone counts from vCenter and backfills existing allocations. vm-operator only reads it (read RBAC), as it reads the environment-browser objects. A profile name that doesn't resolve is a clear admission failure, with no fallback.
+- In Milestone 1 a class that lists profiles fixes the profile's fields (`min == max`).
+- A VM with a selected profile must match the profile's shape after defaulting, whether or not it names a class. A resize past the profile is rejected at admission.
+- Class edits through the v2 path are rejected only when they change an allocated profile's shape or make the class's default VM invalid for it. The v1 vAPI keeps today's block on update and delete while any Supervisor has capacity for the class.
 
 ## Conversion
 
@@ -86,7 +90,10 @@ A reserved profile is a vCenter object that holds one VM shape: vCPU count, CPU 
 | `policies.resources.{requests,limits}` | `resources.{requests,limits}` |
 | `configSpec` path that has a typed field | that typed field |
 | (none) | `externalID` = name; `zones` unset |
-| `reservedProfileID: X` | `reservedProfile: {default: X, allowed: [X]}` (and back) |
+| `reservedProfileID: X` | `reservedProfileName: {default: X, allowed: [X], required: true}` |
+| `reservedSlots` | `reservedSlots`, unchanged, including zero |
+
+Back to v1alpha5, `reservedProfileID` = `reservedProfileName.default`. Up again, if `reservedProfileID` differs from the default stored in the conversion annotation (an older-API writer such as wcpsvc changed it), the field is reset to `{default: Y, allowed: [Y], required: true}`; otherwise it is restored from the annotation.
 
 Fields with no v1alpha5 home round-trip through the conversion annotation.
 
@@ -124,9 +131,10 @@ A reserved GPU class:
 
 ```yaml
 spec:
-  reservedProfile:
+  reservedProfileName:
     default: gpu-large
     allowed: [gpu-large]
+    required: true
   resources:
     size:
       cpu: {min: 8, max: 8, default: 8}

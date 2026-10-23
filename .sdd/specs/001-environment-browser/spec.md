@@ -1,13 +1,14 @@
-# Feature Specification: VM Service Class Policy and Resize — Policy + Environment Browser Pipeline
+# Feature Specification: Environment Browser
 
 - **Feature branch**: [`feature/vm-config-options-api`](https://github.com/akutz/vm-operator/tree/feature/vm-config-options-api/)
   - **Fork**: `akutz/vm-operator`
   - **PR target**: `vmware-tanzu/vm-operator`
 - **Created**: 2026-05-13
-- **Status**: In Progress (Architecture phase; code not yet started)
+- **Status**: In Progress
 - **Epic**: vmop-3331
 - **Wiki parent**: VM Service: Class Policy and Resize
 - **Spike (done)**: vmop-3470
+- **Scope update (vmop-4318)**: `VirtualMachineConfigPolicy` and its admission enforcement are superseded by Flex VM Classes (`VirtualMachineClass` v2, vmop-4034; specification proposed in PR #2067). This spec covers environment-browser discovery and hardware feasibility; the class spec owns governance, ranges, ExtraConfig rules, and create/update/power-on enforcement. Policy removal (vmop-4318) is independent of the class spec and environment-browser completion (vmop-4319).
 
 ---
 
@@ -17,8 +18,7 @@ Introduce a Kubernetes-native pipeline that:
 
 1. Queries each vSphere cluster's `EnvironmentBrowser` for cluster-scope data and walks the cluster's ESX hosts for the per-host fields (max default hardware version, SR-IOV NICs with DVX details) that `QueryConfigTarget` does not return at cluster scope.
 2. Materializes that discovery as a set of cluster-scoped CRDs: `ConfigTarget`, `VirtualMachineConfigOptions`, and `VirtualMachineGuestOptions`. There is no per-host CRD; all per-host data is aggregated onto `ConfigTarget.status`.
-3. Allows tenant admins to define a `VirtualMachineConfigPolicy` that governs what hardware and ExtraConfig a VM may request in their namespace.
-4. Enforces the policy at admission time in the VM webhook, including hardware-version feasibility checks via `ConfigTarget.status.maxHardwareVersion`.
+3. Checks hardware-version feasibility at VM admission via `ConfigTarget.status.maxHardwareVersion` (remaining admission work is tracked separately).
 
 The whole pipeline is gated behind a single capability/feature switch.
 
@@ -36,12 +36,9 @@ Zone (existing)
   │                  │
   │                  └─per HW version─▶ VirtualMachineConfigOptions (cluster-scoped)
   │                                        └─per guest OS─▶ VirtualMachineGuestOptions (cluster-scoped)
-  │
-  └─per zone─▶ VirtualMachineConfigPolicy (namespace-scoped, tenant namespace)
-                   └─spec sync (when syncMode=ConfigTarget)─▶ reads ConfigTarget.status
 ```
 
-The VM admission webhook reads the namespace's `VirtualMachineConfigPolicy` and the cluster's `ConfigTarget.status` (in particular `maxHardwareVersion` and `sriov`) to enforce the policy and hardware-version feasibility at admission time. 
+Hardware-feasibility admission reads the cluster's `ConfigTarget.status` (in particular `maxHardwareVersion` and `sriov`). VM Class governance consumes the same discovery objects under its separate spec.
 
 ---
 
@@ -70,7 +67,7 @@ A CSP admin creates a `Zone` on a Supervisor. Without any further action, the sy
 
 A CSP admin or an admission webhook needs to know the hardware capabilities of a zone's cluster from a single object lookup — no per-host fan-out, no list-and-label match.
 
-**Why P1**: This is the basis for the webhook capability check in US5 and for the policy-sync work in US3.
+**Why P1**: This is the basis for the webhook capability check in US5 and for per-zone hardware compatibility in the Flex VM Classes spec.
 
 **Independent test**: After the pipeline stabilises, `kubectl get configtarget <clusterMoID> -o yaml` shows `status.maxHardwareVersion` populated and `status.sriov` containing one entry per (host, SR-IOV NIC) pair, with `hostMoID` attribution and DVX class fields filled where applicable.
 
@@ -79,23 +76,6 @@ A CSP admin or an admission webhook needs to know the hardware capabilities of a
 1. **Given** the cluster's hosts default to `vmx-21`, `vmx-22`, and `vmx-23`, **when** the ConfigTarget controller reconciles, **then** `ConfigTarget.status.maxHardwareVersion = vmx-23`.
 2. **Given** a host's `config.defaultHardwareVersion` changes in vSphere, **when** the next ConfigTarget reconcile completes, **then** `ConfigTarget.status.maxHardwareVersion` is recomputed and reflects the new max.
 3. **Given** a host is removed from the cluster, **when** the next ConfigTarget reconcile completes, **then** its SR-IOV entries are gone from `ConfigTarget.status.sriov` and any reduction in `maxHardwareVersion` is reflected.
-
----
-
-### US3 — Tenant admin: per-namespace hardware policy (Priority: P1)
-
-A tenant admin can declare what hardware features (CPU/memory limits, ExtraConfig keys, hardware versions) are allowed in their namespace by editing a `VirtualMachineConfigPolicy`.
-
-**Why P1**: This is the primary product deliverable for the "Class Policy" in the epic name.
-
-**Independent test**: A `VirtualMachineConfigPolicy` exists in a namespace, its `spec.syncMode=ConfigTarget` causes its fields to mirror the namespace's cluster capabilities, and changes to the `ConfigTarget` are reflected within one reconcile.
-
-**Acceptance scenarios**:
-
-1. **Given** a `Zone` is created, **when** the Zone controller reconciles, **then** a `VirtualMachineConfigPolicy` with `spec.zone = <zone name>` is created in the zone's namespace with `spec.syncMode = ConfigTarget` by default.
-2. **Given** a policy with `syncMode=ConfigTarget`, **when** the ConfigTarget's status is updated with new hardware limits, **then** the policy's `spec` reflects those limits after the next reconcile.
-3. **Given** a policy with `syncMode=Disabled`, **when** the ConfigTarget's status changes, **then** the policy's `spec` is unchanged.
-4. **Given** a policy with a non-empty `spec.extraConfig.denied` list, **when** a VM is created with an ExtraConfig key matching a `Denied` entry, **then** admission is rejected with a descriptive error.
 
 ---
 
@@ -116,44 +96,47 @@ When a hardware version is dropped from a cluster's supported list, or when an E
 
 ---
 
-### US5 — DevOps user: VM admission reflects namespace policy and host capabilities (Priority: P1)
+### US5 — DevOps user: VM admission reflects host capabilities (Priority: P1)
 
-A DevOps user creating or updating a VM receives a clear, actionable rejection if the requested hardware or ExtraConfig violates the namespace policy or exceeds what the zone's hosts support.
-
-**Why P1**: This is the "enforce" half of the policy pipeline.
-
-**Independent test**: Creating a VM with an ExtraConfig key in the policy's `Denied` list, or requesting a hardware version no host supports, is rejected with a reason that references the specific policy field or the cluster's `ConfigTarget.status.maxHardwareVersion`.
+A VM requesting a hardware version unavailable in its zone is rejected with an actionable reason. This hardware-feasibility work remains separate from vmop-4318.
 
 **Acceptance scenarios**:
 
-1. **Given** `VirtualMachineConfigPolicy.spec.createMode = Deny`, **when** a DevOps user creates a VM that exceeds a limit, **then** the webhook rejects it.
-2. **Given** `spec.extraConfig.denied = [{type: Glob, key: "guestinfo.*"}]`, **when** a VM is created with `extraConfig["guestinfo.foo"] = bar`, **then** admission fails.
-3. **Given** `spec.extraConfig.allowed` is non-empty and a VM ExtraConfig key matches none of the allowed entries, **when** that VM is admitted, **then** the webhook rejects it.
-4. **Given** `spec.vmClassMode = AsPolicy` (default), **when** a VM is deployed from a VM Class, **then** the VM Class configuration bypasses the policy (preserves pre-9.1 behaviour).
-5. **Given** `spec.vmClassMode = AsConfig`, **when** a VM is deployed from a VM Class, **then** the policy applies to the class-derived config identically to direct config.
-6. **Given** the cluster's `ConfigTarget.status.maxHardwareVersion = vmx-21`, **when** a VM requests features requiring `vmx-23`, **then** the webhook rejects the request with a reason citing the maximum available hardware version.
+1. **Given** the cluster's `ConfigTarget.status.maxHardwareVersion = vmx-21`, **when** a VM requests features requiring `vmx-23`, **then** admission rejects the request with the maximum available hardware version.
+2. **Given** the cluster's `ConfigTarget` is missing or not ready, **when** feasibility is checked, **then** admission fails closed.
 
 ---
 
 ### US6 — Platform engineer: the pipeline is opt-in per Supervisor (Priority: P2)
 
-A Supervisor can be brought up or upgraded without enabling the policy pipeline; enabling or disabling the feature leaves the cluster in a clean state.
+A Supervisor can be brought up or upgraded without enabling the environment-browser pipeline; enabling or disabling the feature leaves the cluster in a clean state.
 
 **Why P2**: Operational safety; allows phased rollout.
 
 **Acceptance scenarios**:
 
-1. **Given** the capability `CapabilityVirtualMachineConfigPolicy` (`"supports_vm_config_policy"`) is `false`, **when** a `Zone` reconciles, **then** no `ConfigTarget` or `VirtualMachineConfigPolicy` objects are created.
-2. **Given** the capability is disabled, **when** a `VirtualMachine` is admitted, **then** the webhook skips all policy and `ConfigTarget`-based capability checks.
+1. **Given** the capability `CapabilityKeyFlexVMClasses` (`"supports_vm_service_vm_config_policy"`) is `false`, **when** a `Zone` reconciles, **then** no `ConfigTarget` objects are created.
+2. **Given** the capability is disabled, **when** a `VirtualMachine` is admitted, **then** the webhook skips all `ConfigTarget`-based capability checks.
 3. **Given** the capability is re-enabled after being disabled, **when** the first `Zone` reconcile completes, **then** the pipeline restores the full set of objects.
 
 ---
+
+### US7 — Platform admin: restrict environment-browser access (vmop-4319)
+
+Implementation is tracked by vmop-4319, separately from the policy-removal change.
+
+Environment-browser discovery exposes cluster hardware and inventory. Access to `ConfigTarget`, `VirtualMachineConfigOptions`, and `VirtualMachineGuestOptions` is restricted to platform administrators and the service accounts required by the discovery controllers and admission webhooks. Tenant users, including namespace administrators, must not receive access through namespace roles.
+
+**Acceptance scenarios**:
+
+1. **Given** a platform administrator, **when** they get, list, or watch discovery objects, **then** access succeeds.
+2. **Given** a tenant user or namespace administrator, **when** they get, list, or watch any of the three discovery resources, **then** access is forbidden.
+3. **Given** the environment-browser capability is enabled, **when** its controllers and admission webhooks access discovery objects, **then** their service accounts retain the permissions required for normal operation.
 
 ## Edge cases
 
 - `spec.id` on `ConfigTarget` is immutable after create; attempts to mutate it are rejected by the validation webhook.
 - A `Zone` that references a cluster MoID for which vSphere returns no EB result causes the `ConfigTarget` to enter `Ready=False` with reason `ClusterNotFound`; the Zone reconcile is requeued.
-- A `VirtualMachineConfigPolicy` whose `spec.zone` references a non-existent `Zone` surfaces a condition on the policy; it does not block other policies.
 - A user enables a hardware-version-gated feature (e.g., auto-NUMA, auto-placed SR-IOV) on an existing VM whose `spec.minHardwareVersion` is unset and whose placement has not yet converged. Because `spec.minHardwareVersion` cannot be decreased once raised, accepting the edit on an unsupported zone produces a VM that cannot be powered on or reconciled. The exact rejection rule (and the carve-out for "edit-to-fix-stuck-placement") is the subject of Spike vmop-3794; this spec records the edge case and defers the rule to that Spike's output.
 - `PlaceVmsXCluster` is **not** assumed to honor auto-NUMA or auto-placed-SR-IOV compatibility at create time. The admission webhook must make those determinations from K8s objects alone (per Findings 1 and 6 in `research.md`) — specifically from `ConfigTarget.status.maxHardwareVersion` and `ConfigTarget.status.sriov`. See Spike vmop-3794.
 
@@ -161,11 +144,9 @@ A Supervisor can be brought up or upgraded without enabling the policy pipeline;
 
 ## Out of scope
 
-- Schema-level field-by-field rationale for `VirtualMachineConfigPolicy` *(Design doc A3)*.
+- VM governance, hardware ranges, ExtraConfig allow/deny rules, and create/update/power-on enforcement belong to the Flex VM Classes spec (vmop-4034, PR #2067).
 - Sequence diagrams for the per-host iteration *(TDS A4)*.
-- `vmClassMode = AsPolicy` vs `AsConfig` webhook decision tree *(Design A3)*.
-- Auto-deletion of namespace-scoped `VirtualMachineConfigPolicy` when its `Zone` is deleted *(follow-up)*.
-- Automatic resize of running VMs when tenant policy expands *(separate epic)*.
+- Automatic resize of running VMs *(separate epic)*.
 - Telco-specific extra config fields (VMXNET3, latency sensitivity) *(vmop-3388)*.
 - The 9.2 auto-NUMA and auto-placed-SR-IOV admission rules themselves *(open Spike vmop-3794; resulting Stories will land under vmop-3331)*. This spec captures only the edge case and the design constraint that the answer must be derivable from K8s objects.
 
@@ -178,7 +159,5 @@ A Supervisor can be brought up or upgraded without enabling the policy pipeline;
 - [ ] Garbage collection behaviour is specified with a failure mode (transient error → no GC).
 - [ ] Opt-in capability behaviour is specified.
 - [ ] Immutability constraints on `spec.id` are called out.
-- [ ] `vmClassMode` semantics (AsPolicy vs AsConfig) are specified.
-- [ ] ExtraConfig Allow/Deny precedence is stated.
 - [ ] Out-of-scope items are listed.
 - [ ] Open Spike vmop-3794 (`PlaceVmsXCluster` compatibility for auto-NUMA / auto-placed SR-IOV) is referenced from edge cases and out-of-scope; its conclusions will land as a separate spec/plan/tasks update.

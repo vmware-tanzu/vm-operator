@@ -37,7 +37,7 @@ const (
 // prefix has been stable across vSphere releases, is how the Zone
 // controller derives ConfigTarget's name (controllers/infra/zone), and is
 // required by this webhook's task spec
-// (.sdd/specs/001-class-policy-resize/tasks.md, T060).
+// (.sdd/specs/001-environment-browser/tasks.md, T060).
 var clusterMoIDPattern = regexp.MustCompile(`^domain-c[0-9]+$`)
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vim-vmware-com-v1alpha1-configtarget,mutating=false,failurePolicy=fail,groups=vim.vmware.com,resources=configtargets,versions=v1alpha1,name=default.validating.configtarget.v1alpha1.vim.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1

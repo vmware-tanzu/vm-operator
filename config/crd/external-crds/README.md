@@ -18,7 +18,6 @@ These CRDs are referenced by `config/default/kustomization.yaml` and are install
 * `infra.vmware.com_storagepolicies.yaml` — Infrastructure storage policy API
 * `vim.vmware.com_configtargets.yaml` — VIM config target API
 * `vim.vmware.com_virtualmachineconfigoptions.yaml` — VIM VM config options API
-* `vim.vmware.com_virtualmachineconfigpolicies.yaml` — VIM VM config policy API
 * `vim.vmware.com_virtualmachineguestoptions.yaml` — VIM VM guest options API
 
 ## Integration Test CRDs

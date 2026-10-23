@@ -96,10 +96,9 @@ var (
 		"tags.vsphere.policy.vmware.com",
 	}
 
-	externalVIMConfigPolicy = []string{
+	externalEnvironmentBrowser = []string{
 		"configtargets.vim.vmware.com",
 		"virtualmachineconfigoptions.vim.vmware.com",
-		"virtualmachineconfigpolicies.vim.vmware.com",
 		"virtualmachineguestoptions.vim.vmware.com",
 	}
 
@@ -116,7 +115,7 @@ var (
 		externalBYOK,
 		externalVSpherePolicy,
 		externalTagAPI,
-		externalVIMConfigPolicy,
+		externalEnvironmentBrowser,
 		externalVMEviction,
 		externalControlledRebalancing,
 		[]string{storagePoliciesCRD},
@@ -962,16 +961,16 @@ var _ = Describe("Install", func() {
 			})
 		})
 
-		When("VM config policy is enabled", func() {
+		When("the environment browser is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.VirtualMachineConfigPolicy = true
+					config.Features.FlexVMClasses = true
 				})
 			})
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalVIMConfigPolicy)...)
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalEnvironmentBrowser)...)
 			})
 		})
 
@@ -988,7 +987,7 @@ var _ = Describe("Install", func() {
 					config.Features.BringYourOwnEncryptionKey = true
 					config.Features.GuestCustomizationVCDParity = true
 					config.Features.TelcoVMServiceAPI = true
-					config.Features.VirtualMachineConfigPolicy = true
+					config.Features.FlexVMClasses = true
 					config.Features.K8sWorkloadMgmtAPI = true
 					config.Features.TaggingAPI = true
 					config.Features.VMNetworkUnitNumbers = true
@@ -1036,7 +1035,7 @@ var _ = Describe("Install", func() {
 						VMEviction:                  true,
 						ControlledRebalancingPolicy: true,
 						BringYourOwnEncryptionKey:   true,
-						VirtualMachineConfigPolicy:  true,
+						FlexVMClasses:               true,
 						K8sWorkloadMgmtAPI:          true,
 						TaggingAPI:                  true,
 						VMNetworkUnitNumbers:        true,
@@ -1709,7 +1708,7 @@ func featureStates(enabled bool) pkgcfg.FeatureStates {
 			f.SetBool(enabled)
 		}
 	}
-	fs.VirtualMachineConfigPolicy = true
+	fs.FlexVMClasses = true
 	return fs
 }
 

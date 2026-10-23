@@ -318,7 +318,7 @@ var _ = Describe(
 			ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
 			ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.WorkloadDomainIsolation = true
-				config.Features.VirtualMachineConfigPolicy = true
+				config.Features.FlexVMClasses = true
 			})
 			ctx = cource.WithContext(ctx)
 			ctx = watcher.WithContext(ctx)
@@ -395,25 +395,6 @@ var _ = Describe(
 							g.Expect(vcSimCtx.Client.Get(ctx, ctrlclient.ObjectKey{Name: clusterMoID}, &ct)).To(Succeed())
 							g.Expect(ct.Spec.ID.ID).To(Equal(clusterMoID))
 						}
-					}
-				}).WithTimeout(30 * time.Second).Should(Succeed())
-			})
-
-			It("creates one VirtualMachineConfigPolicy per zone", func() {
-				Eventually(func(g Gomega) {
-					var list topologyv1.ZoneList
-					g.Expect(vcSimCtx.Client.List(ctx, &list, ctrlclient.InNamespace(nsInfo.Namespace))).To(Succeed())
-					g.Expect(list.Items).ToNot(BeEmpty())
-
-					for i := range list.Items {
-						z := &list.Items[i]
-
-						var policy vimv1.VirtualMachineConfigPolicy
-						g.Expect(vcSimCtx.Client.Get(ctx,
-							ctrlclient.ObjectKey{Name: z.Name, Namespace: z.Namespace},
-							&policy)).To(Succeed())
-						g.Expect(policy.Spec.Zone).To(Equal(z.Name))
-						g.Expect(policy.Spec.SyncMode).To(Equal(vimv1.VirtualMachineConfigPolicySyncModeConfigTarget))
 					}
 				}).WithTimeout(30 * time.Second).Should(Succeed())
 			})

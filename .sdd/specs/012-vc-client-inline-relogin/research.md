@@ -105,3 +105,31 @@ Numbered as in `reference-wcpsvc-retry-login.md` §10:
 3. **Exactly one retry.** Kept. A `NotAuthenticated` fault is raised at the session layer before the method dispatches, so the server did not act and the replay is safe; a second attempt would only cover a login race that the generation counter already covers.
 4. **Recursion bounded only by fault-type coincidence.** Closed with an explicit body-type deny-list for login/logout/session bodies, rather than relying on `vpxd` never answering a rejected login with `NotAuthenticated`.
 5. **No direct unit test of the retry path.** Closed by the test plan in `plan.md`.
+
+## 9. Live vCenter validation — 2026-10-24
+
+Validated the production client from this branch against vCenter **9.2.0, build 25863067**, using the pinned govmomi dependency and Go's race detector. The standalone command in [`hack/vcresearch/session-relogin`](../../../hack/vcresearch/session-relogin/main.go) imports `pkg/util/vsphere/client`; it does not copy its recovery implementation. Public round-tripper observers count login attempts. The sanitized results are in [`live-validation.json`](./live-validation.json).
+
+All 19 checks passed, including setup and cleanup:
+
+- SOAP, REST, and PBM recover after confirmed session loss. A second REST expiration triggers a second recovery. The `CurrentTime` request used by SOAP keepalive also recovers.
+- Twenty concurrent SOAP callers and twenty concurrent REST callers each produce exactly one recovery login, and all calls succeed. Measured recovery calls, including these concurrent batches, take approximately 0.2–0.6 seconds on this testbed.
+- `WithNoReplay` and `WaitForUpdatesEx` preserve the original authentication fault while refreshing the session; subsequent calls work.
+- Password rotation rejects the client's cached credentials with exactly one SOAP and one REST login attempt. SOAP retains both `NotAuthenticated` and `InvalidLogin`; REST returns 401. A newly built client succeeds with the new password.
+- Disabling the account and inducing lockout both reject recovery. Re-enabling or unlocking it lets the same client recover. SSO account state is checked explicitly. The existing policy (five failures within 180 seconds, automatic unlock after 300 seconds) is unchanged.
+- Legacy mode returns authentication faults with zero inline login attempts.
+- The temporary SSO user, its inventory permission, and its sessions are cleaned up. Each run journals its principal before creation; `-cleanup` can retry cleanup after interruption.
+
+**Disruption must be observed, not assumed.** On this VC, `TerminateSession` returns and `UserSession` becomes nil roughly three seconds before protected requests begin returning `NotAuthenticated`. Immediate calls can therefore succeed without exercising recovery. The command waits until a raw, non-retrying `CreateContainerView` request faults before timing the production client's recovery. An early inference that `CurrentTime` did not require authentication was disproved once this propagation delay was accounted for.
+
+To rerun, create a private JSON file containing `host`, `username`, and `password`, then run:
+
+```sh
+go run -race ./hack/vcresearch/session-relogin \
+  -credentials /private/vc.json \
+  -exercise -journal /private/new-run-state.json
+```
+
+Omit `-exercise` for inspection. Use `-cleanup -journal /private/new-run-state.json` to retry cleanup. Credentials and generated test passwords are excluded from reports and journals. The command creates a local SSO person user with the built-in ReadOnly role; it does not alter the operator's account or SSO policies.
+
+This validates the password-authenticated client library, not deployed Supervisor reconciliation, certificate-based solution users, natural idle expiration, or the five-minute background keepalive tick. No vpxd restart was performed. Both cluster E2E tests remain experimental until their full workflows are validated on a WCP testbed.

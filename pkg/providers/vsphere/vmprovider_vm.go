@@ -966,17 +966,18 @@ func errOrReconcileErr(reconcileErr, err error) error {
 // updateVirtualMachine performs the following operations in the stated order:
 //
 //  1. Fetch properties
-//  2. Fetch recent tasks
-//  3. Fetch attached tags
-//  4. Fetch volume info
-//  5. Reconcile status
-//  6. Reconcile location
-//  7. Reconcile schema upgrade
-//  8. Reconcile backup state
-//  9. Reconcile snapshot revert
-//  10. Reconcile config
-//  11. Reconcile power state
-//  12. Reconcile snapshot create
+//  2. Reconcile host-local storage
+//  3. Fetch recent tasks
+//  4. Fetch attached tags
+//  5. Fetch volume info
+//  6. Reconcile status
+//  7. Reconcile location
+//  8. Reconcile schema upgrade
+//  9. Reconcile backup state
+//  10. Reconcile snapshot revert
+//  11. Reconcile config
+//  12. Reconcile power state
+//  13. Reconcile snapshot create
 //
 //nolint:gocyclo
 func (vs *vSphereVMProvider) updateVirtualMachine(

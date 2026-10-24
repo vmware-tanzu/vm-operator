@@ -148,6 +148,27 @@ Addresses the second round of code-owner review on the ConfigSpec-driven design.
       configuration works by the same mechanism as a host-local storage
       class, and that the only unguaranteed case is a DRS migration landing
       after CNS has already committed the volume
+- [x] T043 Rebase onto `main`. Three files conflicted —
+      `pkg/config/capabilities/capabilities.go`, its test, and
+      `pkg/config/config.go` — all of them additive collisions where `main`
+      appended new capability keys and feature states at the same point this
+      branch did. No host-local behavior changed; the branch's net diff is
+      byte-identical afterwards apart from a trailing-whitespace fix `main`
+      had already made in `pkg/util/kube/storage.go`. The one resolution
+      needing judgement was the golden feature-diff assertion in
+      `capabilities_test.go`, which both sides edited: it was rebuilt as a
+      sorted union, placing `HostLocalStorage=true` between
+      `GuestCustomizationVCDParity` and `ImmutableClasses`
+- [x] T044 Resync the VM update reconcile order documentation. Adding the
+      host-local step to the body of `updateVirtualMachine` left the godoc
+      above it listing 12 steps with everything after step 1 off by one;
+      `.sdd/memory/operator-best-practices.md` was separately already stale
+      at 11, omitting both this step and `Reconcile location`, and
+      `AGENTS.md` hardcoded the count. All three now agree on 13. Also
+      recorded in `architecture.md` §11.4 why `ControlledRebalancingPolicy`
+      (`disable_drs_vmotion`) and the WCP `vm_host_affinity` capability were
+      each evaluated and rejected as fixes for the migration race, so the
+      next reader does not repeat the investigation
 
 ## Known limitations
 

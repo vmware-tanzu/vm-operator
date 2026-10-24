@@ -74,7 +74,17 @@ func DeferCleanupWithDumpOnFailure(
 
 	GinkgoHelper()
 
-	DeferCleanup(func(ctx context.Context) {
+	DeferCleanup(CleanupWithDumpOnFailure(cleanup, dumps...))
+}
+
+// CleanupWithDumpOnFailure wraps cleanup with diagnostics on spec failure.
+// Pass the returned callback to DeferCleanup when the node needs explicit
+// arguments or decorators, such as an existing context or NodeTimeout.
+func CleanupWithDumpOnFailure(
+	cleanup func(ctx context.Context),
+	dumps ...DumpFunc) func(context.Context) {
+
+	return func(ctx context.Context) {
 		if CurrentSpecReport().Failed() {
 			for _, dump := range dumps {
 				dump(ctx)
@@ -84,7 +94,7 @@ func DeferCleanupWithDumpOnFailure(
 		if cleanup != nil {
 			cleanup(ctx)
 		}
-	})
+	}
 }
 
 // DeferCleanupVirtualMachine registers a DeferCleanup node that describes the

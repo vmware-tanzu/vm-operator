@@ -7,6 +7,7 @@ package vmoperator_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -68,5 +69,37 @@ var _ = Describe("CreateVirtualMachine", func() {
 	},
 		Entry("deletes the created VM", false),
 		Entry("preserves the VM when cleanup is skipped", true),
+	)
+})
+
+var _ = Describe("CleanupWithDumpOnFailure", func() {
+	DescribeTable("preserves cleanup node ordering and context", func(explicitContext bool) {
+		var order []string
+		ctx := context.Background()
+		DeferCleanup(func() {
+			Expect(order).To(Equal([]string{"later cleanup", "VM", "PVCs"}))
+		})
+		cleanup := vmoperator.CleanupWithDumpOnFailure(func(cleanupCtx context.Context) {
+			Expect(cleanupCtx.Err()).NotTo(HaveOccurred())
+			if explicitContext {
+				Expect(cleanupCtx).To(BeIdenticalTo(ctx))
+			} else {
+				_, ok := cleanupCtx.(SpecContext)
+				Expect(ok).To(BeTrue(), "Ginkgo should inject its interruptible cleanup context")
+			}
+			defer func() { order = append(order, "PVCs") }()
+			order = append(order, "VM")
+		}, func(context.Context) {
+			Fail("diagnostics should not run for a passing spec")
+		})
+		if explicitContext {
+			DeferCleanup(cleanup, ctx)
+		} else {
+			DeferCleanup(cleanup, NodeTimeout(time.Minute))
+		}
+		DeferCleanup(func() { order = append(order, "later cleanup") })
+	},
+		Entry("with an explicit caller context", true),
+		Entry("with a Ginkgo context and NodeTimeout", false),
 	)
 })

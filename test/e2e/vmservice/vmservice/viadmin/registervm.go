@@ -332,7 +332,12 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				},
 			}
 			Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Linux VM")
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
+			DeferCleanup(vmoperator.CleanupWithDumpOnFailure(
+				func(cleanupCtx context.Context) {
+					deleteRegisteredVMAndPVCs(cleanupCtx, svClusterClient, config, input.WCPNamespaceName, vmName)
+				},
+				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "vm", input.WCPNamespaceName, vmName),
+			), ctx)
 			// End create new VM
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -468,7 +473,12 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				},
 			}
 			Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Linux VM")
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
+			DeferCleanup(vmoperator.CleanupWithDumpOnFailure(
+				func(cleanupCtx context.Context) {
+					deleteRegisteredVMAndPVCs(cleanupCtx, svClusterClient, config, input.WCPNamespaceName, vmName)
+				},
+				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "vm", input.WCPNamespaceName, vmName),
+			), ctx)
 			// End create new VM
 
 			// Wait for IP, a valid moID and the PVC attachment.
@@ -694,7 +704,12 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 				},
 			}
 			Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Linux VM")
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, config, input.WCPNamespaceName, vmName)
+			DeferCleanup(vmoperator.CleanupWithDumpOnFailure(
+				func(cleanupCtx context.Context) {
+					deleteRegisteredVMAndPVCs(cleanupCtx, svClusterClient, config, input.WCPNamespaceName, vmName)
+				},
+				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "vm", input.WCPNamespaceName, vmName),
+			), ctx)
 
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
@@ -940,7 +955,12 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Bounded so a broken vSphere-side disk state left behind by an earlier
 			// assertion failure in this spec fails cleanup fast instead of blocking
 			// the rest of the suite for hours.
-			DeferCleanup(deleteRegisteredVMAndPVCs, svClusterClient, config, vmNamespace, vmName, NodeTimeout(3*time.Minute))
+			DeferCleanup(vmoperator.CleanupWithDumpOnFailure(
+				func(cleanupCtx context.Context) {
+					deleteRegisteredVMAndPVCs(cleanupCtx, svClusterClient, config, vmNamespace, vmName)
+				},
+				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "vm", vmNamespace, vmName),
+			), NodeTimeout(3*time.Minute))
 			// End create new VM
 
 			// Wait for IP, a valid moID and the PVC attachment.

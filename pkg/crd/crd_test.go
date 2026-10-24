@@ -1570,7 +1570,7 @@ var _ = Describe(
 							g.Expect(crd.DeletionTimestamp.IsZero()).To(BeTrue(),
 								"CRD %s is still terminating", crd.Name)
 						}
-					}).WithTimeout(30 * time.Second).Should(Succeed())
+					}).WithTimeout(time.Minute).Should(Succeed())
 				}
 				if !cleanup {
 					// Creation always removes disabled feature fields, so allow

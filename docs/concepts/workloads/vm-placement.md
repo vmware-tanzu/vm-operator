@@ -176,6 +176,61 @@ spec:
       - size: 100Gi
 ```
 
+### Host-Local Storage
+
+When the `supports_host_local_storage` Supervisor capability is enabled, a VM
+backed by a `PersistentVolumeClaim` on a host-local `StorageClass` — one backed
+by a direct attached VMFS datastore mounted on a single ESXi host — is placed on
+the host that can reach the volume, rather than only onto a zone.
+
+Nothing about the host is recorded on the `VirtualMachine`. For a volume that is
+already provisioned, its datastore is what determines the host, and only one
+host can reach a host-local datastore. For a volume that is not provisioned yet,
+DRS chooses a host whose storage satisfies the `StorageClass`'s policy, and once
+the VM has been created there, VM Operator stamps that host onto the PVC's
+`volume.kubernetes.io/selected-node` so CSI provisions the volume on it.
+
+A host-local PVC's `csi.vsphere.volume-requested-topology` annotation must
+therefore either be **omitted** — letting CSI choose the host — or name a
+`kubernetes.io/hostname`. Naming only a zone cannot be satisfied for host-local
+storage and leaves the volume unprovisioned.
+
+#### Attaching more than one host-local volume
+
+A VM with more than one host-local volume **must** use a
+`WaitForFirstConsumer` host-local `StorageClass` — by convention the
+`-latebinding` variant of the `Immediate` one, sharing its storage policy. Only
+then does VM Operator select the host and stamp it on every host-local PVC, so
+all of the volumes land together.
+
+With an `Immediate` class each volume is provisioned independently, and CSI may
+place them on different hosts. No host can then reach all of the VM's disks, so
+the VM is rejected rather than mis-placed — and because a provisioned
+host-local volume cannot be moved, the VM never becomes creatable. A single
+host-local volume is unaffected, since one volume cannot disagree with itself.
+
+For a VKS cluster, name the late-binding class on each entry of the `volumes`
+variable, including any worker-pool `overrides`:
+
+```yaml
+    variables:
+      - name: storageClass
+        value: host-local-vmfs          # the VM's own files; not a PVC
+      - name: volumes
+        value:
+          - name: vol-1
+            mountPath: /var/lib/containerd-1
+            storageClass: host-local-vmfs-latebinding
+            capacity: 20Gi
+          - name: vol-2
+            mountPath: /var/lib/containerd-2
+            storageClass: host-local-vmfs-latebinding
+            capacity: 20Gi
+```
+
+The top-level `storageClass` variable selects where the VM's own files go and is
+resolved by placement rather than by a PVC, so its binding mode is irrelevant.
+
 ## Status and Conditions
 
 Placement results are reflected in the VM's status:

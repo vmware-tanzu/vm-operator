@@ -6,6 +6,7 @@ package vmwatcher_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,640 +38,296 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe(
-	"Start",
-	Label(
-		testlabels.EnvTest,
-		testlabels.Service,
-		testlabels.API,
-	),
-	func() {
+// The suite runs in both re-login modes so the watcher behaves the same with
+// the timer-driven keepalive and with the inline re-login round trippers.
+func init() {
+	for _, inlineRelogin := range []bool{false, true} {
+		Describe(
+			fmt.Sprintf("Start (InlineReloginEnabled: %v)", inlineRelogin),
+			Label(
+				testlabels.EnvTest,
+				testlabels.Service,
+				testlabels.API,
+			),
+			func() {
 
-		var (
-			ctx               context.Context
-			vcSimCtx          *builder.IntegrationTestContextForVCSim
-			provider          *providerfake.VMProvider
-			initEnvFn         builder.InitVCSimEnvFn
-			vsClientMu        sync.RWMutex
-			vsClient          *vsclient.Client
-			numNewClientCalls int32
-		)
-
-		BeforeEach(func() {
-			numNewClientCalls = 0
-			vsClient = nil
-			vsClientMu = sync.RWMutex{}
-			ctx = logr.NewContext(
-				context.Background(),
-				textlogger.NewLogger(textlogger.NewConfig(
-					textlogger.Verbosity(5),
-					textlogger.Output(GinkgoWriter),
-				)))
-			watcher.Cache.Purge()
-		})
-
-		JustBeforeEach(func() {
-			ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
-			ctx = cource.WithContext(ctx)
-			ctx = watcher.WithContext(ctx)
-
-			provider = providerfake.NewVMProvider()
-			provider.VSphereClientFn = func(ctx context.Context) (*vsclient.Client, error) {
-				vsClientMu.Lock()
-				defer vsClientMu.Unlock()
-
-				atomic.AddInt32(&numNewClientCalls, 1)
-				var err error
-				vsClient, err = vsclient.NewClient(ctx, vcSimCtx.VCClientConfig)
-				return vsClient, err
-			}
-
-			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
-				ctx,
-				builder.VCSimTestConfig{},
-				vmwatcher.AddToManager,
-				func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
-					ctx.VMProvider = provider
-					return nil
-				},
-				initEnvFn)
-			Expect(vcSimCtx).ToNot(BeNil())
-
-			vcSimCtx.BeforeEach()
-		})
-
-		AfterEach(func() {
-			logr.FromContextOrDiscard(ctx).Info("Cache stats", watcher.CacheGetStats()...)
-			vcSimCtx.AfterEach()
-			vcSimCtx = nil
-			provider.Reset()
-		})
-
-		When("the client is no longer authenticated", func() {
-			var (
-				oldVSClient *vsclient.Client
-			)
-			BeforeEach(func() {
-				oldVSClient = nil
-			})
-			JustBeforeEach(func() {
-				func() {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					oldVSClient = vsClient
-				}()
-
-				Eventually(func(g Gomega) {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					g.Expect(vsClient.Valid()).To(BeTrue())
-					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
-				}, "2s").Should(Succeed())
-
-				By("log out the client session", func() {
-					vsClientMu.Lock()
-					defer vsClientMu.Unlock()
-
-					vsClient.Logout(vcSimCtx)
-				})
-			})
-			Specify("the service should be restarted", func() {
-				Eventually(func(g Gomega) {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					g.Expect(vsClient.Valid()).To(BeTrue())
-					g.Expect(vsClient).ToNot(BeIdenticalTo(oldVSClient))
-					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(2)))
-				}).Should(Succeed())
-			})
-		})
-
-		When("the credentials are rotated", func() {
-			var (
-				oldUser     string
-				oldPass     string
-				oldVSClient *vsclient.Client
-			)
-			BeforeEach(func() {
-				oldUser = ""
-				oldPass = ""
-				oldVSClient = nil
-			})
-			JustBeforeEach(func() {
-				By("store the old client", func() {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					oldVSClient = vsClient
-				})
-
-				Eventually(func(g Gomega) {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					g.Expect(vsClient.Valid()).To(BeTrue())
-					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
-				}, "2s").Should(Succeed())
-
-				By("invalidate the credentials", func() {
-					vsClientMu.Lock()
-					defer vsClientMu.Unlock()
-
-					oldUser = vcSimCtx.VCClientConfig.Username
-					oldPass = vcSimCtx.VCClientConfig.Password
-					vcSimCtx.VCClientConfig.Username = ""
-					vcSimCtx.VCClientConfig.Password = ""
-				})
-
-				By("log out the client session", func() {
-					vsClientMu.Lock()
-					defer vsClientMu.Unlock()
-
-					vsClient.Logout(vcSimCtx)
-				})
-			})
-
-			Specify("the service should be restarted once the password is rotated", func() {
-				Eventually(func(g Gomega) {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					g.Expect(vsClient.Valid()).To(BeFalse())
-					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(2)))
-				}).Should(Succeed())
-
-				By("fix the credentials", func() {
-					vsClientMu.Lock()
-					defer vsClientMu.Unlock()
-
-					vcSimCtx.VCClientConfig.Username = oldUser
-					vcSimCtx.VCClientConfig.Password = oldPass
-				})
-
-				Eventually(func(g Gomega) {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					g.Expect(vsClient.Valid()).To(BeTrue())
-					g.Expect(vsClient).ToNot(BeIdenticalTo(oldVSClient))
-					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(3)))
-				}).Should(Succeed())
-			})
-		})
-
-		When("the port is invalid", func() {
-			var (
-				oldPort string
-			)
-
-			JustBeforeEach(func() {
-				vcSimCtx.Suite.StartErrExpected = false
-
-				Eventually(func(g Gomega) {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					g.Expect(vsClient.Valid()).To(BeTrue())
-					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
-				}, "2s").Should(Succeed())
-
-				By("invalidate the port", func() {
-					vsClientMu.Lock()
-					defer vsClientMu.Unlock()
-
-					oldPort = vcSimCtx.VCClientConfig.Port
-					vcSimCtx.VCClientConfig.Port = "1"
-				})
-
-				By("log out the client session", func() {
-					vsClientMu.Lock()
-					defer vsClientMu.Unlock()
-
-					vsClient.Logout(vcSimCtx)
-				})
-			})
-
-			Specify("the service should be restarted once the port is fixed", func() {
-				Eventually(func(g Gomega) {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					g.Expect(vsClient.Valid()).To(BeFalse())
-					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(2)))
-				}).Should(Succeed())
-
-				By("fix the port", func() {
-					vsClientMu.Lock()
-					defer vsClientMu.Unlock()
-
-					vcSimCtx.VCClientConfig.Port = oldPort
-				})
-
-				Eventually(func(g Gomega) {
-					vsClientMu.RLock()
-					defer vsClientMu.RUnlock()
-
-					g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(3)))
-				}).Should(Succeed())
-
-				Consistently(func(g Gomega) {
-					g.Expect(vcSimCtx.Suite.StartErr()).ToNot(HaveOccurred())
-				}).Should(Succeed())
-			})
-		})
-
-		When("the zones do not have the finalizer", func() {
-			Specify("the finalizer gets added", func() {
-				Eventually(func(g Gomega) {
-					zoneList := topologyv1.ZoneList{}
-					err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
-					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(zoneList.Items).ToNot(BeEmpty())
-					for _, zone := range zoneList.Items {
-						g.Expect(zone.Finalizers).To(ConsistOf(zonectrl.Finalizer))
-					}
-				}, "2s").Should(Succeed())
-			})
-		})
-
-		When("there is a vm in the zone's folder", func() {
-
-			const (
-				vmName = "my-vm-1"
-			)
-
-			When("the vm has the namespacedName in extraConfig", func() {
 				var (
-					vm *object.VirtualMachine
+					ctx               context.Context
+					vcSimCtx          *builder.IntegrationTestContextForVCSim
+					provider          *providerfake.VMProvider
+					initEnvFn         builder.InitVCSimEnvFn
+					vsClientMu        sync.RWMutex
+					vsClient          *vsclient.Client
+					numNewClientCalls int32
 				)
 
 				BeforeEach(func() {
-					initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
-						vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
-						Expect(err).ToNot(HaveOccurred())
-						Expect(vmList).ToNot(BeEmpty())
-						vm = vmList[0]
+					numNewClientCalls = 0
+					vsClient = nil
+					vsClientMu = sync.RWMutex{}
+					ctx = logr.NewContext(
+						context.Background(),
+						textlogger.NewLogger(textlogger.NewConfig(
+							textlogger.Verbosity(5),
+							textlogger.Output(GinkgoWriter),
+						)))
+					watcher.Cache.Purge()
+				})
 
-						By("creating vm in k8s", func() {
-							By("creating vm in k8s", func() {
-								obj := builder.DummyBasicVirtualMachine(
-									vmName,
-									ctx.NSInfo.Namespace)
-								Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
-							})
-						})
+				JustBeforeEach(func() {
+					ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
+					ctx = cource.WithContext(ctx)
+					ctx = watcher.WithContext(ctx)
 
-						By("moving vm into zone's folder", func() {
-							t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
-								Folder: ptr.To(ctx.NSInfo.Folder.Reference()),
-							}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
-							Expect(err).ToNot(HaveOccurred())
-							Expect(t).ToNot(BeNil())
-							Expect(t.Wait(ctx)).To(Succeed())
-						})
+					provider = providerfake.NewVMProvider()
+					provider.VSphereClientFn = func(ctx context.Context) (*vsclient.Client, error) {
+						vsClientMu.Lock()
+						defer vsClientMu.Unlock()
 
-						By("adding namespacedName to vm's extraConfig", func() {
-							t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
-								ExtraConfig: []vimtypes.BaseOptionValue{
-									&vimtypes.OptionValue{
-										Key:   "vmservice.namespacedName",
-										Value: ctx.NSInfo.Namespace + "/" + vmName,
-									},
-								},
-							})
-							Expect(err).ToNot(HaveOccurred())
-							Expect(t).ToNot(BeNil())
-							Expect(t.Wait(ctx)).To(Succeed())
-						})
+						atomic.AddInt32(&numNewClientCalls, 1)
+						cfg := vcSimCtx.VCClientConfig
+						cfg.InlineReloginEnabled = inlineRelogin
+						var err error
+						vsClient, err = vsclient.NewClient(ctx, cfg)
+						return vsClient, err
 					}
+
+					vcSimCtx = builder.NewIntegrationTestContextForVCSim(
+						ctx,
+						builder.VCSimTestConfig{},
+						vmwatcher.AddToManager,
+						func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
+							ctx.VMProvider = provider
+							return nil
+						},
+						initEnvFn)
+					Expect(vcSimCtx).ToNot(BeNil())
+
+					vcSimCtx.BeforeEach()
 				})
 
-				Specify("a reconcile request should be received", func() {
-					chanSource := cource.FromContext(ctx, "VirtualMachine")
-					var e event.GenericEvent
-					Eventually(chanSource).Should(Receive(&e))
-					Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
-					Expect(e.Object.GetName()).To(Equal(vmName))
+				AfterEach(func() {
+					logr.FromContextOrDiscard(ctx).Info("Cache stats", watcher.CacheGetStats()...)
+					vcSimCtx.AfterEach()
+					vcSimCtx = nil
+					provider.Reset()
 				})
 
-				When("a Zone that is being deleted", func() {
-					When("the zone has the zone controller finalizer", func() {
-						Specify("a reconcile request should be received", func() {
-							By("verify that the zone has the finalizer added", func() {
-								Eventually(func(g Gomega) {
-									zoneList := topologyv1.ZoneList{}
-									err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
-									g.Expect(err).NotTo(HaveOccurred())
-									g.Expect(zoneList.Items).ToNot(BeEmpty())
-									for _, zone := range zoneList.Items {
-										g.Expect(zone.Finalizers).To(ContainElement(zonectrl.Finalizer))
-									}
-								}).Should(Succeed())
-							})
-
-							By("a reconcile request should be received", func() {
-								chanSource := cource.FromContext(ctx, "VirtualMachine")
-								var e event.GenericEvent
-								Eventually(chanSource).Should(Receive(&e))
-								Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
-								Expect(e.Object.GetName()).To(Equal(vmName))
-							})
-
-							By("add a custom finalizer and mark the zone for deletion", func() {
-								zoneList := topologyv1.ZoneList{}
-								err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
-								Expect(err).NotTo(HaveOccurred())
-								Expect(zoneList.Items).ToNot(BeEmpty())
-								for _, zone := range zoneList.Items {
-									// Add a finalizer to each zone.
-									controllerutil.AddFinalizer(&zone, "foo/bar")
-									Expect(vcSimCtx.Client.Update(vcSimCtx, &zone)).To(Succeed())
-
-									// Mark the zone for deletion.
-									Expect(vcSimCtx.Client.Delete(vcSimCtx, &zone)).To(Succeed())
-								}
-							})
-
-							By("restart the watcher", func() {
-								Expect(watcher.Close(vcSimCtx)).Should(Succeed())
-
-								Eventually(func(g Gomega) {
-									vsClientMu.RLock()
-									defer vsClientMu.RUnlock()
-
-									g.Expect(vsClient.Valid()).To(BeTrue())
-									g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(2)))
-								}).Should(Succeed())
-							})
-
-							By("reconfigure the VM", func() {
-								t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
-									ExtraConfig: []vimtypes.BaseOptionValue{
-										&vimtypes.OptionValue{
-											Key:   "guestinfo.ipaddr",
-											Value: "1.2.3.4",
-										},
-									},
-								})
-								Expect(err).ToNot(HaveOccurred())
-								Expect(t).ToNot(BeNil())
-								Expect(t.Wait(ctx)).To(Succeed())
-							})
-
-							By("a reconcile request should still be received", func() {
-								chanSource := cource.FromContext(ctx, "VirtualMachine")
-								var e event.GenericEvent
-								Eventually(chanSource).Should(Receive(&e))
-								Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
-								Expect(e.Object.GetName()).To(Equal(vmName))
-							})
-						})
-					})
-
-					When("the zone does not have the zone controller finalizer", func() {
-						Specify("a reconcile request should not be received", func() {
-							By("wait for the watcher to start", func() {
-								Eventually(func(g Gomega) {
-									vsClientMu.RLock()
-									defer vsClientMu.RUnlock()
-
-									g.Expect(vsClient.Valid()).To(BeTrue())
-									g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(1)))
-								}).Should(Succeed())
-
-							})
-
-							By("verify that the zone has the finalizer added", func() {
-								Eventually(func(g Gomega) {
-									zoneList := topologyv1.ZoneList{}
-									err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
-									g.Expect(err).NotTo(HaveOccurred())
-									g.Expect(zoneList.Items).ToNot(BeEmpty())
-									for _, zone := range zoneList.Items {
-										g.Expect(zone.Finalizers).To(ContainElement(zonectrl.Finalizer))
-									}
-								}).Should(Succeed())
-							})
-
-							By("first reconcile event should be received", func() {
-								chanSource := cource.FromContext(ctx, "VirtualMachine")
-								var e event.GenericEvent
-								Eventually(chanSource).Should(Receive(&e))
-								Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
-								Expect(e.Object.GetName()).To(Equal(vmName))
-							})
-
-							By("add a custom finalizer to the VM, remove the controller finalizer and mark the zone for deletion", func() {
-								zoneList := topologyv1.ZoneList{}
-								err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
-								Expect(err).NotTo(HaveOccurred())
-								Expect(zoneList.Items).ToNot(BeEmpty())
-								for _, zone := range zoneList.Items {
-									// Add a custom finalizer
-									controllerutil.AddFinalizer(&zone, "foo/bar")
-									controllerutil.RemoveFinalizer(&zone, zonectrl.Finalizer)
-									Expect(vcSimCtx.Client.Update(vcSimCtx, &zone)).To(Succeed())
-
-									// Mark the zone for deletion
-									Expect(vcSimCtx.Client.Delete(vcSimCtx, &zone)).To(Succeed())
-								}
-							})
-
-							By("close the watcher so all pending property update connections are closed", func() {
-								Expect(watcher.Close(vcSimCtx)).Should(Succeed())
-
-								Eventually(func(g Gomega) {
-									vsClientMu.RLock()
-									defer vsClientMu.RUnlock()
-
-									g.Expect(vsClient.Valid()).To(BeTrue())
-									g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(2)))
-								}).Should(Succeed())
-							})
-
-							By("reconfigure the VM", func() {
-								t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
-									ExtraConfig: []vimtypes.BaseOptionValue{
-										&vimtypes.OptionValue{
-											Key:   "guestinfo.ipaddr",
-											Value: "1.2.3.4",
-										},
-									},
-								})
-								Expect(err).ToNot(HaveOccurred())
-								Expect(t).ToNot(BeNil())
-								Expect(t.Wait(ctx)).To(Succeed())
-							})
-
-							By("a reconcile should not be received", func() {
-								chanSource := cource.FromContext(ctx, "VirtualMachine")
-								Consistently(chanSource).ShouldNot(Receive())
-							})
-						})
-					})
-				})
-
-				When("a bogus Zone Folder MoID", func() {
+				When("the client is no longer authenticated", func() {
+					var (
+						oldVSClient *vsclient.Client
+					)
 					BeforeEach(func() {
-						outerInitEnvFn := initEnvFn
-
-						initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
-							outerInitEnvFn(ctx)
-
-							zone := &topologyv1.Zone{
-								ObjectMeta: metav1.ObjectMeta{
-									Name:      "bogus",
-									Namespace: vcSimCtx.NSInfo.Namespace,
-								},
-								Spec: topologyv1.ZoneSpec{
-									ManagedVMs: topologyv1.VSphereEntityInfo{
-										FolderMoID: "group-4242424242",
-									},
-								},
-							}
-							Expect(ctx.Client.Create(ctx, zone)).To(Succeed())
-						}
+						oldVSClient = nil
 					})
+					JustBeforeEach(func() {
+						func() {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
 
-					Specify("a reconcile request should still be received", func() {
-						chanSource := cource.FromContext(ctx, "VirtualMachine")
-						var e event.GenericEvent
-						Eventually(chanSource).Should(Receive(&e))
-						Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
-						Expect(e.Object.GetName()).To(Equal(vmName))
+							oldVSClient = vsClient
+						}()
 
-						By("bogus zone should not have finalizer applied", func() {
-							zone := topologyv1.Zone{
-								ObjectMeta: metav1.ObjectMeta{
-									Name:      "bogus",
-									Namespace: vcSimCtx.NSInfo.Namespace,
-								},
-							}
-							Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(&zone), &zone)).To(Succeed())
-							Expect(zone.Finalizers).To(BeEmpty())
+						Eventually(func(g Gomega) {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
+
+							g.Expect(vsClient.Valid()).To(BeTrue())
+							g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
+						}, "2s").Should(Succeed())
+
+						By("log out the client session", func() {
+							vsClientMu.Lock()
+							defer vsClientMu.Unlock()
+
+							vsClient.Logout(vcSimCtx)
 						})
+					})
+					Specify("the service should be restarted", func() {
+						Eventually(func(g Gomega) {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
+
+							g.Expect(vsClient.Valid()).To(BeTrue())
+							g.Expect(vsClient).ToNot(BeIdenticalTo(oldVSClient))
+							g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(2)))
+						}).Should(Succeed())
 					})
 				})
 
-				When("the vm is reconfigured", func() {
-
-					Specify("a second reconcile request should be received", func() {
-						chanSource := cource.FromContext(ctx, "VirtualMachine")
-						var e1 event.GenericEvent
-						Eventually(chanSource).Should(Receive(&e1))
-						Expect(e1.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
-						Expect(e1.Object.GetName()).To(Equal(vmName))
-
-						t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
-							ExtraConfig: []vimtypes.BaseOptionValue{
-								&vimtypes.OptionValue{
-									Key:   "guestinfo.ipaddr",
-									Value: "1.2.3.4",
-								},
-							},
-						})
-						Expect(err).ToNot(HaveOccurred())
-						Expect(t).ToNot(BeNil())
-						Expect(t.Wait(ctx)).To(Succeed())
-
-						var e2 event.GenericEvent
-						Eventually(chanSource).Should(Receive(&e2))
-						Expect(e2.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
-						Expect(e2.Object.GetName()).To(Equal(vmName))
-					})
-
-					When("the namespacedName has an invalid namespace", func() {
-						Specify("a second reconcile request should not be received", func() {
-							chanSource := cource.FromContext(ctx, "VirtualMachine")
-							var e event.GenericEvent
-							Eventually(chanSource).Should(Receive(&e))
-							Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
-							Expect(e.Object.GetName()).To(Equal(vmName))
-
-							t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
-								ExtraConfig: []vimtypes.BaseOptionValue{
-									&vimtypes.OptionValue{
-										Key:   "guestinfo.ipaddr",
-										Value: "1.2.3.4",
-									},
-									&vimtypes.OptionValue{
-										Key:   "vmservice.namespacedName",
-										Value: "invalid/" + vmName,
-									},
-								},
-							})
-							Expect(err).ToNot(HaveOccurred())
-							Expect(t).ToNot(BeNil())
-							Expect(t.Wait(ctx)).To(Succeed())
-
-							Consistently(chanSource).ShouldNot(Receive())
-						})
-					})
-				})
-			})
-
-			When("the vm does not have the namespacedName in extraConfig", func() {
-				When("the vm's status.uniqueID is in the manager's cache", func() {
+				When("the credentials are rotated", func() {
+					var (
+						oldUser     string
+						oldPass     string
+						oldVSClient *vsclient.Client
+					)
 					BeforeEach(func() {
-						initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
-							vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
-							Expect(err).ToNot(HaveOccurred())
-							Expect(vmList).ToNot(BeEmpty())
-							vm := vmList[0]
+						oldUser = ""
+						oldPass = ""
+						oldVSClient = nil
+					})
+					JustBeforeEach(func() {
+						By("store the old client", func() {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
 
-							By("creating vm in k8s", func() {
-								obj := builder.DummyBasicVirtualMachine(
-									vmName,
-									ctx.NSInfo.Namespace)
-								Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
-								obj.Status.UniqueID = vm.Reference().Value
-								Expect(ctx.Client.Status().Update(ctx, obj)).To(Succeed())
-							})
+							oldVSClient = vsClient
+						})
 
-							By("moving vm into zone's folder", func() {
-								t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
-									Folder: ptr.To(ctx.NSInfo.Folder.Reference()),
-								}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
-								Expect(err).ToNot(HaveOccurred())
-								Expect(t).ToNot(BeNil())
-								Expect(t.Wait(ctx)).To(Succeed())
-							})
-						}
+						Eventually(func(g Gomega) {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
+
+							g.Expect(vsClient.Valid()).To(BeTrue())
+							g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
+						}, "2s").Should(Succeed())
+
+						By("invalidate the credentials", func() {
+							vsClientMu.Lock()
+							defer vsClientMu.Unlock()
+
+							oldUser = vcSimCtx.VCClientConfig.Username
+							oldPass = vcSimCtx.VCClientConfig.Password
+							vcSimCtx.VCClientConfig.Username = ""
+							vcSimCtx.VCClientConfig.Password = ""
+						})
+
+						By("log out the client session", func() {
+							vsClientMu.Lock()
+							defer vsClientMu.Unlock()
+
+							vsClient.Logout(vcSimCtx)
+						})
 					})
 
-					Specify("a reconcile request should not be received because the VM entered the watcher's scope already verified", func() {
-						chanSource := cource.FromContext(ctx, "VirtualMachine")
-						Consistently(chanSource, time.Second*5).ShouldNot(Receive())
+					Specify("the service should be restarted once the password is rotated", func() {
+						Eventually(func(g Gomega) {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
+
+							g.Expect(vsClient.Valid()).To(BeFalse())
+							g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(2)))
+						}).Should(Succeed())
+
+						By("fix the credentials", func() {
+							vsClientMu.Lock()
+							defer vsClientMu.Unlock()
+
+							vcSimCtx.VCClientConfig.Username = oldUser
+							vcSimCtx.VCClientConfig.Password = oldPass
+						})
+
+						Eventually(func(g Gomega) {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
+
+							g.Expect(vsClient.Valid()).To(BeTrue())
+							g.Expect(vsClient).ToNot(BeIdenticalTo(oldVSClient))
+							g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(3)))
+						}).Should(Succeed())
+					})
+				})
+
+				When("the port is invalid", func() {
+					var (
+						oldPort string
+					)
+
+					JustBeforeEach(func() {
+						vcSimCtx.Suite.StartErrExpected = false
+
+						Eventually(func(g Gomega) {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
+
+							g.Expect(vsClient.Valid()).To(BeTrue())
+							g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(Equal(int32(1)))
+						}, "2s").Should(Succeed())
+
+						By("invalidate the port", func() {
+							vsClientMu.Lock()
+							defer vsClientMu.Unlock()
+
+							oldPort = vcSimCtx.VCClientConfig.Port
+							vcSimCtx.VCClientConfig.Port = "1"
+						})
+
+						By("log out the client session", func() {
+							vsClientMu.Lock()
+							defer vsClientMu.Unlock()
+
+							vsClient.Logout(vcSimCtx)
+						})
 					})
 
-					When("the vm's k8s object is being deleted", func() {
+					Specify("the service should be restarted once the port is fixed", func() {
+						Eventually(func(g Gomega) {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
+
+							g.Expect(vsClient.Valid()).To(BeFalse())
+							g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(2)))
+						}).Should(Succeed())
+
+						By("fix the port", func() {
+							vsClientMu.Lock()
+							defer vsClientMu.Unlock()
+
+							vcSimCtx.VCClientConfig.Port = oldPort
+						})
+
+						Eventually(func(g Gomega) {
+							vsClientMu.RLock()
+							defer vsClientMu.RUnlock()
+
+							g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(3)))
+						}).Should(Succeed())
+
+						Consistently(func(g Gomega) {
+							g.Expect(vcSimCtx.Suite.StartErr()).ToNot(HaveOccurred())
+						}).Should(Succeed())
+					})
+				})
+
+				When("the zones do not have the finalizer", func() {
+					Specify("the finalizer gets added", func() {
+						Eventually(func(g Gomega) {
+							zoneList := topologyv1.ZoneList{}
+							err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
+							g.Expect(err).NotTo(HaveOccurred())
+							g.Expect(zoneList.Items).ToNot(BeEmpty())
+							for _, zone := range zoneList.Items {
+								g.Expect(zone.Finalizers).To(ConsistOf(zonectrl.Finalizer))
+							}
+						}, "2s").Should(Succeed())
+					})
+				})
+
+				When("there is a vm in the zone's folder", func() {
+
+					const (
+						vmName = "my-vm-1"
+					)
+
+					When("the vm has the namespacedName in extraConfig", func() {
+						var (
+							vm *object.VirtualMachine
+						)
+
 						BeforeEach(func() {
 							initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
 								vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
 								Expect(err).ToNot(HaveOccurred())
 								Expect(vmList).ToNot(BeEmpty())
-								vm := vmList[0]
-								obj := builder.DummyBasicVirtualMachine(
-									vmName,
-									ctx.NSInfo.Namespace)
+								vm = vmList[0]
 
 								By("creating vm in k8s", func() {
-									Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
-									obj.Status.UniqueID = vm.Reference().Value
-									Expect(ctx.Client.Status().Update(ctx, obj)).To(Succeed())
-								})
-
-								By("deleting vm in k8s", func() {
-									// Add a fake finalizer to prevent the VM
-									// from being removed entirely. We want the
-									// VM to exist with a non-zero deletion
-									// time stamp.
-									obj.Finalizers = []string{"fake.com/finalizer"}
-									Expect(ctx.Client.Update(ctx, obj)).To(Succeed())
-									Expect(ctx.Client.Delete(ctx, obj)).To(Succeed())
+									By("creating vm in k8s", func() {
+										obj := builder.DummyBasicVirtualMachine(
+											vmName,
+											ctx.NSInfo.Namespace)
+										Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+									})
 								})
 
 								By("moving vm into zone's folder", func() {
@@ -681,46 +338,398 @@ var _ = Describe(
 									Expect(t).ToNot(BeNil())
 									Expect(t.Wait(ctx)).To(Succeed())
 								})
+
+								By("adding namespacedName to vm's extraConfig", func() {
+									t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+										ExtraConfig: []vimtypes.BaseOptionValue{
+											&vimtypes.OptionValue{
+												Key:   "vmservice.namespacedName",
+												Value: ctx.NSInfo.Namespace + "/" + vmName,
+											},
+										},
+									})
+									Expect(err).ToNot(HaveOccurred())
+									Expect(t).ToNot(BeNil())
+									Expect(t.Wait(ctx)).To(Succeed())
+								})
 							}
 						})
 
-						Specify("a reconcile request should not be received because the VM is being deleted", func() {
+						Specify("a reconcile request should be received", func() {
 							chanSource := cource.FromContext(ctx, "VirtualMachine")
-							Consistently(chanSource, time.Second*5).ShouldNot(Receive())
+							var e event.GenericEvent
+							Eventually(chanSource).Should(Receive(&e))
+							Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+							Expect(e.Object.GetName()).To(Equal(vmName))
 						})
-					})
-				})
 
-				When("the vm's status.uniqueID is not in the manager's cache", func() {
-					BeforeEach(func() {
-						initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
-							vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
-							Expect(err).ToNot(HaveOccurred())
-							Expect(vmList).ToNot(BeEmpty())
-							vm := vmList[0]
+						When("a Zone that is being deleted", func() {
+							When("the zone has the zone controller finalizer", func() {
+								Specify("a reconcile request should be received", func() {
+									By("verify that the zone has the finalizer added", func() {
+										Eventually(func(g Gomega) {
+											zoneList := topologyv1.ZoneList{}
+											err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
+											g.Expect(err).NotTo(HaveOccurred())
+											g.Expect(zoneList.Items).ToNot(BeEmpty())
+											for _, zone := range zoneList.Items {
+												g.Expect(zone.Finalizers).To(ContainElement(zonectrl.Finalizer))
+											}
+										}).Should(Succeed())
+									})
 
-							By("creating vm in k8s", func() {
-								obj := builder.DummyBasicVirtualMachine(
-									vmName,
-									ctx.NSInfo.Namespace)
-								Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+									By("a reconcile request should be received", func() {
+										chanSource := cource.FromContext(ctx, "VirtualMachine")
+										var e event.GenericEvent
+										Eventually(chanSource).Should(Receive(&e))
+										Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+										Expect(e.Object.GetName()).To(Equal(vmName))
+									})
+
+									By("add a custom finalizer and mark the zone for deletion", func() {
+										zoneList := topologyv1.ZoneList{}
+										err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
+										Expect(err).NotTo(HaveOccurred())
+										Expect(zoneList.Items).ToNot(BeEmpty())
+										for _, zone := range zoneList.Items {
+											// Add a finalizer to each zone.
+											controllerutil.AddFinalizer(&zone, "foo/bar")
+											Expect(vcSimCtx.Client.Update(vcSimCtx, &zone)).To(Succeed())
+
+											// Mark the zone for deletion.
+											Expect(vcSimCtx.Client.Delete(vcSimCtx, &zone)).To(Succeed())
+										}
+									})
+
+									By("restart the watcher", func() {
+										Expect(watcher.Close(vcSimCtx)).Should(Succeed())
+
+										Eventually(func(g Gomega) {
+											vsClientMu.RLock()
+											defer vsClientMu.RUnlock()
+
+											g.Expect(vsClient.Valid()).To(BeTrue())
+											g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(2)))
+										}).Should(Succeed())
+									})
+
+									By("reconfigure the VM", func() {
+										t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+											ExtraConfig: []vimtypes.BaseOptionValue{
+												&vimtypes.OptionValue{
+													Key:   "guestinfo.ipaddr",
+													Value: "1.2.3.4",
+												},
+											},
+										})
+										Expect(err).ToNot(HaveOccurred())
+										Expect(t).ToNot(BeNil())
+										Expect(t.Wait(ctx)).To(Succeed())
+									})
+
+									By("a reconcile request should still be received", func() {
+										chanSource := cource.FromContext(ctx, "VirtualMachine")
+										var e event.GenericEvent
+										Eventually(chanSource).Should(Receive(&e))
+										Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+										Expect(e.Object.GetName()).To(Equal(vmName))
+									})
+								})
 							})
 
-							By("moving vm into zone's folder", func() {
-								t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
-									Folder: ptr.To(ctx.NSInfo.Folder.Reference()),
-								}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+							When("the zone does not have the zone controller finalizer", func() {
+								Specify("a reconcile request should not be received", func() {
+									By("wait for the watcher to start", func() {
+										Eventually(func(g Gomega) {
+											vsClientMu.RLock()
+											defer vsClientMu.RUnlock()
+
+											g.Expect(vsClient.Valid()).To(BeTrue())
+											g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(1)))
+										}).Should(Succeed())
+
+									})
+
+									By("verify that the zone has the finalizer added", func() {
+										Eventually(func(g Gomega) {
+											zoneList := topologyv1.ZoneList{}
+											err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
+											g.Expect(err).NotTo(HaveOccurred())
+											g.Expect(zoneList.Items).ToNot(BeEmpty())
+											for _, zone := range zoneList.Items {
+												g.Expect(zone.Finalizers).To(ContainElement(zonectrl.Finalizer))
+											}
+										}).Should(Succeed())
+									})
+
+									By("first reconcile event should be received", func() {
+										chanSource := cource.FromContext(ctx, "VirtualMachine")
+										var e event.GenericEvent
+										Eventually(chanSource).Should(Receive(&e))
+										Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+										Expect(e.Object.GetName()).To(Equal(vmName))
+									})
+
+									By("add a custom finalizer to the VM, remove the controller finalizer and mark the zone for deletion", func() {
+										zoneList := topologyv1.ZoneList{}
+										err := vcSimCtx.Client.List(vcSimCtx, &zoneList, ctrlclient.InNamespace(vcSimCtx.NSInfo.Namespace))
+										Expect(err).NotTo(HaveOccurred())
+										Expect(zoneList.Items).ToNot(BeEmpty())
+										for _, zone := range zoneList.Items {
+											// Add a custom finalizer
+											controllerutil.AddFinalizer(&zone, "foo/bar")
+											controllerutil.RemoveFinalizer(&zone, zonectrl.Finalizer)
+											Expect(vcSimCtx.Client.Update(vcSimCtx, &zone)).To(Succeed())
+
+											// Mark the zone for deletion
+											Expect(vcSimCtx.Client.Delete(vcSimCtx, &zone)).To(Succeed())
+										}
+									})
+
+									By("close the watcher so all pending property update connections are closed", func() {
+										Expect(watcher.Close(vcSimCtx)).Should(Succeed())
+
+										Eventually(func(g Gomega) {
+											vsClientMu.RLock()
+											defer vsClientMu.RUnlock()
+
+											g.Expect(vsClient.Valid()).To(BeTrue())
+											g.Expect(atomic.LoadInt32(&numNewClientCalls)).To(BeNumerically(">=", int32(2)))
+										}).Should(Succeed())
+									})
+
+									By("reconfigure the VM", func() {
+										t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+											ExtraConfig: []vimtypes.BaseOptionValue{
+												&vimtypes.OptionValue{
+													Key:   "guestinfo.ipaddr",
+													Value: "1.2.3.4",
+												},
+											},
+										})
+										Expect(err).ToNot(HaveOccurred())
+										Expect(t).ToNot(BeNil())
+										Expect(t.Wait(ctx)).To(Succeed())
+									})
+
+									By("a reconcile should not be received", func() {
+										chanSource := cource.FromContext(ctx, "VirtualMachine")
+										Consistently(chanSource).ShouldNot(Receive())
+									})
+								})
+							})
+						})
+
+						When("a bogus Zone Folder MoID", func() {
+							BeforeEach(func() {
+								outerInitEnvFn := initEnvFn
+
+								initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+									outerInitEnvFn(ctx)
+
+									zone := &topologyv1.Zone{
+										ObjectMeta: metav1.ObjectMeta{
+											Name:      "bogus",
+											Namespace: vcSimCtx.NSInfo.Namespace,
+										},
+										Spec: topologyv1.ZoneSpec{
+											ManagedVMs: topologyv1.VSphereEntityInfo{
+												FolderMoID: "group-4242424242",
+											},
+										},
+									}
+									Expect(ctx.Client.Create(ctx, zone)).To(Succeed())
+								}
+							})
+
+							Specify("a reconcile request should still be received", func() {
+								chanSource := cource.FromContext(ctx, "VirtualMachine")
+								var e event.GenericEvent
+								Eventually(chanSource).Should(Receive(&e))
+								Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+								Expect(e.Object.GetName()).To(Equal(vmName))
+
+								By("bogus zone should not have finalizer applied", func() {
+									zone := topologyv1.Zone{
+										ObjectMeta: metav1.ObjectMeta{
+											Name:      "bogus",
+											Namespace: vcSimCtx.NSInfo.Namespace,
+										},
+									}
+									Expect(vcSimCtx.Client.Get(vcSimCtx, ctrlclient.ObjectKeyFromObject(&zone), &zone)).To(Succeed())
+									Expect(zone.Finalizers).To(BeEmpty())
+								})
+							})
+						})
+
+						When("the vm is reconfigured", func() {
+
+							Specify("a second reconcile request should be received", func() {
+								chanSource := cource.FromContext(ctx, "VirtualMachine")
+								var e1 event.GenericEvent
+								Eventually(chanSource).Should(Receive(&e1))
+								Expect(e1.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+								Expect(e1.Object.GetName()).To(Equal(vmName))
+
+								t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+									ExtraConfig: []vimtypes.BaseOptionValue{
+										&vimtypes.OptionValue{
+											Key:   "guestinfo.ipaddr",
+											Value: "1.2.3.4",
+										},
+									},
+								})
 								Expect(err).ToNot(HaveOccurred())
 								Expect(t).ToNot(BeNil())
 								Expect(t.Wait(ctx)).To(Succeed())
+
+								var e2 event.GenericEvent
+								Eventually(chanSource).Should(Receive(&e2))
+								Expect(e2.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+								Expect(e2.Object.GetName()).To(Equal(vmName))
 							})
-						}
+
+							When("the namespacedName has an invalid namespace", func() {
+								Specify("a second reconcile request should not be received", func() {
+									chanSource := cource.FromContext(ctx, "VirtualMachine")
+									var e event.GenericEvent
+									Eventually(chanSource).Should(Receive(&e))
+									Expect(e.Object.GetNamespace()).To(Equal(vcSimCtx.NSInfo.Namespace))
+									Expect(e.Object.GetName()).To(Equal(vmName))
+
+									t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+										ExtraConfig: []vimtypes.BaseOptionValue{
+											&vimtypes.OptionValue{
+												Key:   "guestinfo.ipaddr",
+												Value: "1.2.3.4",
+											},
+											&vimtypes.OptionValue{
+												Key:   "vmservice.namespacedName",
+												Value: "invalid/" + vmName,
+											},
+										},
+									})
+									Expect(err).ToNot(HaveOccurred())
+									Expect(t).ToNot(BeNil())
+									Expect(t.Wait(ctx)).To(Succeed())
+
+									Consistently(chanSource).ShouldNot(Receive())
+								})
+							})
+						})
 					})
-					Specify("a reconcile request should not be received", func() {
-						chanSource := cource.FromContext(ctx, "VirtualMachine")
-						Consistently(chanSource, time.Second*5).ShouldNot(Receive())
+
+					When("the vm does not have the namespacedName in extraConfig", func() {
+						When("the vm's status.uniqueID is in the manager's cache", func() {
+							BeforeEach(func() {
+								initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+									vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
+									Expect(err).ToNot(HaveOccurred())
+									Expect(vmList).ToNot(BeEmpty())
+									vm := vmList[0]
+
+									By("creating vm in k8s", func() {
+										obj := builder.DummyBasicVirtualMachine(
+											vmName,
+											ctx.NSInfo.Namespace)
+										Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+										obj.Status.UniqueID = vm.Reference().Value
+										Expect(ctx.Client.Status().Update(ctx, obj)).To(Succeed())
+									})
+
+									By("moving vm into zone's folder", func() {
+										t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+											Folder: ptr.To(ctx.NSInfo.Folder.Reference()),
+										}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+										Expect(err).ToNot(HaveOccurred())
+										Expect(t).ToNot(BeNil())
+										Expect(t.Wait(ctx)).To(Succeed())
+									})
+								}
+							})
+
+							Specify("a reconcile request should not be received because the VM entered the watcher's scope already verified", func() {
+								chanSource := cource.FromContext(ctx, "VirtualMachine")
+								Consistently(chanSource, time.Second*5).ShouldNot(Receive())
+							})
+
+							When("the vm's k8s object is being deleted", func() {
+								BeforeEach(func() {
+									initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+										vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
+										Expect(err).ToNot(HaveOccurred())
+										Expect(vmList).ToNot(BeEmpty())
+										vm := vmList[0]
+										obj := builder.DummyBasicVirtualMachine(
+											vmName,
+											ctx.NSInfo.Namespace)
+
+										By("creating vm in k8s", func() {
+											Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+											obj.Status.UniqueID = vm.Reference().Value
+											Expect(ctx.Client.Status().Update(ctx, obj)).To(Succeed())
+										})
+
+										By("deleting vm in k8s", func() {
+											// Add a fake finalizer to prevent the VM
+											// from being removed entirely. We want the
+											// VM to exist with a non-zero deletion
+											// time stamp.
+											obj.Finalizers = []string{"fake.com/finalizer"}
+											Expect(ctx.Client.Update(ctx, obj)).To(Succeed())
+											Expect(ctx.Client.Delete(ctx, obj)).To(Succeed())
+										})
+
+										By("moving vm into zone's folder", func() {
+											t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+												Folder: ptr.To(ctx.NSInfo.Folder.Reference()),
+											}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+											Expect(err).ToNot(HaveOccurred())
+											Expect(t).ToNot(BeNil())
+											Expect(t.Wait(ctx)).To(Succeed())
+										})
+									}
+								})
+
+								Specify("a reconcile request should not be received because the VM is being deleted", func() {
+									chanSource := cource.FromContext(ctx, "VirtualMachine")
+									Consistently(chanSource, time.Second*5).ShouldNot(Receive())
+								})
+							})
+						})
+
+						When("the vm's status.uniqueID is not in the manager's cache", func() {
+							BeforeEach(func() {
+								initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+									vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
+									Expect(err).ToNot(HaveOccurred())
+									Expect(vmList).ToNot(BeEmpty())
+									vm := vmList[0]
+
+									By("creating vm in k8s", func() {
+										obj := builder.DummyBasicVirtualMachine(
+											vmName,
+											ctx.NSInfo.Namespace)
+										Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+									})
+
+									By("moving vm into zone's folder", func() {
+										t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+											Folder: ptr.To(ctx.NSInfo.Folder.Reference()),
+										}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+										Expect(err).ToNot(HaveOccurred())
+										Expect(t).ToNot(BeNil())
+										Expect(t.Wait(ctx)).To(Succeed())
+									})
+								}
+							})
+							Specify("a reconcile request should not be received", func() {
+								chanSource := cource.FromContext(ctx, "VirtualMachine")
+								Consistently(chanSource, time.Second*5).ShouldNot(Receive())
+							})
+						})
 					})
 				})
 			})
-		})
-	})
+	}
+}

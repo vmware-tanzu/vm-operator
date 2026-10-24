@@ -784,11 +784,12 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	}
 
 	c.VCClientConfig = pkgclient.Config{
-		Host:       c.server.URL.Hostname(),
-		Port:       c.server.URL.Port(),
-		Username:   simulator.DefaultLogin.Username(),
-		CAFilePath: c.tlsServerCertPath,
-		Datacenter: dc.Reference().Value,
+		Host:                 c.server.URL.Hostname(),
+		Port:                 c.server.URL.Port(),
+		Username:             simulator.DefaultLogin.Username(),
+		CAFilePath:           c.tlsServerCertPath,
+		Datacenter:           dc.Reference().Value,
+		InlineReloginEnabled: false,
 	}
 	if p, ok := simulator.DefaultLogin.Password(); ok {
 		c.VCClientConfig.Password = p

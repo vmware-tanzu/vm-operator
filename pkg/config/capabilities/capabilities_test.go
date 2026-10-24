@@ -196,6 +196,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVMEviction: {
 							Activated: true,
 						},
+						capabilities.CapabilityKeyVCSessionInlineRelogin: {
+							Activated: true,
+						},
 						capabilities.CapabilityKeyControlledRebalancingPolicy: {
 							Activated: true,
 						},
@@ -229,6 +232,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VirtualMachineConfigPolicy = true
 							config.Features.WorkloadNetworkConfiguration = true
 							config.Features.VMEviction = true
+							config.Features.VCSessionInlineRelogin = true
 							config.Features.ControlledRebalancingPolicy = true
 							config.Features.CSIBackupAPI = true
 						})
@@ -298,6 +302,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMEviction, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMEviction).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVCSessionInlineRelogin, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VCSessionInlineRelogin).To(BeTrue())
 					})
 					Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeTrue())
@@ -373,6 +380,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMEviction, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMEviction).To(BeTrue())
+					})
+					Specify(capabilities.CapabilityKeyVCSessionInlineRelogin, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VCSessionInlineRelogin).To(BeTrue())
 					})
 					Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeTrue())
@@ -457,6 +467,9 @@ var _ = Describe("UpdateCapabilities", func() {
 						capabilities.CapabilityKeyVMEviction: {
 							Activated: false,
 						},
+						capabilities.CapabilityKeyVCSessionInlineRelogin: {
+							Activated: false,
+						},
 						capabilities.CapabilityKeyControlledRebalancingPolicy: {
 							Activated: false,
 						},
@@ -532,6 +545,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMEviction, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMEviction).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVCSessionInlineRelogin, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VCSessionInlineRelogin).To(BeFalse())
 					})
 					Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeFalse())
@@ -622,6 +638,9 @@ var _ = Describe("UpdateCapabilities", func() {
 					})
 					Specify(capabilities.CapabilityKeyVMEviction, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.VMEviction).To(BeFalse())
+					})
+					Specify(capabilities.CapabilityKeyVCSessionInlineRelogin, func() {
+						Expect(pkgcfg.FromContext(ctx).Features.VCSessionInlineRelogin).To(BeFalse())
 					})
 					Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeFalse())
@@ -1042,6 +1061,19 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMEviction).To(BeTrue())
 			})
 		})
+		Context(capabilities.CapabilityKeyVCSessionInlineRelogin, func() {
+			BeforeEach(func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VCSessionInlineRelogin).To(BeFalse())
+				obj.Status.Supervisor[capabilities.CapabilityKeyVCSessionInlineRelogin] = capv1.CapabilityStatus{
+					Activated: true,
+				}
+			})
+			Specify("Enabled", func() {
+				Expect(ok).To(BeTrue())
+				Expect(diff).To(Equal("VCSessionInlineRelogin=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VCSessionInlineRelogin).To(BeTrue())
+			})
+		})
 		Context(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 			BeforeEach(func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeFalse())
@@ -1163,6 +1195,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyVMEviction: {
 				Activated: true,
 			},
+			capabilities.CapabilityKeyVCSessionInlineRelogin: {
+				Activated: true,
+			},
 			capabilities.CapabilityKeyControlledRebalancingPolicy: {
 				Activated: true,
 			},
@@ -1210,6 +1245,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.WorkloadNetworkConfiguration = true
 					config.Features.ExtensionCompatConstraint = true
 					config.Features.VMEviction = true
+					config.Features.VCSessionInlineRelogin = true
 					config.Features.ControlledRebalancingPolicy = true
 					config.Features.VMNetworkUnitNumbers = true
 					config.Features.TaggingAPI = true
@@ -1287,6 +1323,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyVMEviction, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMEviction).To(BeTrue())
 			})
+			Specify(capabilities.CapabilityKeyVCSessionInlineRelogin, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VCSessionInlineRelogin).To(BeTrue())
+			})
 			Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeTrue())
 			})
@@ -1325,6 +1364,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.WorkloadNetworkConfiguration = false
 					config.Features.ExtensionCompatConstraint = false
 					config.Features.VMEviction = false
+					config.Features.VCSessionInlineRelogin = false
 					config.Features.VMNetworkUnitNumbers = false
 					config.Features.TaggingAPI = false
 					config.Features.VMHardAffinityDuringExecution = false
@@ -1333,7 +1373,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMHardAffinityDuringExecution=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,VCSessionInlineRelogin=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMHardAffinityDuringExecution=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -1400,6 +1440,9 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify(capabilities.CapabilityKeyVMEviction, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMEviction).To(BeFalse())
+			})
+			Specify(capabilities.CapabilityKeyVCSessionInlineRelogin, func() {
+				Expect(pkgcfg.FromContext(ctx).Features.VCSessionInlineRelogin).To(BeFalse())
 			})
 			Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeFalse())

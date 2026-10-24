@@ -697,217 +697,225 @@ func intgTestsReconcile() {
 	})
 }
 
-var _ = Describe(
-	"ChanSource",
-	Label(
-		testlabels.Controller,
-		testlabels.EnvTest,
-		testlabels.API,
-	), func() {
+// The suite runs in both re-login modes so the controller behaves the same
+// with the timer-driven keepalive and with the inline re-login round trippers.
+func init() {
+	for _, inlineRelogin := range []bool{false, true} {
+		Describe(
+			fmt.Sprintf("ChanSource (InlineReloginEnabled: %v)", inlineRelogin),
+			Label(
+				testlabels.Controller,
+				testlabels.EnvTest,
+				testlabels.API,
+			), func() {
 
-		const (
-			vmName = "my-vm-1"
-		)
+				const (
+					vmName = "my-vm-1"
+				)
 
-		var (
-			ctx                    context.Context
-			vcSimCtx               *builder.IntegrationTestContextForVCSim
-			provider               *providerfake.VMProvider
-			initEnvFn              builder.InitVCSimEnvFn
-			vm                     *object.VirtualMachine
-			numCreateOrUpdateCalls int32
-			obj                    *vmopv1.VirtualMachine
-			objKey                 client.ObjectKey
-		)
+				var (
+					ctx                    context.Context
+					vcSimCtx               *builder.IntegrationTestContextForVCSim
+					provider               *providerfake.VMProvider
+					initEnvFn              builder.InitVCSimEnvFn
+					vm                     *object.VirtualMachine
+					numCreateOrUpdateCalls int32
+					obj                    *vmopv1.VirtualMachine
+					objKey                 client.ObjectKey
+				)
 
-		BeforeEach(func() {
-			numCreateOrUpdateCalls = 0
-			ctx = context.Background()
-			ctx = logr.NewContext(ctx, testutil.GinkgoLogr(4))
-			obj = &vmopv1.VirtualMachine{}
-		})
+				BeforeEach(func() {
+					numCreateOrUpdateCalls = 0
+					ctx = context.Background()
+					ctx = logr.NewContext(ctx, testutil.GinkgoLogr(4))
+					obj = &vmopv1.VirtualMachine{}
+				})
 
-		JustBeforeEach(func() {
-			ctx = logr.NewContext(
-				context.Background(),
-				textlogger.NewLogger(textlogger.NewConfig(
-					textlogger.Verbosity(2),
-					textlogger.Output(GinkgoWriter),
-				)))
+				JustBeforeEach(func() {
+					ctx = logr.NewContext(
+						context.Background(),
+						textlogger.NewLogger(textlogger.NewConfig(
+							textlogger.Verbosity(2),
+							textlogger.Output(GinkgoWriter),
+						)))
 
-			ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
-			ctx = pkgcfg.UpdateContext(
-				ctx,
-				func(config *pkgcfg.Config) {
-					config.AsyncCreateEnabled = true
-					config.AsyncSignalEnabled = true
-				},
-			)
-			ctx = cource.WithContext(ctx)
-			ctx = watcher.WithContext(ctx)
-			ctx = ovfcache.WithContext(ctx)
+					ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
+					ctx = pkgcfg.UpdateContext(
+						ctx,
+						func(config *pkgcfg.Config) {
+							config.AsyncCreateEnabled = true
+							config.AsyncSignalEnabled = true
+						},
+					)
+					ctx = cource.WithContext(ctx)
+					ctx = watcher.WithContext(ctx)
+					ctx = ovfcache.WithContext(ctx)
 
-			provider = providerfake.NewVMProvider()
-			provider.VSphereClientFn = func(ctx context.Context) (*vsclient.Client, error) {
-				return vsclient.NewClient(ctx, vcSimCtx.VCClientConfig)
-			}
-			providerfake.SetCreateOrUpdateFunction(
-				ctx,
-				provider,
-				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-					atomic.AddInt32(&numCreateOrUpdateCalls, 1)
-					return nil
-				},
-			)
-
-			vcSimCtx = builder.NewIntegrationTestContextForVCSim(
-				ctx,
-				builder.VCSimTestConfig{},
-				func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-					if err := vmwatcher.AddToManager(ctx, mgr); err != nil {
-						return err
+					provider = providerfake.NewVMProvider()
+					provider.VSphereClientFn = func(ctx context.Context) (*vsclient.Client, error) {
+						cfg := vcSimCtx.VCClientConfig
+						cfg.InlineReloginEnabled = inlineRelogin
+						return vsclient.NewClient(ctx, cfg)
 					}
-					return virtualmachine.AddToManager(ctx, mgr)
-				},
-				func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
-					ctx.VMProvider = provider
-					return nil
-				},
-				initEnvFn)
-			Expect(vcSimCtx).ToNot(BeNil())
-
-			vcSimCtx.BeforeEach()
-
-			objKey = client.ObjectKey{
-				Namespace: vcSimCtx.NSInfo.Namespace,
-				Name:      vmName,
-			}
-
-			ctx = vcSimCtx
-		})
-
-		BeforeEach(func() {
-			initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
-				vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
-				Expect(err).ToNot(HaveOccurred())
-				Expect(vmList).ToNot(BeEmpty())
-				vm = vmList[0]
-
-				By("creating vm in k8s", func() {
-					obj = builder.DummyBasicVirtualMachine(
-						vmName,
-						ctx.NSInfo.Namespace)
-					Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
-					obj.Status.UniqueID = vm.Reference().Value
-					Expect(ctx.Client.Status().Update(ctx, obj)).To(Succeed())
-				})
-
-				By("adding namespacedName to vm's extraConfig", func() {
-					t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
-						ExtraConfig: []vimtypes.BaseOptionValue{
-							&vimtypes.OptionValue{
-								Key:   "vmservice.namespacedName",
-								Value: ctx.NSInfo.Namespace + "/" + vmName,
-							},
+					providerfake.SetCreateOrUpdateFunction(
+						ctx,
+						provider,
+						func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+							atomic.AddInt32(&numCreateOrUpdateCalls, 1)
+							return nil
 						},
-					})
-					Expect(err).ToNot(HaveOccurred())
-					Expect(t).ToNot(BeNil())
-					Expect(t.Wait(ctx)).To(Succeed())
-				})
+					)
 
-				By("moving vm into the zone's folder", func() {
-					t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
-						Folder: ptr.To(vcSimCtx.NSInfo.Folder.Reference()),
-					}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(t).ToNot(BeNil())
-					Expect(t.Wait(ctx)).To(Succeed())
-				})
-			}
-		})
-
-		AfterEach(func() {
-			vcSimCtx.AfterEach()
-			vcSimCtx = nil
-		})
-
-		JustBeforeEach(func() {
-			By("wait for VM to have finalizer", func() {
-				Eventually(func(g Gomega) {
-					g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
-					g.Expect(obj.Finalizers).To(HaveLen(1))
-				}).Should(Succeed())
-			})
-
-			By("wait for vm to be reconciled once due to the controller starting", func() {
-				Eventually(func() int32 {
-					return atomic.LoadInt32(&numCreateOrUpdateCalls)
-				}).Should(Equal(int32(1)))
-				Consistently(func() int32 {
-					return atomic.LoadInt32(&numCreateOrUpdateCalls)
-				}).Should(Equal(int32(1)))
-			})
-		})
-
-		Specify("vm should be reconciled when change happens on vSphere", func() {
-			By("update the vm's extraConfig", func() {
-				t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
-					ExtraConfig: []vimtypes.BaseOptionValue{
-						&vimtypes.OptionValue{
-							Key:   "guestinfo.ipaddr",
-							Value: "1.2.3.4",
+					vcSimCtx = builder.NewIntegrationTestContextForVCSim(
+						ctx,
+						builder.VCSimTestConfig{},
+						func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+							if err := vmwatcher.AddToManager(ctx, mgr); err != nil {
+								return err
+							}
+							return virtualmachine.AddToManager(ctx, mgr)
 						},
-					},
-				})
-				Expect(err).ToNot(HaveOccurred())
-				Expect(t).ToNot(BeNil())
-				Expect(t.Wait(ctx)).To(Succeed())
-			})
+						func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
+							ctx.VMProvider = provider
+							return nil
+						},
+						initEnvFn)
+					Expect(vcSimCtx).ToNot(BeNil())
 
-			By("wait for vm to be reconciled again, this time by the watcher", func() {
-				Eventually(func() int32 {
-					return atomic.LoadInt32(&numCreateOrUpdateCalls)
-				}).Should(Equal(int32(2)))
-				Consistently(func() int32 {
-					return atomic.LoadInt32(&numCreateOrUpdateCalls)
-				}).Should(Equal(int32(2)))
-			})
-		})
+					vcSimCtx.BeforeEach()
 
-		When("VM has skip-platform-delete annotation", func() {
-			JustBeforeEach(func() {
-				By("add the skip-platform-delete annotation", func() {
-					Eventually(func(g Gomega) {
-						g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
-						if obj.Annotations == nil {
-							obj.Annotations = map[string]string{}
-						}
-						obj.Annotations[pkgconst.SkipDeletePlatformResourceKey] = ""
-						g.Expect(vcSimCtx.Client.Update(ctx, obj)).To(Succeed())
-					}).Should(Succeed())
+					objKey = client.ObjectKey{
+						Namespace: vcSimCtx.NSInfo.Namespace,
+						Name:      vmName,
+					}
+
+					ctx = vcSimCtx
 				})
-				By("delete the VM", func() {
-					Eventually(func(g Gomega) {
-						g.Expect(vcSimCtx.Client.Delete(ctx, obj)).To(Succeed())
-					}).Should(Succeed())
-				})
-			})
-			It("will delete the Kube VirtualMachine object but not the vSphere VM", func() {
-				By("kube vm should be deleted", func() {
-					Eventually(func(g Gomega) {
-						err := vcSimCtx.Client.Get(ctx, objKey, obj)
-						g.Expect(err).To(HaveOccurred())
-						g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-					}).Should(Succeed())
-				})
-				By("vsphere vm should not be deleted", func() {
-					Consistently(func(g Gomega) {
-						name, err := vm.ObjectName(vcSimCtx)
+
+				BeforeEach(func() {
+					initEnvFn = func(ctx *builder.IntegrationTestContextForVCSim) {
+						vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
 						Expect(err).ToNot(HaveOccurred())
-						Expect(name).ToNot(BeEmpty())
-					}).Should(Succeed())
+						Expect(vmList).ToNot(BeEmpty())
+						vm = vmList[0]
+
+						By("creating vm in k8s", func() {
+							obj = builder.DummyBasicVirtualMachine(
+								vmName,
+								ctx.NSInfo.Namespace)
+							Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+							obj.Status.UniqueID = vm.Reference().Value
+							Expect(ctx.Client.Status().Update(ctx, obj)).To(Succeed())
+						})
+
+						By("adding namespacedName to vm's extraConfig", func() {
+							t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+								ExtraConfig: []vimtypes.BaseOptionValue{
+									&vimtypes.OptionValue{
+										Key:   "vmservice.namespacedName",
+										Value: ctx.NSInfo.Namespace + "/" + vmName,
+									},
+								},
+							})
+							Expect(err).ToNot(HaveOccurred())
+							Expect(t).ToNot(BeNil())
+							Expect(t.Wait(ctx)).To(Succeed())
+						})
+
+						By("moving vm into the zone's folder", func() {
+							t, err := vm.Relocate(ctx, vimtypes.VirtualMachineRelocateSpec{
+								Folder: ptr.To(vcSimCtx.NSInfo.Folder.Reference()),
+							}, vimtypes.VirtualMachineMovePriorityDefaultPriority)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(t).ToNot(BeNil())
+							Expect(t.Wait(ctx)).To(Succeed())
+						})
+					}
+				})
+
+				AfterEach(func() {
+					vcSimCtx.AfterEach()
+					vcSimCtx = nil
+				})
+
+				JustBeforeEach(func() {
+					By("wait for VM to have finalizer", func() {
+						Eventually(func(g Gomega) {
+							g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
+							g.Expect(obj.Finalizers).To(HaveLen(1))
+						}).Should(Succeed())
+					})
+
+					By("wait for vm to be reconciled once due to the controller starting", func() {
+						Eventually(func() int32 {
+							return atomic.LoadInt32(&numCreateOrUpdateCalls)
+						}).Should(Equal(int32(1)))
+						Consistently(func() int32 {
+							return atomic.LoadInt32(&numCreateOrUpdateCalls)
+						}).Should(Equal(int32(1)))
+					})
+				})
+
+				Specify("vm should be reconciled when change happens on vSphere", func() {
+					By("update the vm's extraConfig", func() {
+						t, err := vm.Reconfigure(ctx, vimtypes.VirtualMachineConfigSpec{
+							ExtraConfig: []vimtypes.BaseOptionValue{
+								&vimtypes.OptionValue{
+									Key:   "guestinfo.ipaddr",
+									Value: "1.2.3.4",
+								},
+							},
+						})
+						Expect(err).ToNot(HaveOccurred())
+						Expect(t).ToNot(BeNil())
+						Expect(t.Wait(ctx)).To(Succeed())
+					})
+
+					By("wait for vm to be reconciled again, this time by the watcher", func() {
+						Eventually(func() int32 {
+							return atomic.LoadInt32(&numCreateOrUpdateCalls)
+						}).Should(Equal(int32(2)))
+						Consistently(func() int32 {
+							return atomic.LoadInt32(&numCreateOrUpdateCalls)
+						}).Should(Equal(int32(2)))
+					})
+				})
+
+				When("VM has skip-platform-delete annotation", func() {
+					JustBeforeEach(func() {
+						By("add the skip-platform-delete annotation", func() {
+							Eventually(func(g Gomega) {
+								g.Expect(vcSimCtx.Client.Get(ctx, objKey, obj)).To(Succeed())
+								if obj.Annotations == nil {
+									obj.Annotations = map[string]string{}
+								}
+								obj.Annotations[pkgconst.SkipDeletePlatformResourceKey] = ""
+								g.Expect(vcSimCtx.Client.Update(ctx, obj)).To(Succeed())
+							}).Should(Succeed())
+						})
+						By("delete the VM", func() {
+							Eventually(func(g Gomega) {
+								g.Expect(vcSimCtx.Client.Delete(ctx, obj)).To(Succeed())
+							}).Should(Succeed())
+						})
+					})
+					It("will delete the Kube VirtualMachine object but not the vSphere VM", func() {
+						By("kube vm should be deleted", func() {
+							Eventually(func(g Gomega) {
+								err := vcSimCtx.Client.Get(ctx, objKey, obj)
+								g.Expect(err).To(HaveOccurred())
+								g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+							}).Should(Succeed())
+						})
+						By("vsphere vm should not be deleted", func() {
+							Consistently(func(g Gomega) {
+								name, err := vm.ObjectName(vcSimCtx)
+								Expect(err).ToNot(HaveOccurred())
+								Expect(name).ToNot(BeEmpty())
+							}).Should(Succeed())
+						})
+					})
 				})
 			})
-		})
-	})
+	}
+}

@@ -252,7 +252,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmservice.VerifyVMClassDeletion(wcpClient, newVMClassName)
 	})
 
-	It("Should create expected resources for a single VirtualMachine", func() {
+	It("Should create a VirtualMachine with an E1000 NIC and expected extraConfig, CPU, and memory", func() {
 		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassE1000)).To(Succeed())
 
 		err := vmservice.EnsureNamespaceHasAccess(input.WCPClient, vmservice.VMClassE1000, input.WCPNamespaceName)

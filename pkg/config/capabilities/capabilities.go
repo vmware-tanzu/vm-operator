@@ -172,6 +172,13 @@ const (
 	// CapabilityKeyCSIBackupAPI is the name of the capability key defined in
 	// the Supervisor capabilities CRD for exposing disk lists in VM snapshots.
 	CapabilityKeyCSIBackupAPI = "supports_CSI_Backup_API"
+
+	// CapabilityKeyVCSessionInlineRelogin is the name of the capability key
+	// defined in the Supervisor capabilities CRD. It gates the vCenter
+	// client's inline session re-login: when active, an authentication
+	// failure re-authenticates and replays the request in place instead of
+	// waiting for the next timer-driven keepalive tick.
+	CapabilityKeyVCSessionInlineRelogin = "supports_vc_session_inline_relogin"
 )
 
 var (
@@ -364,6 +371,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMHardAffinityDuringExecution = capStatus.Activated
 		case CapabilityKeyCSIBackupAPI:
 			fs.CSIBackupAPI = capStatus.Activated
+		case CapabilityKeyVCSessionInlineRelogin:
+			fs.VCSessionInlineRelogin = capStatus.Activated
 		}
 
 	}

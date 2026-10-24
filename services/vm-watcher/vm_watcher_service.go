@@ -125,6 +125,10 @@ func (s Service) Start(ctx context.Context) error {
 
 			// TODO: We might want to sleep a bit here so we don't spin if like we
 			// cannot get a VC client.
+			if ctx.Err() == nil {
+				logger.Info("Waiting a bit before restarting VM watcher service")
+				time.Sleep(5 * time.Second)
+			}
 		}
 	}
 	return ctx.Err()

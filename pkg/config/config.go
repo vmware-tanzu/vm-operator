@@ -220,6 +220,7 @@ type FeatureStates struct {
 	WorkloadNetworkConfiguration  bool
 	ExtensionCompatConstraint     bool
 	VMEviction                    bool
+	VCSessionInlineRelogin        bool
 	ControlledRebalancingPolicy   bool
 	VMNetworkUnitNumbers          bool
 	K8sWorkloadMgmtAPI            bool

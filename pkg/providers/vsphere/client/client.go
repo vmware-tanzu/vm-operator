@@ -7,6 +7,7 @@ package client
 import (
 	"context"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
@@ -23,13 +24,14 @@ func NewClient(
 	config *config.VSphereVMProviderConfig) (*Client, error) {
 
 	c, err := client.NewClient(ctx, client.Config{
-		Host:       config.VcPNID,
-		Port:       config.VcPort,
-		Username:   config.VcCreds.Username,
-		Password:   config.VcCreds.Password,
-		CAFilePath: config.CAFilePath,
-		Insecure:   config.InsecureSkipTLSVerify,
-		Datacenter: config.Datacenter,
+		Host:                 config.VcPNID,
+		Port:                 config.VcPort,
+		Username:             config.VcCreds.Username,
+		Password:             config.VcCreds.Password,
+		CAFilePath:           config.CAFilePath,
+		Insecure:             config.InsecureSkipTLSVerify,
+		Datacenter:           config.Datacenter,
+		InlineReloginEnabled: pkgcfg.FromContext(ctx).Features.VCSessionInlineRelogin,
 	})
 
 	if err != nil {

@@ -7,7 +7,6 @@ package storage
 import (
 	"fmt"
 
-	"github.com/vmware/govmomi/pbm"
 	pbmtypes "github.com/vmware/govmomi/pbm/types"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -67,7 +66,7 @@ func GetDiskProvisioningForProfile(
 	vcClient *vcclient.Client,
 	storageProfileID string) (string, error) {
 
-	c, err := pbm.NewClient(vmCtx, vcClient.VimClient())
+	c, err := vcClient.NewPbmClient(vmCtx)
 	if err != nil {
 		return "", err
 	}

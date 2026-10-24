@@ -565,9 +565,30 @@ binding modes:
      detects or guards against that specific race.
 
    Closing that gap would need a DRS VM-Host rule, or placing the VM's home on
-   the same host-local datastore. Separately, nothing prevents an
-   administrator from relocating a host-local VM in vCenter by hand; detecting
-   and reporting that drift is out of scope.
+   the same host-local datastore. Two candidate mechanisms were evaluated and
+   rejected:
+
+   - **`ControlledRebalancingPolicy`** (Supervisor capability
+     `supports_infrapolicy_controlled_rebalancing`) applies the vCenter compute
+     policy capability `disable_drs_vmotion`. That is closer to what this gap
+     needs than a VM-Host rule, since the requirement is that the VM not move
+     rather than that it be bound to a *named* host. It is nonetheless not
+     usable here. The CRs are mirrored down from the WCP InfraPolicy admin API
+     and VM Operator has read-only access with no controller for the type, so
+     this feature cannot apply one to a VM it has just placed. Its `MatchSpec`
+     selects on workload labels, guest ID, kind, and image, none of which can
+     express "consumes a host-local PVC". Every in-repo description scopes it
+     to "cluster load balancing", while the sibling eviction policies name
+     maintenance mode explicitly — so it likely does not cover the
+     maintenance-mode half of this gap. And it sits behind a separate vCenter
+     FSS, `LatencySensitiveVmsResourceMgmt`.
+   - **The WCP `vm_host_affinity` compute policy capability** is only a *soft*
+     rule, which is why the eviction-policy E2E builds a real
+     `ClusterVmHostRuleInfo` instead. Closing this gap by way of a VM-Host rule
+     would need the hard rule, not that capability.
+
+   Separately, nothing prevents an administrator from relocating a host-local
+   VM in vCenter by hand; detecting and reporting that drift is out of scope.
 5. **More than one host-local volume on a VM requires a
    `WaitForFirstConsumer` StorageClass.** Under `Immediate` binding each PVC is
    provisioned before a consumer exists, so nothing correlates the decisions.

@@ -2151,6 +2151,9 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			It("returns not-ready error and creates the interface", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(err).To(MatchError(
+					"interface \"eth0\": network interface is not ready\n" +
+						"interface \"eth1\": network interface is not ready"))
 				Expect(devices).To(BeEmpty())
 
 				netIf := &netopv1alpha1.NetworkInterface{}
@@ -2307,7 +2310,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			It("returns failure error", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
-				Expect(err).To(MatchError("error getting device for interface eth0: network interface is not ready: failure - SomeReason: something went wrong"))
+				Expect(err).To(MatchError("interface \"eth0\": network interface is not ready: failure - SomeReason: something went wrong"))
 			})
 		})
 	})
@@ -2352,6 +2355,9 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			It("returns not-ready error and creates the interface", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(err).To(MatchError(
+					"interface \"eth0\": network interface is not ready\n" +
+						"interface \"eth1\": network interface is not ready"))
 				Expect(devices).To(BeEmpty())
 
 				vnetIf := &ncpv1alpha1.VirtualNetworkInterface{}
@@ -2495,7 +2501,7 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 
 			It("returns error about missing provider status", func() {
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("ready network interface does not have provider status"))
+				Expect(err.Error()).To(ContainSubstring("interface \"eth0\": waiting for network interface status"))
 			})
 		})
 	})
@@ -2540,6 +2546,9 @@ var _ = Describe("CreateNetworkDevices", Label(testlabels.VCSim), func() {
 			It("returns not-ready error and creates the interface", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+				Expect(err).To(MatchError(
+					"interface \"eth0\": network interface is not ready\n" +
+						"interface \"eth1\": network interface is not ready"))
 				Expect(devices).To(BeEmpty())
 
 				subnetPort := &vpcv1alpha1.SubnetPort{}

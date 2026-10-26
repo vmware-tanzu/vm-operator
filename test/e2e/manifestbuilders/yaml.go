@@ -8,9 +8,11 @@ import (
 	"bytes"
 	"fmt"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
@@ -20,10 +22,9 @@ import (
 // metadata.creationTimestamp fields are omitted since they are never part of
 // a desired-state manifest.
 func ToYAML(objs ...ctrlclient.Object) []byte {
+	GinkgoHelper()
 	out, err := toYAML(objs...)
-	if err != nil {
-		e2eframework.Failf("Failed to render YAML: %v", err)
-	}
+	Expect(err).ToNot(HaveOccurred(), "Failed to render YAML")
 	return out
 }
 

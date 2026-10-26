@@ -144,7 +144,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		By("Verifying VM gets expected BIOS and instance UUID")
 		virtualMachine, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(virtualMachine.Spec.BiosUUID).To(Equal(virtualMachine.Status.BiosUUID))
 
 		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
@@ -176,10 +176,10 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		var vmMO mo.VirtualMachine
 		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 
 		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, clusterResources.VMClassName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 
 		hw := vmMO.Config.Hardware
 		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
@@ -213,11 +213,11 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		var vmMO mo.VirtualMachine
 		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 
 		// Verify initial CPU and memory.
 		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, clusterResources.VMClassName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 
@@ -234,14 +234,14 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmoperator.WaitOnVirtualMachineConditionUpdate(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, classConfigSyncedCondition)
 
 		newVMClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, newVMClassName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		// Assert that we can tell that a resize happened.
 		Expect(vmClass.Spec.Hardware.Cpus).ToNot(Equal(newVMClass.Spec.Hardware.Cpus))
 		Expect(vmClass.Spec.Hardware.Memory).ToNot(Equal(newVMClass.Spec.Hardware.Memory))
 
 		By("VC VM configuration should have been updated")
 		err = propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(newVMClass.Spec.Hardware.Cpus))
 		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(newVMClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 		// Make sure the VM reflects the guaranteed class.
@@ -261,7 +261,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassE1000)).To(Succeed())
 
 		err := vmservice.EnsureNamespaceHasAccess(input.WCPClient, vmservice.VMClassE1000, input.WCPNamespaceName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 
 		vmToCreate := &vmopv1a2.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -283,7 +283,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		var vmMO mo.VirtualMachine
 		err = propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 
 		hw := vmMO.Config.Hardware
 		// verify nic type
@@ -302,7 +302,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		// verify cpu and memory
 		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmservice.VMClassE1000)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 
@@ -313,7 +313,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassVMX22)).To(Succeed())
 
 		err := vmservice.EnsureNamespaceHasAccess(input.WCPClient, vmservice.VMClassVMX22, input.WCPNamespaceName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 
 		vmToCreate := &vmopv1a2.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -338,7 +338,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		var vmMO mo.VirtualMachine
 		err = propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 
 		hwVersion := vmMO.Config.Version
 		hw := vmMO.Config.Hardware
@@ -347,7 +347,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 
 		// verify cpu and memory
 		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmservice.VMClassVMX22)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 

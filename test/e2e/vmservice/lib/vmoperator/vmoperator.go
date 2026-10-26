@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -165,7 +166,7 @@ func WaitForVirtualMachineCreation(ctx context.Context, config *config.E2EConfig
 	By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", ns, vmName))
 	WaitForVirtualMachineToExist(ctx, config, svClusterClient, ns, vmName)
 	WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, ns, vmName)
-	WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+	WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, vmopv1.VirtualMachinePowerStateOn)
 	WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
 }
 
@@ -530,27 +531,109 @@ func WaitForVirtualMachineZone(ctx context.Context, config *config.E2EConfig, cl
 	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for VirtualMachines %s to be created in zone %s", vmName, zone)
 }
 
-func UpdateVirtualMachinePowerState(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName, powerState string) {
-	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
-		g.Expect(err).NotTo(HaveOccurred())
+// PatchVirtualMachine fetches an existing VM, applies mutateFn, and patches any
+// changes to its spec or metadata. It never creates a VM. The callback must not
+// change the VM's name or namespace. By default, it uses a plain merge patch.
+// Pass ctrlclient.MergeFromWithOptimisticLock{} to reject concurrent changes.
+// Callers that retry must invoke this helper again to fetch the latest VM.
+func PatchVirtualMachine(
+	ctx context.Context,
+	client ctrlclient.Client,
+	ns, vmName string,
+	mutateFn func(*vmopv1.VirtualMachine) error,
+	opts ...ctrlclient.MergeFromOption) error {
 
-		vm.Spec.PowerState = vmopv1.VirtualMachinePowerState(powerState)
-		g.Expect(client.Update(ctx, vm)).To(Succeed())
-	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(Succeed(), "Timed out updating VirtualMachines %s PowerState to %s", vmName, powerState)
+	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
+	if err != nil {
+		return fmt.Errorf("failed to get VirtualMachine %s/%s: %w", ns, vmName, err)
+	}
+
+	base := vm.DeepCopy()
+	if err := mutateFn(vm); err != nil {
+		return fmt.Errorf("failed to mutate VirtualMachine %s/%s: %w", ns, vmName, err)
+	}
+	if vm.Name != vmName || vm.Namespace != ns {
+		return fmt.Errorf("mutateFn must not change VirtualMachine %s/%s name or namespace", ns, vmName)
+	}
+	if apiequality.Semantic.DeepEqual(base, vm) {
+		return nil
+	}
+
+	if err := client.Patch(ctx, vm, ctrlclient.MergeFromWithOptions(base, opts...)); err != nil {
+		return fmt.Errorf("failed to patch VirtualMachine %s/%s: %w", ns, vmName, err)
+	}
+	return nil
 }
 
+// UpdateVirtualMachinePowerState patches the desired power state of an existing
+// VM using optimistic locking, retrying with the latest VM until the patch succeeds.
+func UpdateVirtualMachinePowerState(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string, powerState vmopv1.VirtualMachinePowerState) {
+	GinkgoHelper()
+	Eventually(func() error {
+		return PatchVirtualMachine(ctx, client, ns, vmName, func(vm *vmopv1.VirtualMachine) error {
+			vm.Spec.PowerState = powerState
+			return nil
+		}, ctrlclient.MergeFromWithOptimisticLock{})
+	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).WithContext(ctx).Should(Succeed(),
+		"Timed out updating VirtualMachine %s/%s PowerState to %s", ns, vmName, powerState)
+}
+
+// UpdateVirtualMachinePowerStateAndWait patches the desired power state of an
+// existing VM and waits for its status to report that state.
+func UpdateVirtualMachinePowerStateAndWait(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string, powerState vmopv1.VirtualMachinePowerState) {
+	GinkgoHelper()
+	UpdateVirtualMachinePowerState(ctx, config, client, ns, vmName, powerState)
+	WaitForVirtualMachinePowerState(ctx, config, client, ns, vmName, powerState)
+}
+
+// PowerOnVirtualMachineAndWait powers on an existing VM and waits for it to be powered on.
+func PowerOnVirtualMachineAndWait(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
+	GinkgoHelper()
+	UpdateVirtualMachinePowerStateAndWait(ctx, config, client, ns, vmName, vmopv1.VirtualMachinePowerStateOn)
+}
+
+// PowerOffVirtualMachineAndWait powers off an existing VM and waits for it to be powered off.
+func PowerOffVirtualMachineAndWait(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
+	GinkgoHelper()
+	UpdateVirtualMachinePowerStateAndWait(ctx, config, client, ns, vmName, vmopv1.VirtualMachinePowerStateOff)
+}
+
+// SuspendVirtualMachineAndWait suspends an existing VM using the specified
+// suspend mode and waits for it to be suspended.
+func SuspendVirtualMachineAndWait(
+	ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client,
+	ns, vmName string,
+	suspendMode vmopv1.VirtualMachinePowerOpMode) {
+
+	GinkgoHelper()
+	Eventually(func() error {
+		return PatchVirtualMachine(ctx, client, ns, vmName, func(vm *vmopv1.VirtualMachine) error {
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+			vm.Spec.SuspendMode = suspendMode
+			return nil
+		}, ctrlclient.MergeFromWithOptimisticLock{})
+	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).WithContext(ctx).Should(Succeed(),
+		"Timed out suspending VirtualMachine %s/%s using %s suspend mode", ns, vmName, suspendMode)
+	WaitForVirtualMachinePowerState(ctx, config, client, ns, vmName, vmopv1.VirtualMachinePowerStateSuspended)
+}
+
+// WaitForVirtualMachinePowerState waits for the VM's status to report the
+// expected power state.
 func WaitForVirtualMachinePowerState(
 	ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client,
-	ns, vmName, expectedPowerState string) {
-	By(fmt.Sprintf("Waiting for VM power state to reach %s", expectedPowerState))
+	ns, vmName string,
+	expectedPowerState vmopv1.VirtualMachinePowerState) {
+	GinkgoHelper()
+	By(fmt.Sprintf("Waiting for VM %s/%s power state to reach %s", ns, vmName, expectedPowerState))
 	Eventually(func(g Gomega) {
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerState(expectedPowerState)))
-	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(Succeed(), "Timed out waiting for VirtualMachines %s PowerState to be updated to %s", vmName, expectedPowerState)
+		g.Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).WithContext(ctx).Should(Succeed(), "Timed out waiting for VirtualMachines %s PowerState to be updated to %s", vmName, expectedPowerState)
 }
 
 func WaitForLinuxPrepCustomizeNextPowerOnFalse(

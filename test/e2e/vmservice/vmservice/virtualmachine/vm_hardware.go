@@ -205,7 +205,7 @@ func waitForVMAndBatchAttach(
 	csi.WaitForBatchAttachVolumesToBeAttached(ctx, config, svClusterClient, vmSvcNamespace, vmPrefix, expectedVolumes)
 
 	By("Waiting for Virtual Machine to Power On")
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmPrefix, "PoweredOn")
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmPrefix, vmopv1.VirtualMachinePowerStateOn)
 
 	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmPrefix)
 	Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
@@ -511,7 +511,7 @@ func (b *bootDiskCapacityVM) createPoweredOffVM(
 	Expect(b.client.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", b.name)
 	vmoperator.WaitForVirtualMachineToExist(ctx, b.config, b.client, b.namespace, b.name)
 	vmoperator.WaitForVirtualMachineConditionCreated(ctx, b.config, b.client, b.namespace, b.name)
-	vmoperator.WaitForVirtualMachinePowerState(ctx, b.config, b.client, b.namespace, b.name, string(vmopv1.VirtualMachinePowerStateOff))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, b.config, b.client, b.namespace, b.name, vmopv1.VirtualMachinePowerStateOff)
 }
 
 // createPoweredOffVMWithCapacity creates a powered off VM from the image with
@@ -538,7 +538,7 @@ func (b *bootDiskCapacityVM) createPoweredOffVMWithCapacity(ctx context.Context)
 	Expect(b.client.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", b.name)
 	vmoperator.WaitForVirtualMachineToExist(ctx, b.config, b.client, b.namespace, b.name)
 	vmoperator.WaitForVirtualMachineConditionCreated(ctx, b.config, b.client, b.namespace, b.name)
-	vmoperator.WaitForVirtualMachinePowerState(ctx, b.config, b.client, b.namespace, b.name, string(vmopv1.VirtualMachinePowerStateOff))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, b.config, b.client, b.namespace, b.name, vmopv1.VirtualMachinePowerStateOff)
 }
 
 // setDesiredCapacity sets spec.advanced.bootDiskCapacity on the VM to the
@@ -1371,7 +1371,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						PowerState:       string(vmPowerState),
 						Hardware:         &hardware,
 					}, false)
-					vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmPowerState))
+					vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmPowerState)
 
 					By("Verifying the controllers are created")
 					verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
@@ -1451,7 +1451,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Hardware:         &hardware,
 				}, false)
 
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOff)
 
 				By("Verifying the controllers are created")
 				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
@@ -1501,7 +1501,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Hardware:         &hardware,
 				}, false)
 
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 
 				By("Verifying the controllers are created")
 				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, vmName,
@@ -1625,7 +1625,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 					By("Waiting for Virtual Machine to Power On: " + vmName)
 					vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName,
-						"PoweredOn")
+						vmopv1.VirtualMachinePowerStateOn)
 				}
 			})
 		})
@@ -1899,15 +1899,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// Get backfilled volumes and add them to volumeNames
 				backfilledVolumes := getBackfilledVolumes(ctx, config, svClusterClient, vmSvcNamespace, vmName, allDisksArePVCapabilityEnabled)
 				volumeNames = append(volumeNames, backfilledVolumes...)
-				vm := waitForVMAndBatchAttach(ctx, config, svClusterClient, vmSvcNamespace, vmName, volumeNames)
+				waitForVMAndBatchAttach(ctx, config, svClusterClient, vmSvcNamespace, vmName, volumeNames)
 
 				By("Powering off the Virtual Machine")
 
-				vmPatch := vm.DeepCopy()
-				vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
-					To(Succeed(), "failed to patch virtualmachine")
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, "PoweredOff")
+				vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
 				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
@@ -1915,11 +1911,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Powering on the Virtual Machine")
 
-				vmPatch = vm.DeepCopy()
-				vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
-					To(Succeed(), "failed to patch virtualmachine")
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+				vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
 				By("Deleting the Virtual Machine")
 				Expect(svClusterClient.Delete(ctx, vm)).To(Succeed(), "failed to delete virtualmachine")
@@ -1997,7 +1989,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
 					To(Succeed(), "failed to patch virtualmachine removable fields")
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, "PoweredOff")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOff)
 
 				By("Detaching all volumes")
 
@@ -2048,11 +2040,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vm, err = utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
 				Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachine")
 
-				vmPatch = vm.DeepCopy()
-				vmPatch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-				Expect(clusterProxy.GetClient().Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
-					To(Succeed(), "failed to patch virtualmachine power state to on")
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+				vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
 				By("Verifying status.volumes matches the originally recorded state")
 				Eventually(func(g Gomega) {
@@ -2127,7 +2115,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Waiting for the Virtual Machine to be created and power on")
 				vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmSvcNamespace, vmName)
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 
 				By("Verifying the CD-ROMs are attached to the first IDE controller")
 
@@ -2221,7 +2209,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, bootDiskVM.desiredCapacity)
 
 				By("Verifying the Virtual Machine is still powered off")
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOff)
 			})
 
 			// Only the boot disk is extended. The other disks keep the size of
@@ -2237,7 +2225,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// an IP address. Do not wait for one.
 				vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmSvcNamespace, vmName)
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the requested size")
 				vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, bootDiskVM.desiredCapacity)
@@ -2297,12 +2285,10 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// The update path only builds a disk resize when the VM goes
 				// from off to on, so power cycle the VM to exercise it.
 				By("Powering off the Virtual Machine")
-				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+				vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
 				By("Powering on the Virtual Machine")
-				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the original size")
 				vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, bootDiskVM.desiredCapacity)
@@ -2324,8 +2310,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				bootDiskVM.setDesiredCapacity(ctx)
 
 				By("Powering on the Virtual Machine")
-				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the image size")
@@ -2346,8 +2331,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				bootDiskVM.setDesiredCapacity(ctx)
 
 				By("Powering on the Virtual Machine")
-				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
 				bootDiskVM.verifyLinkedCloneAtImageSize(ctx)
 			})
@@ -2371,8 +2355,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				bootDiskVM.setDesiredCapacity(ctx)
 
 				By("Powering on the Virtual Machine")
-				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the image size")
 				vmoperator.EventuallyBootDiskCapacityMatches(ctx, config, vCenterClient, svClusterClient, vmSvcNamespace, vmName, bootDiskVM.imageCapacity)
@@ -2402,7 +2385,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				bootDiskVM.createVMWithCapacitySetDuringSnapshot(ctx)
 				bootDiskVM.deleteSnapshot(ctx)
 				bootDiskVM.powerOnWithPromoteDisksMode(ctx, vmopv1.VirtualMachinePromoteDisksModeOnline)
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 
 				By("Verifying the vCenter disk, the PVC request and the PV capacity are all the image size")
@@ -2419,7 +2402,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				bootDiskVM.createVMWithCapacitySetDuringSnapshot(ctx)
 				bootDiskVM.deleteSnapshot(ctx)
 				bootDiskVM.powerOnWithPromoteDisksMode(ctx, vmopv1.VirtualMachinePromoteDisksModeOffline)
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 
 				bootDiskVM.verifyLinkedCloneAtImageSize(ctx)
 
@@ -2427,16 +2410,14 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				// then a full clone without a PVC, so the capacity is applied
 				// before the PVC is created.
 				By("Powering off the Virtual Machine")
-				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+				vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 				vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, vmSvcNamespace, vmName, metav1.Condition{
 					Type:   vmopv1.VirtualMachineDiskPromotionSynced,
 					Status: metav1.ConditionTrue,
 				})
 
 				By("Powering on the Virtual Machine")
-				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 				vmoperator.WaitForBootDiskPVC(ctx, config, svClusterClient, vmSvcNamespace, vmName, nil)
 
 				// NOTE: The capacity is applied here even though the field was not
@@ -2456,8 +2437,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				bootDiskVM.deleteSnapshot(ctx)
 
 				By("Powering on the Virtual Machine")
-				vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
 				bootDiskVM.verifyLinkedCloneAtImageSize(ctx)
 			})
@@ -2768,7 +2748,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vmSvcNamespace, importedVMName, false,
 					hardwareVMDumps(clusterProxy, vmSvcNamespace, importedVMName)...)
 
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, vmopv1.VirtualMachinePowerStateOn)
 
 				By("Verifying controllers in status")
 				verifyCreatedControllersCount(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, map[vmopv1.VirtualControllerType]int{
@@ -2964,7 +2944,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vmSvcNamespace, importedVMName, false,
 					hardwareVMDumps(clusterProxy, vmSvcNamespace, importedVMName)...)
 
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, vmopv1.VirtualMachinePowerStateOn)
 
 				By("Waiting for the unmanaged disks to be backfilled and registered as PVCs")
 
@@ -3178,7 +3158,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					hardwareVMDumps(clusterProxy, vmSvcNamespace, importedVMName)...)
 
 				By("Verifying VM is imported and powered on")
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, vmopv1.VirtualMachinePowerStateOn)
 				e2eframework.Logf("Imported VM %s is powered on", importedVMName)
 
 				By("Verifying shared SCSI controller in VM status")

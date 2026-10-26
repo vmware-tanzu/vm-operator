@@ -136,7 +136,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 		BeforeEach(func() {
 			createSnapshotVM(ctx, vmSvcE2EConfig, svClusterClient, vmSvcClusterResources, vmSvcNamespace, vmName)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 		})
 
 		It("successfully create, update, revert to, and delete vm snapshots", Label("smoke"), func() {
@@ -398,7 +398,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 					Namespace:        vmSvcNamespace,
 				})
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 		})
 
 		It("successfully create, and delete vm snapshots", func() {
@@ -525,7 +525,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 				By("Waiting for the imported VM to power on")
 				vmoperator.WaitForVirtualMachinePowerState(
-					ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
+					ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, importedVMName, vmopv1.VirtualMachinePowerStateOn)
 
 				By("Creating a snapshot on the imported brownfield VM")
 				vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
@@ -566,7 +566,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 			createSnapshotVM(ctx, vmSvcE2EConfig, svClusterClient, vmSvcClusterResources, vmSvcNamespace, vmName)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 
 			By("Enabling ChangeBlockTracking on the VM")
 			vm := &vmopv1.VirtualMachine{}

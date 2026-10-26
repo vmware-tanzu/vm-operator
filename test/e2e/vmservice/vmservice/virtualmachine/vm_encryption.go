@@ -300,7 +300,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vmName)
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 		waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 	})
 
@@ -448,7 +448,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(adminClient.Patch(ctx, class, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update EncryptionClass")
 
 		By("Expect VM to be created using updated encryption class key")
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
 		Expect(cryptoStatus.KeyID).To(Equal(class.Spec.KeyID))
@@ -580,7 +580,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 
 		By("Verify VM is encrypted with the encryption class provider")
@@ -672,7 +672,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 
 		By("Verify VM is encrypted")
@@ -763,7 +763,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
 		Expect(cryptoStatus.KeyID).NotTo(BeEmpty())

@@ -523,7 +523,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			Spec: vmopv1a1.VirtualMachineSpec{
 				ClassName:    clusterResources.VMClassName,
 				StorageClass: clusterResources.StorageClassName,
-				PowerState:   "PoweredOn",
+				PowerState:   vmopv1a1.VirtualMachinePoweredOn,
 			},
 		}
 		v1a2VM = &vmopv1a2.VirtualMachine{
@@ -970,7 +970,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, ns, vmName)
 			vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, ns, vmName, "windows-sysprep")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, ns, vmName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, vmopv1.VirtualMachinePowerStateOn)
 			vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName, "windows-sysprep")
 		}
 

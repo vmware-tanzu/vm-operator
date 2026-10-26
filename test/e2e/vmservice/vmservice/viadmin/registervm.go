@@ -369,8 +369,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			Expect(backupVersion).ToNot(BeEmpty())
 
 			By("Power off the VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Add the pause annotation to VM")
 
@@ -556,8 +555,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Both PVC A and B are now attached to VM.
 
 			By("Power off the VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Add the pause annotation and set all volumes as removable")
 
@@ -979,8 +977,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vmObj := object.NewVirtualMachine(vmopvCenterClient, vmMoRef)
 
 			By("Power off the VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, "PoweredOff")
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Add the pause annotation to VM")
 

@@ -18,6 +18,7 @@ import (
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
@@ -114,7 +115,7 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 				}
 				vmoperator.CreateVirtualMachine(ctx, config, input.ClusterProxy, vmToCreate, false)
 
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 				vmoperator.WaitForVirtualMachineZone(ctx, config, svClusterClient, input.WCPNamespaceName, zoneName, vmName)
 
 				// Verify that this VM is created in the specific cluster.
@@ -138,7 +139,7 @@ func VMMultipleClusterSpec(ctx context.Context, inputGetter func() VMMultipleClu
 				}
 				vmoperator.CreateVirtualMachine(ctx, config, input.ClusterProxy, vmToCreate, false)
 
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 				vmoperator.WaitForVirtualMachineZone(ctx, config, svClusterClient, input.WCPNamespaceName, "", vmName)
 			})
 		})

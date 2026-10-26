@@ -296,24 +296,6 @@ func waitForNICExtraConfigSyncedWithExtraConfigAbsent(
 	time.Sleep(time.Second)
 }
 
-// patchVMPowerState patches key's spec.powerState to state and waits for
-// status.powerState to reach it.
-func patchVMPowerState(
-	ctx context.Context,
-	svClusterClient ctrlclient.Client,
-	config *e2eConfig.E2EConfig,
-	key types.NamespacedName,
-	state vmopv1.VirtualMachinePowerState,
-) {
-	vm := getExtraConfigVM(ctx, svClusterClient, key)
-	vmPatch := vm.DeepCopy()
-	vmPatch.Spec.PowerState = state
-	Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
-		"failed to patch VM %s PowerState=%s", key.Name, state)
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, key.Namespace, key.Name,
-		string(state))
-}
-
 // powerCycleVM powers key off, then back on, waiting for each transition to
 // be observed before proceeding.
 func powerCycleVM(
@@ -322,8 +304,8 @@ func powerCycleVM(
 	config *e2eConfig.E2EConfig,
 	key types.NamespacedName,
 ) {
-	patchVMPowerState(ctx, svClusterClient, config, key, vmopv1.VirtualMachinePowerStateOff)
-	patchVMPowerState(ctx, svClusterClient, config, key, vmopv1.VirtualMachinePowerStateOn)
+	vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, key.Namespace, key.Name)
+	vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, key.Namespace, key.Name)
 }
 
 // VMNICExtraConfigSpec exercises the NIC ExtraConfig feature: live-mode
@@ -455,7 +437,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKey,
 				"ethernet0.coalescingScheme", "adapt")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
-				string(vmopv1.VirtualMachinePowerStateOn))
+				vmopv1.VirtualMachinePowerStateOn)
 
 			By("Phase 3: patching all four powercycle-mode fields to positive values")
 
@@ -769,7 +751,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKeyB,
 				"ethernet0.coalescingScheme", "adapt")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmNameB,
-				string(vmopv1.VirtualMachinePowerStateOn))
+				vmopv1.VirtualMachinePowerStateOn)
 
 			vmB = getExtraConfigVM(ctx, svClusterClient, vmKeyB)
 			vmBPatch := vmB.DeepCopy()
@@ -782,7 +764,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			By("Powering off to apply the VNUMANodeID assignment")
 
-			patchVMPowerState(ctx, svClusterClient, config, vmKeyB, vmopv1.VirtualMachinePowerStateOff)
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmKeyB.Namespace, vmKeyB.Name)
 
 			waitForNICExtraConfigSynced(ctx, svClusterClient, config, vmKeyB,
 				metav1.ConditionTrue, "")

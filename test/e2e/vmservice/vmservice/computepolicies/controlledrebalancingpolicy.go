@@ -123,7 +123,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 	})
 
 	It("Should tag a matching VM and surface the policy in status.policies",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			suffix := capiutil.RandomString(4)
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing", suffix)
@@ -157,7 +157,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		})
 
 	It("Should re-evaluate an already-created VM when a policy's match is widened",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			suffix := capiutil.RandomString(4)
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-widen", suffix)
@@ -203,7 +203,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		})
 
 	It("Should tag a VM that explicitly references a matching Optional ControlledRebalancingPolicy",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			suffix := capiutil.RandomString(4)
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-optional", suffix)
@@ -231,7 +231,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		})
 
 	It("Should surface an error when a VM explicitly references a non-matching Optional ControlledRebalancingPolicy",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			suffix := capiutil.RandomString(4)
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-no-match", suffix)
@@ -256,7 +256,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		})
 
 	It("Should update the VM's vSphere tag when the policy's Tags are changed",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			suffix := capiutil.RandomString(4)
 			tagID1 := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-update-1", suffix)
@@ -308,7 +308,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		})
 
 	It("Should remove the VM's vSphere tag and status.policies entry when the policy is deleted",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			suffix := capiutil.RandomString(4)
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-delete", suffix)

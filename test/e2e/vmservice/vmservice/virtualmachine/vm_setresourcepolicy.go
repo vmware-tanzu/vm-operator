@@ -251,7 +251,7 @@ func VMSetResourcePolicySpec(ctx context.Context, inputGetter func() VMSetResour
 			}
 		})
 
-		It("Should remove the cluster modules of a decommissioned Zone", Label("core-functional"), func() {
+		It("Should remove the cluster modules of a decommissioned Zone", Label("core-functional", "experimental"), func() {
 			namespaceZones, err := utils.ListZonesByNamespace(ctx, setup.svClusterClient, setup.nsName)
 			Expect(err).ToNot(HaveOccurred(), "failed to list Zones for namespace %s", setup.nsName)
 

@@ -20,8 +20,8 @@
 3. Classes are zonal: `spec.zones` and `spec.governs.zones` say where a class is available and where it governs.
 4. `spec.externalID` holds the client's identity for the class, separate from the Kubernetes name.
 5. `configSpec` keeps only pass-through fields that have no typed field.
-6. Classes live in each Supervisor's `vmware-system-vmop` namespace, are written through a new per-Supervisor v2 class vAPI, and are copied into namespaces by wcp-namespace-operator.
-7. Reserved capacity follows the VM: a class offers reserved profiles as a governed field, the VM carries the profile it uses and must match its shape, and the profiles themselves are read from `VirtualMachineReservedProfile` objects that the wcpsvc zone controller maintains.
+6. Classes live in each Supervisor's `vmware-system-vmop` namespace and are copied into namespaces; they are written through the provider's class APIs, and vm-operator's webhooks validate every write.
+7. Reserved capacity follows the VM: a class offers reserved profiles as a governed field, the VM carries the profile it uses and must match its shape, and the profiles themselves are read from `VirtualMachineReservedProfile` objects that the provider publishes.
 8. `VirtualMachineConfigPolicy` is removed.
 
 Milestone 1 (provider classes) ships all of the above with one governing class per zone, behind a Supervisor capability. Milestone 2 (tenant classes) adds `parentClassRefs`, so a class can be bounded by another class.
@@ -46,7 +46,8 @@ Milestone 1 (provider classes) ships all of the above with one governing class p
 - Redesigning placement; placement only receives a narrower zone list.
 - Bringing VCFA's provider and tenant concepts into vm-operator.
 - Moving the vCenter UI to the v2 API (a later milestone).
-- Enforcing reserved slot counts; vCenter DRS owns slots.
+- Implementing the class and namespace APIs, publishing reserved profiles, or advertising the capability; these are the provider's (see "Provider contract").
+- Enforcing reserved slot counts; the platform owns slots.
 
 ---
 
@@ -137,15 +138,15 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 3. **Given** a preset class that attaches a device, **when** it is written, **then** the class mutating webhook sets the memory reservation lock; a VM that names it with less than full reservation is rejected at VM admission.
 4. **Given** a fixed class written through the existing class API, **when** it attaches a device, **then** the class itself still requires full memory reservation, as today.
 
-### US9 — Admin and automation: classes are written through the v2 vAPI (P1)
+### US9 — Admin and automation: classes keep their shape across API versions (P1)
 
 **Acceptance scenarios**:
 
-1. **Given** a class created or last updated through the v2 API, **when** a client writes it through the existing class API, **then** the write is rejected with an error pointing at the v2 API; reads still work.
-2. **Given** a class written through the v2 API, **when** it is copied into a namespace, **then** every v2 field reaches the namespace copy.
+1. **Given** a class created or last updated through the v1alpha6 CRD version, **when** a client writes its spec through an older CRD version, **then** the write is rejected; reads still work.
+2. **Given** a class in `vmware-system-vmop`, **when** the provider copies it into a namespace through v1alpha6, **then** every v1alpha6 field reaches the namespace copy.
 3. **Given** an association entry with `zones` unset, `[]` or a list, **when** the namespace copy is written, **then** the three states stay distinct through every layer.
 4. **Given** an existing class, **when** it is migrated, **then** its `metadata.name` is unchanged and `spec.externalID` equals the name.
-5. **Given** a change to the v1alpha6 class types, **when** the vmodl is not regenerated, **then** the pre-commit drift check fails.
+5. **Given** a change to the v1alpha6 class types, **when** a field has neither a `+vmodl` mapping nor an explicit exclusion, **then** the field-coverage check fails.
 
 ### US10 — CSP admin: reserved capacity works with flex classes (P1)
 
@@ -159,10 +160,10 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 6. **Given** a VM, class-backed or classless, with a selected profile after defaulting, **when** its CPU count, CPU reservation or limit, memory reservation or limit, or device identities or quantities differ from the profile, **then** it is rejected, naming the field and the profile. Overhead is not compared. A resize past the profile is rejected the same way.
 7. **Given** a VM that names a class, **when** an update changes `spec.reservedProfileName` directly, **then** it is rejected by the inline-edit rule; a classless VM may set it.
 8. **Given** a powered-on VM with `spec.reservedProfileName` set, **when** an update changes it to another set value, **then** it is rejected; vm-operator setting it from unset (schema upgrade) is allowed.
-9. **Given** a powered-on VM with a reserved profile, **when** its class changes, **then** it is rejected; the class can change only while the VM is powered off. [NEEDS CLARIFICATION: whether DRS honors a changed or removed profile ID on reconfigure without a vpxd reload; until it does, this stays powered-off only.]
+9. **Given** a powered-on VM with a reserved profile, **when** its class changes, **then** it is rejected; the class can change only while the VM is powered off. [NEEDS CLARIFICATION: whether the platform honors a changed or removed profile on a VM without a restart of its management service; until it does, this stays powered-off only. Tracked in the provider's spec.]
 10. **Given** a VM moved to a class without a reserved profile, **when** it reconciles, **then** `spec.reservedProfileName` is cleared and vm-operator removes the profile ID from the VM's extraConfig.
-11. **Given** an existing VM of a reserved class, **when** it is upgraded, **then** `spec.reservedProfileName` is filled from its class, and vm-operator sets the vCenter reservation from the VM field, falling back to the class while the field is unset.
-12. **Given** a class with VMs holding an allocated profile, **when** it is edited through the v2 path, **then** only changes that alter the profile's shape or make the class's default VM invalid for it are rejected; through the v1 vAPI, update and delete stay blocked while any Supervisor has capacity for the class, as today.
+11. **Given** an existing VM of a reserved class, **when** it is upgraded, **then** `spec.reservedProfileName` is filled from its class, and vm-operator sets the VM's reservation from the VM field, falling back to the class while the field is unset.
+12. **Given** a class with VMs holding an allocated profile, **when** it is edited through v1alpha6, **then** only changes that alter the profile's shape or make the class's default VM invalid for it are rejected. (The provider's older class API keeps today's block on update and delete while capacity is assigned; see "Provider contract".)
 13. **Given** a class with `reservedSlots`, **when** it is converted or copied into a namespace, **then** the value, including zero, is kept and never replaced with observed totals.
 
 ### US11 — Platform engineer: `VirtualMachineConfigPolicy` is removed (P2)
@@ -199,13 +200,26 @@ A class lists one parent in `spec.parentClassRefs`; its ranges must fit inside t
 - Moving `VirtualMachineReservedProfile` out of the vm-operator API; vm-operator only reads it.
 - Placement: the zone filter for single VMs and groups.
 - The environment-browser completion from spec 001: maximum hardware version, admin-only access, no re-query on resync.
-- The vmodl markers, the generator hookup and the drift checks.
+- The `+vmodl` markers on the v1alpha6 class Go types that the provider's generator consumes, and a check that every field has a mapping or an explicit exclusion.
 - The capability, the quarantined pipeline, enablement and docs.
 - Removing `VirtualMachineConfigPolicy`.
 
-**Built in-house in other components**: the v2 class vAPI and the wcpsvc class API changes, the wcpsvc zone controller that writes `VirtualMachineReservedProfile`, the Supervisor and wcp-namespace-operator integration (plan.md, Milestone 1, vmop-4201).
+**Provider (tracked in the provider's spec)**: the v2 class API and the older class API, the namespace API with per-class zones, generating the class API definition from the CRD and its drift checks, publishing `VirtualMachineReservedProfile` and building reserved profiles from class defaults, advertising the capability, and the Supervisor and namespace-copy integration (plan.md, "Provider work"; tasks.md T910–T916).
 
-**Other teams**: the Supervisor team (the 1.5 capability, per-class zones on `vmClassRefs`, the vcdb → catalog migrator), wcp-namespace-operator owners (sign-off), the vAPI team (generator support), VCFA (move to the v2 API; whether region quota reads class sizes), the vCenter UI (hide edit actions for classes written through v2).
+**Other teams**: the Supervisor team (the 1.5 capability, the class migrator), VCFA (move to the v2 API; whether region quota reads class sizes), the vCenter UI (hide edit actions for classes written through v1alpha6).
+
+---
+
+## Provider contract
+
+vm-operator runs on a Supervisor whose provider supplies the pieces below. vm-operator states what it assumes, not how the provider does it; the provider's spec tracks the implementation (plan.md, "Provider work").
+
+- **Reserved profiles are published.** The provider publishes a namespaced `VirtualMachineReservedProfile` for every profile a namespace can use, with the profile's shape (CPU count, CPU reservation and limit, memory reservation and limit, device identities and quantities) and per-zone counts. vm-operator only reads it.
+- **Backfilled before the capability.** Objects exist for every existing allocation before the Flex VM Classes capability is enabled. A profile name that doesn't resolve is a clear admission failure in vm-operator, with no fallback.
+- **Older writers keep working.** The provider may keep writing `reservedProfileID` and `reservedSlots` through older API versions; vm-operator converts them (US10.1, US10.2, US10.13).
+- **Capability.** The provider advertises the Flex VM Classes capability; vm-operator only reads it (US12).
+- **Platform enforcement.** The platform rejects, at power-on, a VM whose configuration doesn't match its named profile. vm-operator rejects the same mismatch earlier, at admission.
+- **Class and namespace APIs.** The v2 class API, the older class API (including its block on editing a class with assigned capacity) and the namespace API with per-class zones are the provider's. Every class they write lands in `vmware-system-vmop` and is validated by vm-operator's webhooks; the provider copies classes into namespaces through v1alpha6, keeping unset and `[]` zone lists apart.
 
 ---
 
@@ -215,7 +229,7 @@ A class lists one parent in `spec.parentClassRefs`; its ranges must fit inside t
 - A class edit between admission and placement can leave a VM in a non-compliant zone; it is handled as drift by `existingVMs`.
 - A governing class with `governs.zones: []` doesn't count when deciding whether a VM must set a zone.
 - An elevated field arriving in `configSpec` from an older writer is moved to the typed field; from a writer on the version where the field is typed, it is rejected.
-- vCenter DRS checks a VM against its reserved profile at initial placement and power-on, not on reconfigure; a mismatch fails with `InvalidVmConfig` and no fallback. The VM webhook enforces the profile's shape so the same failure surfaces at admission instead. [NEEDS CLARIFICATION: what happens to a powered-on VM's slot after a resize.]
+- The platform checks a VM against its reserved profile only when it is placed and powered on, and rejects a mismatch with no fallback. The VM webhook enforces the profile's shape so the same failure surfaces at admission instead. [NEEDS CLARIFICATION: what happens to a powered-on VM's slot after a resize; tracked in the provider's spec.]
 - A VM moved to an unreserved class must lose its extraConfig profile ID; vm-operator writes or removes it from `spec.reservedProfileName`.
 
 ---
@@ -225,13 +239,9 @@ A class lists one parent in `spec.parentClassRefs`; its ranges must fit inside t
 - [NEEDS CLARIFICATION: Who rejects an association zone outside the namespace or the class.] The class in `vmware-system-vmop` carries `spec.zones` and `governs.zones`, the association only narrows them, and its `status.zones` covers its `spec.zones`.
 - [NEEDS CLARIFICATION: Hardware version as a range with a default, its path, and whether a VM below the minimum is upgraded or rejected.]
 - [NEEDS CLARIFICATION: Confirmation from its owners that the zone's unreserved-DirectPath setting applies to classless VMs and non-reserved classes with devices.] Working assumption: it does.
-- [NEEDS CLARIFICATION: Reserved capacity (DRS): whether a changed or removed profile ID on reconfigure is honored without a vpxd reload, and what happens to a powered-on VM's slot after a resize.]
-- [NEEDS CLARIFICATION: Reserved capacity: RP3 profiles not tied to a class and how VCFA discovers them; RP8 read access to vCenter reservations for a later per-zone status; RC3 profile naming across Supervisors and VCFA on one vCenter; whether anything outside vm-operator reads `reservedSlots`.] Findings in WIKI page 3118085468.
+- [NEEDS CLARIFICATION: Reserved capacity: RP3 profiles not tied to a class and how VCFA discovers them; RP8 read access to reservations for a later per-zone status.] Findings in WIKI page 3118085468.
 - [NEEDS CLARIFICATION: Whether an explicit `""` means "no value" for every enum field, as it does for `reservedProfileName`.]
-- [NEEDS CLARIFICATION: Whether default classes can be updated and deleted on Supervisor 1.5 (vAPI page O12).]
-- [NEEDS CLARIFICATION: vAPI generator route, `Quantity` mapping, generator ownership, `externalID` index, v2 `name` uniqueness, and creating a class before any Supervisor exists (vAPI page O4–O8, O11).]
-- [NEEDS CLARIFICATION: Sign-off from wcp-namespace-operator on vAPI page §6.2.]
-- [NEEDS CLARIFICATION: The design of the vpxd config field drift check (vmop-4393).]
+- Provider-side open items (platform behavior on a changed profile or a resize, profile naming across Supervisors, external readers of `reservedSlots`, the class API generator, namespace-copy sign-off, default classes, the vpxd config field drift check) are tracked in the provider's spec; vm-operator tasks that depend on them say so.
 - [NEEDS CLARIFICATION: Milestone 2: whether a child's branches need one `existingVMs` answer when a VM satisfies none of them.]
 
 ---

@@ -10,7 +10,7 @@ The technical design is WIKI page 3118085463 and its child pages (full schema, v
 
 ## Summary
 
-Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `governs`, zones, `externalID` and reserved profiles; enforce governance in the class and VM webhooks; report compatibility and compliance from the class and VM controllers; filter placement by governance; ship the v2 class vAPI; remove `VirtualMachineConfigPolicy`. All of it is behind the Flex VM Classes capability until the enablement story. Milestone 2 adds `parentClassRefs` behind a second capability.
+Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `governs`, zones, `externalID` and reserved profiles; enforce governance in the class and VM webhooks; report compatibility and compliance from the class and VM controllers; filter placement by governance; add the `+vmodl` markers the provider's class API is generated from; remove `VirtualMachineConfigPolicy`. The provider's work is listed under "Provider work". All of it is behind the Flex VM Classes capability until the enablement story. Milestone 2 adds `parentClassRefs` behind a second capability.
 
 ## Technical context
 
@@ -21,7 +21,7 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 | Inputs | `ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions` from spec 001 |
 | Testing | Ginkgo/Gomega; envtest for CRD, CEL and conversion behavior; vcsim; E2E on a Supervisor in the quarantined capability pipeline |
 | Feature gate | The Flex VM Classes Supervisor capability (vmop-4313); Milestone 2 adds the Tenant VM Classes capability (vmop-4339), which depends on it |
-| Other components | v2 class vAPI, wcpsvc class API, Supervisor and wcp-namespace-operator integration, built in-house (vmop-4327, vmop-4328, vmop-4329) |
+| Provider | Class and namespace APIs, class API generation and drift checks, reserved profile publication, capability advertisement, Supervisor integration; tracked in the provider's spec (tasks.md T910–T916) |
 
 ## Constitution check
 
@@ -51,7 +51,8 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 | VM webhooks | `webhooks/virtualmachine/{mutation,validation}` |
 | Class controller | `controllers/virtualmachineclass` (moving the `ReservedProfileID` reader in `virtualmachineclass_controller.go` to `reservedProfileName`) |
 | VM reconciler | `pkg/providers/vsphere` (compliance step before power state; reservation from the VM field in `virtualmachine/configspec.go`), `pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go` (backfill of `spec.reservedProfileName`), `controllers/virtualmachine` |
-| Reserved profiles | remove `VirtualMachineReservedProfile` from `api/v1alpha6`; read RBAC in `config/rbac`; the writer is the wcpsvc zone controller |
+| Reserved profiles | remove `VirtualMachineReservedProfile` from `api/v1alpha6`; read RBAC in `config/rbac`; the writer is the provider |
+| vmodl markers | `api/v1alpha6/virtualmachineclass_types.go` and the value types; field-coverage check under `api/` |
 | Placement | `pkg/providers/vsphere/placement` |
 | Zone mirror controller | `controllers/infra/zone` |
 | Environment browser | `controllers/vim/*`, `controllers/virtualmachineconfigoptions`, `config/rbac` |
@@ -62,15 +63,15 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 ## API strategy
 
 - **Class.** Every configuration field the class bounds is a typed value: number `{min, max, default}` (`default` required when `min` or `max` is set; an unset bound is open, limited by hardware or a parent class), enum `{allowed, default}`, boolean `{allowOverride, default}`, list `{default, allowed, denied}` with `{type, value}` matchers. `configSpec` keeps only pass-through fields; an elevated path in it is moved for older writers and rejected for writers on v1alpha6.
-- **Reserved capacity.** `reservedProfileName` is an `EnumPolicy` `{default, allowed, required}` of profile names, at the same path as the VM's `spec.reservedProfileName`; `EnumPolicy` was chosen over `ListPolicy` because the VM value is one name and list add/remove/match semantics don't fit a single reservation. Names must resolve to a `VirtualMachineReservedProfile` in the namespace, and `allowed` is required when `default` is set. v1alpha5 `reservedProfileID: X` converts to `{default: X, allowed: [X], required: true}`; down, `reservedProfileID` = `default`; up, a `reservedProfileID` that differs from the annotation's default (an older-API writer such as wcpsvc through the v1alpha1 client changed it) resets the field to `{default: Y, allowed: [Y], required: true}`, otherwise the annotation is restored. `reservedProfileID` is removed from v1alpha6 and exists only in v1alpha5 and older; the class controller reader and the extraConfig write move to `reservedProfileName`. wcpsvc keeps writing `reservedProfileID` through v1alpha1, so it needs no change. `reservedSlots` stays an `int32` with the same name and meaning, deprecated, preserved through conversion and the namespace copy (including zero), never overwritten with observed totals.
-- **Reserved profiles.** `VirtualMachineReservedProfile` leaves vm-operator's v1alpha6 (unshipped, so this is safe) and is owned by the wcpsvc zone controller, which reconciles each profile's shape and per-zone counts from vCenter and backfills existing allocations. vm-operator only reads it. The backfill must land before VM admission relies on it; an unknown profile is a clear failure with no fallback.
+- **Reserved capacity.** `reservedProfileName` is an `EnumPolicy` `{default, allowed, required}` of profile names, at the same path as the VM's `spec.reservedProfileName`; `EnumPolicy` was chosen over `ListPolicy` because the VM value is one name and list add/remove/match semantics don't fit a single reservation. Names must resolve to a `VirtualMachineReservedProfile` in the namespace, and `allowed` is required when `default` is set. v1alpha5 `reservedProfileID: X` converts to `{default: X, allowed: [X], required: true}`; down, `reservedProfileID` = `default`; up, a `reservedProfileID` that differs from the annotation's default (an older-API writer changed it) resets the field to `{default: Y, allowed: [Y], required: true}`, otherwise the annotation is restored. `reservedProfileID` is removed from v1alpha6 and exists only in v1alpha5 and older; the class controller reader and the extraConfig write move to `reservedProfileName`. The provider may keep writing `reservedProfileID` through older versions. `reservedSlots` stays an `int32` with the same name and meaning, deprecated, preserved through conversion and the namespace copy (including zero), never overwritten with observed totals.
+- **Reserved profiles.** `VirtualMachineReservedProfile` leaves vm-operator's v1alpha6 (unshipped, so this is safe) and is published by the provider with each profile's shape and per-zone counts (spec, "Provider contract"). vm-operator only reads it. The provider's backfill must be complete before VM admission relies on it; an unknown profile is a clear failure with no fallback.
 - **VM.** `spec.reservedProfileName` is filled by the mutation webhook from the class default, like any other default; omission inherits the default, explicit `""` selects no profile, and `required: true` rejects an empty value after defaulting. The extraConfig profile ID is written from the VM field, falling back to the class while the field is unset, and removed when the field is empty. Existing VMs get the field from their class during schema upgrade; that unset-to-set write is exempt from the powered-on lock.
 - **Upgrade.** Only conversion fills ranges (`min == max == default`); `spec.zones` stays unset (all zones); `externalID` = name; no class governs until an admin adds `governs`.
 
 ## Controller and webhook impact
 
 - **Class mutating webhook**: `governs.enforcement: Deny`, the memory lock on a preset class that attaches devices.
-- **Class validating webhook**: value-shape rules not expressible in CEL, elevated `configSpec` paths, `externalID` immutable, `existingVMs` required on a governing class with no parent, one governing class per zone, class-vs-class bounds, sticky v2 writes, `parentClassRefs` rejected until Milestone 2, reserved profiles resolve to a `VirtualMachineReservedProfile`, the class's default configuration must match its default profile, and every allowed profile must fit within the class's resource and device policy; listing a profile does not fix the class's bounds, and on edit only changes that alter an allocated profile's shape or invalidate the class's default VM are rejected (the v1 vAPI keeps today's block on update and delete while any Supervisor has capacity for the class). `governs.zones` within `spec.zones` is a CEL rule on the type.
+- **Class validating webhook**: value-shape rules not expressible in CEL, elevated `configSpec` paths, `externalID` immutable, `existingVMs` required on a governing class with no parent, one governing class per zone, class-vs-class bounds, sticky v2 writes, `parentClassRefs` rejected until Milestone 2, reserved profiles resolve to a `VirtualMachineReservedProfile`, the class's default configuration must match its default profile, and every allowed profile must fit within the class's resource and device policy; listing a profile does not fix the class's bounds, and on edit only changes that alter an allocated profile's shape or invalidate the class's default VM are rejected (the provider's older class API keeps today's block on update and delete while capacity is assigned). `governs.zones` within `spec.zones` is a CEL rule on the type.
 - **VM mutating webhook**: fill unset fields from the class, from the image, or from the governing class; fill `reservedProfileName`; on a class change (allowed when `VMResize` or `VMResizeCPUMemory` is on, with no annotation), replace every class-supplied field from the new class and clear and re-default the fields it doesn't set.
 - **VM validating webhook**: governance, inline-edit rule while `className` is set (including `reservedProfileName`), the zone rule, hardware compatibility per zone, device memory reservation, reserved-profile match (after defaulting, for class-backed and classless VMs; overhead excluded; a resize past the profile rejected), the powered-on lock on changing one set profile to another, class change of a reserved VM only while powered off. The `DenyPowerOn` power-on rejection ships with compliance (vmop-4041).
 - **Class controller**: per-zone `HardwareCompatible`, `WithinGovernance`, `Governing`, resolved limits; watches `ConfigTarget` and `Zone`.
@@ -87,9 +88,9 @@ Milestone 1 enables governing classes for providers; Milestone 2 adds tenant cla
 |---|---|---|
 | vmop-4038 — API, upgrade and capability | capability, quarantined pipeline, v1alpha6 schema (including removing `VirtualMachineReservedProfile`), conversion, VM and Zone API fields, policy removal, environment-browser completion | — |
 | vmop-4039 — Governance engine and class compatibility | governance package, class `HardwareCompatible`, resolved limits, governance status and Zone mirror | the schema (vmop-4315) |
-| vmop-4201 — Class webhooks and v2 vAPI | class webhooks, vmodl markers, generator hookup and drift checks, v2 class vAPI, wcpsvc changes, the wcpsvc zone controller's `VirtualMachineReservedProfile` writer, Supervisor and nsop integration | the schema; the governance package for class-vs-class bounds |
-| vmop-4040 — VM create and edit | VM defaults, VM governance validation, device memory reservation, zone rule, reserved capacity | the governance package; the VM API fields; the reserved profile writer (vmop-TBD) for reserved capacity |
-| vmop-4041 — Compliance, placement and enablement | `GovernanceCompliant`, the `DenyPowerOn` power-on rejection, placement filter, enablement, docs | the VM webhooks |
+| vmop-4201 — Class webhooks and vmodl markers | class mutating and validating webhooks (vmop-4324, vmop-4325), `+vmodl` markers (vmop-4326) | the schema; the governance package for class-vs-class bounds |
+| vmop-4040 — VM create and edit | VM defaults, VM governance validation, device memory reservation, zone rule, reserved capacity | the governance package; the VM API fields; the provider's reserved profile publication (T910) for reserved capacity |
+| vmop-4041 — Compliance, placement and enablement | `GovernanceCompliant`, the `DenyPowerOn` power-on rejection, placement filter, enablement, docs | the VM webhooks; the provider's capability advertisement (T911) for enablement |
 | vmop-4312 — Tenant VM Classes (Milestone 2) | second capability, `parentClassRefs`, class families, v2 vAPI round-trip, enablement | all of Milestone 1 |
 
 **Sequential**: the schema → the governance package → the VM webhooks → compliance and placement → enablement.
@@ -98,7 +99,7 @@ Milestone 1 enables governing classes for providers; Milestone 2 adds tenant cla
 
 - Within vmop-4038: the capability and pipeline, policy removal and environment-browser completion run beside the schema.
 - vmop-4039's class status stories run beside vmop-4201's class webhooks once the governance package lands.
-- vmop-4201's vAPI, wcpsvc and integration work runs beside vmop-4040, because it needs only the schema and markers.
+- Provider work (T910–T916) runs beside the vm-operator epics; it needs the schema (vmop-4315) and, for the class API, the markers (vmop-4326).
 - Docs run beside vmop-4041.
 
 ## Timeline
@@ -109,10 +110,14 @@ Two-week sprints from 2026-10-20; the sprint covering 2026-12-15 to 2027-01-11 i
 |---|---|---|
 | vmop-4038 | 2026-10-20 → 2026-11-16 | 2026-10-20 → 2026-11-16 |
 | vmop-4039 | 2026-11-03 → 2026-11-30 | 2026-11-03 → 2026-11-30 |
-| vmop-4201 | 2026-11-17 → 2026-12-14 | 2026-11-17 → 2027-01-11 |
+| vmop-4201 | 2026-11-17 → 2026-12-14 | 2026-11-17 → 2026-12-28 |
 | vmop-4040 | 2026-12-01 → 2027-01-11 | 2026-12-01 → 2027-01-25 |
 | vmop-4041 | 2026-12-15 → 2027-01-25 | 2026-12-15 → 2027-02-08 |
 | vmop-4312 | 2027-01-26 → 2027-03-08 | 2027-01-26 → 2027-03-22 |
+
+## Provider work
+
+Tracked in the provider's spec and listed in tasks.md as dependency tasks T910–T916 with their vmop keys: reserved profile publication and backfill (T910), capability advertisement (T911), the v2 class API (T912, vmop-4327), the older class API and the namespace API (T913, vmop-4328), Supervisor and namespace-copy integration (T914, vmop-4329), class API generation and drift checks (T915, vmop-4392), and the vpxd config field drift check (T916, vmop-4393). vm-operator work that consumes them: vmop-4334 needs T910; vmop-4337 needs T911; T912 and T915 need vmop-4315 and vmop-4326.
 
 ## Test strategy
 
@@ -123,7 +128,7 @@ Two-week sprints from 2026-10-20; the sprint covering 2026-12-15 to 2027-01-11 i
 ## Rollout
 
 - Existing classes convert with no manual step; no class governs until an admin adds `governs`, so behavior doesn't change on upgrade.
-- The capability stays off until vmop-4337. The v2 vAPI is offered only on Supervisors with the VM class migration capability (Supervisor 1.5); the vcdb fallback (WIKI page 3118573642) applies only if that model is rolled back.
+- The capability stays off until vmop-4337. vm-operator turns flex behavior on only when the provider advertises the capability, which it does once its contract is met (spec, "Provider contract"); the Supervisor model choice is on WIKI page 3119061412.
 - The policy is removed in the same release; its enforcement never shipped.
 - Release notes: v1alpha6 class fields, classless VMs in governed zones, `GovernanceCompliant`, `spec.reservedProfileName`.
 

@@ -18,24 +18,22 @@ Each open item changes the shape of an API or a check. A task that depends on on
 - [x] T002 Number rule: `default` is required when `min` or `max` is set; an unset bound is open; a fixed size is `min == max == default`
 - [x] T003 `governs.existingVMs` is required on a governing class with no parent; in Milestone 2 only the top class sets it and children inherit it
 - [x] T004 Reserved capacity in Milestone 1: `reservedProfileName {default, allowed, required}` (`EnumPolicy`, not `ListPolicy`, because the VM value is one name) on the class, `spec.reservedProfileName` on the VM, filled by mutation like any default; omission inherits the default, `""` selects no profile, `required: true` rejects empty after defaulting; names must resolve to a `VirtualMachineReservedProfile`, and `allowed` is required when `default` is set (WIKI page 3118085468)
-- [x] T007 Conversion of reserved profiles: `reservedProfileID: X` ↔ `{default: X, allowed: [X], required: true}`; down = `default`; up resets to `{Y, [Y], required: true}` when the ID differs from the annotation's default, otherwise restores the annotation. `reservedProfileID` is removed from v1alpha6 (v1alpha5 and older only); wcpsvc keeps writing it through v1alpha1
+- [x] T007 Conversion of reserved profiles: `reservedProfileID: X` ↔ `{default: X, allowed: [X], required: true}`; down = `default`; up resets to `{Y, [Y], required: true}` when the ID differs from the annotation's default, otherwise restores the annotation. `reservedProfileID` is removed from v1alpha6 (v1alpha5 and older only); the provider may keep writing it through older versions
 - [x] T008 A VM with a selected profile, class-backed or classless, must match the profile's shape after defaulting: CPU count, CPU and memory reservation and limit, device identities and quantities; overhead is not compared. A resize past the profile is rejected at admission
 - [x] T009 `reservedProfileName` is class-supplied on a class-backed VM (inline-edit rule); it can't change from one set value to another while powered on; vm-operator's unset-to-set backfill is exempt. A class change of a reserved VM is allowed only while powered off (per T018)
 - [x] T009a Class change is allowed when `VMResize` or `VMResizeCPUMemory` is on, with no annotation: class-supplied fields are replaced from the new class, fields it doesn't set are cleared and re-defaulted, and the extraConfig profile ID is written or removed from the VM field
-- [x] T009b Class edits: the v1 vAPI keeps today's block on update and delete while any Supervisor has capacity for the class; the v2 path rejects only changes that alter an allocated profile's shape or invalidate the class's default VM (the exact field boundary is a test deliverable of T303a)
+- [x] T009b Class edits: the provider's older class API keeps today's block on update and delete while capacity is assigned; edits through v1alpha6 reject only changes that alter an allocated profile's shape or invalidate the class's default VM (the exact field boundary is a test deliverable of T303a)
 - [x] T009c `reservedSlots` stays `int32` with the same name and meaning, deprecated, preserved through conversion and the namespace copy including zero, never overwritten with observed totals; no annotation migration
-- [x] T009d `VirtualMachineReservedProfile` moves out of vm-operator's API to the wcpsvc zone controller, which reconciles it from vCenter and backfills existing allocations; vm-operator only reads it (T103a, T315)
+- [x] T009d `VirtualMachineReservedProfile` moves out of vm-operator's API; the provider publishes and backfills it (T910); vm-operator only reads it (T103a)
 - [x] T009e Devices are one `ListPolicy` over the VM's inline vGPU and DirectPath I/O devices; `SetPolicy`, independent count bounds and required entries are deferred
 - [x] T005 The environment-browser demand gate is dropped; the CRDs are restricted to admins instead (T107)
 - [x] T006 `configSpec` keeps its name
 - [ ] T010 Decide who rejects an association zone outside the namespace or the class. Blocks T305 (decided so far: the class in `vmware-system-vmop` carries `spec.zones` and `governs.zones`, the association only narrows them, and `status.zones` covers `spec.zones`)
 - [ ] T011 Decide the hardware version shape: a range with a default, its path, and whether a VM below the minimum is upgraded or rejected. Blocks T103 for that field
 - [ ] T012 Confirm with its owners that the zone's unreserved-DirectPath setting applies to classless VMs and non-reserved classes with devices (working assumption: it does). Affects only T202's reason for that case
-- [ ] T014 Reserved capacity follow-ups: RP3, RP8, RC3 (profile naming across Supervisors and VCFA), and whether anything outside vm-operator reads `reservedSlots`
-- [ ] T018 Ask DRS whether a changed or removed profile ID on reconfigure is honored without a vpxd reload, and what happens to a powered-on VM's slot after a resize. Affects T408 (class change of a reserved VM while powered on)
+- [ ] T014 Reserved capacity follow-ups: RP3 and RP8 (profile naming across Supervisors and external readers of `reservedSlots` are tracked in the provider's spec)
+- [ ] T018 Get the platform's answer (tracked in the provider's spec) on whether a changed or removed profile on a VM is honored without a restart, and what happens to a powered-on VM's slot after a resize. Affects T408 (class change of a reserved VM while powered on)
 - [ ] T019 Decide whether an explicit `""` means "no value" for every enum field, as for `reservedProfileName`. Affects T104 and T400
-- [ ] T015 Get wcp-namespace-operator's sign-off on vAPI page §6.2, and the Supervisor team's decision on default classes (vAPI page O12)
-- [ ] T017 Design the vpxd config field drift check. Blocks T310
 
 ---
 
@@ -60,7 +58,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — VM Class upgrade and conversion (vmop-4316)
 
-- [ ] T106 [US1/US9/US10] [vmop-4316] Conversion v1alpha5 and older ↔ v1alpha6: scalars to complete ranges, `hardware.{cpus,memory}` to `resources.size`, `policies.resources` to `resources.requests/limits`, elevated `configSpec` paths moved to typed fields, `externalID` = name, reserved profiles per T007 (`reservedProfileID` in v1alpha5 and older ↔ `reservedProfileName` in v1alpha6, which has no `reservedProfileID`; including the v1alpha1 path wcpsvc writes through), `reservedSlots` preserved including zero. Round-trip test including a multi-entry `allowed` and a changed `reservedProfileID` — `api/v1alpha5/virtualmachineclass_conversion.go`, older versions
+- [ ] T106 [US1/US9/US10] [vmop-4316] Conversion v1alpha5 and older ↔ v1alpha6: scalars to complete ranges, `hardware.{cpus,memory}` to `resources.size`, `policies.resources` to `resources.requests/limits`, elevated `configSpec` paths moved to typed fields, `externalID` = name, reserved profiles per T007 (`reservedProfileID` in v1alpha5 and older ↔ `reservedProfileName` in v1alpha6, which has no `reservedProfileID`; including the v1alpha1 path the provider writes through), `reservedSlots` preserved including zero. Round-trip test including a multi-entry `allowed` and a changed `reservedProfileID` — `api/v1alpha5/virtualmachineclass_conversion.go`, older versions
 - [ ] T106a [US9] [vmop-4316] Three-state zone test: unset, `[]` and a list survive JSON, conversion, `CreateOrUpdate` and back — envtest
 - [ ] T106b [US1] [vmop-4316] E2E: an existing class and its VMs behave as before after upgrade
 
@@ -111,7 +109,9 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ---
 
-## Phase 3 — Class webhooks and v2 vAPI (vmop-4201)
+## Phase 3 — Class webhooks and vmodl markers (vmop-4201)
+
+The class APIs, their generation and the namespace-copy integration are provider work (T912–T916).
 
 ### Story — Class mutating webhook (vmop-4324)
 
@@ -130,32 +130,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — vmodl markers (vmop-4326)
 
-- [ ] T307 [US9] [vmop-4326] The vmodl markers the generator reads on the v1alpha6 class types, and a CI check that every field has a mapping or an explicit exclusion
-
-### Story — vmodl generator hookup and drift pipeline (vmop-4392)
-
-- [ ] T308 [US9] [vmop-4392] Run the OpenAPI → vmodl generator on the v1alpha6 class, check in the generated vmodl with golden-file tests, and add a pre-commit job that regenerates it and fails on drift. Depends on T103 and T307
-
-### Story — vpxd config field drift pipeline (vmop-4393)
-
-- [ ] T310 [vmop-4393] A pre-commit job that fails when vpxd adds a VM config field the class doesn't cover or exclude, naming the field and the owner. Blocked on T017
-
-### Story — v2 class vAPI (vmop-4327)
-
-- [ ] T311 [US9] [vmop-4327] The per-Supervisor v2 class vAPI on the generated vmodl: create, update, get, list, read-only `schemaVersion`. Depends on T308
-
-### Story — wcpsvc class API changes (vmop-4328)
-
-- [ ] T312 [P] [US9/US10] [vmop-4328] The v1 class API fans out to every Supervisor, rejects edits to classes last written through v2, keeps today's update and delete block while any Supervisor has capacity for the class, and the namespace API carries per-class zones; wcpsvc's profile manager builds the configSpec for a flex class from its resolved defaults before extracting the profile
-
-### Story — Zone controller reserved profile writer (vmop-TBD)
-
-- [ ] T315 [P] [US10] [vmop-TBD] The wcpsvc zone controller owns `VirtualMachineReservedProfile`: reconcile each profile's shape and per-zone counts from vCenter, and backfill existing allocations before VM admission relies on it. An unknown profile is a clear failure, with no fallback. Blocks vmop-4334
-
-### Story — Supervisor and nsop integration (vmop-4329)
-
-- [ ] T313 [P] [US9] [vmop-4329] Track the Supervisor 1.5 vAPI proxy, wcp-namespace-operator copying classes through the new CRD version (unset and `[]` kept apart), and the vCenter UI hiding edit for v2 classes (per T015)
-- [ ] T314 [US9] [vmop-4329] E2E: a class written through the v2 API reaches the namespace copy with every field, and three-state zones survive end to end
+- [ ] T307 [US9] [vmop-4326] The `+vmodl` markers the provider's generator reads on the v1alpha6 class types, and a CI check that every field has a mapping or an explicit exclusion — `api/v1alpha6/virtualmachineclass_types.go`, value types in `api/v1alpha6/`
 
 ---
 
@@ -184,7 +159,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Reserved capacity (vmop-4334)
 
-Depends on the reserved profile writer (vmop-TBD, T315).
+Depends on the provider's reserved profile publication (T910).
 
 - [ ] T408 [US10] [vmop-4334] VM validating webhook: `reservedProfileName` must be in the class's (or governing class's) `allowed`; after defaulting, every VM with a selected profile must match the `VirtualMachineReservedProfile` shape (T008), naming the field and the profile; a resize past the profile is rejected; inline edits on a class-backed VM are rejected; a set value can't change to another while powered on, unset-to-set by vm-operator is allowed; a class change of a reserved VM only while powered off (per T018) — `webhooks/virtualmachine/validation`
 - [ ] T409 [US10] [vmop-4334] Write the extraConfig profile ID from `spec.reservedProfileName`, falling back to the class's `reservedProfileName` (not the removed `reservedProfileID`) while the VM field is unset, and remove the key when the field is empty (fixes the stale `resourcepool.vmResourceProfileId` after moving to an unreserved class). Runs after T110 — `pkg/providers/vsphere/virtualmachine/configspec.go`
@@ -208,7 +183,7 @@ Depends on the reserved profile writer (vmop-TBD, T315).
 
 ### Story — Flex VM Classes enablement (vmop-4337)
 
-- [ ] T505 [US12] [vmop-4337] Take the capability pipeline out of quarantine, run the full E2E sweep, enable the capability
+- [ ] T505 [US12] [vmop-4337] Take the capability pipeline out of quarantine, run the full E2E sweep, enable the capability. Depends on T910 and T911
 
 ### Story — Flex VM Classes docs (vmop-4338, absorbs vmop-3739)
 
@@ -243,9 +218,21 @@ Depends on the reserved profile writer (vmop-TBD, T315).
 
 ---
 
+## Provider work (tracked in the provider's spec)
+
+Dependency tasks; vm-operator does not implement them. What vm-operator assumes from them is in spec.md, "Provider contract".
+
+- [ ] T910 [US10] [vmop-TBD] Publish a namespaced `VirtualMachineReservedProfile` per profile with its shape and per-zone counts, backfilled for existing allocations before the capability is enabled. Blocks vmop-4334 and T505
+- [ ] T911 [US12] [vmop-TBD] Advertise the Flex VM Classes capability once T910 and T914 hold. Blocks T505
+- [ ] T912 [US9] [vmop-4327] The per-Supervisor v2 class API. Depends on T103 and T307 (through T915)
+- [ ] T913 [US9/US10] [vmop-4328] The older class API (rejects writes to v1alpha6 classes per T304, keeps today's block on classes with capacity, reports the schema version) and the namespace API with per-class zones; reserved profiles built from a flex class's defaults
+- [ ] T914 [US9] [vmop-4329] Supervisor and namespace-copy integration: copy classes through v1alpha6 with unset and `[]` zones kept apart, report rejected copies; end-to-end E2E of a class written through the v2 API
+- [ ] T915 [US9] [vmop-4392] Generate the class API definition from the v1alpha6 CRD and its `+vmodl` markers, with a drift check. Depends on T103 and T307
+- [ ] T916 [vmop-4393] A drift check for new vpxd VM config fields the class neither covers nor excludes
+
 ## Dependencies on other teams (not vm-operator code)
 
-- [ ] T900 Supervisor team: the 1.5 capability, per-class zones on `vmClassRefs`, the vcdb → catalog migrator, backup and restore of catalog classes, one list of default classes
-- [ ] T901 vAPI team: `openapi-compiler` support for the vmodl annotations, or the fallback route
+- [ ] T900 Supervisor team: the 1.5 capability, the class migrator, backup and restore of classes, one list of default classes and whether they can be edited
+- [ ] T901 vAPI team: generator support for the class API definition (needed by T915)
 - [ ] T902 VCFA: move to the v2 API; whether region quota reads class sizes
-- [ ] T903 vCenter UI: hide edit actions for classes last written through v2
+- [ ] T903 vCenter UI: hide edit actions for classes last written through v1alpha6

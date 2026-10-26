@@ -45,7 +45,7 @@ A separate `SetPolicy` shape is deferred; lists taken as one value (`pnumaNodeAf
 | `reservedSlots` | int32 | Deprecated. Same name and meaning as today: the namespace's desired slot total across zones. Preserved through conversion and the namespace copy, including zero; never overwritten with observed totals. |
 | `configSpec` | `VirtualMachineConfigSpec` | Pass-through settings with no typed field; presets only, never governance. An elevated path is moved for older writers and rejected for v1alpha6 writers. Only the top class of a chain may set it. |
 
-Label: the schema-version label records the last CRD version that wrote the class. A write through an older version is rejected once a newer one has written it. The vAPI shows it as read-only `schemaVersion`.
+Label: the schema-version label records the last CRD version that wrote the class. A write through an older version is rejected once a newer one has written it. The provider's class API shows it as read-only `schemaVersion`.
 
 ## `VirtualMachineClass.status`
 
@@ -73,12 +73,12 @@ Label: the schema-version label records the last CRD version that wrote the clas
 
 ## Reserved capacity
 
-A reserved profile is a vCenter object that holds one VM shape: vCPU count, CPU reservation and limit (equal), memory reservation and limit (equal), and DirectPath profiles. vCenter DRS places slots of a profile on hosts, gives a powered-on VM that names the profile a free slot, and takes it back at power-off. vm-operator never enforces slot counts.
+A reserved profile is a platform object that holds one VM shape: vCPU count, CPU reservation and limit (equal), memory reservation and limit (equal), and passthrough device profiles. The platform places slots of a profile on hosts, gives a powered-on VM that names the profile a free slot, and takes it back at power-off. vm-operator never enforces slot counts.
 
-- `VirtualMachineReservedProfile` is not a vm-operator API type. It is owned by the wcpsvc zone controller, which reconciles each profile's shape and per-zone counts from vCenter and backfills existing allocations. vm-operator only reads it (read RBAC), as it reads the environment-browser objects. A profile name that doesn't resolve is a clear admission failure, with no fallback.
+- `VirtualMachineReservedProfile` is not a vm-operator API type. It is published by the provider with each profile's shape and per-zone counts, backfilled for existing allocations before the capability is enabled (spec, "Provider contract"). vm-operator only reads it (read RBAC), as it reads the environment-browser objects. A profile name that doesn't resolve is a clear admission failure, with no fallback.
 - A class that lists profiles: the class's default configuration must match its default profile, and every allowed profile must fit within the class's resource and device policy; listing a profile does not fix the class's bounds.
 - A VM with a selected profile must match the profile's shape after defaulting, whether or not it names a class. A resize past the profile is rejected at admission.
-- Class edits through the v2 path are rejected only when they change an allocated profile's shape or make the class's default VM invalid for it. The v1 vAPI keeps today's block on update and delete while any Supervisor has capacity for the class.
+- Class edits through v1alpha6 are rejected only when they change an allocated profile's shape or make the class's default VM invalid for it. The provider's older class API keeps today's block on update and delete while capacity is assigned.
 
 ## Conversion
 
@@ -92,7 +92,7 @@ A reserved profile is a vCenter object that holds one VM shape: vCPU count, CPU 
 | `reservedProfileID: X` | `reservedProfileName: {default: X, allowed: [X], required: true}` |
 | `reservedSlots` | `reservedSlots`, unchanged, including zero |
 
-`reservedProfileID` is removed in v1alpha6 and exists only in v1alpha5 and older. Back to v1alpha5, `reservedProfileID` = `reservedProfileName.default`. Up again, if `reservedProfileID` differs from the default stored in the conversion annotation (an older-API writer such as wcpsvc changed it), the field is reset to `{default: Y, allowed: [Y], required: true}`; otherwise it is restored from the annotation.
+`reservedProfileID` is removed in v1alpha6 and exists only in v1alpha5 and older. Back to v1alpha5, `reservedProfileID` = `reservedProfileName.default`. Up again, if `reservedProfileID` differs from the default stored in the conversion annotation (an older-API writer changed it), the field is reset to `{default: Y, allowed: [Y], required: true}`; otherwise it is restored from the annotation.
 
 Fields with no v1alpha5 home round-trip through the conversion annotation.
 

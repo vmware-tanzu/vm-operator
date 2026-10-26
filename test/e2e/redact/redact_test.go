@@ -98,5 +98,15 @@ var _ = Describe("RedactSensitiveOutput", func() {
 			``,
 			``,
 		),
+
+		Entry("decryptK8Pwd.py --json style password fields",
+			"{\n  \"kubeInstSupervisors\": [\n    {\n      \"cluster\": \"domain-c9:21d4eaa0\",\n      \"ip\": \"192.0.2.10\",\n      \"pwd\": \"fake-Pass\\\"1\",\n      \"grub_pwd\": \"fake-grub\",\n      \"username\": \"root\"\n    }\n  ]\n}",
+			"{\n  \"kubeInstSupervisors\": [\n    {\n      \"cluster\": \"domain-c9:21d4eaa0\",\n      \"ip\": \"192.0.2.10\",\n      \"pwd\": \"***\",\n      \"grub_pwd\": \"***\",\n      \"username\": \"root\"\n    }\n  ]\n}",
+		),
+
+		Entry("does not redact non-sensitive JSON fields",
+			`{"ip": "192.0.2.10", "username": "root"}`,
+			`{"ip": "192.0.2.10", "username": "root"}`,
+		),
 	)
 })

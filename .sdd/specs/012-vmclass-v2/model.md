@@ -42,7 +42,6 @@ A separate `SetPolicy` shape is deferred; lists taken as one value (`pnumaNodeAf
 | hardware version | Number | [NEEDS CLARIFICATION: shape, path, and upgrade or reject below the minimum.] |
 | `hardware.instanceStorage` | as today | Preset only. |
 | `reservedProfileName` | `EnumPolicy` of profile names | Same path as the VM's `spec.reservedProfileName`. Every name must resolve to a `VirtualMachineReservedProfile` in the namespace. Unset `allowed` is not "all profiles": `allowed` is required when `default` is set. See "Reserved capacity". |
-| `reservedProfileID` | string | Kept only for conversion and the v1 vAPI; `reservedProfileName` is authoritative. |
 | `reservedSlots` | int32 | Deprecated. Same name and meaning as today: the namespace's desired slot total across zones. Preserved through conversion and the namespace copy, including zero; never overwritten with observed totals. |
 | `configSpec` | `VirtualMachineConfigSpec` | Pass-through settings with no typed field; presets only, never governance. An elevated path is moved for older writers and rejected for v1alpha6 writers. Only the top class of a chain may set it. |
 
@@ -93,7 +92,7 @@ A reserved profile is a vCenter object that holds one VM shape: vCPU count, CPU 
 | `reservedProfileID: X` | `reservedProfileName: {default: X, allowed: [X], required: true}` |
 | `reservedSlots` | `reservedSlots`, unchanged, including zero |
 
-Back to v1alpha5, `reservedProfileID` = `reservedProfileName.default`. Up again, if `reservedProfileID` differs from the default stored in the conversion annotation (an older-API writer such as wcpsvc changed it), the field is reset to `{default: Y, allowed: [Y], required: true}`; otherwise it is restored from the annotation.
+`reservedProfileID` is removed in v1alpha6 and exists only in v1alpha5 and older. Back to v1alpha5, `reservedProfileID` = `reservedProfileName.default`. Up again, if `reservedProfileID` differs from the default stored in the conversion annotation (an older-API writer such as wcpsvc changed it), the field is reset to `{default: Y, allowed: [Y], required: true}`; otherwise it is restored from the annotation.
 
 Fields with no v1alpha5 home round-trip through the conversion annotation.
 

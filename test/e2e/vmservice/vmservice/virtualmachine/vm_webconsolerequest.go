@@ -11,13 +11,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -43,7 +41,7 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 	var (
 		input            VMWebConsoleRequestSpecInput
 		config           *e2eConfig.E2EConfig
-		clusterProxy     *common.VMServiceClusterProxy
+		clusterProxy     framework.ClusterProxyInterface
 		svClusterClient  ctrlclient.Client
 		webconsoleName   string
 		webconsoleParams manifestbuilders.VirtualMachineWebConsoleRequestYaml
@@ -62,7 +60,7 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", vmWebConsoleSpecName)
 
 		config = input.Config
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, vmWebConsoleSpecName))
@@ -80,9 +78,8 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 		It("should successfully create v1a1 webconsolerequests and populate status", Label("smoke"), func() {
 			vmoperator.DeferCleanupWithDumpOnFailure(nil,
 				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "webconsolerequests", input.WCPNamespaceName, webconsoleName))
-			webconsoleYaml := manifestbuilders.GetV1A1WebConsoleRequestYaml(webconsoleParams)
-			e2eframework.Logf("%v", string(webconsoleYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, webconsoleYaml)).NotTo(HaveOccurred(), "failed to create v1a1 webconsole request", string(webconsoleYaml))
+			webconsole := manifestbuilders.WebConsoleRequestA1(webconsoleParams)
+			Expect(svClusterClient.Create(ctx, webconsole)).NotTo(HaveOccurred(), "failed to create v1a1 webconsole request")
 			// Verify webconsole request creation.
 			vmservice.VerifyWebConsoleRequestCreation(ctx, config, svClusterClient, input.WCPNamespaceName, webconsoleName)
 			vmoperator.VerifyWebConsoleRequestStatus(ctx, config, svClusterClient, input.WCPNamespaceName, webconsoleName)
@@ -91,9 +88,8 @@ func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsol
 		It("When WCP_VMService_v1alpha2 enabled, should successfully create v1a2 virtualmachinewebconsolerequests and populate status", func() {
 			vmoperator.DeferCleanupWithDumpOnFailure(nil,
 				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "virtualmachinewebconsolerequests", input.WCPNamespaceName, webconsoleName))
-			vmWebconsoleYaml := manifestbuilders.GetVirtualMachineWebConsoleRequestYaml(webconsoleParams)
-			e2eframework.Logf("%v", string(vmWebconsoleYaml))
-			Expect(clusterProxy.CreateWithArgs(ctx, vmWebconsoleYaml)).NotTo(HaveOccurred(), "failed to create v1a2 virtualmachinewebconsole request", string(vmWebconsoleYaml))
+			vmWebconsole := manifestbuilders.VirtualMachineWebConsoleRequestA2(webconsoleParams)
+			Expect(svClusterClient.Create(ctx, vmWebconsole)).NotTo(HaveOccurred(), "failed to create v1a2 virtualmachinewebconsole request")
 			// Verify virtualmachine webconsole request creation.
 			vmservice.VerifyVirtualMachineWebConsoleRequestCreation(ctx, config, svClusterClient, input.WCPNamespaceName, webconsoleName)
 			vmoperator.VerifyVirtualMachineWebConsoleRequestStatus(ctx, config, svClusterClient, input.WCPNamespaceName, webconsoleName)

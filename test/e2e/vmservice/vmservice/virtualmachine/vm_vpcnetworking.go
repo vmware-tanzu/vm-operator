@@ -12,9 +12,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
@@ -38,23 +41,12 @@ type VMVPCSpecInput struct {
 
 // VMVPCSpec exercises VPC Subnet/SubnetSet-backed VM networking.
 //
-// clusterProxy.CreateWithArgs/ApplyWithArgs and the controller-runtime client
-// returned by GetClient already retry transient connectivity errors
-// internally (see framework/retry_client.go and
-// vmservice/common/vmservice_clusterproxy.go), so most creates below are
-// single-shot. Subnet, SubnetSet, VirtualMachine, and SecurityPolicy creates
-// are the exception and keep an explicit Eventually: their admission
-// webhooks (NSX operator, VM Operator) can reject with a real, non-transient
-// validation error simply because a referenced object -- a just-created
-// Subnet/SubnetSet, or the namespace's VPC/NSX projection -- has not
-// finished realizing yet. That is a distinct failure class from the
-// dial/timeout errors the lower-level retries classify as transient, so it
-// still needs to be ridden out here. These retried creates use
-// ApplyWithArgs rather than CreateWithArgs: CreateWithArgs only tolerates
-// AlreadyExists within its own internal retry attempts, so wrapping it in an
-// outer Eventually can surface a hard AlreadyExists failure if an earlier
-// outer attempt's write landed after a delayed/lost response -- Apply has
-// no such create-vs-update distinction to trip over.
+// VM creates use the shared typed-client helper, which retries transient
+// connectivity errors and registers diagnostics and cleanup. Subnet,
+// SubnetSet, and SecurityPolicy creates keep an explicit Eventually because
+// NSX admission can reject them while their dependencies finish realizing.
+// Those retried creates use ApplyWithArgs so they remain idempotent if a
+// write succeeds but its response is lost between outer attempts.
 func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 	const (
 		specName = "vm-vpc-networking"
@@ -73,16 +65,14 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		input                 VMVPCSpecInput
 		config                *e2eConfig.E2EConfig
 		clusterProxy          *common.VMServiceClusterProxy
-		svClusterConfig       *e2eConfig.ManagementClusterConfig
 		svClusterClient       ctrlclient.Client
 		wcpClient             wcp.WorkloadManagementAPI
 		clusterResources      *e2eConfig.Resources
-		v1a2vmParameters      manifestbuilders.VirtualMachineYaml
+		vmTemplate            *vmopv1a2.VirtualMachine
 		vm1Name               string
 		vm2Name               string
 		secretName            string
 		linuxImageDisplayName string
-		linuxVMIName          string
 	)
 
 	// createSubnetOrSubnetSet creates a Subnet or SubnetSet, retrying on a
@@ -95,17 +85,6 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		Eventually(func(g Gomega) {
 			g.Expect(clusterProxy.ApplyWithArgs(ctx, subnetYaml)).To(Succeed(), "failed to create the %s %s/%s: %s", kind, ns, name, string(subnetYaml))
 		}, config.GetIntervals("default", "wait-subnet-creation")...).Should(Succeed(), "Timed out in creating %s %s/%s", kind, ns, name)
-	}
-
-	// createVM creates a VirtualMachine, retrying on a real (non-transient)
-	// validation error while its dependencies finish realizing; see the
-	// VMVPCSpec doc comment.
-	createVM := func(vmYaml []byte) {
-		GinkgoHelper()
-
-		Eventually(func(g Gomega) {
-			g.Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine: %s", string(vmYaml))
-		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out in creating the VirtualMachine")
 	}
 
 	BeforeEach(func() {
@@ -123,7 +102,7 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 
-		svClusterConfig = config.InfraConfig.ManagementClusterConfig
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
@@ -132,28 +111,29 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 		vm2Name = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 		secretName = fmt.Sprintf("%s-%s", "secret", capiutil.RandomString(4))
 
-		secretYaml := manifestbuilders.GetSecretYamlCloudConfig(manifestbuilders.Secret{
+		secret := manifestbuilders.CloudConfigSecret(manifestbuilders.Secret{
 			Namespace: input.WCPNamespaceName,
 			Name:      secretName,
 		})
-		Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create secret: %s", string(secretYaml))
+		Expect(svClusterClient.Create(ctx, secret)).To(Succeed(), "failed to create Secret %s/%s", secret.Namespace, secret.Name)
 		vmservice.VerifySecretCreation(ctx, config, svClusterClient, input.WCPNamespaceName, secretName)
 
 		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
-		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+		linuxVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
-		v1a2vmParameters = manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			VMClassName:      clusterResources.VMClassName,
-			ImageName:        linuxVMIName,
-			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       "PoweredOn",
-			Bootstrap: manifestbuilders.Bootstrap{
-				CloudInit: &manifestbuilders.CloudInit{
-					RawCloudConfig: &manifestbuilders.KeySelector{
-						Key:  "user-data",
-						Name: secretName,
+		vmTemplate = &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{Namespace: input.WCPNamespaceName},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ClassName:    clusterResources.VMClassName,
+				ImageName:    linuxVMIName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+				Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{
+						RawCloudConfig: &vmopv1a2common.SecretKeySelector{
+							Key:  "user-data",
+							Name: secretName,
+						},
 					},
 				},
 			},
@@ -173,30 +153,36 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetDHCPName, utils.SubnetSetKind)
 
 			By("Creating VM1 using the DHCP Private Subnet and VM2 using the DHCP Private SubnetSet")
-			// vm1Params/vm2Params are shallow copies of v1a2vmParameters: only
-			// value fields (Name, Namespace, NetworkA2, ImageName) are set
-			// below, so the shared Bootstrap.CloudInit pointer is never
-			// mutated through either copy. Do not start writing through
-			// vmNParams.Bootstrap.* without giving it its own copy first.
-			vm1Params := v1a2vmParameters
+			// Each VM gets its own copy of the bootstrap and network settings.
+			vm1Params := vmTemplate.DeepCopy()
 			vm1Params.Name = vm1Name
-			vm1Params.NetworkA2 = manifestbuilders.NetworkA2{
-				Interfaces: []manifestbuilders.InterfaceSpec{
-					{Name: subnetDHCPName, Kind: utils.SubnetKind, APIVersion: vpcAPIVersion},
+			vm1Params.Spec.Network = &vmopv1a2.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1a2.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Network: &vmopv1a2common.PartialObjectRef{
+							TypeMeta: metav1.TypeMeta{APIVersion: vpcAPIVersion, Kind: utils.SubnetKind},
+							Name:     subnetDHCPName,
+						},
+					},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm1Params))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm1Name, false)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm1Params, false)
 
-			vm2Params := v1a2vmParameters
+			vm2Params := vmTemplate.DeepCopy()
 			vm2Params.Name = vm2Name
-			vm2Params.NetworkA2 = manifestbuilders.NetworkA2{
-				Interfaces: []manifestbuilders.InterfaceSpec{
-					{Name: subnetSetDHCPName, Kind: utils.SubnetSetKind, APIVersion: vpcAPIVersion},
+			vm2Params.Spec.Network = &vmopv1a2.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1a2.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Network: &vmopv1a2common.PartialObjectRef{
+							TypeMeta: metav1.TypeMeta{APIVersion: vpcAPIVersion, Kind: utils.SubnetSetKind},
+							Name:     subnetSetDHCPName,
+						},
+					},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm2Params))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm2Name, false)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm2Params, false)
 
 			By("Waiting for both VMs to be created with IPs")
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name)
@@ -222,25 +208,35 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetCIDRName, utils.SubnetSetKind)
 
 			By("Creating VM1 using the CIDR Private Subnet and VM2 using the CIDR Public SubnetSet")
-			vm1Params := v1a2vmParameters
+			vm1Params := vmTemplate.DeepCopy()
 			vm1Params.Name = vm1Name
-			vm1Params.NetworkA2 = manifestbuilders.NetworkA2{
-				Interfaces: []manifestbuilders.InterfaceSpec{
-					{Name: subnetCIDRName, Kind: utils.SubnetKind, APIVersion: vpcAPIVersion},
+			vm1Params.Spec.Network = &vmopv1a2.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1a2.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Network: &vmopv1a2common.PartialObjectRef{
+							TypeMeta: metav1.TypeMeta{APIVersion: vpcAPIVersion, Kind: utils.SubnetKind},
+							Name:     subnetCIDRName,
+						},
+					},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm1Params))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm1Name, false)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm1Params, false)
 
-			vm2Params := v1a2vmParameters
+			vm2Params := vmTemplate.DeepCopy()
 			vm2Params.Name = vm2Name
-			vm2Params.NetworkA2 = manifestbuilders.NetworkA2{
-				Interfaces: []manifestbuilders.InterfaceSpec{
-					{Name: subnetSetCIDRName, Kind: utils.SubnetSetKind, APIVersion: vpcAPIVersion},
+			vm2Params.Spec.Network = &vmopv1a2.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1a2.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Network: &vmopv1a2common.PartialObjectRef{
+							TypeMeta: metav1.TypeMeta{APIVersion: vpcAPIVersion, Kind: utils.SubnetSetKind},
+							Name:     subnetSetCIDRName,
+						},
+					},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm2Params))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm2Name, false)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm2Params, false)
 
 			By("Waiting for both VMs to be created with IPs")
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name)
@@ -264,49 +260,60 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, nic2Name, utils.SubnetSetKind)
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, nic2Name, utils.SubnetSetKind)
 
-			v1a2vmParameters.Name = vm1Name
-			v1a2vmParameters.NetworkA2 = manifestbuilders.NetworkA2{
-				Interfaces: []manifestbuilders.InterfaceSpec{
-					{Name: nic1Name, Kind: utils.SubnetKind, APIVersion: vpcAPIVersion},
-					{Name: nic2Name, Kind: utils.SubnetSetKind, APIVersion: vpcAPIVersion},
+			vm1 := vmTemplate.DeepCopy()
+			vm1.Name = vm1Name
+			vm1.Spec.Network = &vmopv1a2.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1a2.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Network: &vmopv1a2common.PartialObjectRef{
+							TypeMeta: metav1.TypeMeta{APIVersion: vpcAPIVersion, Kind: utils.SubnetKind},
+							Name:     nic1Name,
+						},
+					},
+					{
+						Name: "eth1",
+						Network: &vmopv1a2common.PartialObjectRef{
+							TypeMeta: metav1.TypeMeta{APIVersion: vpcAPIVersion, Kind: utils.SubnetSetKind},
+							Name:     nic2Name,
+						},
+					},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineWithMultiNetworkYamlA2(v1a2vmParameters))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm1Name, false)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm1, false)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name)
 		})
 	})
 
 	Context("Across namespaces, VPC Public and Private accessMode", func() {
-		var (
-			secondNamespaceName string
-			secondNamespaceCtx  wcpframework.NamespaceContext
-		)
-
 		It("one VirtualMachine within Private Subnet can communicate to another VM in another ns within Public Subnet", func() {
 			By("Create VM1 using Private Subnet")
 			createSubnetOrSubnetSet(utils.SubnetKind, subnetName, input.WCPNamespaceName, utils.CIDRConfig, true)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, subnetName, utils.SubnetKind)
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, subnetName, utils.SubnetKind)
 
-			v1a2vmParameters.Name = vm1Name
-			v1a2vmParameters.NetworkA2 = manifestbuilders.NetworkA2{
-				Interfaces: []manifestbuilders.InterfaceSpec{
-					{Name: subnetName, Kind: utils.SubnetKind, APIVersion: vpcAPIVersion},
+			vm1 := vmTemplate.DeepCopy()
+			vm1.Name = vm1Name
+			vm1.Spec.Network = &vmopv1a2.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1a2.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						Network: &vmopv1a2common.PartialObjectRef{
+							TypeMeta: metav1.TypeMeta{APIVersion: vpcAPIVersion, Kind: utils.SubnetKind},
+							Name:     subnetName,
+						},
+					},
 				},
 			}
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(v1a2vmParameters))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vm1Name, false)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm1.DeepCopy(), false)
 
 			By("Create a second namespace")
 
-			secondNamespaceName = fmt.Sprintf("%s-second", input.WCPNamespaceName)
+			secondNamespaceName := fmt.Sprintf("%s-second", input.WCPNamespaceName)
 			clID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
 			vmsvcSpecs := wcp.NewVMServiceSpecDetails([]string{clusterResources.VMClassName}, []string{clID})
 
-			var err error
-
-			secondNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, secondNamespaceName, input.ArtifactFolder)
+			secondNamespaceCtx, err := clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, secondNamespaceName, input.ArtifactFolder)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create a second test WCP namespace")
 			DeferCleanup(clusterProxy.DeleteWCPNamespace, secondNamespaceCtx)
 			wcp.WaitForNamespaceReady(wcpClient, secondNamespaceName)
@@ -321,14 +328,17 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 			// status. That is a second, namespace-readiness reason (on top of
 			// the general one in the VMVPCSpec doc comment) why this secret
 			// create keeps an explicit Eventually despite being a plain
-			// corev1 object.
+			// corev1 object. AlreadyExists is ignored because an earlier
+			// attempt's create may have landed even though it reported an
+			// error, and the secret name is random in a new namespace.
 			By("Create a secret in the second namespace with cloud-init config")
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(manifestbuilders.Secret{
+			secret := manifestbuilders.CloudConfigSecret(manifestbuilders.Secret{
 				Namespace: secondNamespaceName,
 				Name:      secretName,
 			})
 			Eventually(func(g Gomega) {
-				g.Expect(clusterProxy.ApplyWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create secret: %s", string(secretYaml))
+				g.Expect(ctrlclient.IgnoreAlreadyExists(svClusterClient.Create(ctx, secret.DeepCopy()))).To(Succeed(),
+					"failed to create Secret %s/%s", secret.Namespace, secret.Name)
 			}, config.GetIntervals("default", "wait-secret-creation")...).Should(Succeed(), "Timed out in creating the Secret")
 			vmservice.VerifySecretCreation(ctx, config, svClusterClient, secondNamespaceName, secretName)
 
@@ -338,12 +348,11 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 			vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, secondNamespaceName, subnetName, utils.SubnetKind)
 			DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, secondNamespaceName, subnetName, utils.SubnetKind)
 
-			vm2Parameters := v1a2vmParameters
+			vm2Parameters := vm1.DeepCopy()
 			vm2Parameters.Name = vm2Name
 			vm2Parameters.Namespace = secondNamespaceName
-			vm2Parameters.ImageName = vmImageName2
-			createVM(manifestbuilders.GetVirtualMachineYamlA2(vm2Parameters))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), secondNamespaceName, vm2Name, false)
+			vm2Parameters.Spec.ImageName = vmImageName2
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm2Parameters, false)
 
 			By("Label VM2 and apply Security Policy that allows ingress")
 			Expect(vmservice.LabelVM(ctx, config, clusterProxy, vm2Name, secondNamespaceName, "role", "allow-ingress")).To(Succeed())

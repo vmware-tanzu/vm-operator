@@ -24,7 +24,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -60,7 +59,6 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	var (
 		input            SpecInput
 		config           *e2eConfig.E2EConfig
-		clusterProxy     *common.VMServiceClusterProxy
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 		linuxVMIName     string
@@ -80,7 +78,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy := input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.K8sWorkloadMgmtAPICapabilityName)
@@ -131,10 +129,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 						ImageName:    linuxVMIName,
 						ClassName:    clusterResources.VMClassName,
 						StorageClass: clusterResources.StorageClassName,
-						Reserved: &vmopv1.VirtualMachineReservedSpec{
-							ResourcePolicyName: clusterResources.VMResourcePolicyName,
-						},
-						PowerState: powerState,
+						PowerState:   powerState,
 					},
 				},
 			},

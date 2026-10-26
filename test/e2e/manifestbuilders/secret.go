@@ -16,20 +16,20 @@ type Secret struct {
 	Name      string `json:"name,omitempty"`
 }
 
-// GetSecretYamlCloudConfig returns a Secret whose user-data is a plaintext
-// cloud-init configuration, the same content as GetConfigMapYamlGOSC.
-func GetSecretYamlCloudConfig(secret Secret) []byte {
-	return ToYAML(&corev1.Secret{
+// CloudConfigSecret returns a Secret containing plaintext cloud-init user-data,
+// the same content as CloudConfigMap.
+func CloudConfigSecret(secret Secret) *corev1.Secret {
+	return &corev1.Secret{
 		TypeMeta:   typeMeta("v1", "Secret"),
 		ObjectMeta: secretObjectMeta(secret),
 		StringData: map[string]string{
 			"user-data": goscCloudConfig,
 		},
-	})
+	}
 }
 
 // seedDataCloudConfig is the cloud-init user-data of
-// GetSecretYamlCloudConfigSeedData.
+// SeedDataCloudConfigSecret.
 const seedDataCloudConfig = `#cloud-config
 ssh_pwauth: true
 users:
@@ -78,23 +78,20 @@ runcmd:
   - [/usr/local/bin/vmop-seed.sh]
 `
 
-// GetSecretYamlCloudConfigSeedData returns a cloud-config Secret that, in
-// addition to the default user, seeds checksummed random data on the boot disk
-// and on the first data disk.
-func GetSecretYamlCloudConfigSeedData(secret Secret) []byte {
-	return ToYAML(&corev1.Secret{
+// SeedDataCloudConfigSecret returns a cloud-config Secret that seeds checksummed data on the boot and first data disks.
+func SeedDataCloudConfigSecret(secret Secret) *corev1.Secret {
+	return &corev1.Secret{
 		TypeMeta:   typeMeta("v1", "Secret"),
 		ObjectMeta: secretObjectMeta(secret),
 		StringData: map[string]string{
 			"user-data": seedDataCloudConfig,
 		},
-	})
+	}
 }
 
-// GetSecretYamlInlineCloudInitData returns a Secret with inline data
-// referenced by cloud-init bootstrap secret key selectors.
-func GetSecretYamlInlineCloudInitData(secret Secret) []byte {
-	return ToYAML(&corev1.Secret{
+// InlineCloudInitSecret returns the Secret referenced by inline cloud-init key selectors.
+func InlineCloudInitSecret(secret Secret) *corev1.Secret {
+	return &corev1.Secret{
 		TypeMeta:   typeMeta("v1", "Secret"),
 		ObjectMeta: secretObjectMeta(secret),
 		StringData: map[string]string{
@@ -102,39 +99,34 @@ func GetSecretYamlInlineCloudInitData(secret Secret) []byte {
 			"vmsvc-pwd": `$1$salt$SOC33fVbA/ZxeIwD5yw1u1`,
 			"hello":     "Hello World!",
 		},
-	})
+	}
 }
 
-// GetSecretYamlInlineSysprepData returns a Secret with inline data
-// referenced by sysprep bootstrap secret key selectors.
-func GetSecretYamlInlineSysprepData(secret Secret) []byte {
-	return ToYAML(&corev1.Secret{
+// InlineSysprepSecret returns the Secret referenced by inline Sysprep key selectors.
+func InlineSysprepSecret(secret Secret) *corev1.Secret {
+	return &corev1.Secret{
 		TypeMeta:   typeMeta("v1", "Secret"),
 		ObjectMeta: secretObjectMeta(secret),
 		StringData: map[string]string{
 			"vmsvc-pwd": "vmware",
 		},
-	})
+	}
 }
 
-// GetSecretYamlOvfEnv returns a Secret whose user-data is the same
-// cloud-init configuration as GetSecretYamlCloudConfig, but base64-encoded,
-// as vSphere delivers it through the guestinfo.ovfEnv OVF property.
-func GetSecretYamlOvfEnv(secret Secret) []byte {
-	return ToYAML(&corev1.Secret{
+// OvfEnvSecret returns a Secret containing base64-encoded cloud-init user-data for OVF delivery.
+func OvfEnvSecret(secret Secret) *corev1.Secret {
+	return &corev1.Secret{
 		TypeMeta:   typeMeta("v1", "Secret"),
 		ObjectMeta: secretObjectMeta(secret),
 		StringData: map[string]string{
 			"user-data": base64.StdEncoding.EncodeToString([]byte(goscCloudConfig)),
 		},
-	})
+	}
 }
 
-// GetSecretYamlVAppConfig returns a Secret whose values are vApp property
-// template expressions evaluated by VM Operator's guest customization
-// engine, not by this package. They are literal strings here.
-func GetSecretYamlVAppConfig(secret Secret) []byte {
-	return ToYAML(&corev1.Secret{
+// VAppConfigSecret returns a Secret containing vApp property template expressions.
+func VAppConfigSecret(secret Secret) *corev1.Secret {
+	return &corev1.Secret{
 		TypeMeta:   typeMeta("v1", "Secret"),
 		ObjectMeta: secretObjectMeta(secret),
 		StringData: map[string]string{
@@ -143,21 +135,18 @@ func GetSecretYamlVAppConfig(secret Secret) []byte {
 			"management_ip":      `{{ V1alpha1_FirstIP }}`,
 			"management_gateway": `{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}`,
 		},
-	})
+	}
 }
 
-// GetSecretYamlSysprepConfig returns a Secret whose unattend value is a
-// sysprep answer file with template expressions evaluated by VM Operator's
-// guest customization engine, not by this package. It is a literal string
-// here.
-func GetSecretYamlSysprepConfig(secret Secret) []byte {
-	return ToYAML(&corev1.Secret{
+// SysprepSecret returns a Secret containing a Sysprep answer file with guest customization templates.
+func SysprepSecret(secret Secret) *corev1.Secret {
+	return &corev1.Secret{
 		TypeMeta:   typeMeta("v1", "Secret"),
 		ObjectMeta: secretObjectMeta(secret),
 		StringData: map[string]string{
 			"unattend": sysprepUnattend,
 		},
-	})
+	}
 }
 
 const sysprepUnattend = `<?xml version="1.0" encoding="UTF-8"?>

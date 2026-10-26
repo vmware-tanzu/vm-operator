@@ -19,7 +19,6 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
@@ -44,8 +43,7 @@ type VIAdminNamespaceRoleSpecInput struct {
 
 func VIAdminNamespaceRoleSpec(ctx context.Context, inputGetter func() VIAdminNamespaceRoleSpecInput) {
 	var (
-		input        VIAdminNamespaceRoleSpecInput
-		clusterProxy *common.VMServiceClusterProxy
+		clusterProxy wcpframework.WCPClusterProxyInterface
 		config       *e2eConfig.E2EConfig
 		nsContext    wcpframework.NamespaceContext
 	)
@@ -53,9 +51,9 @@ func VIAdminNamespaceRoleSpec(ctx context.Context, inputGetter func() VIAdminNam
 	BeforeEach(func() {
 		var err error
 
-		input = inputGetter()
+		input := inputGetter()
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		config = input.Config
 
 		vmsvcSpecs := wcp.NewVMServiceSpecDetails([]string{}, []string{})

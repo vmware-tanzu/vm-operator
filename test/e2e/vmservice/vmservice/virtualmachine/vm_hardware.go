@@ -26,7 +26,6 @@ import (
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
@@ -93,11 +92,102 @@ type testSpec struct {
 	hardware vmopv1.VirtualMachineHardwareSpec
 
 	// precreatePVCs, when true, creates the PVCs before the VirtualMachine
-	// instead of relying on the embedded PVC documents in the VM manifest.
-	// The VM manifest places the VirtualMachine document ahead of its PVCs,
-	// so admission would otherwise see the referenced PVC as not-yet-existing
-	// and skip PVC-dependent validation (e.g. ReadWriteMany sharing checks).
+	// instead of creating the VM first. Otherwise admission would see the
+	// referenced PVC as not-yet-existing and skip PVC-dependent validation
+	// (e.g. ReadWriteMany sharing checks).
 	precreatePVCs bool
+}
+
+// createHardwareVMWithPVCs preserves the fixture's admission ordering: some
+// hardware tests require PVCs to exist before the VM, while others create the
+// VM first. Deferred cleanup deletes the VM before its PVCs in either case.
+func createHardwareVMWithPVCs(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	clusterProxy framework.ClusterProxyInterface,
+	params manifestbuilders.VirtualMachineYaml,
+	precreatePVCs bool) {
+
+	GinkgoHelper()
+
+	client := clusterProxy.GetClient()
+	vm := manifestbuilders.VirtualMachineA5(params)
+	claims, err := manifestbuilders.PersistentVolumeClaims(params.PVCs)
+	Expect(err).NotTo(HaveOccurred(), "failed to build PVCs")
+
+	// Register this before the VM cleanup so the VM is deleted first.
+	deferCleanupPVCs(clusterProxy, claims...)
+	// Register diagnostics before either create so partial fixture failures
+	// retain the same VM, batch attachment, and namespace PVC dumps.
+	vmoperator.DeferCleanupVirtualMachine(config, client, clusterProxy.GetKubeconfigPath(),
+		params.Namespace, params.Name, false, hardwareVMDumps(clusterProxy, params.Namespace, params.Name)...)
+
+	if precreatePVCs {
+		By("Pre-creating the PVCs so admission can resolve them when the VM is created")
+		for _, claim := range claims {
+			Expect(client.Create(ctx, claim)).To(Succeed(), "failed to create PVC %s", claim.Name)
+		}
+	}
+
+	Expect(client.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s/%s", vm.Namespace, vm.Name)
+
+	if !precreatePVCs {
+		for _, claim := range claims {
+			Expect(client.Create(ctx, claim)).To(Succeed(), "failed to create PVC %s", claim.Name)
+		}
+	}
+}
+
+// deferCleanupPVCs registers a DeferCleanup node that deletes the claims.
+// Failure diagnostics also cover PVC creation failures before VM cleanup
+// is registered. VM cleanup is registered later, so it still runs first.
+func deferCleanupPVCs(
+	clusterProxy framework.ClusterProxyInterface,
+	claims ...*corev1.PersistentVolumeClaim) {
+
+	client := clusterProxy.GetClient()
+	dumps := make([]vmoperator.DumpFunc, 0, len(claims))
+	for _, claim := range claims {
+		dumps = append(dumps, hardwareResourceYAML(clusterProxy.GetKubeconfigPath(), "pvc", claim.Namespace, claim.Name))
+	}
+	vmoperator.DeferCleanupWithDumpOnFailure(func(ctx context.Context) {
+		for _, claim := range claims {
+			_ = client.Delete(ctx, claim)
+		}
+	}, dumps...)
+}
+
+// hardwareResourceYAML logs the complete resource, including fields that
+// kubectl describe may omit. An empty name logs every resource in the namespace.
+func hardwareResourceYAML(kubeconfigPath, resource, ns, name string) vmoperator.DumpFunc {
+	return func(ctx context.Context) {
+		args := []string{"-n", ns, "-oyaml"}
+		if name != "" {
+			args = append([]string{name}, args...)
+		}
+		stdout, err := framework.KubectlGet(ctx, kubeconfigPath, append([]string{resource}, args...)...)
+		if err != nil {
+			e2eframework.Logf("Failed to get %s %s/%s: %v", resource, ns, name, err)
+			return
+		}
+		e2eframework.Logf("%s %s/%s:\n%s", resource, ns, name, stdout)
+	}
+}
+
+// hardwareVMDumps retains the full VM, batch attachment, and namespace PVC YAML
+// previously logged by AfterEach, including backfilled disk claims. Descriptions
+// additionally include events. Run these before deleting the VM.
+func hardwareVMDumps(
+	clusterProxy framework.ClusterProxyInterface,
+	ns, vmName string) []vmoperator.DumpFunc {
+
+	kubeconfigPath := clusterProxy.GetKubeconfigPath()
+	return []vmoperator.DumpFunc{
+		hardwareResourceYAML(kubeconfigPath, "virtualmachine", ns, vmName),
+		hardwareResourceYAML(kubeconfigPath, "batchattach", ns, vmName),
+		vmoperator.DescribeResource(kubeconfigPath, "batchattach", ns, vmName),
+		hardwareResourceYAML(kubeconfigPath, "pvc", ns, ""),
+	}
 }
 
 func waitForVMAndBatchAttach(
@@ -646,13 +736,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 		clusterResources               *e2eConfig.Resources
 		vCenterClient                  *vim25.Client
 		wcpClient                      wcp.WorkloadManagementAPI
-		vmYaml                         []byte
-		vmYamls                        [][]byte
-		pvcsYamls                      [][]byte
 		vmName                         string
 		isoSupportFSSEnabled           bool
 		allDisksArePVCapabilityEnabled bool
-		linuxImageDisplayName          string
 		linuxVMIName                   string
 		eztStoragePolicyID             string
 	)
@@ -690,7 +776,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 			DeferCleanup(cancelPodWatches)
 
-			linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+			linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 
 			linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, vmSvcNamespace, linuxImageDisplayName)
 
@@ -770,84 +856,14 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 		})
 
 		BeforeEach(func() {
-			vmYamls = [][]byte{}
-			pvcsYamls = [][]byte{}
 			vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-		})
-
-		AfterEach(func() {
-			if CurrentSpecReport().Failed() {
-				By("Logging Virtual Machines and Batch Attachments after failure")
-
-				for _, vmYaml := range vmYamls {
-					// The VirtualMachine is the first document in the
-					// manifest, which is the one yaml.Unmarshal decodes.
-					var virtualMachine metav1.PartialObjectMetadata
-					if err := yaml.Unmarshal(vmYaml, &virtualMachine); err != nil {
-						e2eframework.Logf("Failed to parse VM yaml: %s", err)
-						continue
-					}
-
-					vmName := virtualMachine.Name
-
-					stdout, err := framework.KubectlGet(ctx,
-						clusterProxy.GetKubeconfigPath(),
-						"virtualmachine", vmName,
-						"-n", virtualMachine.Namespace,
-						"-oyaml")
-					if err != nil {
-						e2eframework.Logf("Failed to get VirtualMachine %s: %s", vmName, err)
-					} else {
-						e2eframework.Logf("VirtualMachine %s:\n%s", vmName, stdout)
-					}
-
-					stdout, err = framework.KubectlGet(ctx,
-						clusterProxy.GetKubeconfigPath(),
-						"batchattach", vmName,
-						"-n", virtualMachine.Namespace,
-						"-oyaml")
-					if err != nil {
-						e2eframework.Logf("Failed to get batch attachment: %s", err)
-					} else {
-						e2eframework.Logf("Batch Attachment %s:\n%s", vmName, stdout)
-					}
-				}
-
-				stdout, err := framework.KubectlGet(ctx, clusterProxy.GetKubeconfigPath(),
-					"pvc",
-					"-n", vmSvcNamespace,
-					"-oyaml")
-				if err != nil {
-					e2eframework.Logf("Failed to get PVCs: %s", err)
-				} else {
-					e2eframework.Logf("PVCs:\n%s", stdout)
-				}
-			}
-
-			for _, vmYaml := range vmYamls {
-				_ = clusterProxy.DeleteWithArgs(ctx, vmYaml)
-			}
-
-			for _, pvcYaml := range pvcsYamls {
-				_ = clusterProxy.DeleteWithArgs(ctx, pvcYaml)
-			}
 		})
 
 		DescribeTable("Virtual Machine with PVCs Power On",
 			func(specGetter func() testSpec) {
 				spec := specGetter()
 
-				if spec.precreatePVCs {
-					By("Pre-creating the PVCs so admission can resolve them when the VM is created")
-
-					for _, pvc := range spec.pvcs {
-						pvcYaml := manifestbuilders.GetPersistentVolumeClaimYaml(pvc)
-						pvcsYamls = append(pvcsYamls, pvcYaml)
-						Expect(clusterProxy.CreateWithArgs(ctx, pvcYaml)).To(Succeed(), "failed to create PVC %s", pvc.ClaimName)
-					}
-				}
-
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
@@ -855,17 +871,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             spec.pvcs,
 					Hardware:         &spec.hardware,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				if spec.precreatePVCs {
-					// The VM manifest embeds the same PVC documents again; the VM
-					// is a genuine create, but re-declaring the pre-created PVCs
-					// must be an idempotent apply rather than a failing create.
-					Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine")
-				} else {
-					Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine")
-				}
+				}, spec.precreatePVCs)
 
 				By("Waiting for the VirtualMachine to be created")
 
@@ -1355,7 +1361,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						// We do not create IDE controllers because they are created by default.
 					}
 
-					vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+					By("Create and wait for VM to power on")
+					createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 						Namespace:        vmSvcNamespace,
 						Name:             vmName,
 						ImageName:        linuxVMIName,
@@ -1363,11 +1370,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 						StorageClassName: clusterResources.StorageClassName,
 						PowerState:       string(vmPowerState),
 						Hardware:         &hardware,
-					})
-					vmYamls = append(vmYamls, vmYaml)
-
-					By("Create and wait for VM to power on")
-					Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+					}, false)
 					vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmPowerState))
 
 					By("Verifying the controllers are created")
@@ -1438,7 +1441,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					},
 				}
 
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
@@ -1446,10 +1449,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 					PowerState:       string(vmopv1.VirtualMachinePowerStateOff),
 					Hardware:         &hardware,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				}, false)
 
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
 
@@ -1491,7 +1491,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					},
 				}
 
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
@@ -1499,10 +1499,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 					PowerState:       string(vmopv1.VirtualMachinePowerStateOn),
 					Hardware:         &hardware,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				}, false)
 
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 
@@ -1530,6 +1527,17 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			numberOfVMs := 3
 
 			AfterEach(func() {
+				// This hook runs before deferred cleanup. Capture all shared-disk
+				// VMs before deleting any of them, preserving the deletion order below.
+				if CurrentSpecReport().Failed() {
+					for i := range numberOfVMs {
+						name := fmt.Sprintf("%s-%d", vmName, i)
+						vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "vm", vmSvcNamespace, name)(ctx)
+						for _, dump := range hardwareVMDumps(clusterProxy, vmSvcNamespace, name) {
+							dump(ctx)
+						}
+					}
+				}
 				// We delete the VMs one after the other instead of relying on
 				// deleting the entire yaml because the PVCs are shared between the VMs
 				// and we need to ensure that VMs are deleted before PVCs.
@@ -1580,19 +1588,23 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					vms = append(vms, fmt.Sprintf("%s-%d", vmName, i))
 				}
 
-				for _, vmName := range vms {
+				for i, vmName := range vms {
 					By("Creating Virtual Machine: " + vmName)
-					vmYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+					params := manifestbuilders.VirtualMachineYaml{
 						Namespace:        vmSvcNamespace,
 						Name:             vmName,
 						ImageName:        linuxVMIName,
 						VMClassName:      clusterResources.VMClassName,
 						StorageClassName: clusterResources.StorageClassName,
 						PVCs:             pvcs,
-					})
-					vmYamls = append(vmYamls, vmYaml)
-
-					Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+					}
+					if i == 0 {
+						// The VMs share the PVCs, so only the first VM creates them.
+						createHardwareVMWithPVCs(ctx, config, clusterProxy, params, false)
+						continue
+					}
+					vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, manifestbuilders.VirtualMachineA5(params), false,
+						hardwareVMDumps(clusterProxy, vmSvcNamespace, vmName)...)
 				}
 
 				for _, vmName := range vms {
@@ -1624,17 +1636,14 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 				}, 3)
 
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				}, false)
 
 				volumeNames := make([]string, len(pvcs))
 				for i, pvc := range pvcs {
@@ -1707,18 +1716,15 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 				}, 1)
 
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				By("Creating the Virtual Machine")
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				By("Creating the Virtual Machine")
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				}, false)
 
 				By("Waiting for the Virtual Machine to be created")
 
@@ -1792,17 +1798,14 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				pvcs[0].RequestSize = "1Mi"
 				pvcs[1].RequestSize = "2Mi"
 
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				}, false)
 
 				By("Waiting for the Virtual Machine to be created")
 
@@ -1878,17 +1881,14 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 				}, 1)
 
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				}, false)
 
 				By("Waiting for the Virtual Machine to be created and powered on")
 
@@ -1922,7 +1922,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
 
 				By("Deleting the Virtual Machine")
-				Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
+				Expect(svClusterClient.Delete(ctx, vm)).To(Succeed(), "failed to delete virtualmachine")
 				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmSvcNamespace, vmName)
 
 				By("Verifying the CnsNodeVMBatchAttachment is deleted")
@@ -1934,17 +1934,14 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 				}, 3)
 
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				}, false)
 
 				volumeNames := make([]string, len(pvcs))
 				for i, pvc := range pvcs {
@@ -2113,7 +2110,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Name: isoImageName,
 				}
 
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				By("Creating the Virtual Machine")
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
@@ -2125,11 +2123,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 							cdrom,
 						},
 					},
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				By("Creating the Virtual Machine")
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				}, false)
 
 				By("Waiting for the Virtual Machine to be created and power on")
 				vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmSvcNamespace, vmName)
@@ -2469,19 +2463,18 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			})
 
 			It("Boot disk PVC lifecycle operations should succeed", func() {
-				vmYaml = manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				params := manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
 					VMClassName:      clusterResources.VMClassName,
 					StorageClassName: clusterResources.StorageClassName,
-					PVCs:             []manifestbuilders.PVC{},
-				})
-				vmYamls = append(vmYamls, vmYaml)
+				}
 
 				By("Creating the Virtual Machine")
-				e2eframework.Logf("Creating the Virtual Machine with yaml: %s", string(vmYaml))
-				Expect(clusterProxy.ApplyWithArgs(ctx, vmYaml)).To(Succeed(), "failed to apply virtualmachine")
+				e2eframework.Logf("Creating the Virtual Machine with yaml: %s",
+					manifestbuilders.ToYAML(manifestbuilders.VirtualMachineA5(params)))
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, params, false)
 
 				waitForVMAndBatchAttach(ctx, config, svClusterClient, vmSvcNamespace, vmName, []string{})
 
@@ -2771,10 +2764,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Name:      fmt.Sprintf("import-%s", vmName),
 				}, importOperation)
 
-				vmYamls = append(vmYamls, manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
-					Namespace: vmSvcNamespace,
-					Name:      importedVMName,
-				}))
+				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+					vmSvcNamespace, importedVMName, false,
+					hardwareVMDumps(clusterProxy, vmSvcNamespace, importedVMName)...)
 
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
 
@@ -2968,11 +2960,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Name:      fmt.Sprintf("import-%s", vmName),
 				}, importOperation)
 
-				vmYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
-					Namespace: vmSvcNamespace,
-					Name:      importedVMName,
-				})
-				vmYamls = append(vmYamls, vmYaml)
+				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+					vmSvcNamespace, importedVMName, false,
+					hardwareVMDumps(clusterProxy, vmSvcNamespace, importedVMName)...)
 
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
 
@@ -3104,7 +3094,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Should(Succeed(), "Timed out waiting for the VM to drop the detached disks from status.volumes")
 
 				By("Deleting the VirtualMachine")
-				Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
+				Expect(svClusterClient.Delete(ctx, &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{Namespace: vmSvcNamespace, Name: importedVMName},
+				})).To(Succeed(), "failed to delete virtualmachine")
 
 				Eventually(func(g Gomega) {
 					_, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, importedVMName)
@@ -3181,10 +3173,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Name:      importOpName,
 				}, importOperation)
 
-				vmYamls = append(vmYamls, manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
-					Namespace: vmSvcNamespace,
-					Name:      importedVMName,
-				}))
+				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+					vmSvcNamespace, importedVMName, false,
+					hardwareVMDumps(clusterProxy, vmSvcNamespace, importedVMName)...)
 
 				By("Verifying VM is imported and powered on")
 				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
@@ -3441,7 +3432,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					},
 				}
 
-				vmYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				By("Creating non-encrypted VM with physical-sharing SCSI controller")
+				createHardwareVMWithPVCs(ctx, config, clusterProxy, manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             vmName,
 					ImageName:        linuxVMIName,
@@ -3449,12 +3441,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             pvcs,
 					Hardware:         &hardware,
-				})
-				vmYamls = append(vmYamls, vmYaml)
-
-				By("Creating non-encrypted VM with physical-sharing SCSI controller")
-				Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(),
-					"expected webhook to accept VM with physical-sharing controller and non-encrypted storage")
+				}, false)
 
 				By("Waiting for the VM to power on with shared PVCs attached")
 				volumeNames := make([]string, len(pvcs))
@@ -3529,10 +3516,11 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 			It("should bind the PVC and power on the VM within a reasonable timeout", func() {
 				By("Pre-creating a standalone PVC backed by the WFFC storage class")
-				pvcYaml := manifestbuilders.GetPersistentVolumeClaimYaml(wffcPVC)
-				Expect(clusterProxy.ApplyWithArgs(ctx, pvcYaml)).To(Succeed(),
+				claim, err := manifestbuilders.PersistentVolumeClaim(wffcPVC)
+				Expect(err).ToNot(HaveOccurred(), "failed to build WFFC PVC")
+				deferCleanupPVCs(clusterProxy, claim)
+				Expect(svClusterClient.Create(ctx, claim)).To(Succeed(),
 					"failed to pre-create WFFC PVC %q", wffcPVC.ClaimName)
-				pvcsYamls = append(pvcsYamls, pvcYaml)
 
 				By("Verifying the PVC remains Pending before any consumer is created")
 				Consistently(func(g Gomega) {
@@ -3548,7 +3536,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					Should(Succeed(), "WFFC PVC %q unexpectedly bound before VM was created", wffcPVC.ClaimName)
 
 				By("Creating a VirtualMachine that references the WFFC PVC")
-				wffcVMYaml := manifestbuilders.GetVirtualMachineYamlA5(manifestbuilders.VirtualMachineYaml{
+				// The PVC already exists, so create only the VirtualMachine.
+				wffcVM := manifestbuilders.VirtualMachineA5(manifestbuilders.VirtualMachineYaml{
 					Namespace:        vmSvcNamespace,
 					Name:             wffcVMName,
 					ImageName:        linuxVMIName,
@@ -3556,9 +3545,8 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					StorageClassName: clusterResources.StorageClassName,
 					PVCs:             []manifestbuilders.PVC{wffcPVC},
 				})
-				vmYamls = append(vmYamls, wffcVMYaml)
-				Expect(clusterProxy.ApplyWithArgs(ctx, wffcVMYaml)).To(Succeed(),
-					"failed to create VirtualMachine %q with WFFC PVC", wffcVMName)
+				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, wffcVM, false,
+					hardwareVMDumps(clusterProxy, vmSvcNamespace, wffcVMName)...)
 
 				backfilledVolumes := getBackfilledVolumes(ctx, config,
 					svClusterClient, vmSvcNamespace, wffcVMName,
@@ -3568,7 +3556,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 				By("Verifying the WFFC PVC is bound after the VM powers on")
 				pvc := &corev1.PersistentVolumeClaim{}
-				err := svClusterClient.Get(ctx, types.NamespacedName{
+				err = svClusterClient.Get(ctx, types.NamespacedName{
 					Namespace: vmSvcNamespace,
 					Name:      wffcPVC.ClaimName,
 				}, pvc)

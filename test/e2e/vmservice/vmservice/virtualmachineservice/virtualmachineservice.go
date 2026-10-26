@@ -20,7 +20,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -47,12 +46,10 @@ func VirtualMachineServiceSpec(ctx context.Context, inputGetter func() SpecInput
 	var (
 		input            SpecInput
 		config           *e2eConfig.E2EConfig
-		clusterProxy     *common.VMServiceClusterProxy
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 
-		linuxImageDisplayName string
-		linuxVMIName          string
+		linuxVMIName string
 
 		selectorKey   string
 		vmServiceName string
@@ -71,12 +68,12 @@ func VirtualMachineServiceSpec(ctx context.Context, inputGetter func() SpecInput
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy := input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
 		suffix := capiutil.RandomString(4)

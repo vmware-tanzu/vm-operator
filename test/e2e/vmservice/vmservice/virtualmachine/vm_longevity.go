@@ -12,17 +12,17 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -48,21 +48,18 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 	)
 
 	var (
-		input                 VMLongevityInput
-		wcpClient             wcp.WorkloadManagementAPI
-		config                *e2eConfig.E2EConfig
-		clusterProxy          *common.VMServiceClusterProxy
-		svClusterConfig       *e2eConfig.ManagementClusterConfig
-		svClusterClient       ctrlclient.Client
-		clusterResources      *e2eConfig.Resources
-		secondNSContext       wcpframework.NamespaceContext
-		vmYaml                []byte
-		vmName                string
-		classReady            metav1.Condition
-		imageReady            metav1.Condition
-		storageReady          metav1.Condition
-		linuxImageDisplayName string
-		linuxVMIName          string
+		input            VMLongevityInput
+		wcpClient        wcp.WorkloadManagementAPI
+		config           *e2eConfig.E2EConfig
+		clusterProxy     wcpframework.WCPClusterProxyInterface
+		svClusterClient  ctrlclient.Client
+		clusterResources *e2eConfig.Resources
+		secondNSContext  wcpframework.NamespaceContext
+		vmName           string
+		classReady       metav1.Condition
+		imageReady       metav1.Condition
+		storageReady     metav1.Condition
+		linuxVMIName     string
 	)
 
 	BeforeEach(func() {
@@ -77,11 +74,11 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 		wcpClient = input.WCPClient
 		config = input.Config
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
-		svClusterConfig = config.InfraConfig.ManagementClusterConfig
+		clusterProxy = input.ClusterProxy
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = clusterProxy.GetClient()
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
@@ -133,19 +130,19 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			By("Create VirtualMachine")
 
 			vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				ImageName:        linuxVMIName,
-				VMClassName:      vmClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				ResourcePolicy:   clusterResources.VMResourcePolicyName,
-				PowerState:       "PoweredOn",
+			vmToCreate := &vmopv1a2.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: input.WCPNamespaceName,
+					Name:      vmName,
+				},
+				Spec: vmopv1a2.VirtualMachineSpec{
+					ImageName:    linuxVMIName,
+					ClassName:    vmClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+				},
 			}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				input.WCPNamespaceName, vmName, false)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		})
 

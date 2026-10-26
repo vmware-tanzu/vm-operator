@@ -11,22 +11,23 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -51,13 +52,12 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 	var (
 		input            VMNetworkSpecInput
 		config           *e2eConfig.E2EConfig
-		clusterProxy     *common.VMServiceClusterProxy
+		clusterProxy     framework.ClusterProxyInterface
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 		vmName           string
 
-		linuxImageDisplayName string
-		linuxVMIName          string
+		linuxVMIName string
 	)
 
 	BeforeEach(func() {
@@ -72,30 +72,31 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
 
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 	})
 
 	It("Should allow network interface to be added to VirtualMachine when mutability cap is enabled", Label("smoke"), func() {
-		vmParameters := manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			Name:             vmName,
-			ImageName:        linuxVMIName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			PowerState:       "PoweredOff",
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOff,
+			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(
-			config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, false)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -182,8 +183,13 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 		By("Creating custom SubnetSet")
 		Eventually(func(g Gomega) {
-			sYaml := utils.CreateSubnetOrSubnetSetYaml(utils.SubnetSetKind, subnetSetName, input.WCPNamespaceName, utils.DHCPConfig, true)
-			g.Expect(clusterProxy.CreateWithArgs(ctx, sYaml)).To(Succeed(), "failed to create the SubnetSet: %s", string(sYaml))
+			subnetSet, err := manifestbuilders.DHCPSubnetOrSubnetSet(manifestbuilders.SubnetOrSubnetSet{
+				Kind:      utils.SubnetSetKind,
+				Name:      subnetSetName,
+				Namespace: input.WCPNamespaceName,
+			}, true)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to build SubnetSet")
+			g.Expect(svClusterClient.Create(ctx, subnetSet)).To(Succeed(), "failed to create SubnetSet %s", subnetSetName)
 		}, config.GetIntervals("default", "wait-subnet-creation")...).Should(Succeed(), "Timed out in creating SubnetSet")
 		vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetName, utils.SubnetSetKind)
 
@@ -192,18 +198,19 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 			vmoperator.WaitForSubnetOrSubnetSetToBeDeleted(ctx, config, svClusterClient, input.WCPNamespaceName, subnetSetName, utils.SubnetSetKind)
 		})
 
-		vmParameters := manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			Name:             vmName,
-			ImageName:        linuxVMIName,
-			VMClassName:      clusterResources.VMClassName,
-			StorageClassName: clusterResources.StorageClassName,
-			PowerState:       "PoweredOff",
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOff,
+			},
 		}
-		vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(
-			config, svClusterClient, clusterProxy.GetKubeconfigPath(), input.WCPNamespaceName, vmName, false)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)

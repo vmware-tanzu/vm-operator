@@ -62,7 +62,7 @@ func NewSSHCommandRunnerFromHTTPProxy() (SSHCommandRunner, error) {
 func newSSHDialerWithRetries(hostname string, port int, config *ssh.ClientConfig, interval time.Duration, timeout time.Duration) (*ssh.Client, error) {
 	var newClient *ssh.Client
 
-	err := wait.PollWithContext(context.Background(), interval, timeout, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), interval, timeout, true, func(ctx context.Context) (bool, error) {
 		var err error
 		if newClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), config); err != nil {
 			return false, err

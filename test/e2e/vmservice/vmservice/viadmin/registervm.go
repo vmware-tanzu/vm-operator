@@ -1289,7 +1289,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 	// backuprestore suite and will be removed once that suite leaves
 	// quarantine (spec 010-veeam-e2e-backup-restore).
 	Context("RegisterVM - Restore to new", func() {
-		It("Should register VM when no pre-existing VM CR exists", Label("experimental"), func() {
+		It("Should register VM when no pre-existing VM CR exists", func() {
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")
 			}

@@ -1094,7 +1094,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		})
 	})
 
-	Context("PLACEMENT-POLICY-COMBINATIONS", Label("placement-policy", "extended-functional", "experimental"), func() {
+	Context("PLACEMENT-POLICY-COMBINATIONS", Label("placement-policy", "extended-functional"), func() {
 		var (
 			tmpNamespaceName         string
 			tmpNamespaceVMIName      string

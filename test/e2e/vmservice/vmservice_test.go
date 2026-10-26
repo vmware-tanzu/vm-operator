@@ -242,6 +242,18 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
+		Context("VM-AFFINITY-TAG", func() {
+			virtualmachine.VMAffinityTagSpec(context.TODO(), func() virtualmachine.VMAffinityTagSpecInput {
+				return virtualmachine.VMAffinityTagSpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					WCPClient:        wcpClient,
+					ArtifactFolder:   artifactFolder,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
 		Context("VM-SNAPSHOT", func() {
 			virtualmachine.VMSnapshotSpec(context.TODO(), func() virtualmachine.VMSnapshotSpecInput {
 				return virtualmachine.VMSnapshotSpecInput{

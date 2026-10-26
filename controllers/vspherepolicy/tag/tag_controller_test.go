@@ -7,6 +7,7 @@ package tag_test
 import (
 	"context"
 	"errors"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,6 +33,8 @@ import (
 	testlabels "github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/vmtags"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -142,6 +145,22 @@ var _ = Describe(
 				withObjs = append(withObjs, obj)
 			})
 
+			Context("and the Tag is marked for deletion", func() {
+				BeforeEach(func() {
+					obj.DeletionTimestamp = new(metav1.Now())
+					obj.Finalizers = []string{metav1.FinalizerDeleteDependents}
+				})
+
+				It("leaves the terminating Tag unchanged", func() {
+					before := getObj().DeepCopy()
+
+					result, err := reconcileObj()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(Equal(ctrl.Result{}))
+					Expect(getObj()).To(Equal(before))
+				})
+			})
+
 			Context("and the label mirror is missing", func() {
 				BeforeEach(func() {
 					obj.Labels = nil
@@ -201,6 +220,22 @@ var _ = Describe(
 			BeforeEach(func() {
 				obj.OwnerReferences = nil
 				withObjs = append(withObjs, obj)
+			})
+
+			Context("and the Tag is marked for deletion", func() {
+				BeforeEach(func() {
+					obj.DeletionTimestamp = new(metav1.Now())
+					obj.Finalizers = []string{metav1.FinalizerDeleteDependents}
+				})
+
+				It("leaves the terminating Tag unchanged", func() {
+					before := getObj().DeepCopy()
+
+					result, err := reconcileObj()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(Equal(ctrl.Result{}))
+					Expect(getObj()).To(Equal(before))
+				})
 			})
 
 			It("deletes the Tag outright, with no terminating window", func() {
@@ -302,6 +337,240 @@ var _ = Describe(
 		})
 	},
 )
+
+// This Describe exercises kubeutil.RegisterVMTagsIndexes through a real
+// manager cache rather than a fake client, so each index's field selector
+// semantics are proven against the real informer machinery it is registered
+// on in production, not an approximation of it. It registers the indexes
+// directly, without the VM controller that owns that call on a Supervisor,
+// because the subject here is the indexes themselves.
+var _ = Describe("Field indexes", Label(
+	testlabels.Controller,
+	testlabels.EnvTest,
+	testlabels.API,
+), func() {
+	var (
+		idxSuite  *builder.TestSuite
+		ns1Ctx    *builder.IntegrationTestContext
+		mgrClient ctrlclient.Client
+	)
+
+	BeforeEach(func() {
+		idxSuite = builder.NewTestSuiteForControllerWithContext(
+			pkgcfg.NewContextWithDefaultConfig(),
+			func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+				return kubeutil.RegisterVMTagsIndexes(ctx, mgr.GetFieldIndexer())
+			},
+			pkgmgr.InitializeProvidersNoopFn)
+		idxSuite.BeforeSuite()
+
+		ns1Ctx = idxSuite.NewIntegrationTestContext()
+
+		// List with MatchingFields must go through the manager's cache: the
+		// direct API-server client IntegrationTestContext.Client uses for
+		// writes below has no notion of these custom field indexes and
+		// rejects the field selector outright.
+		mgrClient = idxSuite.GetManager().GetClient()
+	})
+
+	AfterEach(func() {
+		ns1Ctx.AfterEach()
+		ns1Ctx = nil
+
+		idxSuite.AfterSuite()
+		idxSuite = nil
+	})
+
+	newTag := func(ns, name, key, value string) *vspherepolv1.Tag {
+		return &vspherepolv1.Tag{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      name,
+			},
+			Spec: vspherepolv1.TagSpec{
+				Key:   key,
+				Value: value,
+			},
+		}
+	}
+
+	It("metadata.ownerReferences.uid returns a VM's owned Tags", func() {
+		ownedByA := newTag(ns1Ctx.Namespace, "owned-by-a", "team", "blue")
+		ownedByA.OwnerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: vmopv1.GroupVersion.String(),
+				Kind:       "VirtualMachine",
+				Name:       "vm-a",
+				UID:        types.UID("vm-a-uid"),
+			},
+		}
+
+		ownedByB := newTag(ns1Ctx.Namespace, "owned-by-b", "team", "red")
+		ownedByB.OwnerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: vmopv1.GroupVersion.String(),
+				Kind:       "VirtualMachine",
+				Name:       "vm-b",
+				UID:        types.UID("vm-b-uid"),
+			},
+		}
+
+		Expect(ns1Ctx.Client.Create(ns1Ctx, ownedByA)).To(Succeed())
+		Expect(ns1Ctx.Client.Create(ns1Ctx, ownedByB)).To(Succeed())
+
+		var list vspherepolv1.TagList
+		Eventually(func(g Gomega) {
+			g.Expect(mgrClient.List(
+				ns1Ctx,
+				&list,
+				ctrlclient.InNamespace(ns1Ctx.Namespace),
+				ctrlclient.MatchingFields{kubeutil.TagOwnerReferencesUIDIndexKey: "vm-a-uid"},
+			)).To(Succeed())
+			g.Expect(list.Items).To(HaveLen(1))
+		}).Should(Succeed())
+
+		Expect(list.Items[0].Name).To(Equal("owned-by-a"))
+	})
+})
+
+// This Describe proves the optimistic-lock merge patch
+// operator-best-practices.md requires for fan-in owner-reference writes
+// actually does its job against a real API server, not just a fake client:
+// two VMs concurrently becoming owners of the same brand-new Tag must both
+// survive, rather than one silently overwriting the other's write — the
+// exact failure a plain merge patch (no resourceVersion precondition) would
+// allow. A real apiserver's conflict detection is what a fake client cannot
+// be trusted to reproduce faithfully.
+var _ = Describe("Concurrent ownership writes", Label(
+	testlabels.Controller,
+	testlabels.EnvTest,
+	testlabels.API,
+), func() {
+	var (
+		concurrentSuite *builder.TestSuite
+		intgCtx         *builder.IntegrationTestContext
+		mgrClient       ctrlclient.Client
+	)
+
+	BeforeEach(func() {
+		concurrentSuite = builder.NewTestSuiteForControllerWithContext(
+			pkgcfg.NewContextWithDefaultConfig(),
+			func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+				return kubeutil.RegisterVMTagsIndexes(ctx, mgr.GetFieldIndexer())
+			},
+			pkgmgr.InitializeProvidersNoopFn)
+		concurrentSuite.BeforeSuite()
+
+		intgCtx = concurrentSuite.NewIntegrationTestContext()
+		mgrClient = concurrentSuite.GetManager().GetClient()
+	})
+
+	AfterEach(func() {
+		intgCtx.AfterEach()
+		intgCtx = nil
+
+		concurrentSuite.AfterSuite()
+		concurrentSuite = nil
+	})
+
+	It("both survive when two VMs concurrently become owners of the same new Tag", func() {
+		affinityFor := func(key, value string) *vmopv1.AffinitySpec {
+			return &vmopv1.AffinitySpec{
+				VMAffinity: &vmopv1.VMAffinitySpec{
+					RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{key: value},
+							},
+							// Deliberately not zone/hostname, so the term is
+							// eligible regardless of the
+							// VMPlacementPolicies/VMAffinityDuringExecution
+							// flags (mirrors newVM in
+							// vmtags_reconciler_test.go).
+							TopologyKey: "custom-topology-key",
+						},
+					},
+				},
+			}
+		}
+
+		vmA := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: intgCtx.Namespace,
+				Name:      "vm-a",
+				UID:       types.UID("vm-a-uid"),
+				Labels:    map[string]string{"team": "blue"},
+			},
+			Spec: vmopv1.VirtualMachineSpec{Affinity: affinityFor("team", "blue")},
+		}
+		vmB := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: intgCtx.Namespace,
+				Name:      "vm-b",
+				UID:       types.UID("vm-b-uid"),
+				Labels:    map[string]string{"team": "blue"},
+			},
+			Spec: vmopv1.VirtualMachineSpec{Affinity: affinityFor("team", "blue")},
+		}
+
+		// reconcileWithRetry mimics what a real controller requeues on a
+		// conflict error: try again. ReconcileTagCRs itself does not retry —
+		// a conflict from the optimistic lock is expected to propagate so
+		// the caller's normal requeue handles it.
+		reconcileWithRetry := func(vm *vmopv1.VirtualMachine) error {
+			var lastErr error
+			for range 20 {
+				_, err := vmtags.ReconcileTagCRs(intgCtx, mgrClient, vm)
+				if err == nil {
+					return nil
+				}
+				lastErr = err
+			}
+			return lastErr
+		}
+
+		start := make(chan struct{})
+		errs := make([]error, 2)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		for i, vm := range []*vmopv1.VirtualMachine{vmA, vmB} {
+			go func(i int, vm *vmopv1.VirtualMachine) {
+				defer wg.Done()
+				<-start
+				errs[i] = reconcileWithRetry(vm)
+			}(i, vm)
+		}
+		close(start)
+		wg.Wait()
+
+		Expect(errs[0]).ToNot(HaveOccurred())
+		Expect(errs[1]).ToNot(HaveOccurred())
+
+		// Both owner-reference writes land in the same API-server-side Tag
+		// object, but the informer cache backing mgrClient observes them as
+		// two separate watch events. A List that only waits for the Tag to
+		// exist can win the race against the second event and read back a
+		// stale copy with only the first VM's owner reference, so the owner
+		// extraction must be inside the Eventually and re-read on every
+		// poll rather than reusing whatever the first successful List saw.
+		Eventually(func(g Gomega) {
+			var list vspherepolv1.TagList
+			g.Expect(mgrClient.List(
+				intgCtx,
+				&list,
+				ctrlclient.InNamespace(intgCtx.Namespace),
+			)).To(Succeed())
+			g.Expect(list.Items).To(HaveLen(1))
+
+			owners := make([]string, 0, len(list.Items[0].OwnerReferences))
+			for _, ref := range list.Items[0].OwnerReferences {
+				owners = append(owners, string(ref.UID))
+			}
+			g.Expect(owners).To(ConsistOf("vm-a-uid", "vm-b-uid"))
+		}).Should(Succeed())
+	})
+})
 
 // This Describe proves the Tag CRD's generated printer columns and status
 // subresource are what tag_types.go's kubebuilder markers declare, not just

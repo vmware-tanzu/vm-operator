@@ -67,6 +67,10 @@ func NewFakeClientWithInterceptors(
 			&vmopv1.VirtualMachineSnapshot{},
 			kubeutil.VMSnapshotVMNameFieldIndex,
 			kubeutil.VMSnapshotVMNameIndexerFunc).
+		WithIndex(
+			&vspherepolv1.Tag{},
+			kubeutil.TagOwnerReferencesUIDIndexKey,
+			kubeutil.TagOwnerReferencesUIDIndexerFunc).
 		Build()
 }
 

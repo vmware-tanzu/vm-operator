@@ -7,6 +7,7 @@ package virtualmachine
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
@@ -26,19 +27,38 @@ type AffinityRuleConstraints struct {
 	ConfigureZoneRules bool
 }
 
-// extractAffinityLabelsFromVM extracts all "key:value" labels referenced
-// in the VM's affinity and anti-affinity rules.
-// Returns a set where keys are "key:value" strings
-// that are used in affinity rules.
-func extractAffinityLabelsFromVM(vmCtx pkgctx.VirtualMachineContext, constraints AffinityRuleConstraints) sets.Set[string] {
+// AffinityLabelPairs returns the label key/value pairs referenced by the
+// VM's own affinity and anti-affinity rules, eligible per constraints. Callers
+// pass CalculateAffinityConstraints so that term eligibility is decided by the
+// same rules as the flag-off path.
+func AffinityLabelPairs(
+	vmCtx pkgctx.VirtualMachineContext,
+	constraints AffinityRuleConstraints) []LabelPair {
+
+	return affinityLabelPairs(vmCtx, constraints)
+}
+
+// affinityLabelPairs returns the label key/value pairs referenced by the
+// VM's own affinity and anti-affinity rules, eligible per constraints. This
+// is extractAffinityLabelsFromVM's own eligibility logic, restructured to
+// return pairs instead of "key:value" strings, so a caller can build both a
+// Tag spec and a vCenter tag name from one source of truth.
+// extractAffinityLabelsFromVM calls this function so the flag-off and
+// flag-on paths cannot diverge on what "referenced by affinity" means.
+func affinityLabelPairs(
+	vmCtx pkgctx.VirtualMachineContext,
+	constraints AffinityRuleConstraints) []LabelPair {
+
 	affinity := vmCtx.VM.Spec.Affinity
 	if affinity == nil {
 		return nil
 	}
 
-	affinityLabels := sets.New[string]()
+	seen := sets.New[LabelPair]()
 
-	// helper to extract "key:value" labels from VMAffinityTerm slice
+	var pairs []LabelPair
+
+	// helper to extract eligible label pairs from a VMAffinityTerm slice.
 	extractFromTerms := func(terms []vmopv1.VMAffinityTerm) {
 		for _, term := range terms {
 			if term.LabelSelector == nil {
@@ -60,7 +80,18 @@ func extractAffinityLabelsFromVM(vmCtx pkgctx.VirtualMachineContext, constraints
 			}
 
 			for _, label := range labels {
-				affinityLabels.Insert(label)
+				key, value, ok := strings.Cut(label, ":")
+				if !ok {
+					continue
+				}
+
+				pair := LabelPair{Key: key, Value: value}
+				if seen.Has(pair) {
+					continue
+				}
+
+				seen.Insert(pair)
+				pairs = append(pairs, pair)
 			}
 		}
 	}
@@ -81,6 +112,24 @@ func extractAffinityLabelsFromVM(vmCtx pkgctx.VirtualMachineContext, constraints
 		if pkgcfg.FromContext(vmCtx.Context).Features.VMHardAffinityDuringExecution {
 			extractFromTerms(affinity.VMAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution)
 		}
+	}
+
+	return pairs
+}
+
+// extractAffinityLabelsFromVM extracts all "key:value" labels referenced
+// in the VM's affinity and anti-affinity rules.
+// Returns a set where keys are "key:value" strings
+// that are used in affinity rules.
+func extractAffinityLabelsFromVM(vmCtx pkgctx.VirtualMachineContext, constraints AffinityRuleConstraints) sets.Set[string] {
+	pairs := affinityLabelPairs(vmCtx, constraints)
+	if len(pairs) == 0 {
+		return nil
+	}
+
+	affinityLabels := sets.New[string]()
+	for _, pair := range pairs {
+		affinityLabels.Insert(TagName(pair.Key, pair.Value))
 	}
 
 	return affinityLabels

@@ -38,7 +38,7 @@ The `Tag` API is **invisible to DevOps users**: they continue to express intent 
 - **G6**: Tag participation **MUST** be scoped to a single namespace. The same label key/value in two namespaces **MUST** produce two distinct `Tag` resources, and a VM **MUST NOT** be tagged on account of a `Tag` resource in another namespace.
 - **G7**: A change to a VM's label participation — a label it carries being added or removed while `spec.affinity` references it — **MUST** converge both that VM's own tags and the tags of every other VM in the namespace affected by the change. Convergence **MUST** be re-evaluated on every reconcile, not only at create time. This convergence only checks "did the VM's labels change?" — it does not check vCenter to see if the tag is still actually attached. If someone manually removes a tag directly in vCenter, VM Operator won't notice or re-add it until that VM's labels change again (see the "vCenter Tag detached out of band" edge case).
 - **G8**: Tag application and removal **MUST** be independent of `VirtualMachineGroup` membership.
-- **G9**: DevOps users **MUST NOT** be able to create, update, or delete a `Tag` resource; only privileged accounts may. `spec.key` and `spec.value` **MUST** be immutable after create.
+- **G9**: RBAC **MUST** restrict creating, updating, and deleting `Tag` resources to authorized platform accounts; DevOps roles **MUST NOT** grant these permissions. Control-plane cleanup accounts **MUST** retain the permissions needed for garbage collection and namespace teardown. Admission **MUST NOT** add identity-based authorization checks. `spec.key` and `spec.value` **MUST** be immutable after create.
 - **G10**: A CSP admin listing `Tag` resources **MUST** be able to see, from the default `kubectl get` output, which label key and value each `Tag` represents.
 - **G11**: The entire behavior **MUST** be gated behind a feature flag, and with the flag off, tagging behavior **MUST** be exactly what it is today.
 - **G12**: A `Tag` resource that has been deleted and is concurrently needed again **MUST** be re-created rather than silently skipped, and two VMs needing the same `Tag` at the same time **MUST** converge on a single resource carrying both owners. Either request **MUST** be retried until it succeeds rather than dropped. Deletion is atomic — a `Tag` carries no finalizer — so there is no "pending deletion" state for a reconcile to observe: the resource either exists or does not.
@@ -191,7 +191,7 @@ A CSP admin inspects which label relationships are currently driving affinity in
 
 1. **Given** `Tag` resources exist in a namespace, **When** a CSP admin lists them, **Then** the default output identifies, for each `Tag`, the label key and the label value it represents.
 2. **Given** a `Tag` exists, **When** a CSP admin inspects it, **Then** its owner references name every VM whose `spec.affinity` references the label — whether or not that VM carries it — and its `Ready` condition and last-observed generation reflect the current state.
-3. **Given** a DevOps user (non-privileged account), **When** they attempt to create, modify, or delete a `Tag`, **Then** the request is rejected by admission.
+3. **Given** a DevOps user (non-privileged account), **When** they attempt to create, modify, or delete a `Tag`, **Then** the request is rejected by RBAC.
 4. **Given** a privileged account, **When** they attempt to change a `Tag`'s label key or value after create, **Then** the request is rejected as immutable.
 
 ---
@@ -239,4 +239,4 @@ None outstanding. Decisions previously open and now settled — the API's group 
 - [x] `Tag` lifecycle at zero owners is specified for both the VM-deleted and the label-dropped paths.
 - [x] Ownership and tag carriage are specified as separate rules, and every scenario is consistent with both.
 - [x] Feature-flag-off behavior is specified.
-- [x] DevOps-user invisibility (admission) is specified.
+- [x] DevOps-user access restrictions (RBAC) are specified.

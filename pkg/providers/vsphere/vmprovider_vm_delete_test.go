@@ -11,17 +11,23 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/vmware/govmomi/simulator"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -212,4 +218,82 @@ func vmDeleteTests() {
 		Entry("invalid", vimtypes.VirtualMachineConnectionStateInvalid),
 		Entry("orphaned", vimtypes.VirtualMachineConnectionStateOrphaned),
 	)
+
+	Context("Affinity Tag ownership (TaggingAPI)", func() {
+		var tag *vspherepolv1.Tag
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+				config.Features.TaggingAPI = true
+			})
+		})
+
+		JustBeforeEach(func() {
+			tag = &vspherepolv1.Tag{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "team-blue",
+					Namespace: vm.Namespace,
+				},
+				Spec: vspherepolv1.TagSpec{
+					Key:   "team",
+					Value: "blue",
+				},
+			}
+			Expect(controllerutil.SetOwnerReference(
+				vm, tag, ctx.Client.Scheme())).To(Succeed())
+			Expect(ctx.Client.Create(ctx, tag)).To(Succeed())
+		})
+
+		It("releases ownership on the normal delete path", func() {
+			Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+
+			got := &vspherepolv1.Tag{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(tag), got)).To(Succeed())
+			Expect(got.OwnerReferences).To(BeEmpty())
+		})
+
+		It("releases ownership even when the VM has no vCenter VM", func() {
+			Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+			Expect(ctx.GetVMFromMoID(vm.Status.UniqueID)).To(BeNil())
+
+			// Re-establish ownership now that the vCenter VM is gone, then
+			// delete again so DeleteVirtualMachine hits the vcVM == nil
+			// early-return after releasing ownership.
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(tag), tag)).To(Succeed())
+			Expect(controllerutil.SetOwnerReference(
+				vm, tag, ctx.Client.Scheme())).To(Succeed())
+			Expect(ctx.Client.Update(ctx, tag)).To(Succeed())
+
+			Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+
+			got := &vspherepolv1.Tag{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(tag), got)).To(Succeed())
+			Expect(got.OwnerReferences).To(BeEmpty())
+		})
+
+		It("propagates an error from releasing ownership", func() {
+			injectedErr := errors.New("release ownership boom")
+
+			fakeClient := builder.NewFakeClientWithInterceptors(
+				interceptor.Funcs{
+					Patch: func(
+						ctx context.Context,
+						c client.WithWatch,
+						obj client.Object,
+						patch client.Patch,
+						opts ...client.PatchOption) error {
+
+						if _, ok := obj.(*vspherepolv1.Tag); ok {
+							return injectedErr
+						}
+						return c.Patch(ctx, obj, patch, opts...)
+					},
+				},
+				tag,
+			)
+
+			p := vsphere.NewVSphereVMProviderFromClient(ctx, fakeClient, ctx.Recorder)
+			Expect(p.DeleteVirtualMachine(ctx, vm)).To(MatchError(injectedErr))
+		})
+	})
 }

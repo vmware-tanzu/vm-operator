@@ -203,6 +203,15 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		)
 	}
 
+	if pkgcfg.FromContext(ctx).Features.TaggingAPI {
+		// Register the VM Tag field indexes here, alongside their
+		// consumers: every consumer of these indexes is reached through
+		// this controller's reconcile path, so this is their single owner.
+		if err := kubeutil.RegisterVMTagsIndexes(ctx, mgr.GetFieldIndexer()); err != nil {
+			return fmt.Errorf("failed to register VM Tag field indexes: %w", err)
+		}
+	}
+
 	// Setup watches for the network interface CR types supported on this cluster.
 	for _, providerType := range netsetutil.GetClusterSupportedProviderTypesFromConfig(ctx) {
 		switch providerType {
@@ -359,6 +368,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=resourcequotas;namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=encryption.vmware.com,resources=encryptionclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;patch
+// +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tags,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile the object.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {

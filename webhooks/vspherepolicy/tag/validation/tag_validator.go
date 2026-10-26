@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"reflect"
 
-	admissionv1 "k8s.io/api/admission/v1"
 	metavalidation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,25 +32,12 @@ const (
 	webHookName = "default"
 )
 
-// allowedSystemAccountsForTag are the control-plane clients that must be
-// allowed to write a Tag even though they are not privileged accounts.
-// generic-garbage-collector prunes a dangling owner reference on UPDATE and
-// deletes a Tag with zero owners on DELETE; namespace-controller deletes a
-// Tag as part of namespace teardown on DELETE. Without this allow-list,
-// both operations are denied, which wedges owner-reference cleanup and
-// namespace termination respectively.
-var allowedSystemAccountsForTag = map[string]struct{}{
-	"system:serviceaccount:kube-system:generic-garbage-collector": {},
-	"system:serviceaccount:kube-system:namespace-controller":      {},
-}
-
 var (
 	specKeyPath   = field.NewPath("spec", "key")
 	specValuePath = field.NewPath("spec", "value")
-	metadataPath  = field.NewPath("metadata")
 )
 
-// +kubebuilder:webhook:verbs=create;update;delete,path=/default-validate-vsphere-policy-vmware-com-v1alpha1-tag,mutating=false,failurePolicy=fail,groups=vsphere.policy.vmware.com,resources=tags,versions=v1alpha1,name=default.validating.tag.v1alpha1.vsphere.policy.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
+// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vsphere-policy-vmware-com-v1alpha1-tag,mutating=false,failurePolicy=fail,groups=vsphere.policy.vmware.com,resources=tags,versions=v1alpha1,name=default.validating.tag.v1alpha1.vsphere.policy.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tags,verbs=get;list
 
 // AddToManager adds the webhook to the provided manager.
@@ -84,8 +70,8 @@ func (v validator) For() schema.GroupVersionKind {
 	return vspherepolv1.GroupVersion.WithKind(reflect.TypeFor[vspherepolv1.Tag]().Name())
 }
 
-// ValidateCreate admits only privileged requesters, and requires a valid
-// label key and value whose derived name matches metadata.name.
+// ValidateCreate requires a valid label key and value whose derived name
+// matches metadata.name. Authorization is enforced by RBAC.
 func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	tag, err := v.tagFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -94,7 +80,6 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	var fieldErrs field.ErrorList
 
-	fieldErrs = append(fieldErrs, v.validatePrivileged(ctx, admissionv1.Create)...)
 	fieldErrs = append(fieldErrs, validateLabelKey(tag.Spec.Key)...)
 	fieldErrs = append(fieldErrs, validateLabelValue(tag.Spec.Value)...)
 	fieldErrs = append(fieldErrs, validateDerivedName(tag)...)
@@ -102,9 +87,9 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	return common.BuildValidationResponse(ctx, nil, fieldErrsToStrings(fieldErrs), nil)
 }
 
-// ValidateUpdate admits only privileged requesters and requires a valid label
-// key and value. Immutability of spec.key and spec.value is enforced by CEL
-// rules on the CRD.
+// ValidateUpdate requires a valid label key and value. Immutability of
+// spec.key and spec.value is enforced by CEL rules on the CRD.
+// Authorization is enforced by RBAC.
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	tag, err := v.tagFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -113,40 +98,16 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	var fieldErrs field.ErrorList
 
-	fieldErrs = append(fieldErrs, v.validatePrivileged(ctx, admissionv1.Update)...)
 	fieldErrs = append(fieldErrs, validateLabelKey(tag.Spec.Key)...)
 	fieldErrs = append(fieldErrs, validateLabelValue(tag.Spec.Value)...)
 
 	return common.BuildValidationResponse(ctx, nil, fieldErrsToStrings(fieldErrs), nil)
 }
 
-// ValidateDelete admits only privileged requesters.
-func (v validator) ValidateDelete(ctx *pkgctx.WebhookRequestContext) admission.Response {
-	fieldErrs := v.validatePrivileged(ctx, admissionv1.Delete)
-
-	return common.BuildValidationResponse(ctx, nil, fieldErrsToStrings(fieldErrs), nil)
-}
-
-// validatePrivileged permits only a privileged account, or one of the
-// allow-listed system service accounts, to create, update or delete a Tag.
-// The allow-list is checked before IsPrivilegedAccount, and neither test
-// admits a DevOps user: the Tag API is internal bookkeeping and is not
-// exposed to namespace users.
-func (v validator) validatePrivileged(
-	ctx *pkgctx.WebhookRequestContext,
-	op admissionv1.Operation) field.ErrorList {
-	if _, ok := allowedSystemAccountsForTag[ctx.UserInfo.Username]; ok {
-		return nil
-	}
-
-	if ctx.IsPrivilegedAccount {
-		return nil
-	}
-
-	return field.ErrorList{
-		field.Forbidden(metadataPath,
-			fmt.Sprintf("only privileged users may %s a Tag", op)),
-	}
+// ValidateDelete allows deletion; authorization is enforced by RBAC.
+// DELETE is not registered with this webhook.
+func (v validator) ValidateDelete(_ *pkgctx.WebhookRequestContext) admission.Response {
+	return admission.Allowed("")
 }
 
 // validateLabelKey requires spec.key to be non-empty and a valid

@@ -46,6 +46,7 @@ Config file: `test/e2e/vmservice/config/wcp.yaml`. Env vars such as `NETWORK`, `
 - Capability constants (e.g. `"supports_vm_service_classless_vm"`) belong in `test/e2e/vmservice/consts/consts.go` as named exported constants — do not inline capability strings in spec files.
 - Prefer helpers in `lib/vmoperator`, `manifestbuilders`, and `infrastructure/vsphere` rather than ad-hoc API calls.
 - Async behavior: `Eventually` / `Consistently`, not sleeps — same spirit as controller tests; details and snippets are in the README.
+- **Assertions:** use Gomega directly. When the actual value is an `err` variable, use `Expect(err).ToNot(HaveOccurred(), "operation context")`. When the actual value is a function call, use `Expect(f()).To(Succeed(), "operation context")`. Use Ginkgo's `Fail` when there is no error value, and mark assertion helpers with `GinkgoHelper()` so failures point at the caller.
 
 ### Structure and manifests
 

@@ -5,9 +5,11 @@
 package manifestbuilders
 
 import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
@@ -58,9 +60,8 @@ func objectMeta(vmYaml VirtualMachineYaml) metav1.ObjectMeta {
 
 // must returns obj, failing the current test if err is not nil.
 func must[T any](obj T, err error) T {
-	if err != nil {
-		e2eframework.Failf("Failed to build manifest: %v", err)
-	}
+	GinkgoHelper()
+	Expect(err).ToNot(HaveOccurred(), "Failed to build manifest")
 	return obj
 }
 

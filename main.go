@@ -77,6 +77,8 @@ var (
 // stated, the order of the functions in main is by-design, and the functions
 // should only be re-ordered with care.
 func main() {
+	initCoverage()
+
 	setupLog.Info("Starting VM Operator controller",
 		"version", pkg.BuildVersion,
 		"buildnumber", pkg.BuildNumber,

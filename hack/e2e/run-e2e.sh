@@ -36,6 +36,12 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+# UTS's standard CODE_COVERAGE stage uses this flag. Preserve E2E_COVERAGE
+# as the local-run alias while routing both through the same lifecycle.
+if [ "${CODE_COVERAGE:-}" = "enabled" ]; then
+    export E2E_COVERAGE=true
+fi
+
 # Source callback.sh for report_callback. Guarded (rather than an
 # unconditional source) so a missing sibling file can't take down the whole
 # script before any test output is produced; report_result below already
@@ -119,6 +125,21 @@ report_result() {
         subtest_details=$(parse_json_report "${json_report}") || subtest_details="[]"
     fi
 
+    if [ "${E2E_COVERAGE:-false}" = "true" ]; then
+        local coverage_status="${ARTIFACT_FOLDER}/coverage/status.json"
+        if [ -f "${coverage_status}" ]; then
+            subtest_details=$(jq --argjson tests "${subtest_details}" '
+                $tests + [{testcasename: "E2E operator code coverage",
+                    result: (if .coverage_passed then "PASS" else "FAIL" end),
+                    syndrome: ((.errors // []) | join("; ") | .[0:1024])}]
+            ' "${coverage_status}")
+        else
+            subtest_details=$(printf '%s' "${subtest_details}" | jq '. + [{
+                testcasename: "E2E operator code coverage", result: "FAIL",
+                syndrome: "coverage status artifact is missing"}]')
+        fi
+    fi
+
     # Build a top-level syndrome from the failed subtests' own syndromes, so
     # the overall result carries a short synopsis instead of a bare Failed.
     local syndrome=""
@@ -192,16 +213,23 @@ E2E_ARGS="-e2e.e2e-config=${ROOT_DIR}test/e2e/vmservice/config/wcp.yaml -e2e.art
 
 # 5. Execute (capture exit code so we can report it before exiting)
 E2E_EXIT=0
+run_test() {
+    if [ "${E2E_COVERAGE:-false}" = "true" ]; then
+        python3 "${_SCRIPT_DIR}/coverage.py" --output "${ARTIFACT_FOLDER}/coverage" run -- "$@"
+    else
+        "$@"
+    fi
+}
 if [ "$MODE" = "prebuilt" ]; then
     echo "Running E2E tests (prebuilt: $PREBUILT_BIN)..."
     echo "$PREBUILT_BIN $E2E_ARGS ${GINKGO_ARGS[*]}"
     # shellcheck disable=SC2086
-    "$PREBUILT_BIN" $E2E_ARGS "${GINKGO_ARGS[@]}" || E2E_EXIT=$?
+    run_test "$PREBUILT_BIN" $E2E_ARGS "${GINKGO_ARGS[@]}" || E2E_EXIT=$?
 else
     echo "Running E2E tests (ginkgo CLI)..."
     echo "$GINKGO_BIN ${GINKGO_ARGS[*]} ./test/e2e/vmservice/... -- $E2E_ARGS"
     # shellcheck disable=SC2086
-    "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice/... -- $E2E_ARGS || E2E_EXIT=$?
+    run_test "$GINKGO_BIN" "${GINKGO_ARGS[@]}" ./test/e2e/vmservice/... -- $E2E_ARGS || E2E_EXIT=$?
 fi
 
 # 6. Optionally collect a WCP support bundle from this suite's own pod,

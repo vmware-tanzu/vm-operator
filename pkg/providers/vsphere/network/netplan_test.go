@@ -432,6 +432,60 @@ var _ = Describe("Netplan", Label(testlabels.API), func() {
 			})
 		})
 
+		DescribeTableSubtree("DNS settings",
+			func(addresses, search []string, expectedDNS *netplan.Nameserver) {
+				BeforeEach(func() {
+					bootstraps = []network.Bootstrap{
+						{
+							Name:            ifName,
+							GuestDeviceName: guestDevName,
+							MacAddress:      macAddr1,
+							Nameservers:     addresses,
+							SearchDomains:   search,
+						},
+					}
+				})
+
+				It("sets nameservers only when DNS settings are present", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(config.Ethernets).To(HaveKey(ifName))
+					Expect(config.Ethernets[ifName].Nameservers).To(Equal(expectedDNS))
+				})
+			},
+			Entry("nil DNS settings",
+				nil,
+				nil,
+				nil,
+			),
+			Entry("empty DNS settings",
+				[]string{},
+				[]string{},
+				nil,
+			),
+			Entry("DNS addresses alone",
+				[]string{dnsServer1},
+				nil,
+				&netplan.Nameserver{
+					Addresses: []string{dnsServer1},
+				},
+			),
+			Entry("search domains alone",
+				nil,
+				[]string{searchDomain1},
+				&netplan.Nameserver{
+					Search: []string{searchDomain1},
+				},
+			),
+			Entry("DNS addresses and search domains",
+				[]string{dnsServer1},
+				[]string{searchDomain1},
+				&netplan.Nameserver{
+					Addresses: []string{dnsServer1},
+					Search:    []string{searchDomain1},
+				},
+			),
+		)
+
 		Context("VLANs", func() {
 			const (
 				vlanName1 = "vlan100"

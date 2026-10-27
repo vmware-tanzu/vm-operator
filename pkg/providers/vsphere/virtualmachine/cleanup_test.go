@@ -6,6 +6,7 @@ package virtualmachine_test
 
 import (
 	"context"
+	"strings"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -207,6 +208,46 @@ func cleanupOnDeleteTests() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(moVM.Config).ToNot(BeNil())
 				Expect(moVM.Config.ManagedBy).To(BeNil())
+			})
+		})
+
+		Context("when VM has recorded name-based affinity tags", func() {
+			BeforeEach(func() {
+				initialExtraConfig = nil
+				initialManagedBy = nil
+				pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+					c.Features.VSpherePolicies = false
+					c.Features.TaggingAPI = false
+					c.Features.VMHardAffinityDuringExecution = false
+					c.Features.VMAffinityDuringExecution = false
+				})
+			})
+			It("detaches originals, AF hashes and AAF self tags while preserving unrecorded tags", func() {
+				category, err := tagMgr.CreateCategory(ctx, &tags.Category{
+					Name: vm.Namespace, Cardinality: "MULTIPLE", AssociableTypes: []string{"VirtualMachine"},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				names := []string{"app:one", "af-54aed5dcce0bb11b-app:one", "152e9a8b13d9227e", "user:keep"}
+				var ids []string
+				for _, name := range names {
+					id, err := tagMgr.CreateTag(ctx, &tags.Tag{Name: name, CategoryID: category})
+					Expect(err).NotTo(HaveOccurred())
+					ids = append(ids, id)
+				}
+				Expect(tagMgr.AttachMultipleTagsToObject(ctx, ids, vcVM.Reference())).To(Succeed())
+				spec := vimtypes.VirtualMachineConfigSpec{ExtraConfig: []vimtypes.BaseOptionValue{
+					&vimtypes.OptionValue{Key: virtualmachine.ExtraConfigVMTagsKey, Value: strings.Join(names[:3], ",")},
+				}}
+				task, err := vcVM.Reconfigure(vmCtx, spec)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(task.Wait(vmCtx)).To(Succeed())
+				Expect(virtualmachine.CleanupVMServiceState(vmCtx, vcVM)).To(Succeed())
+				attached, err := tagMgr.ListAttachedTags(ctx, vcVM.Reference())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(attached).To(ConsistOf(ids[3]))
+				var actual mo.VirtualMachine
+				Expect(vcVM.Properties(vmCtx, vcVM.Reference(), []string{"config"}, &actual)).To(Succeed())
+				Expect(virtualmachine.RecordedVMTags(actual.Config)).To(BeEmpty())
 			})
 		})
 

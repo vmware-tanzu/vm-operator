@@ -836,6 +836,111 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		Expect(ctxop.IsUpdate(vmCtx)).To(BeTrue())
 	}
 
+	DescribeTable("local affinity updates commit both receipts through the session", func(poweredOn, resize bool, lifecycleState string) {
+		pkgcfg.SetContext(vmCtx, func(cfg *pkgcfg.Config) {
+			cfg.Features.TaggingAPI = false
+			cfg.Features.VMAffinityDuringExecution = true
+			cfg.Features.VMHardAffinityDuringExecution = true
+			cfg.Features.VMResizeCPUMemory = resize
+		})
+		// vcsim does not provision affinity tags or enforce policies. Pre-create
+		// backend tags; this test verifies session wiring and applied receipts.
+		tagManager := tags.NewManager(ctx.RestClient)
+		category, err := tagManager.CreateCategory(ctx, &tags.Category{Name: vm.Namespace, Cardinality: "MULTIPLE", AssociableTypes: []string{"VirtualMachine"}})
+		Expect(err).ToNot(HaveOccurred())
+		for _, name := range []string{"vmoperator:app:nginx", "vmoperator:af-pp-host-0d65cedea5c5987a-app:nginx"} {
+			_, err := tagManager.CreateTag(ctx, &tags.Tag{Name: name, CategoryID: category})
+			Expect(err).ToNot(HaveOccurred())
+		}
+		vm.UID = "affinity-vm"
+		vm.Labels = map[string]string{"app": "nginx"}
+		vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAffinity: &vmopv1.VMAffinitySpec{
+			PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{TopologyKey: corev1.LabelHostname,
+				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}}}},
+		}}
+		if poweredOn {
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			if vmCtx.MoVM.Summary.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
+				task, err := vcVM.PowerOn(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(task.Wait(ctx)).To(Succeed())
+			}
+		} else {
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			if vmCtx.MoVM.Summary.Runtime.PowerState != vimtypes.VirtualMachinePowerStatePoweredOff {
+				task, err := vcVM.PowerOff(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(task.Wait(ctx)).To(Succeed())
+			}
+		}
+		Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+		if resize {
+			Expect(vmopv1util.SetLastResizedAnnotationClassName(vm, "old-class")).To(Succeed())
+			vm.Spec.ClassName = "new-class"
+			resizeArgs = &session.VMResizeArgs{VMClass: &vmopv1.VirtualMachineClass{ObjectMeta: metav1.ObjectMeta{Name: "new-class"}},
+				ConfigSpec: vimtypes.VirtualMachineConfigSpec{NumCPUs: vmCtx.MoVM.Config.Hardware.NumCPU + 2}}
+		}
+		if lifecycleState == "suspended" {
+			task, err := vcVM.Suspend(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+			Expect(vmCtx.MoVM.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStateSuspended))
+		} else if lifecycleState == "running task" {
+			vmCtx.Context = pkgctx.WithVMRecentTasks(vmCtx.Context, []vimtypes.TaskInfo{{
+				State: vimtypes.TaskInfoStateRunning, DescriptionId: "VirtualMachine.reconfigure",
+			}})
+		} else if lifecycleState != "" {
+			switch lifecycleState {
+			case "admin paused":
+				vmCtx.MoVM.Config.ExtraConfig = append(vmCtx.MoVM.Config.ExtraConfig,
+					&vimtypes.OptionValue{Key: vmopv1.PauseVMExtraConfigKey, Value: "TRUE"})
+			case "devops paused":
+				metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, "")
+			}
+
+			err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+			Expect(err == nil || errors.Is(err, session.ErrReconfigure)).To(BeTrue(), "update returned %v", err)
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+			Expect(virtualmachine.RecordedVMTags(vmCtx.MoVM.Config)).To(BeEmpty())
+			policyRecord, _ := object.OptionValueList(vmCtx.MoVM.Config.ExtraConfig).GetString(virtualmachine.ExtraConfigPlacementPoliciesKey)
+			Expect(policyRecord).To(BeEmpty())
+			attached, err := tagManager.GetAttachedTags(ctx, vcVM.Reference())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(attached).To(BeEmpty())
+
+			// The pending affinity update must apply once the lifecycle guard clears.
+			delete(vm.Annotations, vmopv1.PauseAnnotation)
+		}
+		Eventually(func(g Gomega) {
+			err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+			g.Expect(err == nil || errors.Is(err, session.ErrReconfigure) || errors.Is(err, vmlifecycle.ErrBootstrapCustomize)).To(BeTrue(), "update returned %v", err)
+			g.Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+			g.Expect(virtualmachine.RecordedVMTags(vmCtx.MoVM.Config)).To(Equal([]string{"vmoperator:af-pp-host-0d65cedea5c5987a-app:nginx", "vmoperator:app:nginx"}))
+		}).Should(Succeed())
+		policyRecord, ok := object.OptionValueList(vmCtx.MoVM.Config.ExtraConfig).GetString(virtualmachine.ExtraConfigPlacementPoliciesKey)
+		Expect(ok).To(BeTrue())
+		Expect(policyRecord).To(ContainSubstring("vmoperator:af-pp-host-0d65cedea5c5987a-app:nginx"))
+		var owned vspherepolv1.TagList
+		Expect(ctx.Client.List(ctx, &owned, ctrlclient.InNamespace(vm.Namespace))).To(Succeed())
+		Expect(owned.Items).To(BeEmpty())
+		// Disabling the feature alone must not detach the recorded associations.
+		pkgcfg.SetContext(vmCtx, func(cfg *pkgcfg.Config) { cfg.Features.VMHardAffinityDuringExecution = false })
+		vm.Spec.Affinity = nil
+		err = sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+		Expect(err == nil || errors.Is(err, session.ErrReconfigure) || errors.Is(err, vmlifecycle.ErrBootstrapCustomize)).To(BeTrue(), "update returned %v", err)
+		Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+		Expect(virtualmachine.RecordedVMTags(vmCtx.MoVM.Config)).To(HaveLen(2))
+	},
+		Entry("powered off", false, false, ""),
+		Entry("powered on", true, false, ""),
+		Entry("powered-off resize", false, true, ""),
+		Entry("admin paused", true, false, "admin paused"),
+		Entry("devops paused", true, false, "devops paused"),
+		Entry("suspended", true, false, "suspended"),
+		Entry("running task", true, false, "running task"),
+	)
+
 	When("VM is powered off", func() {
 		JustBeforeEach(func() {
 			// Ensure the VM is powered off.

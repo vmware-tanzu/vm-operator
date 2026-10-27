@@ -2362,6 +2362,24 @@ func (d *wcpDcliClient) ListComputePolicyTagUsage(categoryName, tagName string) 
 	return filtered, nil
 }
 
+// GetComputePolicy retrieves the backend definition of a compute policy.
+func (d *wcpDcliClient) GetComputePolicy(policyID string) (ComputePolicyInfo, error) {
+	cmd := fmt.Sprintf("%s get --policy %s %s %s", computePolicies, policyID, showUnreleased, jsonFormatter)
+	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	if err != nil {
+		return ComputePolicyInfo{}, fmt.Errorf("get compute policy %q: %w", policyID, DcliError{
+			rawResponse: string(resp),
+			baseErr:     err,
+		})
+	}
+
+	var info ComputePolicyInfo
+	if err := json.Unmarshal(resp, &info); err != nil {
+		return ComputePolicyInfo{}, fmt.Errorf("decode compute policy %q: %w", policyID, err)
+	}
+	return info, nil
+}
+
 // GetVMPolicyCompliance returns the compliance status of a VM against a compute policy.
 func (d *wcpDcliClient) GetVMPolicyCompliance(policyID, vmMoid string) (VMPolicyComplianceStatus, error) {
 	cmd := fmt.Sprintf("%s --policy %s --vm %s %s", virtualmachineComputePolicy, policyID, vmMoid, jsonFormatter)

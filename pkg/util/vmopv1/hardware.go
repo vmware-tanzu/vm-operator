@@ -40,6 +40,15 @@ type ControllerSpec interface {
 	ReservedUnitNumber() int32
 }
 
+// firstUnitNumberer is an optional ControllerSpec extension. Controllers
+// whose valid unit numbers do not start at zero implement it: FirstUnitNumber
+// returns the first assignable unit number on the controller's bus, and
+// NextAvailableUnitNumber scans from there. Controllers that start at zero
+// (the default) need not implement it.
+type firstUnitNumberer interface {
+	FirstUnitNumber() int32
+}
+
 // NextAvailableUnitNumber returns the first available unit number for the
 // specified controller. The occupiedSlots parameter should contain all unit
 // numbers that are already in use on the specified bus.
@@ -54,13 +63,50 @@ func NextAvailableUnitNumber(
 		return -1
 	}
 
-	for unitNumber := range controller.MaxSlots() {
+	// Controllers default to a first unit number of zero; only controllers
+	// implementing firstUnitNumberer scan from a different base.
+	first := int32(0)
+	if f, ok := controller.(firstUnitNumberer); ok {
+		first = f.FirstUnitNumber()
+	}
+
+	// MaxSlots is a count of slots, not an upper bound on unit numbers: the
+	// scan covers first..first+MaxSlots-1.
+	for unitNumber := first; unitNumber < first+controller.MaxSlots(); unitNumber++ {
 		if _, exists := occupiedSlots[unitNumber]; !exists &&
 			unitNumber != controller.ReservedUnitNumber() {
 			return unitNumber
 		}
 	}
 	return -1
+}
+
+// NICBusSpec implements ControllerSpec for the VM's single, implicit PCI bus
+// hosting ethernet cards. The NIC bus has no spec object — the bus is always
+// present — so this type exists only for unit-number slot computation, with
+// no API surface. Ethernet cards own PCI units NICUnitNumberFirst through
+// NICUnitNumberMax by the platform's static, per-device-class unit
+// allocation, and no unit inside the band is reserved (unlike SCSI).
+type NICBusSpec struct{}
+
+// MaxSlots returns the number of unit numbers in the ethernet-card band.
+func (NICBusSpec) MaxSlots() int32 {
+	return NICUnitNumberMax - NICUnitNumberFirst + 1
+}
+
+// MaxCount returns the maximum number of NIC buses per VM: one implicit bus.
+func (NICBusSpec) MaxCount() int32 {
+	return 1
+}
+
+// ReservedUnitNumber returns -1: the NIC bus has no reserved unit number.
+func (NICBusSpec) ReservedUnitNumber() int32 {
+	return -1
+}
+
+// FirstUnitNumber returns the first unit number an ethernet card can occupy.
+func (NICBusSpec) FirstUnitNumber() int32 {
+	return NICUnitNumberFirst
 }
 
 // GenerateControllerID generates a controller ID from a controller specification.

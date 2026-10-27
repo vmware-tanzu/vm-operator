@@ -26,7 +26,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 - [x] T009c `reservedSlots` stays `int32` with the same name and meaning, deprecated, preserved through conversion and the namespace copy including zero, never overwritten with observed totals; no annotation migration
 - [x] T009d `VirtualMachineReservedProfile` moves out of vm-operator's API; the provider publishes and backfills it (T910); vm-operator only reads it (T103a)
 - [x] T009e Devices are one `ListPolicy` over the VM's inline vGPU and DirectPath I/O devices; independent count bounds and required entries are deferred
-- [x] T009f No `SetPolicy` shape: a collection of independent items is a `ListPolicy`; a collection that is one setting is an `EnumPolicy` whose values are lists, compared as sets. `pnumaNodeAffinity` is an `EnumPolicy` of node-ID sets in Milestone 1; `cpuFeatureMask` is a top-class preset until Milestone 2
+- [x] T009f A collection of independent items is a `ListPolicy`; a collection that is one setting is a `SetPolicy` (`default`, `allowed` sets, `required`; no `denied`). `pnumaNodeAffinity` is an `Int32SetPolicy` in Milestone 1; `cpuFeatureMask` is a top-class preset until Milestone 2
 - [x] T005 The environment-browser demand gate is dropped; the CRDs are restricted to admins instead (T107)
 - [x] T006 `configSpec` keeps its name
 - [ ] T010 Decide who rejects an association zone outside the namespace or the class. Blocks T305 (decided so far: the class in `vmware-system-vmop` carries `spec.zones` and `governs.zones`, the association only narrows them, and `status.zones` covers `spec.zones`)

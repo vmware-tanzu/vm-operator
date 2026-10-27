@@ -53,4 +53,4 @@ A VM with a vGPU or DirectPath I/O device must reserve all its memory to power o
 
 ## Finding 6: the class API definition comes from the CRD
 
-The provider generates its v2 class API definition (vmodl) from the v1alpha6 class's OpenAPI schema plus `+vmodl` markers on vm-operator's Go types. vm-operator owns the markers and a check that every field is mapped or explicitly excluded (vmop-4326); the generator, its drift check (vmop-4392) and the vpxd config field drift check (vmop-4393) are the provider's (WIKI page 3118091426 §7).
+The provider generates its v2 class API definition from the v1alpha6 class's OpenAPI schema plus mapping markers on vm-operator's Go types. vm-operator owns the markers and a check that every field is mapped or explicitly excluded (vmop-4326); the generator, its drift check (vmop-4392) and the vpxd config field drift check (vmop-4393) are the provider's (WIKI page 3118091426 §7).

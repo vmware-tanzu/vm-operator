@@ -128,6 +128,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 4. **Given** a namespace user, **when** they read the class status or a rejection message, **then** they see per-VM limits and what governance permits, never pool totals or devices governance forbids.
 5. **Given** a DevOps user, **when** they read `ConfigTarget`, `VirtualMachineConfigOptions` or `VirtualMachineGuestOptions`, **then** the request is forbidden; only admins and vm-operator can read them.
 6. **Given** a resync with no cluster change, **when** the environment-browser controllers reconcile, **then** vCenter is not queried again; a cluster change triggers a new query.
+7. **Given** a class, **when** the class controller reconciles, **then** `status.zones[]` lists, for every governed field, the values a VM can get in that zone: what the environment browser reports, within the governing class (and the parent in Milestone 2), with the entry's display fields. A field the class doesn't set is limited by the environment browser alone. A form renders its options from this status, or, for a new class with nothing above it, from the environment-browser objects an admin can read; it never combines restrictions itself.
 
 ### US8 — Admin: a VM with a passthrough device has its memory fully reserved (P1)
 
@@ -146,7 +147,8 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 2. **Given** a class in `vmware-system-vmop`, **when** the provider copies it into a namespace through v1alpha6, **then** every v1alpha6 field reaches the namespace copy.
 3. **Given** an association entry with `zones` unset, `[]` or a list, **when** the namespace copy is written, **then** the three states stay distinct through every layer.
 4. **Given** an existing class, **when** it is migrated, **then** its `metadata.name` is unchanged and `spec.externalID` equals the name.
-5. **Given** a change to the v1alpha6 class types, **when** a field has neither a `+vmodl` mapping nor an explicit exclusion, **then** the field-coverage check fails.
+5. **Given** a change to the v1alpha6 class types, **when** a field has neither a provider API mapping marker nor an explicit exclusion, **then** the field-coverage check fails.
+6. **Given** the v1alpha6 class CRD schema, **when** the schema test runs, **then** every governed field matches exactly one value shape by its field set, and every device list is a map list keyed by the same key fields as its environment-browser entry.
 
 ### US10 — CSP admin: reserved capacity works with flex classes (P1)
 
@@ -200,7 +202,7 @@ A class lists one parent in `spec.parentClassRefs`; its ranges must fit inside t
 - Moving `VirtualMachineReservedProfile` out of the vm-operator API; vm-operator only reads it.
 - Placement: the zone filter for single VMs and groups.
 - The environment-browser completion from spec 001: maximum hardware version, admin-only access, no re-query on resync.
-- The `+vmodl` markers on the v1alpha6 class Go types that the provider's generator consumes, and a check that every field has a mapping or an explicit exclusion.
+- The provider API mapping markers on the v1alpha6 class Go types, which the provider's API generation reads, and a check that every field has a mapping or an explicit exclusion.
 - The capability, the quarantined pipeline, enablement and docs.
 - Removing `VirtualMachineConfigPolicy`.
 

@@ -10,7 +10,7 @@ The technical design is WIKI page 3118085463 and its child pages (full schema, v
 
 ## Summary
 
-Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `governs`, zones, `externalID` and reserved profiles; enforce governance in the class and VM webhooks; report compatibility and compliance from the class and VM controllers; filter placement by governance; add the `+vmodl` markers the provider's class API is generated from; remove `VirtualMachineConfigPolicy`. The provider's work is listed under "Provider work". All of it is behind the Flex VM Classes capability until the enablement story. Milestone 2 adds `parentClassRefs` behind a second capability.
+Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `governs`, zones, `externalID` and reserved profiles; enforce governance in the class and VM webhooks; report compatibility and compliance from the class and VM controllers; filter placement by governance; add the mapping markers the provider's class API is generated from; remove `VirtualMachineConfigPolicy`. The provider's work is listed under "Provider work". All of it is behind the Flex VM Classes capability until the enablement story. Milestone 2 adds `parentClassRefs` behind a second capability.
 
 ## Technical context
 
@@ -52,7 +52,7 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 | Class controller | `controllers/virtualmachineclass` (moving the `ReservedProfileID` reader in `virtualmachineclass_controller.go` to `reservedProfileName`) |
 | VM reconciler | `pkg/providers/vsphere` (compliance step before power state; reservation from the VM field in `virtualmachine/configspec.go`), `pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go` (backfill of `spec.reservedProfileName`), `controllers/virtualmachine` |
 | Reserved profiles | remove `VirtualMachineReservedProfile` from `api/v1alpha6`; read RBAC in `config/rbac`; the writer is the provider |
-| vmodl markers | `api/v1alpha6/virtualmachineclass_types.go` and the value types; field-coverage check under `api/` |
+| Provider API mapping markers | `api/v1alpha6/virtualmachineclass_types.go` and the value types; field-coverage check under `api/` |
 | Placement | `pkg/providers/vsphere/placement` |
 | Zone mirror controller | `controllers/infra/zone` |
 | Environment browser | `controllers/vim/*`, `controllers/virtualmachineconfigoptions`, `config/rbac` |
@@ -88,7 +88,7 @@ Milestone 1 enables governing classes for providers; Milestone 2 adds tenant cla
 |---|---|---|
 | vmop-4038 — API, upgrade and capability | capability, quarantined pipeline, v1alpha6 schema (including removing `VirtualMachineReservedProfile`), conversion, VM and Zone API fields, policy removal, environment-browser completion | — |
 | vmop-4039 — Governance engine and class compatibility | governance package, class `HardwareCompatible`, resolved limits, governance status and Zone mirror | the schema (vmop-4315) |
-| vmop-4201 — Class webhooks and vmodl markers | class mutating and validating webhooks (vmop-4324, vmop-4325), `+vmodl` markers (vmop-4326) | the schema; the governance package for class-vs-class bounds |
+| vmop-4201 — Class webhooks and provider API markers | class mutating and validating webhooks (vmop-4324, vmop-4325), provider API mapping markers (vmop-4326) | the schema; the governance package for class-vs-class bounds |
 | vmop-4040 — VM create and edit | VM defaults, VM governance validation, device memory reservation, zone rule, reserved capacity | the governance package; the VM API fields; the provider's reserved profile publication (T910) for reserved capacity |
 | vmop-4041 — Compliance, placement and enablement | `GovernanceCompliant`, the `DenyPowerOn` power-on rejection, placement filter, enablement, docs | the VM webhooks; the provider's capability advertisement (T911) for enablement |
 | vmop-4312 — Tenant VM Classes (Milestone 2) | second capability, `parentClassRefs`, class families, v2 vAPI round-trip, enablement | all of Milestone 1 |

@@ -25,7 +25,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 - [x] T009b Class edits: the provider's older class API keeps today's block on update and delete while capacity is assigned; edits through v1alpha6 reject only changes that alter an allocated profile's shape or invalidate the class's default VM (the exact field boundary is a test deliverable of T303a)
 - [x] T009c `reservedSlots` stays `int32` with the same name and meaning, deprecated, preserved through conversion and the namespace copy including zero, never overwritten with observed totals; no annotation migration
 - [x] T009d `VirtualMachineReservedProfile` moves out of vm-operator's API; the provider publishes and backfills it (T910); vm-operator only reads it (T103a)
-- [x] T009e Devices are one `ListPolicy` over the VM's inline vGPU and DirectPath I/O devices; independent count bounds and required entries are deferred
+- [x] T009e Devices are `ListPolicy`s over the VM's inline vGPU and DirectPath I/O devices. Items are flat and mirror the environment-browser entry: `{profileName, count}` and `{vendorID, deviceID, customLabel, count}`, keyed by `profileName` and by `vendorID` + `deviceID`, with the same key names in the environment browser, the class and the VM. Matchers are the key fields, each optional; string key fields take `{fixed, glob, regex}`. Independent count bounds and required entries are deferred
 - [x] T009f A collection of independent items is a `ListPolicy`; a collection that is one setting is a `SetPolicy` (`default`, `allowed` sets, `required`; no `denied`). `pnumaNodeAffinity` is an `Int32SetPolicy` in Milestone 1; `cpuFeatureMask` is a top-class preset until Milestone 2
 - [x] T005 The environment-browser demand gate is dropped; the CRDs are restricted to admins instead (T107)
 - [x] T006 `configSpec` keeps its name
@@ -66,6 +66,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 ### Story — VM and Zone API fields (vmop-4317)
 
 - [ ] T108 [P] [US3/US6/US10] [vmop-4317] VM API: `spec.reservedProfileName`, `status.governingClassNames`, the `GovernanceCompliant` condition, and the observed fields (firmware, change block tracking, CPU `reservationLockedToMax`, NUMA fixed auto-affinity, SEV, SEV-SNP, TDX, CPU hot-remove, SMC, DirectPath I/O devices) — `api/v1alpha6/virtualmachine_types.go`
+- [ ] T108a [US8/US10] [vmop-4317] VM API: inline `hardware.devices.vgpuDevices` and `hardware.devices.dynamicDirectPathIODevices`, with the same item fields and key names as the class items (T009e) — `api/v1alpha6/virtualmachine_types.go`
 - [ ] T109 [P] [US2] [vmop-4317] `Zone.status.governingClasses` — `external/tanzu-topology/api/v1alpha1/zone.go`; `make generate-external-manifests`
 - [ ] T110 [US10] [vmop-4317] Schema upgrade fills `spec.reservedProfileName` on existing VMs from their class's `reservedProfileName.default`; this unset-to-set write is exempt from the powered-on lock — `pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go`
 
@@ -98,8 +99,8 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Class resolved limits (vmop-4322)
 
-- [ ] T202 [US7] [vmop-4322] Class status: resolved per-zone limits, per-VM only, only what governance permits; the unreserved-DirectPath reason per T012
-- [ ] T202a [US7] [vmop-4322] E2E: resolved limits never exceed the governing class
+- [ ] T202 [US7] [vmop-4322] Class status: resolved per-zone limits and options for every governed field (ranges as `{min, max}`; enums, sets and devices as the available values with display fields), from the environment-browser objects within the governing class; per-VM only, only what governance permits; updated when the environment-browser objects change; the unreserved-DirectPath reason per T012
+- [ ] T202a [US7] [vmop-4322] E2E: resolved limits never exceed the governing class, and a device list shows only the devices the zone has
 
 ### Story — Class governance status (vmop-4323)
 
@@ -110,7 +111,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ---
 
-## Phase 3 — Class webhooks and vmodl markers (vmop-4201)
+## Phase 3 — Class webhooks and provider API markers (vmop-4201)
 
 The class APIs, their generation and the namespace-copy integration are provider work (T912–T916).
 
@@ -129,9 +130,10 @@ The class APIs, their generation and the namespace-copy integration are provider
 - [ ] T305 [US9] [vmop-4325] Namespace-copy checks: the zones belong to the namespace; zones with reserved capacity are included (per T010)
 - [ ] T306 [US2/US9] [vmop-4325] E2E: a second governing class for a zone and a selectable class outside the ceiling are rejected; a v1 write to a v2 class is rejected
 
-### Story — vmodl markers (vmop-4326)
+### Story — Provider API mapping markers (vmop-4326)
 
-- [ ] T307 [US9] [vmop-4326] The `+vmodl` markers the provider's generator reads on the v1alpha6 class types, and a CI check that every field has a mapping or an explicit exclusion — `api/v1alpha6/virtualmachineclass_types.go`, value types in `api/v1alpha6/`
+- [ ] T307 [US9] [vmop-4326] The mapping markers the provider's API generation reads on the v1alpha6 class types, and a CI check that every field has a mapping or an explicit exclusion — `api/v1alpha6/virtualmachineclass_types.go`, value types in `api/v1alpha6/`
+- [ ] T308 [US9] [vmop-4326] Schema test on the generated CRD: every governed field matches exactly one value shape by its field set; device lists are map lists keyed by the same key fields as their environment-browser entries; matcher lists are atomic — test under `api/`
 
 ---
 
@@ -228,7 +230,7 @@ Dependency tasks; vm-operator does not implement them. What vm-operator assumes 
 - [ ] T912 [US9] [vmop-4327] The per-Supervisor v2 class API. Depends on T103 and T307 (through T915)
 - [ ] T913 [US9/US10] [vmop-4328] The older class API (rejects writes to v1alpha6 classes per T304, keeps today's block on classes with capacity, reports the schema version) and the namespace API with per-class zones; reserved profiles built from a flex class's defaults
 - [ ] T914 [US9] [vmop-4329] Supervisor and namespace-copy integration: copy classes through v1alpha6 with unset and `[]` zones kept apart, report rejected copies; end-to-end E2E of a class written through the v2 API
-- [ ] T915 [US9] [vmop-4392] Generate the class API definition from the v1alpha6 CRD and its `+vmodl` markers, with a drift check. Depends on T103 and T307
+- [ ] T915 [US9] [vmop-4392] Generate the class API definition from the v1alpha6 CRD and its mapping markers, with a drift check. Depends on T103 and T307
 - [ ] T916 [vmop-4393] A drift check for new vpxd VM config fields the class neither covers nor excludes
 
 ## Dependencies on other teams (not vm-operator code)

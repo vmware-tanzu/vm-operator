@@ -9,25 +9,35 @@ All types are in `vmoperator.vmware.com/v1alpha6`, which has not shipped and is 
 
 ## Value shapes
 
-Every governable field has one shape. Each shape is a concrete, named Go struct (no generics, so `controller-gen` can build the schema). All sub-fields are optional pointers, so absent is distinct from zero.
+Every governable field has one shape. Each shape is a concrete, named Go struct (no generics, so `controller-gen` can build the schema). All sub-fields are optional pointers, so absent is distinct from zero. Each shape has a field set no other shape has, so a client can tell the shape from the CRD schema alone; a schema test checks that every governed field matches exactly one shape.
 
 | Shape | Fields | Rules |
 |---|---|---|
 | Number (`Range`) | `min`, `max`, `default` | `default` is required when `min` or `max` is set, and must be within them. An unset bound is open: limited by the hardware, or by a parent class in Milestone 2. A fixed value is `min == max == default`. A wholly absent struct leaves the value to vpxd. |
 | `EnumPolicy` | `allowed`, `default`, `required` | Unset `allowed` = all values; `[]` = none. `default` is required when `allowed` has more than one value; with one value, that value is the default. A set `default` must be in `allowed`. A VM that omits the field inherits `default`; an explicit `""` means no value; `required: true` rejects an empty value after defaulting. [NEEDS CLARIFICATION: whether `""` means "no value" for every enum field or only for `reservedProfileName`.] |
 | `BoolPolicy` | `allowOverride`, `default` | `allowOverride: false` fixes the value and needs a `default`. Otherwise an unset `default` leaves the value to vpxd. |
-| `ListPolicy` | `default`, `allowed`, `denied` | `default` is filled into the VM at admission; the VM may add or remove items within `allowed` and `denied`. Matchers are `{type, value}` with `type` one of `Fixed`, `Regex`, `Glob`. `denied` wins. `allowed` only is closed; `denied` only is open. A class can't require an item. |
-| `SetPolicy` | `default`, `allowed`, `required` | The value is one set. `default` is a set; `allowed` is a list of approved sets; sets compare with unique members and order ignored; no matchers and no `denied`. Unset `allowed` = any set of valid members; `required: true` rejects an empty set. Members' type and domain come from the field. Go types are concrete per member type (`Int32SetPolicy`), as with `IntRange` and `LongRange`. [NEEDS CLARIFICATION: whether `allowed` entries need a named wrapper type, e.g. `{members: [...]}`, for the provider's API generation instead of a list of lists.] |
-| Device `ListPolicy` | as `ListPolicy`, plus `count` per default item | One `ListPolicy` over the VM spec's inline vGPU and DirectPath I/O devices. Dynamic DirectPath I/O matches `{vendorID, deviceID}`. Independent count bounds and required entries are deferred. |
+| `ListPolicy` | `default`, `allowed`, `denied` | `default` is filled into the VM at admission; the VM may add or remove items within `allowed` and `denied`. Items are flat structs; `default` is a map list (`+listType=map`) keyed by the item's key fields. A matcher is the item's key fields, each optional: an unset key field matches anything; a numeric key field matches exactly; a string key field is `{fixed, glob, regex}` with exactly one set. Matcher lists are atomic. `denied` wins. `allowed` only is closed; `denied` only is open. A class can't require an item. |
+| `SetPolicy` | `default`, `allowed`, `required` | The value is one set. `default` is a set; `allowed` is a list of approved sets; sets compare with unique members and order ignored; no matchers and no `denied`. Unset `allowed` = any set of valid members; `required: true` rejects an empty set. Members' type and domain come from the field. Each `allowed` entry is `{members: [...]}`, with `members` a set list (`+listType=set`). Go types are concrete per member type (`Int32SetPolicy`), as with `IntRange` and `LongRange`. |
 
 A collection field's shape follows what its value is. A collection of independent items, each of which can be added or removed on its own, is a `ListPolicy` (`advanced.extraConfig`, devices). A collection that is one setting, whose meaning changes when any member changes, is a `SetPolicy`. The admin chooses the approved sets.
 
 | Collection | Shape | Milestone |
 |---|---|---|
 | `advanced.extraConfig` | `ListPolicy` | 1 |
-| `hardware.devices.{vgpuDevices,dynamicDirectPathIODevices}` | Device `ListPolicy` | 1 |
-| `advanced.pnumaNodeAffinity` | `Int32SetPolicy` of node IDs, e.g. `{default: [0,1], allowed: [[0,1],[2,3]], required: true}`. Unset `allowed` = any set of valid node IDs; `required: false` permits an explicit `[]` (no pinning). Each node ID is checked against `ConfigTarget.numNumaNodes`. | 1 |
+| `hardware.devices.vgpuDevices` | `ListPolicy`; item `{profileName, count}`, key `profileName` | 1 |
+| `hardware.devices.dynamicDirectPathIODevices` | `ListPolicy`; item `{vendorID, deviceID, customLabel, count}`, key `vendorID` + `deviceID`. `customLabel`, when set, is passed through to the device backing; it is not a key. | 1 |
+| `advanced.pnumaNodeAffinity` | `Int32SetPolicy` of node IDs, e.g. `{default: [0,1], allowed: [{members: [0,1]}, {members: [2,3]}], required: true}`. Unset `allowed` = any set of valid node IDs; `required: false` permits an explicit `[]` (no pinning). Each node ID is checked against `ConfigTarget.numNumaNodes`. | 1 |
 | `hardware.cpuFeatureMask` | Preset of the top class only in Milestone 1 (no VM field, so nothing below it to govern); checked against config options `cpuFeatureMaskSupported`. [NEEDS CLARIFICATION: shape for Milestone 2 child classes. Each CPUID leaf's mask is one setting, but the leaves are independent items.] | 2 |
+
+Device items: independent count bounds and required entries are deferred. A device's quantity is its `count`.
+
+**Matching names.** An item's key fields have the same names in the environment-browser entry, the class item and the VM item, so choosing an option copies the entry's key fields. Environment-browser entries may carry extra display fields (`vendorName`, `deviceName`, `customLabel`); class and VM items add payload such as `count`.
+
+| Item | Environment-browser entry | Class item | VM item |
+|---|---|---|---|
+| Dynamic DirectPath I/O | ConfigTarget `dynamicPassthroughDevices[]`: `vendorID`, `deviceID` (+ `vendorName`, `deviceName`, `customLabel`) | `vendorID`, `deviceID`, `customLabel`, `count` | same as the class item |
+| vGPU | ConfigTarget `vgpuProfile[]`: `profileName` (+ display fields) | `profileName`, `count` | same as the class item |
+| pNUMA node | ConfigTarget `numNumaNodes` (IDs 0..n-1) | node ID | `pnumaNodeAffinity []int32` |
 
 ## `VirtualMachineClass.spec`
 
@@ -45,7 +55,7 @@ A collection field's shape follows what its value is. A collection of independen
 | `resources.{requests,limits}.{cpu,memory}` | Number | CPU in vCPUs; compared with a VM's MHz using the cluster's minimum host frequency. |
 | `cpuAdvanced.*`, `memoryAdvanced.*`, `bootOptions.*`, `advanced.*` | per field | Same paths as `VirtualMachine.spec`. |
 | `advanced.extraConfig` | `ListPolicy` | At the VM's path. |
-| `hardware.devices.{vgpuDevices,dynamicDirectPathIODevices}` | device `ListPolicy` | |
+| `hardware.devices.{vgpuDevices,dynamicDirectPathIODevices}` | `ListPolicy` of device items | See "Value shapes". |
 | `hardware.*` | per field | Settings that aren't in the VM spec but are exposed or checked. |
 | hardware version | Number | [NEEDS CLARIFICATION: shape, path, and upgrade or reject below the minimum.] |
 | `hardware.instanceStorage` | as today | Preset only. |
@@ -61,7 +71,7 @@ Label: the schema-version label records the last CRD version that wrote the clas
 |---|---|
 | `zones[].name` | Covers `spec.zones`, or every zone when unset. |
 | `zones[].conditions` | `HardwareCompatible`, `WithinGovernance`, `Governing`. |
-| `zones[]` resolved limits | Per-VM limits a VM can obtain in that zone: the class within the governing class, clamped by hardware. Never pool totals, never what governance forbids. |
+| `zones[]` resolved limits | Per-VM limits and options a VM can obtain in that zone, for every governed field: the class within the governing class (and the parent in Milestone 2), within what the environment browser reports for the zone. Ranges as `{min, max}`; enums, sets and device lists as the available values, with the entry's display fields. A field the class doesn't set is limited by the environment browser alone. Fields without a finite domain (extraConfig) carry their effective `allowed` and `denied`. Updated when the environment-browser objects change. Never pool totals, never what governance forbids. |
 | `observedGeneration`, `conditions[Ready]` | As required for every controller. |
 
 ## `VirtualMachine`

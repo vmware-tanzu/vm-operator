@@ -1,0 +1,6 @@
+---
+# Capabilities for cayman-vm-operator to enable through the UTS workload for E2E tests.
+capabilities:
+  - supports_telco_vm_service_api
+  - supports_VM_service_VM_groups
+  - supports_VM_service_VM_placement_policies

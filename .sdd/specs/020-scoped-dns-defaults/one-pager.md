@@ -214,7 +214,7 @@ data:
   searchsuffixes: "corp.local"
 ```
 
-Unless stated otherwise, the capability is activated and the VM has selected `scoped`. Interfaces shown with static addresses are on networks with IPAM, with DHCPv4, DHCPv6, and Router Advertisements disabled unless an example says otherwise. An address in the VM Spec alone does not establish this: provider addressing mode still matters. Provider-DNS examples 7, 10, 13, and 18 use synthetic provider input; reading those values from SubnetPorts is a follow-up.
+Unless stated otherwise, the capability is activated and the VM has selected `scoped`. Interfaces shown with static addresses are on networks with IPAM, with DHCPv4, DHCPv6, and Router Advertisements disabled unless an example says otherwise. An address in the VM Spec alone does not establish this: provider addressing mode still matters. DHCP is shown the way it is usually configured, by the network: the interface's provider CR status reports it, either a NetOP `NetworkInterface` with `ipAssignmentMode: dhcp` or, in examples 10 and 13, a VPC `SubnetPort` with no address on a Subnet where DHCP is not deactivated. The examples don't set the VM Spec `dhcp4` and `dhcp6` fields, which override the provider's result. Provider-DNS examples 7, 10, 13, and 18 use synthetic `dnsResolverIPs` provider input; reading those values from SubnetPorts is a follow-up.
 
 How to read the output:
 
@@ -360,11 +360,16 @@ spec:
     cloudInit: {}
   network:
     interfaces:
-    - name: eth0
-      dhcp4: true
+    - name: eth0   # provider reports DHCP
     - name: eth1
       addresses: ["192.168.20.10/24"]
       gateway4: 192.168.20.1
+
+# Network provider input (NetOP NetworkInterface; not part of the VM Spec).
+---
+# NetworkInterface status fragment for eth0
+status:
+  ipAssignmentMode: dhcp
 ```
 
 New behavior:
@@ -403,11 +408,19 @@ spec:
       addresses: ["192.168.20.10/24", "fd00:20::10/64"]
       gateway4: 192.168.20.1
       gateway6: fd00:20::1
-    - name: eth2
-      dhcp4: true
-    - name: eth3
-      dhcp4: true
+    - name: eth2   # provider reports DHCP
+    - name: eth3   # provider reports DHCP
       nameservers: ["172.16.0.53"]
+
+# Network provider input (NetOP NetworkInterface; not part of the VM Spec).
+---
+# NetworkInterface status fragment for eth2
+status:
+  ipAssignmentMode: dhcp
+---
+# NetworkInterface status fragment for eth3
+status:
+  ipAssignmentMode: dhcp
 ```
 
 New behavior:
@@ -453,10 +466,18 @@ spec:
     nameservers: ["192.168.1.53"]
     searchDomains: ["app.example"]
     interfaces:
-    - name: eth0
-      dhcp4: true
-    - name: eth1
-      dhcp4: true
+    - name: eth0   # provider reports DHCP
+    - name: eth1   # provider reports DHCP
+
+# Network provider input (NetOP NetworkInterface; not part of the VM Spec).
+---
+# NetworkInterface status fragment for eth0
+status:
+  ipAssignmentMode: dhcp
+---
+# NetworkInterface status fragment for eth1
+status:
+  ipAssignmentMode: dhcp
 ```
 
 New behavior:
@@ -477,7 +498,6 @@ The webhook still accepts the VM-level DNS, but the VM has no static interface t
 ```yaml
     interfaces:
     - name: eth0
-      dhcp4: true
       nameservers: ["192.168.1.53"]
       searchDomains: ["app.example"]
 ```
@@ -534,11 +554,16 @@ spec:
     linuxPrep: {}
   network:
     interfaces:
-    - name: eth0
-      dhcp4: true
+    - name: eth0   # provider reports DHCP
     - name: eth1
       addresses: ["192.168.20.10/24"]
       gateway4: 192.168.20.1
+
+# Network provider input (NetOP NetworkInterface; not part of the VM Spec).
+---
+# NetworkInterface status fragment for eth0
+status:
+  ipAssignmentMode: dhcp
 ```
 
 New behavior:
@@ -569,8 +594,13 @@ spec:
     - name: eth0
       addresses: ["192.168.10.10/24"]
       gateway4: 192.168.10.1
-    - name: eth1
-      dhcp4: true
+    - name: eth1   # provider reports DHCP
+
+# Network provider input (NetOP NetworkInterface; not part of the VM Spec).
+---
+# NetworkInterface status fragment for eth1
+status:
+  ipAssignmentMode: dhcp
 ```
 
 New behavior:
@@ -604,10 +634,10 @@ spec:
     - name: eth0   # future provider input supplies 10.1.0.53
       addresses: ["192.168.10.10/24"]
       gateway4: 192.168.10.1
-    - name: eth1   # future provider input supplies 10.2.0.53, 10.1.0.53
-      dhcp4: true
+    - name: eth1   # provider reports DHCP; future input: 10.2.0.53, 10.1.0.53
 
-# Synthetic provider input (future SubnetPort API; not part of the VM Spec).
+# Network provider input (SubnetPort status; not part of the VM Spec).
+# dnsResolverIPs is synthetic: the SubnetPort API does not report it yet.
 ---
 # SubnetPort status fragment for eth0
 status:
@@ -615,6 +645,10 @@ status:
 ---
 # SubnetPort status fragment for eth1
 status:
+  networkInterfaceConfig:
+    # No ipAddress and DHCP not deactivated on the Subnet: DHCPv4.
+    ipAddresses:
+    - gateway: 192.168.21.1
   dnsResolverIPs: ["10.2.0.53", "10.1.0.53"]
 ```
 
@@ -686,15 +720,23 @@ spec:
     - name: eth0
       addresses: ["192.168.10.10/24"]
       gateway4: 192.168.10.1
-    - name: eth1
-      dhcp4: true
+    - name: eth1   # provider reports DHCP
     - name: eth2
       addresses: ["192.168.30.10/24"]
       gateway4: 192.168.30.1
       nameservers: ["172.16.0.53"]
-    - name: eth3
-      dhcp4: true
+    - name: eth3   # provider reports DHCP
       nameservers: ["172.17.0.53"]
+
+# Network provider input (NetOP NetworkInterface; not part of the VM Spec).
+---
+# NetworkInterface status fragment for eth1
+status:
+  ipAssignmentMode: dhcp
+---
+# NetworkInterface status fragment for eth3
+status:
+  ipAssignmentMode: dhcp
 ```
 
 New behavior:
@@ -733,10 +775,10 @@ spec:
     - name: eth0   # future provider input supplies 10.1.0.53
       addresses: ["192.168.10.10/24"]
       gateway4: 192.168.10.1
-    - name: eth1   # future provider input supplies 10.2.0.53
-      dhcp4: true
+    - name: eth1   # provider reports DHCP; future input supplies 10.2.0.53
 
-# Synthetic provider input (future SubnetPort API; not part of the VM Spec).
+# Network provider input (SubnetPort status; not part of the VM Spec).
+# dnsResolverIPs is synthetic: the SubnetPort API does not report it yet.
 ---
 # SubnetPort status fragment for eth0
 status:
@@ -744,6 +786,10 @@ status:
 ---
 # SubnetPort status fragment for eth1
 status:
+  networkInterfaceConfig:
+    # No ipAddress and DHCP not deactivated on the Subnet: DHCPv4.
+    ipAddresses:
+    - gateway: 192.168.21.1
   dnsResolverIPs: ["10.2.0.53"]
 ```
 

@@ -118,7 +118,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 				vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmClassName)
 				g.Expect(err).ToNot(HaveOccurred(), "vmclass should exist in namespace where it's associated with")
 				g.Expect(vmclass).ToNot(BeNil())
-			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+			}, time.Minute, 5*time.Second).Should(Succeed())
 
 			vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, secondNamespaceName, vmClassName)
 			Expect(vmclass).To(BeNil())

@@ -14,12 +14,19 @@ Every governable field has one shape. Each shape is a concrete, named Go struct 
 | Shape | Fields | Rules |
 |---|---|---|
 | Number (`Range`) | `min`, `max`, `default` | `default` is required when `min` or `max` is set, and must be within them. An unset bound is open: limited by the hardware, or by a parent class in Milestone 2. A fixed value is `min == max == default`. A wholly absent struct leaves the value to vpxd. |
-| `EnumPolicy` | `allowed`, `default`, `required` | Unset `allowed` = all values; `[]` = none. `default` is required when `allowed` has more than one value; with one value, that value is the default. A set `default` must be in `allowed`. A VM that omits the field inherits `default`; an explicit `""` means no value; `required: true` rejects an empty value after defaulting. [NEEDS CLARIFICATION: whether `""` means "no value" for every enum field or only for `reservedProfileName`.] |
+| `EnumPolicy` | `allowed`, `default`, `required` | Values are scalars, or lists for a collection that is one setting (see below). Unset `allowed` = all values; `[]` = none. `default` is required when `allowed` has more than one value; with one value, that value is the default. A set `default` must be in `allowed`. A VM that omits the field inherits `default`; an explicit `""` means no value; `required: true` rejects an empty value after defaulting. [NEEDS CLARIFICATION: whether `""` means "no value" for every enum field or only for `reservedProfileName`.] |
 | `BoolPolicy` | `allowOverride`, `default` | `allowOverride: false` fixes the value and needs a `default`. Otherwise an unset `default` leaves the value to vpxd. |
 | `ListPolicy` | `default`, `allowed`, `denied` | `default` is filled into the VM at admission; the VM may add or remove items within `allowed` and `denied`. Matchers are `{type, value}` with `type` one of `Fixed`, `Regex`, `Glob`. `denied` wins. `allowed` only is closed; `denied` only is open. A class can't require an item. |
 | Device `ListPolicy` | as `ListPolicy`, plus `count` per default item | One `ListPolicy` over the VM spec's inline vGPU and DirectPath I/O devices. Dynamic DirectPath I/O matches `{vendorID, deviceID}`. Independent count bounds and required entries are deferred. |
 
-A separate `SetPolicy` shape is deferred; lists taken as one value (`pnumaNodeAffinity`, `cpuFeatureMask`) are not governed in Milestone 1.
+A collection field's shape follows what its value is. A collection of independent items, each of which can be added or removed on its own, is a `ListPolicy` (`advanced.extraConfig`, devices). A collection that is one setting, whose meaning changes when any member changes, is an `EnumPolicy` whose values are lists, compared as sets (unique members, order ignored, no matchers). The admin chooses the values; there is no `SetPolicy` shape.
+
+| Collection | Shape | Milestone |
+|---|---|---|
+| `advanced.extraConfig` | `ListPolicy` | 1 |
+| `hardware.devices.{vgpuDevices,dynamicDirectPathIODevices}` | Device `ListPolicy` | 1 |
+| `advanced.pnumaNodeAffinity` | `EnumPolicy` of node-ID sets, e.g. `{default: [0,1], allowed: [[0,1],[2,3]], required: true}`. Unset `allowed` = any set of valid node IDs; `required: false` permits an explicit `[]` (no pinning). Each node ID is checked against `ConfigTarget.numNumaNodes`. | 1 |
+| `hardware.cpuFeatureMask` | Preset of the top class only in Milestone 1 (no VM field, so nothing below it to govern); checked against config options `cpuFeatureMaskSupported`. [NEEDS CLARIFICATION: shape for Milestone 2 child classes. Each CPUID leaf's mask is one setting, but the leaves are independent items.] | 2 |
 
 ## `VirtualMachineClass.spec`
 

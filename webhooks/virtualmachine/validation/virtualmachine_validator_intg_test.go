@@ -10,9 +10,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -21,6 +24,9 @@ import (
 )
 
 func intgTests() {
+	Describe("Mutable affinity admission", Serial,
+		Label(testlabels.Update, testlabels.EnvTest, testlabels.API, testlabels.Validation, testlabels.Webhook),
+		intgTestsMutableAffinity)
 
 	Describe(
 		"Create",
@@ -665,4 +671,65 @@ func intgTestsValidateIPAMModesImmutability() {
 			Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
 		})
 	})
+}
+
+func intgTestsMutableAffinity() {
+	DescribeTable("admits valid changes and rejects invalid terms through the API server", func(power vmopv1.VirtualMachinePowerState) {
+		original := pkgcfg.FromContext(suite)
+		DeferCleanup(func() { pkgcfg.SetContext(suite, func(c *pkgcfg.Config) { *c = original }) })
+		pkgcfg.SetContext(suite, func(c *pkgcfg.Config) {
+			c.Features.TaggingAPI = false
+			c.Features.VMAffinityDuringExecution = true
+			c.Features.VMHardAffinityDuringExecution = true
+		})
+		ctx := newIntgValidatingWebhookContext()
+		DeferCleanup(ctx.AfterEach)
+		ctx.vm.Spec.PowerState = power
+		metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+		if ctx.vm.Annotations == nil {
+			ctx.vm.Annotations = map[string]string{}
+		}
+		ctx.vm.Annotations[pkgconst.UpgradedToBuildVersionAnnotationKey] = testBuildVersion
+		ctx.vm.Annotations[pkgconst.UpgradedToSchemaVersionAnnotationKey] = vmopv1.GroupVersion.Version
+		ctx.vm.Annotations[pkgconst.UpgradedToFeatureVersionAnnotationKey] = vmopv1util.ActivatedFeatureVersion(suite).String()
+		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+		key := ctrlclient.ObjectKeyFromObject(ctx.vm)
+		uid := ctx.vm.UID
+		term := vmopv1.VMAffinityTerm{TopologyKey: corev1.LabelHostname,
+			LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}}}
+		invalid := ctx.vm.DeepCopy()
+		invalid.Name += "-missing-label"
+		invalid.ResourceVersion = ""
+		invalid.UID = ""
+		invalid.Labels = nil
+		invalid.Spec.Affinity = testAffinityTerms(false, "preferred", term)
+		Expect(ctx.Client.Create(ctx, invalid)).To(MatchError(ContainSubstring("VM must have label")))
+		for _, affinity := range []*vmopv1.AffinitySpec{
+			testAffinityTerms(false, "preferred", term), testAffinityTerms(true, "preferred", term), {}, nil,
+		} {
+			Expect(ctx.Client.Get(ctx, key, ctx.vm)).To(Succeed())
+			ctx.vm.Spec.Affinity = affinity
+			Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
+			Expect(ctx.vm.UID).To(Equal(uid))
+			if affinity != nil && affinity.VMAffinity != nil {
+				for _, label := range []string{"unrelated", vmopv1.PausedVMLabelKey} {
+					before := ctx.vm.DeepCopy()
+					metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, label, "true")
+					Expect(ctx.Client.Patch(ctx, ctx.vm, ctrlclient.MergeFrom(before))).To(Succeed())
+					before = ctx.vm.DeepCopy()
+					delete(ctx.vm.Labels, label)
+					Expect(ctx.Client.Patch(ctx, ctx.vm, ctrlclient.MergeFrom(before))).To(Succeed())
+				}
+				delete(ctx.vm.Labels, "app")
+				Expect(ctx.Client.Update(ctx, ctx.vm)).To(MatchError(ContainSubstring("VM must have label")))
+				Expect(ctx.Client.Get(ctx, key, ctx.vm)).To(Succeed())
+				Expect(ctx.vm.Labels).To(HaveKeyWithValue("app", "nginx"))
+			}
+		}
+		term.TopologyKey = "invalid-topology"
+		ctx.vm.Spec.Affinity = testAffinityTerms(false, "preferred", term)
+		Expect(ctx.Client.Update(ctx, ctx.vm)).To(MatchError(ContainSubstring("topologyKey")))
+		Expect(ctx.Client.Get(ctx, key, ctx.vm)).To(Succeed())
+		Expect(ctx.vm.Spec.Affinity).To(BeNil())
+	}, Entry("powered on", vmopv1.VirtualMachinePowerStateOn), Entry("powered off", vmopv1.VirtualMachinePowerStateOff))
 }

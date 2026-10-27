@@ -263,7 +263,7 @@ Two flag checks on the same feature is deliberate: the dependency between the ha
    // ExtraConfigVMTagsKey is the ExtraConfig key that contains the
    // "<key>:<value>" affinity tags this feature has applied, so it can later
    // remove only the tags it applied itself.
-   const ExtraConfigVMTagsKey = "vmservice.tags"
+   const ExtraConfigVMTagsKey = "vmservice.placementpolicies.tags"
    ```
 
    It is declared in the provider package, not here, so that `cleanup.go` can read it without importing `pkg/vmconfig/vmtags` — see "Why this package, and the one rule it imposes".
@@ -470,7 +470,7 @@ Ownership is therefore always established by `ReconcileTagCRs` on the first upda
 
 Because this feature records its applied tags the same way (D12), cleanup must do the same for its own key, behind `Features.TaggingAPI`: read `vmtags.ExtraConfigVMTagsKey`, and emit one `TagSpec{Operation: remove, Id.NameId{Tag: s, Category: vm.Namespace}}` per recorded entry. Without this, a VM detached from VM Operator keeps this feature's affinity tags in vCenter and stays subject to Compute Policies it is no longer managed by.
 
-The ExtraConfig key itself needs no cleanup handling: `removeVMOperatorExtraConfig` in the same file already blanks every key with a `vmservice.` prefix, and it reads from `moVM.Config` rather than from the outgoing `configSpec`, so it does not race the read above. This is a second reason to name the key `vmservice.tags` rather than inventing a new prefix.
+The ExtraConfig key itself needs no cleanup handling: `removeVMOperatorExtraConfig` in the same file already blanks every key with a `vmservice.` prefix, and it reads from `moVM.Config` rather than from the outgoing `configSpec`, so it does not race the read above. This is a second reason to name the key `vmservice.placementpolicies.tags` rather than inventing a new prefix.
 
 This is separate from ordinary VM deletion, where the platform resource is destroyed and the tags go with it; it matters only on the skip-delete path.
 
@@ -493,7 +493,7 @@ flowchart TD
 
     subgraph VMPath2["doReconfigure #3 — vmtags.ReconcileTagSpecs"]
         D[Per-label point Get by<br/>TagResourceName#40;key,value#41;<br/>#40;NOT a namespace List#41;<br/>= Tags matching vm.Labels] --> D1[UNION with the owned Tags<br/>from #1 — cache has not yet<br/>observed this pass's creates<br/>= desired vCenter tag set]
-        D1 --> E[Diff vs ExtraConfig record<br/>vmservice.tags<br/>#40;NOT the attached URN list#41;]
+        D1 --> E[Diff vs ExtraConfig record<br/>vmservice.placementpolicies.tags<br/>#40;NOT the attached URN list#41;]
         E --> F[configSpec.TagSpecs += add/remove<br/>NameId entries in this ns category only<br/>— mechanism B's UUID entries untouched<br/>+ rewrite the record iff it changed]
     end
 
@@ -532,7 +532,7 @@ Per `testing-standards.md`: one `_test.go` and one `_suite_test.go` per package,
 - `controllers/vspherepolicy/tag/tag_controller_test.go` — status/`observedGeneration`/`Ready`; label-mirror correction; delete-at-zero-owners; and that the controller enqueues **no** VMs itself on any path (the fan-out is the watch's job, and a second copy of it here would be a silent duplicate).
 - `webhooks/vspherepolicy/tag/validation/tag_validator_test.go` — V1-V6, each rule positive and negative, including the privileged-vs-DevOps account split and the derived-name check.
 - `pkg/providers/vsphere/virtualmachine/` existing affinity/configspec tests — extended so the flag-off path is asserted unchanged and the flag-on path emits no create-time tag specs (spec SC-006).
-- `pkg/providers/vsphere/virtualmachine/cleanup_test.go` — `removeTagAssociations` emits a `NameId` removal per entry recorded in `vmservice.tags` when `TaggingAPI` is on, leaves mechanism B's UUID removals intact when both flags are on, and emits nothing for this feature when the flag is off.
+- `pkg/providers/vsphere/virtualmachine/cleanup_test.go` — `removeTagAssociations` emits a `NameId` removal per entry recorded in `vmservice.placementpolicies.tags` when `TaggingAPI` is on, leaves mechanism B's UUID removals intact when both flags are on, and emits nothing for this feature when the flag is off.
 
 ### Integration (`testlabels.EnvTest`)
 

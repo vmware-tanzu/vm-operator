@@ -29,11 +29,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
 
-// vCenterTagName returns the vCenter tag name for a label key/value pair:
-// "<key>:<value>". Byte-for-byte what
-// pkg/providers/vsphere/virtualmachine.TagName computes; reimplemented
-// here rather than imported so this e2e module does not pick up that
-// package's production dependency graph for two one-line derivations.
+// vCenterTagName returns the unprefixed "<key>:<value>" pair used to derive
+// Tag resource names.
 func vCenterTagName(key, value string) string {
 	return key + ":" + value
 }

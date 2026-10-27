@@ -369,6 +369,133 @@ func setControllerForPVCWithBusNumber(vm *vmopv1.VirtualMachine, defaultBusNum i
 }
 
 // Validate Create operations.
+// affinityValidationCases exercises every term list through public admission.
+func affinityValidationCases(doTest func(testParams)) {
+	Context("Affinity requester labels", func() {
+		for _, bucket := range []string{"preferred", "required", "hard"} {
+			DescribeTable("requires every resolved affinity target on the requester in "+bucket,
+				func(anti, expression bool, labels map[string]string, values []string, allowed bool) {
+					doTest(testParams{
+						expectAllowed: allowed,
+						setup: func(ctx *unitValidatingWebhookContext) {
+							createRequiredDuringExecutionPolicy(ctx)
+							pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.VMAffinityDuringExecution = true })
+							ctx.vm.Labels = labels
+							selector := &metav1.LabelSelector{MatchLabels: map[string]string{"app": values[0]}}
+							if expression {
+								selector = &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+									Key: "app", Operator: metav1.LabelSelectorOpIn, Values: values,
+								}}}
+							}
+							ctx.vm.Spec.Affinity = testAffinityTerms(anti, bucket,
+								vmopv1.VMAffinityTerm{TopologyKey: corev1.LabelHostname, LabelSelector: selector})
+						},
+						validate: func(response admission.Response) {
+							if !allowed {
+								Expect(string(response.Result.Reason)).To(ContainSubstring("VM must have label"))
+							}
+						},
+					})
+				},
+				Entry("matching label", false, false, map[string]string{"app": "nginx"}, []string{"nginx"}, true),
+				Entry("missing label", false, false, nil, []string{"nginx"}, false),
+				Entry("different label value", false, false, map[string]string{"app": "other"}, []string{"nginx"}, false),
+				Entry("present empty value", false, false, map[string]string{"app": ""}, []string{""}, true),
+				Entry("absent empty value", false, false, nil, []string{""}, false),
+				Entry("matching In expression", false, true, map[string]string{"app": "nginx"}, []string{"nginx", "nginx"}, true),
+				Entry("unmatched In value", false, true, map[string]string{"app": "nginx"}, []string{"nginx", "other"}, false),
+				Entry("anti-affinity without target labels", true, false, nil, []string{"nginx"}, true),
+			)
+		}
+	})
+	Context("Integrated affinity validation", func() {
+		for _, anti := range []bool{false, true} {
+			for _, bucket := range []string{"preferred", "required", "hard"} {
+				for _, invalid := range []string{
+					"valid", "topology", "operator", "reserved label", "reserved expression", "empty In",
+					"invalid label key", "invalid label value", "invalid expression key", "invalid expression value",
+					"valid qualified key and empty value",
+				} {
+					It(fmt.Sprintf("validates anti=%t %s %s", anti, bucket, invalid), func() {
+						allowed := strings.HasPrefix(invalid, "valid")
+						doTest(testParams{
+							expectAllowed: allowed,
+							setup: func(ctx *unitValidatingWebhookContext) {
+								pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+									c.Features.TaggingAPI = false
+									c.Features.VMAffinityDuringExecution = true
+								})
+								createRequiredDuringExecutionPolicy(ctx)
+								metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+								term := vmopv1.VMAffinityTerm{TopologyKey: corev1.LabelHostname,
+									LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}}}
+								switch invalid {
+								case "topology":
+									term.TopologyKey = "invalid"
+								case "operator":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "app", Operator: metav1.LabelSelectorOpNotIn, Values: []string{"nginx"}}}
+								case "reserved label":
+									term.LabelSelector.MatchLabels = map[string]string{"vmoperator.vmware.com/test": "value"}
+								case "reserved expression":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "vmoperator.vmware.com/test", Operator: metav1.LabelSelectorOpIn, Values: []string{"value"}}}
+								case "empty In":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "app", Operator: metav1.LabelSelectorOpIn}}
+								case "invalid label key":
+									term.LabelSelector.MatchLabels = map[string]string{"bad:key": "nginx"}
+								case "invalid label value":
+									term.LabelSelector.MatchLabels = map[string]string{"app": "bad:value"}
+								case "invalid expression key":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "bad:key", Operator: metav1.LabelSelectorOpIn, Values: []string{"nginx"}}}
+								case "invalid expression value":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "app", Operator: metav1.LabelSelectorOpIn, Values: []string{"nginx", "bad:value"}}}
+								case "valid qualified key and empty value":
+									metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "example.com/app", "")
+									term.LabelSelector = &metav1.LabelSelector{
+										MatchLabels:      map[string]string{"example.com/app": ""},
+										MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "example.com/app", Operator: metav1.LabelSelectorOpIn, Values: []string{""}}},
+									}
+								}
+								ctx.vm.Spec.Affinity = testAffinityTerms(anti, bucket, term)
+							},
+							validate: func(response admission.Response) {
+								if !allowed {
+									Expect(string(response.Result.Reason)).To(ContainSubstring("spec.affinity."))
+									Expect(string(response.Result.Reason)).ToNot(ContainSubstring("updating Affinity is not allowed"))
+								}
+								if strings.HasPrefix(invalid, "invalid") {
+									Expect(string(response.Result.Reason)).To(ContainSubstring("Invalid value:"))
+								}
+							},
+						})
+					})
+				}
+			}
+		}
+	})
+}
+
+func testAffinityTerms(anti bool, bucket string, term vmopv1.VMAffinityTerm) *vmopv1.AffinitySpec {
+	var preferred, required, hard []vmopv1.VMAffinityTerm
+	switch bucket {
+	case "preferred":
+		preferred = []vmopv1.VMAffinityTerm{term}
+	case "required":
+		required = []vmopv1.VMAffinityTerm{term}
+	case "hard":
+		hard = []vmopv1.VMAffinityTerm{term}
+	}
+	if anti {
+		return &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+			PreferredDuringSchedulingPreferredDuringExecution: preferred,
+			RequiredDuringSchedulingPreferredDuringExecution:  required,
+			RequiredDuringSchedulingRequiredDuringExecution:   hard}}
+	}
+	return &vmopv1.AffinitySpec{VMAffinity: &vmopv1.VMAffinitySpec{
+		PreferredDuringSchedulingPreferredDuringExecution: preferred,
+		RequiredDuringSchedulingPreferredDuringExecution:  required,
+		RequiredDuringSchedulingRequiredDuringExecution:   hard}}
+}
+
 func unitTestsValidateCreate() {
 
 	var (
@@ -524,6 +651,8 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+
+	affinityValidationCases(doTest)
 
 	Context("PVC Volume Controller Fields", func() {
 		DescribeTable("create", doTest,
@@ -4952,7 +5081,9 @@ func unitTestsValidateCreate() {
 										},
 										MatchExpressions: []metav1.LabelSelectorRequirement{
 											{
+												Key:      "foo",
 												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"bar"},
 											},
 										},
 									},
@@ -4965,7 +5096,9 @@ func unitTestsValidateCreate() {
 										},
 										MatchExpressions: []metav1.LabelSelectorRequirement{
 											{
+												Key:      "foo",
 												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"bar"},
 											},
 										},
 									},
@@ -5523,6 +5656,140 @@ func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 	setControllerForPVC(ctx.vm)
 }
 
+func unitTestsValidateUpdateAffinityAuthorization(doTest func(testParams)) {
+	type authorizationCase struct {
+		authorized     bool
+		hardAffinity   bool
+		expectAllowed  bool
+		expectedReason string
+	}
+
+	Context("Mutable affinity authorization", func() {
+		DescribeTableSubtree("rule type", func(antiAffinity bool) {
+			DescribeTable("namespace permission and feature gate", func(tc authorizationCase) {
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						if tc.authorized {
+							createRequiredDuringExecutionPolicy(ctx)
+						}
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.TaggingAPI = false
+							config.Features.VMHardAffinityDuringExecution = tc.hardAffinity
+							config.Features.VMAffinityDuringExecution = true
+							config.Features.VMGroups = true
+						})
+
+						ctx.vm.Spec.GroupName = dummyGroupName
+						ctx.oldVM.Spec.GroupName = dummyGroupName
+						metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+						ctx.vm.Spec.Affinity = testAffinityTerms(antiAffinity, "hard", vmopv1.VMAffinityTerm{
+							TopologyKey: corev1.LabelHostname,
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "nginx"},
+							},
+						})
+					},
+					expectAllowed: tc.expectAllowed,
+					validate: func(response admission.Response) {
+						if tc.expectedReason != "" {
+							Expect(string(response.Result.Reason)).To(ContainSubstring(tc.expectedReason))
+						}
+					},
+				})
+			},
+				Entry("allows an authorized namespace when hard affinity is enabled", authorizationCase{
+					authorized:    true,
+					hardAffinity:  true,
+					expectAllowed: true,
+				}),
+				Entry("rejects an unauthorized namespace when hard affinity is enabled", authorizationCase{
+					hardAffinity:   true,
+					expectedReason: "requiredDuringSchedulingRequiredDuringExecution",
+				}),
+				Entry("rejects an authorized namespace when hard affinity is disabled", authorizationCase{
+					authorized:     true,
+					expectedReason: "updating Affinity is not allowed",
+				}),
+				Entry("rejects an unauthorized namespace when hard affinity is disabled", authorizationCase{
+					expectedReason: "updating Affinity is not allowed",
+				}),
+			)
+		},
+			Entry("affinity", false),
+			Entry("anti-affinity", true),
+		)
+	})
+}
+
+func unitTestsValidateUpdateAffinityGate(doTest func(testParams)) {
+	type featureCase struct {
+		taggingAPI   bool
+		hardAffinity bool
+	}
+
+	Context("Mutable affinity gate", func() {
+		DescribeTableSubtree("feature flags", func(features featureCase) {
+			for _, powerState := range []vmopv1.VirtualMachinePowerState{
+				vmopv1.VirtualMachinePowerStateOff,
+				vmopv1.VirtualMachinePowerStateOn,
+			} {
+				Context(fmt.Sprintf("VM is powered %s", powerState), func() {
+					term := vmopv1.VMAffinityTerm{
+						TopologyKey: corev1.LabelHostname,
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "nginx"},
+						},
+					}
+					preferred := testAffinityTerms(false, "preferred", term)
+					required := testAffinityTerms(false, "required", term)
+
+					DescribeTable("affinity changes", func(oldAffinity, newAffinity *vmopv1.AffinitySpec) {
+						doTest(testParams{
+							setup: func(ctx *unitValidatingWebhookContext) {
+								pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+									config.Features.TaggingAPI = features.taggingAPI
+									config.Features.VMHardAffinityDuringExecution = features.hardAffinity
+									config.Features.VMAffinityDuringExecution = true
+									config.Features.VMGroups = true
+								})
+
+								ctx.vm.Spec.GroupName = dummyGroupName
+								ctx.oldVM.Spec.GroupName = dummyGroupName
+								ctx.vm.Spec.PowerState = powerState
+								ctx.oldVM.Spec.PowerState = powerState
+								ctx.vm.Status.PowerState = powerState
+								ctx.oldVM.Status.PowerState = powerState
+								metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+								ctx.vm.Spec.Affinity = newAffinity.DeepCopy()
+								ctx.oldVM.Spec.Affinity = oldAffinity.DeepCopy()
+							},
+							expectAllowed: features.hardAffinity,
+						})
+					},
+						Entry("add affinity", nil, preferred),
+						Entry("edit affinity", preferred, required),
+						Entry("clear affinity", preferred, nil),
+						Entry("replace affinity with an empty spec", preferred, &vmopv1.AffinitySpec{}),
+						Entry("replace nil affinity with an empty spec", nil, &vmopv1.AffinitySpec{}),
+					)
+				})
+			}
+		},
+			Entry("tagging disabled, hard affinity disabled", featureCase{}),
+			Entry("tagging disabled, hard affinity enabled", featureCase{
+				hardAffinity: true,
+			}),
+			Entry("tagging enabled, hard affinity disabled", featureCase{
+				taggingAPI: true,
+			}),
+			Entry("tagging enabled, hard affinity enabled", featureCase{
+				taggingAPI:   true,
+				hardAffinity: true,
+			}),
+		)
+	})
+}
+
 // Validate Update operations.
 func unitTestsValidateUpdate() {
 	var (
@@ -5675,6 +5942,8 @@ func unitTestsValidateUpdate() {
 			args.validate(response)
 		}
 	}
+
+	affinityValidationCases(doTest)
 
 	DescribeTable(
 		"spec.class and spec.className update",
@@ -9015,6 +9284,204 @@ func unitTestsValidateUpdate() {
 					expectAllowed: true,
 				},
 			),
+		)
+	})
+
+	unitTestsValidateUpdateAffinityAuthorization(doTest)
+	unitTestsValidateUpdateAffinityGate(doTest)
+	Context("Affinity label-only updates", func() {
+		DescribeTable("preserves existing mismatches",
+			func(bucket, topology string, oldLabels, labels map[string]string, expressions, changeAffinity, allowed bool) {
+				doTest(testParams{
+					expectAllowed: allowed,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+							c.Features.VMHardAffinityDuringExecution = true
+							c.Features.VMAffinityDuringExecution = true
+						})
+						// The controller is permitted to patch the paused label.
+						_, wasPaused := oldLabels[vmopv1.PausedVMLabelKey]
+						_, isPaused := labels[vmopv1.PausedVMLabelKey]
+						ctx.IsPrivilegedAccount = wasPaused || isPaused || changeAffinity
+						selector := &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx", "tier": ""}}
+						if expressions {
+							selector = &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+								Key: "app", Operator: metav1.LabelSelectorOpIn, Values: []string{"nginx", "other"},
+							}}}
+						}
+						ctx.oldVM.Spec.Affinity = testAffinityTerms(false, bucket, vmopv1.VMAffinityTerm{
+							TopologyKey: topology, LabelSelector: selector,
+						})
+						ctx.vm.Spec.Affinity = ctx.oldVM.Spec.Affinity.DeepCopy()
+						ctx.oldVM.Labels = oldLabels
+						ctx.vm.Labels = labels
+						if changeAffinity {
+							ctx.vm.Spec.Affinity.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{}
+						}
+					},
+					validate: func(response admission.Response) {
+						if !allowed {
+							Expect(string(response.Result.Reason)).To(ContainSubstring("VM must have label"))
+						}
+					},
+				})
+			},
+			Entry("allow unrelated label with missing targets for preferred host", "preferred", corev1.LabelHostname,
+				nil, map[string]string{"unrelated": "value"}, false, false, true),
+			Entry("allow unrelated label with mismatched targets for preferred host", "preferred", corev1.LabelHostname,
+				map[string]string{"app": "old"}, map[string]string{"app": "old", "unrelated": "value"}, false, false, true),
+			Entry("allow controller paused label for preferred host", "preferred", corev1.LabelHostname,
+				nil, map[string]string{vmopv1.PausedVMLabelKey: "true"}, false, false, true),
+			Entry("allow controller to remove paused label for preferred host", "preferred", corev1.LabelHostname,
+				map[string]string{vmopv1.PausedVMLabelKey: "true"}, nil, false, false, true),
+			Entry("allow partial repair for preferred host", "preferred", corev1.LabelHostname,
+				nil, map[string]string{"app": "nginx"}, false, false, true),
+			Entry("reject losing a match despite another missing target for preferred host", "preferred", corev1.LabelHostname,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, false, false, false),
+			Entry("reject removing a matching empty value for preferred host", "preferred", corev1.LabelHostname,
+				map[string]string{"tier": ""}, nil, false, false, false),
+			Entry("allow unrelated label with multi-value In for preferred host", "preferred", corev1.LabelHostname,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "nginx", "unrelated": "value"}, true, false, true),
+			Entry("reject replacing a matched In value for preferred host", "preferred", corev1.LabelHostname,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, true, false, false),
+			Entry("fully validate changed affinity for preferred host", "preferred", corev1.LabelHostname,
+				nil, map[string]string{"unrelated": "value"}, false, true, false),
+			Entry("allow unrelated label with missing targets for preferred zone", "preferred", corev1.LabelTopologyZone,
+				nil, map[string]string{"unrelated": "value"}, false, false, true),
+			Entry("allow unrelated label with mismatched targets for preferred zone", "preferred", corev1.LabelTopologyZone,
+				map[string]string{"app": "old"}, map[string]string{"app": "old", "unrelated": "value"}, false, false, true),
+			Entry("allow controller paused label for preferred zone", "preferred", corev1.LabelTopologyZone,
+				nil, map[string]string{vmopv1.PausedVMLabelKey: "true"}, false, false, true),
+			Entry("allow controller to remove paused label for preferred zone", "preferred", corev1.LabelTopologyZone,
+				map[string]string{vmopv1.PausedVMLabelKey: "true"}, nil, false, false, true),
+			Entry("allow partial repair for preferred zone", "preferred", corev1.LabelTopologyZone,
+				nil, map[string]string{"app": "nginx"}, false, false, true),
+			Entry("reject losing a match despite another missing target for preferred zone", "preferred", corev1.LabelTopologyZone,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, false, false, false),
+			Entry("reject removing a matching empty value for preferred zone", "preferred", corev1.LabelTopologyZone,
+				map[string]string{"tier": ""}, nil, false, false, false),
+			Entry("allow unrelated label with multi-value In for preferred zone", "preferred", corev1.LabelTopologyZone,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "nginx", "unrelated": "value"}, true, false, true),
+			Entry("reject replacing a matched In value for preferred zone", "preferred", corev1.LabelTopologyZone,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, true, false, false),
+			Entry("fully validate changed affinity for preferred zone", "preferred", corev1.LabelTopologyZone,
+				nil, map[string]string{"unrelated": "value"}, false, true, false),
+			Entry("allow unrelated label with missing targets for required host", "required", corev1.LabelHostname,
+				nil, map[string]string{"unrelated": "value"}, false, false, true),
+			Entry("allow unrelated label with mismatched targets for required host", "required", corev1.LabelHostname,
+				map[string]string{"app": "old"}, map[string]string{"app": "old", "unrelated": "value"}, false, false, true),
+			Entry("allow controller paused label for required host", "required", corev1.LabelHostname,
+				nil, map[string]string{vmopv1.PausedVMLabelKey: "true"}, false, false, true),
+			Entry("allow controller to remove paused label for required host", "required", corev1.LabelHostname,
+				map[string]string{vmopv1.PausedVMLabelKey: "true"}, nil, false, false, true),
+			Entry("allow partial repair for required host", "required", corev1.LabelHostname,
+				nil, map[string]string{"app": "nginx"}, false, false, true),
+			Entry("reject losing a match despite another missing target for required host", "required", corev1.LabelHostname,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, false, false, false),
+			Entry("reject removing a matching empty value for required host", "required", corev1.LabelHostname,
+				map[string]string{"tier": ""}, nil, false, false, false),
+			Entry("allow unrelated label with multi-value In for required host", "required", corev1.LabelHostname,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "nginx", "unrelated": "value"}, true, false, true),
+			Entry("reject replacing a matched In value for required host", "required", corev1.LabelHostname,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, true, false, false),
+			Entry("fully validate changed affinity for required host", "required", corev1.LabelHostname,
+				nil, map[string]string{"unrelated": "value"}, false, true, false),
+			Entry("allow unrelated label with missing targets for required zone", "required", corev1.LabelTopologyZone,
+				nil, map[string]string{"unrelated": "value"}, false, false, true),
+			Entry("allow unrelated label with mismatched targets for required zone", "required", corev1.LabelTopologyZone,
+				map[string]string{"app": "old"}, map[string]string{"app": "old", "unrelated": "value"}, false, false, true),
+			Entry("allow controller paused label for required zone", "required", corev1.LabelTopologyZone,
+				nil, map[string]string{vmopv1.PausedVMLabelKey: "true"}, false, false, true),
+			Entry("allow controller to remove paused label for required zone", "required", corev1.LabelTopologyZone,
+				map[string]string{vmopv1.PausedVMLabelKey: "true"}, nil, false, false, true),
+			Entry("allow partial repair for required zone", "required", corev1.LabelTopologyZone,
+				nil, map[string]string{"app": "nginx"}, false, false, true),
+			Entry("reject losing a match despite another missing target for required zone", "required", corev1.LabelTopologyZone,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, false, false, false),
+			Entry("reject removing a matching empty value for required zone", "required", corev1.LabelTopologyZone,
+				map[string]string{"tier": ""}, nil, false, false, false),
+			Entry("allow unrelated label with multi-value In for required zone", "required", corev1.LabelTopologyZone,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "nginx", "unrelated": "value"}, true, false, true),
+			Entry("reject replacing a matched In value for required zone", "required", corev1.LabelTopologyZone,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, true, false, false),
+			Entry("fully validate changed affinity for required zone", "required", corev1.LabelTopologyZone,
+				nil, map[string]string{"unrelated": "value"}, false, true, false),
+			Entry("allow unrelated label with missing targets for hard host", "hard", corev1.LabelHostname,
+				nil, map[string]string{"unrelated": "value"}, false, false, true),
+			Entry("allow unrelated label with mismatched targets for hard host", "hard", corev1.LabelHostname,
+				map[string]string{"app": "old"}, map[string]string{"app": "old", "unrelated": "value"}, false, false, true),
+			Entry("allow controller paused label for hard host", "hard", corev1.LabelHostname,
+				nil, map[string]string{vmopv1.PausedVMLabelKey: "true"}, false, false, true),
+			Entry("allow controller to remove paused label for hard host", "hard", corev1.LabelHostname,
+				map[string]string{vmopv1.PausedVMLabelKey: "true"}, nil, false, false, true),
+			Entry("allow partial repair for hard host", "hard", corev1.LabelHostname,
+				nil, map[string]string{"app": "nginx"}, false, false, true),
+			Entry("reject losing a match despite another missing target for hard host", "hard", corev1.LabelHostname,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, false, false, false),
+			Entry("reject removing a matching empty value for hard host", "hard", corev1.LabelHostname,
+				map[string]string{"tier": ""}, nil, false, false, false),
+			Entry("allow unrelated label with multi-value In for hard host", "hard", corev1.LabelHostname,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "nginx", "unrelated": "value"}, true, false, true),
+			Entry("reject replacing a matched In value for hard host", "hard", corev1.LabelHostname,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, true, false, false),
+			Entry("fully validate changed affinity for hard host", "hard", corev1.LabelHostname,
+				nil, map[string]string{"unrelated": "value"}, false, true, false),
+			Entry("allow unrelated label with missing targets for hard zone", "hard", corev1.LabelTopologyZone,
+				nil, map[string]string{"unrelated": "value"}, false, false, true),
+			Entry("allow unrelated label with mismatched targets for hard zone", "hard", corev1.LabelTopologyZone,
+				map[string]string{"app": "old"}, map[string]string{"app": "old", "unrelated": "value"}, false, false, true),
+			Entry("allow controller paused label for hard zone", "hard", corev1.LabelTopologyZone,
+				nil, map[string]string{vmopv1.PausedVMLabelKey: "true"}, false, false, true),
+			Entry("allow controller to remove paused label for hard zone", "hard", corev1.LabelTopologyZone,
+				map[string]string{vmopv1.PausedVMLabelKey: "true"}, nil, false, false, true),
+			Entry("allow partial repair for hard zone", "hard", corev1.LabelTopologyZone,
+				nil, map[string]string{"app": "nginx"}, false, false, true),
+			Entry("reject losing a match despite another missing target for hard zone", "hard", corev1.LabelTopologyZone,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, false, false, false),
+			Entry("reject removing a matching empty value for hard zone", "hard", corev1.LabelTopologyZone,
+				map[string]string{"tier": ""}, nil, false, false, false),
+			Entry("allow unrelated label with multi-value In for hard zone", "hard", corev1.LabelTopologyZone,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "nginx", "unrelated": "value"}, true, false, true),
+			Entry("reject replacing a matched In value for hard zone", "hard", corev1.LabelTopologyZone,
+				map[string]string{"app": "nginx"}, map[string]string{"app": "other"}, true, false, false),
+			Entry("fully validate changed affinity for hard zone", "hard", corev1.LabelTopologyZone,
+				nil, map[string]string{"unrelated": "value"}, false, true, false),
+		)
+
+		DescribeTable("preserves requester membership without renewing authorization",
+			func(labels map[string]string, clearAffinity, enabled, allowed bool) {
+				doTest(testParams{
+					expectAllowed: allowed,
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+							c.Features.VMHardAffinityDuringExecution = enabled
+							c.Features.VMAffinityDuringExecution = true
+						})
+						// An unchanged hard rule does not require renewed namespace permission.
+						ctx.oldVM.Spec.Affinity = testAffinityTerms(false, "hard", vmopv1.VMAffinityTerm{
+							TopologyKey:   corev1.LabelTopologyZone,
+							LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}},
+						})
+						ctx.vm.Spec.Affinity = ctx.oldVM.Spec.Affinity.DeepCopy()
+						ctx.oldVM.Labels = map[string]string{"app": "nginx"}
+						ctx.vm.Labels = labels
+						if clearAffinity {
+							ctx.vm.Spec.Affinity = nil
+						}
+					},
+					validate: func(response admission.Response) {
+						if !allowed {
+							Expect(string(response.Result.Reason)).To(ContainSubstring("VM must have label"))
+						}
+					},
+				})
+			},
+			Entry("reject removing target label", nil, false, true, false),
+			Entry("reject changing target value", map[string]string{"app": "other"}, false, true, false),
+			Entry("allow unrelated label changes", map[string]string{"app": "nginx", "other": "value"}, false, true, true),
+			Entry("allow unchanged labels", map[string]string{"app": "nginx"}, false, true, true),
+			Entry("allow clearing affinity with its label", nil, true, true, true),
+			Entry("preserve flag-off behavior", nil, false, false, true),
 		)
 	})
 

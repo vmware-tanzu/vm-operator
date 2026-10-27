@@ -452,8 +452,6 @@ func (r *reconciler) cacheFiles(
 		[]vmopv1.VirtualMachineImageCacheFileStatus, len(cachedFiles))
 
 	for i := range cachedFiles {
-		cachedFileStatuses[i].Name = cachedFiles[i].OriginalName
-
 		if v := cachedFiles[i].Path; v != "" {
 			cachedFileStatuses[i].ID = v
 			if strings.EqualFold(".vmdk", path.Ext(v)) {
@@ -668,8 +666,7 @@ func getSourceFilePathsForOVF(
 			s := is.StorageURIs[j]
 			if includeItemFile(s) {
 				srcFiles = append(srcFiles, clsutil.SourceFile{
-					OriginalName: is.Name,
-					Path:         s,
+					Path: s,
 				})
 			}
 		}

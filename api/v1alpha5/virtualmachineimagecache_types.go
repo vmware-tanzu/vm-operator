@@ -131,11 +131,6 @@ type VirtualMachineImageCacheFileStatus struct {
 
 	// +optional
 
-	// Name describes the original name of the file.
-	Name string `json:"name,omitempty"`
-
-	// +optional
-
 	// DiskType describes the type of disk.
 	// This field is only non-empty when Type=Disk.
 	DiskType VolumeType `json:"diskType,omitempty"`

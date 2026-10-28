@@ -117,36 +117,58 @@ build {
 EOF
   }
 
+  # Jenkins root URL. The CLI refuses to connect until one is configured.
+  provisioner "file" {
+    destination = "/tmp/jenkins.model.JenkinsLocationConfiguration.xml"
+    content = <<EOF
+<?xml version='1.1' encoding='UTF-8'?>
+<jenkins.model.JenkinsLocationConfiguration>
+  <jenkinsUrl>http://localhost:8080/</jenkinsUrl>
+</jenkins.model.JenkinsLocationConfiguration>
+EOF
+  }
+
   provisioner "shell" {
     inline = [
       # Display the commands being executed.
       "set -x",
 
+      # On failure, dump enough guest state to tell a slow download apart from a slow guest.
+      "trap 'rc=$?; if [ $rc -ne 0 ]; then sudo systemctl status jenkins --no-pager || true; sudo journalctl -u jenkins --no-pager -n 200 || true; uptime || true; vmstat 1 5 || true; df -h || true; fi' EXIT",
+
       # Remove outdated Kubernetes apt repository if present (no longer has a Release file).
       "sudo rm -f /etc/apt/sources.list.d/kubernetes.list",
 
       # Sometimes apt-get uses IPv6 and causes failure, force to use IPv4 address.
-      "sudo apt-get -qq -o Acquire::ForceIPv4=true update",
-      "sudo apt-get -qq -o Acquire::ForceIPv4=true install -f -y ca-certificates openjdk-21-jre-headless wget",
+      # Bound each fetch so a stalled mirror fails fast instead of hanging the build.
+      "APT='sudo apt-get -qq -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -o Acquire::Retries=3'",
+      "$APT update",
+      "$APT install -y ca-certificates openjdk-21-jre-headless wget",
 
       # Install Jenkins from a fixed version .deb package directly (avoids GPG key issues with apt repository).
-      # 2.462.3 is the last Jenkins LTS release that supports Java 11.
-      "wget -q -O /tmp/jenkins.deb https://get.jenkins.io/debian-stable/jenkins_2.462.3_all.deb",
-      "sudo dpkg -i /tmp/jenkins.deb || true",
+      # Use a current LTS: old releases stay on only a few mirrors and downloads of them can stall for hours.
+      # If the mirror picked by get.jenkins.io stalls, fall back to archives.jenkins.io, which keeps every release.
+      "for site in https://get.jenkins.io https://archives.jenkins.io; do timeout 300 wget -nv --timeout=60 --tries=2 -O /tmp/jenkins.deb $site/debian-stable/jenkins_2.580.1_all.deb && break; done",
 
-      # Fix any missing dependencies from the dpkg install.
-      "sudo apt-get -qq -o Acquire::ForceIPv4=true install -f -y",
+      # The first start can exceed systemd's default 90s on a slow guest, so allow more time.
+      "sudo mkdir -p /etc/systemd/system/jenkins.service.d",
+      "printf '[Service]\\nTimeoutStartSec=600\\n' | sudo tee /etc/systemd/system/jenkins.service.d/timeout.conf",
 
-      # Restart Jenkins service, in case it didn't initialize successfully.
+      # Installing the local .deb through apt also pulls in its dependencies (e.g. net-tools).
+      "$APT install -y /tmp/jenkins.deb",
+
+      # Set the Jenkins URL, which the CLI requires, and restart Jenkins so it is read.
+      # The package creates /var/lib/jenkins and the jenkins user, so do this after installing it.
+      "sudo install -o jenkins -g jenkins -m 0644 /tmp/jenkins.model.JenkinsLocationConfiguration.xml /var/lib/jenkins/",
       "sudo systemctl restart jenkins",
-      # Wait for Jenkins to be fully up and running.
-      "until curl -s -o /dev/null -w '%%{http_code}' http://localhost:8080/ | grep -q '403\\|200'; do sleep 5; done",
+      # Wait up to 10 minutes for Jenkins to be fully up and running.
+      "i=0; until curl -s -o /dev/null -w '%%{http_code}' http://localhost:8080/ | grep -qE '^(200|403)$'; do i=$((i+1)); [ $i -lt 120 ] || exit 1; sleep 5; done",
 
       "export JENKINS_URL=http://localhost:8080/",
       "export USER=admin",
       "export PASSWORD=$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)",
       # Download Jenkins CLI to create and check job status.
-      "wget -q -O /tmp/jenkins-cli.jar $JENKINS_URL/jnlpJars/jenkins-cli.jar",      
+      "wget -nv --timeout=60 --tries=3 -O /tmp/jenkins-cli.jar $JENKINS_URL/jnlpJars/jenkins-cli.jar",
       # Create a new job from the above sample-job.xml file.
       "java -jar /tmp/jenkins-cli.jar -s $JENKINS_URL -auth $USER:$PASSWORD create-job sample-job < /tmp/sample-job.xml",
       # Build and wait for a successful completion of the job.

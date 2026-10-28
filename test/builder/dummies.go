@@ -273,20 +273,18 @@ func DummyVirtualMachineClass(name string) *vmopv1.VirtualMachineClass {
 			Name: name,
 		},
 		Spec: vmopv1.VirtualMachineClassSpec{
-			Hardware: vmopv1.VirtualMachineClassHardware{
-				Cpus:   int64(2),
-				Memory: resource.MustParse("4Gi"),
-			},
-			Policies: vmopv1.VirtualMachineClassPolicies{
-				Resources: vmopv1.VirtualMachineClassResources{
-					Requests: vmopv1.VirtualMachineResourceSpec{
-						Cpu:    resource.MustParse("1Gi"),
-						Memory: resource.MustParse("2Gi"),
-					},
-					Limits: vmopv1.VirtualMachineResourceSpec{
-						Cpu:    resource.MustParse("2Gi"),
-						Memory: resource.MustParse("4Gi"),
-					},
+			Resources: vmopv1.VirtualMachineClassResources{
+				Size: vmopv1.VirtualMachineClassResourceSpec{
+					CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2"))},
+					Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4Gi"))},
+				},
+				Requests: vmopv1.VirtualMachineClassResourceSpec{
+					CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))},
+					Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))},
+				},
+				Limits: vmopv1.VirtualMachineClassResourceSpec{
+					CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))},
+					Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4Gi"))},
 				},
 			},
 		},

@@ -17,6 +17,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -96,18 +97,18 @@ func unitTestsValidateCreate() {
 		var err error
 
 		if args.invalidCPURequest {
-			ctx.vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("2Gi")
-			ctx.vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("1Gi")
+			ctx.vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))}
 		}
 		if args.invalidMemoryRequest {
-			ctx.vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("2Gi")
-			ctx.vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("1Gi")
+			ctx.vmClass.Spec.Resources.Requests.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))}
 		}
 		if args.noCPULimit {
-			ctx.vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("0")
+			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("0"))}
 		}
 		if args.noMemoryLimit {
-			ctx.vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("0")
+			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("0"))}
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmClass)
@@ -130,7 +131,7 @@ func unitTestsValidateCreate() {
 		ctx = nil
 	})
 
-	reqPath := field.NewPath("spec", "policies", "resources", "requests")
+	reqPath := field.NewPath("spec", "resources", "requests")
 	invalidCPUField := field.Invalid(reqPath.Child("cpu"), "2Gi", "CPU request must not be larger than the CPU limit")
 	invalidMemField := field.Invalid(reqPath.Child("memory"), "2Gi", "memory request must not be larger than the memory limit")
 	DescribeTable("create table", validateCreate,
@@ -159,18 +160,18 @@ func unitTestsValidateUpdate() {
 		var err error
 
 		if args.changeHwCPU {
-			ctx.vmClass.Spec.Hardware.Cpus = 64
+			ctx.vmClass.Spec.Resources.Size.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("64"))}
 		}
 		if args.changeHwMemory {
-			ctx.vmClass.Spec.Hardware.Memory = resource.MustParse("5Gi")
+			ctx.vmClass.Spec.Resources.Size.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("5Gi"))}
 		}
 		if args.changeCPU {
-			ctx.vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("5Gi")
-			ctx.vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("10Gi")
+			ctx.vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("5Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("10Gi"))}
 		}
 		if args.changeMemory {
-			ctx.vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("5Gi")
-			ctx.vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("10Gi")
+			ctx.vmClass.Spec.Resources.Requests.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("5Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("10Gi"))}
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmClass)

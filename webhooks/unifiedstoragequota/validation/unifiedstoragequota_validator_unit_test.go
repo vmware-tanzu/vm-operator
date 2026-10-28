@@ -713,16 +713,13 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 						Namespace: dummyNamespaceName,
 					},
 					Spec: vmopv1.VirtualMachineClassSpec{
-						Hardware: vmopv1.VirtualMachineClassHardware{
-							Cpus:   int64(2),
-							Memory: resource.MustParse("4Gi"),
-						},
+						Resources: vmopv1.VirtualMachineClassResources{Size: vmopv1.VirtualMachineClassResourceSpec{CPU: &vmopv1.ResourceQuantityRange{Default: resource.NewQuantity(2, resource.DecimalSI)}, Memory: &vmopv1.ResourceQuantityRange{Default: resource.NewQuantity(4*1024*1024*1024, resource.BinarySI)}}},
 					},
 				}
 				classConfigSpec = vimtypes.VirtualMachineConfigSpec{
 					Name:     builder.DummyClassName,
-					NumCPUs:  int32(vmClass.Spec.Hardware.Cpus),
-					MemoryMB: virtualmachine.MemoryQuantityToMb(vmClass.Spec.Hardware.Memory),
+					NumCPUs:  int32(vmClass.Spec.Resources.Size.CPU.Default.Value()),
+					MemoryMB: virtualmachine.MemoryQuantityToMb(*vmClass.Spec.Resources.Size.Memory.Default),
 				}
 				rawConfigSpec, err = json.Marshal(classConfigSpec)
 				Expect(err).NotTo(HaveOccurred())

@@ -7,12 +7,18 @@ package mutation_test
 import (
 	"testing"
 
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
+	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
+
 	. "github.com/onsi/ginkgo/v2"
 
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
 )
+
+var admissionVMProvider = providerfake.NewVMProvider()
 
 // suite is used for unit and integration testing this webhook.
 var suite = builder.NewTestSuiteForMutatingWebhookWithContext(
@@ -26,7 +32,10 @@ var suite = builder.NewTestSuiteForMutatingWebhookWithContext(
 			},
 			PodNamespace: "default",
 		}),
-	mutation.AddToManager,
+	func(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+		ctx.VMProvider = admissionVMProvider
+		return mutation.AddToManager(ctx, mgr)
+	},
 	mutation.NewMutator,
 	"default.mutating.virtualmachine.v1alpha6.vmoperator.vmware.com")
 

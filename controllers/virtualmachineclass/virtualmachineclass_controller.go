@@ -134,41 +134,39 @@ func (r *Reconciler) ReconcileNormal(vmClassCtx *pkgctx.VirtualMachineClassConte
 	return nil
 }
 
-// TODO: copied from pkg/providers/vsphere/vmlifecycle/bootstrap.go.
-func getVimTypeHash(obj vimtypes.AnyType) (string, error) {
-	data, err := json.Marshal(obj)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal vim type to json: %w", err)
-	}
-	h := xxhash.New()
-	if _, err := h.Write(data); err != nil {
-		return "", fmt.Errorf("failed to write vim type to hash: %w", err)
-	}
-	out := h.Sum(nil)
-	return fmt.Sprintf("%x", out), nil
-}
-
-// vmClassHash returns a hash of the VM Class Reserved + VirtualMachineConfigSpec.
+// vmClassHash returns a hash of the VM Class configuration that determines the
+// VM instance configuration.
 func vmClassHash(ctx *pkgctx.VirtualMachineClassContext, class *vmopv1.VirtualMachineClass) (string, error) {
-	if len(class.Spec.ConfigSpec) == 0 {
-		// wcpsvc is expected to always set configSpec when creating a VM class.
-		return "", fmt.Errorf("%s configSpec is nil", class.Name)
-	}
-
-	spec, err := vsphere.GetVMClassConfigSpec(ctx, class.Spec.ConfigSpec)
-	if err != nil {
-		return "", err
+	var configSpec vimtypes.VirtualMachineConfigSpec
+	if len(class.Spec.ConfigSpec) > 0 {
+		var err error
+		configSpec, err = vsphere.GetVMClassConfigSpec(ctx, class.Spec.ConfigSpec)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	data := struct {
-		Reserved bool                              `json:"reserved"`
-		Spec     vimtypes.VirtualMachineConfigSpec `json:"spec"`
+		ConfigSpec        vimtypes.VirtualMachineConfigSpec   `json:"configSpec"`
+		Hardware          vmopv1.VirtualMachineClassHardware  `json:"hardware"`
+		Resources         vmopv1.VirtualMachineClassResources `json:"resources"`
+		ReservedProfileID string                              `json:"reservedProfileID,omitempty"`
 	}{
-		class.Spec.ReservedProfileID != "",
-		spec,
+		configSpec,
+		class.Spec.Hardware,
+		class.Spec.Resources,
+		class.Spec.ReservedProfileID,
 	}
 
-	return getVimTypeHash(data)
+	b, err := json.Marshal(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal VM Class config to JSON: %w", err)
+	}
+	h := xxhash.New()
+	if _, err := h.Write(b); err != nil {
+		return "", fmt.Errorf("failed to write VM Class config to hash: %w", err)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 // reconcileInstance creates a VirtualMachineClassInstance for the

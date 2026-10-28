@@ -124,17 +124,17 @@ func vmCreateTests() {
 			Expect(o.Summary.Runtime.PowerState).To(Equal(vimtypes.VirtualMachinePowerStatePoweredOn))
 		})
 
-		vmClassRes := &vmClass.Spec.Policies.Resources
+		vmClassRes := &vmClass.Spec.Resources
 
 		By("has expected CpuAllocation", func() {
 			Expect(o.Config.CpuAllocation).ToNot(BeNil())
 
 			reservation := o.Config.CpuAllocation.Reservation
 			Expect(reservation).ToNot(BeNil())
-			Expect(*reservation).To(Equal(virtualmachine.CPUQuantityToMhz(vmClassRes.Requests.Cpu, vcsimCPUFreq)))
+			Expect(*reservation).To(Equal(virtualmachine.CPUQuantityToMhz(*vmClassRes.Requests.CPU.Default, vcsimCPUFreq)))
 			limit := o.Config.CpuAllocation.Limit
 			Expect(limit).ToNot(BeNil())
-			Expect(*limit).To(Equal(virtualmachine.CPUQuantityToMhz(vmClassRes.Limits.Cpu, vcsimCPUFreq)))
+			Expect(*limit).To(Equal(virtualmachine.CPUQuantityToMhz(*vmClassRes.Limits.CPU.Default, vcsimCPUFreq)))
 		})
 
 		By("has expected MemoryAllocation", func() {
@@ -142,15 +142,15 @@ func vmCreateTests() {
 
 			reservation := o.Config.MemoryAllocation.Reservation
 			Expect(reservation).ToNot(BeNil())
-			Expect(*reservation).To(Equal(virtualmachine.MemoryQuantityToMb(vmClassRes.Requests.Memory)))
+			Expect(*reservation).To(Equal(virtualmachine.MemoryQuantityToMb(*vmClassRes.Requests.Memory.Default)))
 			limit := o.Config.MemoryAllocation.Limit
 			Expect(limit).ToNot(BeNil())
-			Expect(*limit).To(Equal(virtualmachine.MemoryQuantityToMb(vmClassRes.Limits.Memory)))
+			Expect(*limit).To(Equal(virtualmachine.MemoryQuantityToMb(*vmClassRes.Limits.Memory.Default)))
 		})
 
 		By("has expected hardware config", func() {
-			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Resources.Size.CPU.Default.Value()))
+			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Resources.Size.Memory.Default.Value() / 1024 / 1024))
 		})
 
 		By("has expected backup ExtraConfig key", func() {

@@ -6,6 +6,7 @@ package v1alpha2_test
 
 import (
 	"encoding/json"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"reflect"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -74,9 +75,19 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 		BeforeEach(func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
-				Hub:    &vmopv1.VirtualMachineClass{},
-				Spoke:  &vmopv1a2.VirtualMachineClass{},
-				FuzzerFuncs: []fuzzer.FuzzerFuncs{
+				HubAfterMutation: func(h ctrlconversion.Hub) {
+					if m := h.(metav1.Object); len(m.GetAnnotations()) == 0 {
+						m.SetAnnotations(nil)
+					}
+				},
+				SpokeAfterMutation: func(h ctrlconversion.Convertible) {
+					if m := h.(metav1.Object); len(m.GetAnnotations()) == 0 {
+						m.SetAnnotations(nil)
+					}
+				},
+				Hub:   &vmopv1.VirtualMachineClass{},
+				Spoke: &vmopv1a2.VirtualMachineClass{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{fuzztests.ClassPolicyFuzzerFuncs,
 					overrideVirtualMachineFieldsFuncs,
 				},
 			}

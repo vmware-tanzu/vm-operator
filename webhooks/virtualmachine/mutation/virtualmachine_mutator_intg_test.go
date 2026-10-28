@@ -5,6 +5,8 @@
 package mutation_test
 
 import (
+	"context"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -80,6 +82,37 @@ func intgTestsMutating() {
 		Expect(ctx.Client.Delete(ctx, img)).To(Succeed())
 		img = nil
 		ctx = nil
+	})
+
+	Context("class resource defaults", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(suite, func(c *pkgcfg.Config) { c.Features.TelcoVMServiceAPI = true })
+			admissionVMProvider.GetVirtualMachineClassResourcesFn = func(_ context.Context, spec vmopv1.VirtualMachineClassSpec) (*vmopv1.VirtualMachineResourcesSpec, error) {
+				return &vmopv1.VirtualMachineResourcesSpec{Size: &vmopv1.VirtualMachineResourceQuantity{CPU: spec.Resources.Size.CPU.Default, Memory: spec.Resources.Size.Memory.Default}}, nil
+			}
+		})
+		AfterEach(func() {
+			pkgcfg.SetContext(suite, func(c *pkgcfg.Config) { c.Features.TelcoVMServiceAPI = false })
+			admissionVMProvider.GetVirtualMachineClassResourcesFn = nil
+		})
+		It("persists class-owned size through API-server admission", func() {
+			testCtx := ctx
+			class := builder.DummyVirtualMachineClassGenName()
+			class.Namespace = ctx.Namespace
+			class.Spec.Resources.Size.CPU = &vmopv1.ResourceQuantityRange{Default: resource.NewQuantity(2, resource.DecimalSI)}
+			class.Spec.Resources.Size.Memory = &vmopv1.ResourceQuantityRange{Default: resource.NewQuantity(2*1024*1024*1024, resource.BinarySI)}
+			Expect(ctx.Client.Create(ctx, class)).To(Succeed())
+			DeferCleanup(func() { Expect(testCtx.Client.Delete(testCtx, class)).To(Succeed()) })
+			ctx.vm.Spec.ClassName = class.Name
+			ctx.vm.Spec.Resources = nil
+			Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			DeferCleanup(func() { Expect(testCtx.Client.Delete(testCtx, testCtx.vm)).To(Succeed()) })
+			actual := &vmopv1.VirtualMachine{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), actual)).To(Succeed())
+			Expect(actual.Spec.Resources).NotTo(BeNil())
+			Expect(actual.Spec.Resources.Size.CPU.Value()).To(Equal(int64(2)))
+			Expect(actual.Spec.Resources.Size.Memory.Value()).To(Equal(int64(2 * 1024 * 1024 * 1024)))
+		})
 	})
 
 	Describe("mutate", func() {

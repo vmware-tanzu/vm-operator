@@ -2649,19 +2649,13 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	// TODO: This is a partial dupe of what's done in the update path in the remaining Session code. I got
 	// tired of trying to keep that in sync so we get to live with a frankenstein thing longer.
 
-	var configSpec vimtypes.VirtualMachineConfigSpec
-	if rawConfigSpec := createArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
-		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
-		if err != nil {
-			return err
-		}
-		configSpec = vmClassConfigSpec
-	} else {
-		configSpec = virtualmachine.ConfigSpecFromVMClassDevices(&createArgs.VMClass.Spec)
+	configSpec, err := virtualmachine.ClassConfigSpecFromClassSpec(vmCtx, &createArgs.VMClass.Spec)
+	if err != nil {
+		return err
 	}
 
 	var minCPUFreq uint64
-	if res := createArgs.VMClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+	if hasCPUResourceDefaults(createArgs.VMClass.Spec.Resources) {
 		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
 		if err != nil {
 			return err
@@ -2786,6 +2780,18 @@ func NormalizeVAppConfigExpressionProperties(configSpec *vimtypes.VirtualMachine
 			}
 		}
 	}
+}
+
+func hasCPUResourceDefaults(resources vmopv1.VirtualMachineClassResources) bool {
+	for _, valueRange := range []*vmopv1.ResourceQuantityRange{
+		resources.Requests.CPU,
+		resources.Limits.CPU,
+	} {
+		if valueRange != nil && valueRange.Default != nil && !valueRange.Default.IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpecImage(
@@ -3361,7 +3367,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	})
 	updateArgs.ExtraConfig = ecMap
 
-	if res := updateArgs.VMClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+	if hasCPUResourceDefaults(updateArgs.VMClass.Spec.Resources) {
 		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
 		if err != nil {
 			return nil, err
@@ -3369,13 +3375,9 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		updateArgs.MinCPUFreq = freq
 	}
 
-	var configSpec vimtypes.VirtualMachineConfigSpec
-	if rawConfigSpec := updateArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
-		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
-		if err != nil {
-			return nil, err
-		}
-		configSpec = vmClassConfigSpec
+	configSpec, err := virtualmachine.ClassConfigSpecFromClassSpec(vmCtx, &updateArgs.VMClass.Spec)
+	if err != nil {
+		return nil, err
 	}
 
 	updateArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
@@ -3427,7 +3429,7 @@ func (vs *vSphereVMProvider) vmResizeGetArgs(
 	if resizeArgs.VMClass != nil {
 		var minCPUFreq uint64
 
-		if res := resizeArgs.VMClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+		if hasCPUResourceDefaults(resizeArgs.VMClass.Spec.Resources) {
 			freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
 			if err != nil {
 				return nil, err
@@ -3435,13 +3437,9 @@ func (vs *vSphereVMProvider) vmResizeGetArgs(
 			minCPUFreq = freq
 		}
 
-		var configSpec vimtypes.VirtualMachineConfigSpec
-		if rawConfigSpec := resizeArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
-			vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
-			if err != nil {
-				return nil, err
-			}
-			configSpec = vmClassConfigSpec
+		configSpec, err := virtualmachine.ClassConfigSpecFromClassSpec(vmCtx, &resizeArgs.VMClass.Spec)
+		if err != nil {
+			return nil, err
 		}
 
 		resizeArgs.ConfigSpec = virtualmachine.CreateConfigSpec(

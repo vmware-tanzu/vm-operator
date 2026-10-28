@@ -148,8 +148,8 @@ func vmStorageTests() {
 				// loophole is no longer in place because the FSS for
 				// VM Class as Config was removed, and we now rely on
 				// the deploy call to set the correct CPU/memory.
-				// Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-				// Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+				// Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Resources.Size.CPU.Default.Value()))
+				// Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Resources.Size.Memory.Default.Value() / 1024 / 1024))
 			})
 
 			// TODO: More assertions!

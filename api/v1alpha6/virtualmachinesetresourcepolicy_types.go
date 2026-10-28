@@ -5,8 +5,19 @@
 package v1alpha6
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// VirtualMachineResourceSpec describes scalar resource-pool allocations.
+type VirtualMachineResourceSpec struct {
+	// Cpu is the CPU allocation.
+	// +optional
+	Cpu resource.Quantity `json:"cpu,omitempty"` //nolint:revive
+	// Memory is the memory allocation.
+	// +optional
+	Memory resource.Quantity `json:"memory,omitempty"`
+}
 
 // ResourcePoolSpec defines a Logical Grouping of workloads that share resource
 // policies.

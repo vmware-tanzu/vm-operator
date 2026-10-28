@@ -953,6 +953,26 @@ func GetVirtualMachinePublishRequestSourceName(ctx context.Context, config *conf
 	return vmPubSourceName, nil
 }
 
+// GetVirtualMachinePublishRequestImageName returns the name of the
+// VirtualMachineImage realized from the item the publish request uploaded,
+// as recorded in status.imageName. The controller sets this by matching the
+// image's providerItemID to the uploaded item's ID, so unlike a lookup by
+// display name it cannot resolve to another image that shares the target
+// item name, e.g. an item published to a different library by an earlier spec.
+func GetVirtualMachinePublishRequestImageName(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmPubName string) string {
+	var imageName string
+
+	Eventually(func(g Gomega) {
+		vmPub, err := utils.GetVirtualMachinePublishRequest(ctx, svClusterClient, ns, vmPubName)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		imageName = vmPub.Status.ImageName
+		g.Expect(imageName).ToNot(BeEmpty())
+	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-condition")...).Should(Succeed(), "failed to get vmpub %s image name", vmPubName)
+
+	return imageName
+}
+
 func GetVirtualMachinePublishRequestTargetItemName(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmPubName string) (string, error) {
 	var vmPubTargetItemName string
 

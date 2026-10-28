@@ -10,7 +10,7 @@ The technical design is WIKI page 3118085463 and its child pages (full schema, v
 
 ## Summary
 
-Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `governs`, zones, `externalID` and reserved profiles; enforce governance in the class and VM webhooks; report compatibility and compliance from the class and VM controllers; filter placement by governance; add the mapping markers the provider's class API is generated from; remove `VirtualMachineConfigPolicy`. The provider's work is listed under "Provider work". All of it is behind the Flex VM Classes capability until the enablement story. Milestone 2 adds `parentClassRefs` behind a second capability.
+Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `governs`, zones, `externalID` and reserved profiles; enforce governance in the class and VM webhooks; report compatibility and compliance from the class and VM controllers; filter placement by governance; add the mapping markers the provider's class API is generated from; remove `VirtualMachineConfigPolicy`. The provider's work is listed under "Provider work". All of it is behind the `vm_service_classless_vm` capability until the enablement story. Milestone 2 adds `parentClassRefs` behind a second capability.
 
 ## Technical context
 
@@ -20,7 +20,7 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 | API | `vmoperator.vmware.com/v1alpha6` (hub, reshaped in place: it exists only on main, and the 9.1 release ends at v1alpha5); conversion from v1alpha1–v1alpha5 |
 | Inputs | `ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions` from spec 001 |
 | Testing | Ginkgo/Gomega; envtest for CRD, CEL and conversion behavior; vcsim; E2E on a Supervisor in the quarantined capability pipeline |
-| Feature gate | The `vm_service_classless_vm` Supervisor capability (vmop-4313); Milestone 2 adds the Tenant VM Classes capability (vmop-4339), which depends on it |
+| Feature gate | `vm_service_classless_vm`, read as `pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM` (vmop-4313), replaces both previous capability keys and feature flags; Milestone 2 adds the Tenant VM Classes capability (vmop-4339), which depends on it |
 | Provider | Class and namespace APIs, class API generation and drift checks, reserved profile publication, capability advertisement, Supervisor integration; tracked in the provider's spec (tasks.md T910–T916) |
 
 ## Constitution check
@@ -34,7 +34,7 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 - [ ] **Controllers modify only status (deviation).** The VM reconciler writes VM spec in three places: the same-class resize rewrite, schema upgrade, and the re-default after a class change. Precedent: `pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go`. The spec patch is a separate write with an optimistic lock, not part of the deferred patch helper, so a concurrent user edit fails with a conflict and is retried. Recorded in "Complexity tracking".
 - [ ] **Status.** `observedGeneration` and `Ready` on the class; per-zone conditions in `status.zones`.
 - [ ] **Fan-in writes.** `Zone.status.governingClasses` is written by one controller from many classes: patch with an optimistic lock and skip unchanged writes.
-- [ ] **Feature flags.** Every new behavior checks the capability through `pkgcfg.FromContext(ctx)`. v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the Flex VM Classes capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement); toggling it takes effect without a restart.
+- [ ] **Feature flags.** Every new behavior checks `pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM`. v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the `vm_service_classless_vm` capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement); toggling it takes effect without a restart.
 - [ ] **E2E.** Every user-visible behavior ships with E2E coverage in the same story, in the quarantined capability pipeline until enablement.
 - [ ] **Public repo.** No internal links or ticket IDs other than `vmop-NNN` and `WIKI page NNN`.
 
@@ -56,7 +56,7 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 | Placement | `pkg/providers/vsphere/placement` |
 | Zone mirror controller | `controllers/infra/zone` |
 | Environment browser | `controllers/vim/*`, `controllers/virtualmachineconfigoptions`, `config/rbac` |
-| Removal | `external/vim/api/v1alpha1/virtualmachine_config_policy_types.go`, `config/crd/external-crds`, `controllers/infra/zone`, `config/rbac`, `pkg/config` (`Features.VirtualMachineConfigPolicy`), `test/e2e/vmservice/vmservice/configpolicy` |
+| Removal | `external/vim/api/v1alpha1/virtualmachine_config_policy_types.go`, `config/crd/external-crds`, `controllers/infra/zone`, `config/rbac`, `test/e2e/vmservice/vmservice/configpolicy` |
 | E2E | `test/e2e/vmservice/` suites, labeled for the quarantined capability pipeline |
 | Docs | `docs/` |
 
@@ -126,8 +126,6 @@ Tracked in the provider's spec and listed in tasks.md as dependency tasks T910�
 - E2E ships inside each story, in the quarantined capability pipeline (vmop-4314); the enablement story (vmop-4337) takes it out of quarantine after a full sweep.
 
 ## Rollout
-
-- Replace `supports_telco_vm_service_api` and `supports_vm_service_vm_config_policy` with `vm_service_classless_vm` in VM Operator and the Supervisor capability catalog. The new key drives both existing `TelcoVMServiceAPI` and `VirtualMachineConfigPolicy` feature states while policy removal is pending. The Supervisor retemplate step passes both manifest options from that one capability, and the affected E2E suites check the same key.
 
 - Existing classes convert with no manual step; no class governs until an admin adds `governs`, so behavior doesn't change on upgrade.
 - The capability stays off until vmop-4337. vm-operator turns flex behavior on only when the provider advertises the capability, which it does once its contract is met (spec, "Provider contract"); the Supervisor model choice is on WIKI page 3119061412.

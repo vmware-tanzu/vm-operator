@@ -40,9 +40,9 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ## Phase 1 — API, upgrade and capability (vmop-4038)
 
-### Story — Flex VM Classes capability (vmop-4313)
+### Story — `vm_service_classless_vm` capability (vmop-4313)
 
-- [ ] T100 [US12] [vmop-4313] Merge `supports_telco_vm_service_api` and `supports_vm_service_vm_config_policy` into `vm_service_classless_vm` in VM Operator and the Supervisor capability catalog, update manifest gating and E2E capability checks, and gate every new behavior on it; v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the Flex VM Classes capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement); toggling it on or off takes effect without a restart (test both directions) — `pkg/config/capabilities`, `pkg/config`
+- [ ] T100 [US12] [vmop-4313] Replace the Telco and configuration-policy capability keys with `vm_service_classless_vm` and their internal feature flags with `Features.VMServiceClasslessVM`; update every caller, manifest gate, and E2E capability check to use the shared gate; v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the `vm_service_classless_vm` capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement); toggling it on or off takes effect without a restart (test both directions) — `pkg/config/capabilities`, `pkg/config`
 
 ### Story — Quarantined capability pipeline (vmop-4314)
 
@@ -73,7 +73,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 ### Story — Remove VirtualMachineConfigPolicy (vmop-4318)
 
 - [ ] T111 [P] [US11] [vmop-4318] Remove the `Zone` controller's policy fan-out and its tests — `controllers/infra/zone/zone_controller.go`, `zone_controller_test.go`
-- [ ] T112 [P] [US11] [vmop-4318] Remove the policy types, CRD and feature flag — `external/vim/api/v1alpha1/virtualmachine_config_policy_types.go`, `config/crd/external-crds/`, the embedded CRD list, `Features.VirtualMachineConfigPolicy` in `pkg/config`
+- [ ] T112 [P] [US11] [vmop-4318] Remove the policy types and CRD; retain the shared `Features.VMServiceClasslessVM` gate for classless VMs and the environment-browser pipeline — `external/vim/api/v1alpha1/virtualmachine_config_policy_types.go`, `config/crd/external-crds/`, the embedded CRD list
 - [ ] T113 [P] [US11] [vmop-4318] Remove the `virtualmachineconfigpolicies` RBAC rules — `config/rbac/role.yaml` (from markers)
 - [ ] T114 [US11] [vmop-4318] E2E: remove the policy assertions, keep the environment-browser specs, and assert no policy exists after upgrade — `test/e2e/vmservice/vmservice/configpolicy/`
 
@@ -198,7 +198,7 @@ Depends on the provider's reserved profile publication (T910).
 
 ### Story — Tenant VM Classes capability (vmop-4339)
 
-- [ ] T600 [US13] [vmop-4339] A second capability that requires the Flex VM Classes capability
+- [ ] T600 [US13] [vmop-4339] A second capability that requires the `vm_service_classless_vm` capability
 
 ### Story — Parent class references (vmop-4340)
 
@@ -226,7 +226,7 @@ Depends on the provider's reserved profile publication (T910).
 Dependency tasks; vm-operator does not implement them. What vm-operator assumes from them is in spec.md, "Provider contract".
 
 - [ ] T910 [US10] [vmop-TBD] Publish a namespaced `VirtualMachineReservedProfile` per profile with its shape and per-zone counts, backfilled for existing allocations before the capability is enabled. Blocks vmop-4334 and T505
-- [ ] T911 [US12] [vmop-TBD] Advertise the Flex VM Classes capability once T910 and T914 hold. Blocks T505
+- [ ] T911 [US12] [vmop-TBD] Advertise the `vm_service_classless_vm` capability once T910 and T914 hold. Blocks T505
 - [ ] T912 [US9] [vmop-4327] The per-Supervisor v2 class API. Depends on T103 and T307 (through T915)
 - [ ] T913 [US9/US10] [vmop-4328] The older class API (rejects writes to v1alpha6 classes per T304, keeps today's block on classes with capacity, reports the schema version) and the namespace API with per-class zones; reserved profiles built from a flex class's defaults
 - [ ] T914 [US9] [vmop-4329] Supervisor and namespace-copy integration: copy classes through v1alpha6 with unset and `[]` zones kept apart, report rejected copies; end-to-end E2E of a class written through the v2 API

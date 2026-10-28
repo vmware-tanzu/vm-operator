@@ -31,9 +31,9 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/kubernetes/test/e2e/framework"
 
@@ -1776,59 +1776,19 @@ func NewESXConfigFromEnv() *ESXConfig {
 	}
 }
 
-// kubeCreateAlreadyExists returns true if kubectl "create" failed only because the object already exists.
-func kubeCreateAlreadyExists(stderr []byte) bool {
-	s := string(stderr)
-	return strings.Contains(s, "AlreadyExists") || strings.Contains(s, "already exists")
-}
-
-// runKubectlCreateWithRetry runs a kubectl create Command, retrying with exponential backoff
-// on transient failures (e.g. a dropped connection to the supervisor API server). Without this,
-// a single blip during SetupClusterRoleBindings aborts SynchronizedBeforeSuite and fails the
-// entire e2e run before a single spec has executed, forcing a full pipeline-level retry instead
-// of a cheap in-process one. Stops retrying as soon as the command succeeds or fails with
-// AlreadyExists, since the caller treats that as a non-fatal, already-satisfied outcome.
-func runKubectlCreateWithRetry(ctx context.Context, cmd *e2eframework.Command) (stderr []byte, err error) {
-	backoff := wait.Backoff{
-		Steps:    5,
-		Duration: 5 * time.Second,
-		Factor:   2,
-		Jitter:   0.1,
-	}
-
-	if pollErr := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
-		_, stderr, err = cmd.Run(ctx)
-		if err == nil || kubeCreateAlreadyExists(stderr) {
-			return true, nil
-		}
-		framework.Logf("kubectl create failed, retrying: %v\nstderr: %s", err, string(stderr))
-		return false, nil
-	}); pollErr != nil && err == nil {
-		// The command never got to run at all (e.g. context canceled before the first attempt).
-		err = pollErr
-	}
-
-	return stderr, err
-}
-
-// SetupClusterRoleBindings creates the necessary cluster role bindings for vm-operator e2e tests.
-// This replaces the Python logic from roles_helper.py that was called by gce2e_prerequisite.py.
-// It SSHes into the supervisor control plane as root to run kubectl with admin.conf, exactly as
-// the Python script did with run_cmd_vc on the supervisor control plane IP.
+// SetupClusterRoleBindings creates the shared cluster roles and bindings for E2E tests.
 func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error {
 	ctx := context.TODO()
-
 	e2eframework.Byf("Setting up cluster role bindings for e2e tests")
-
-	// Get an admin cluster proxy that uses /etc/kubernetes/admin.conf from the control plane VM,
-	// giving the cluster-admin privileges.
 	adminProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get admin cluster proxy: %w", err)
 	}
 	defer adminProxy.Dispose(ctx)
-
-	// Define the custom roles needed for e2e testing (from roles_helper.py)
+	adminClient, err := adminProxy.GetAdminClient()
+	if err != nil {
+		return fmt.Errorf("failed to get admin client for RBAC setup: %w", err)
+	}
 	customRoles := []RBACRole{
 		{
 			Name:     "gce2e-crds",
@@ -1856,155 +1816,70 @@ func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error 
 		},
 	}
 
-	kubeconfigPath := adminProxy.GetKubeconfigPath()
-
-	// 1. Create cluster-admin binding for cluster-administrator@vsphere.local (best effort)
-	clusterAdminArgs := []string{
-		"--kubeconfig", kubeconfigPath,
-		"--insecure-skip-tls-verify",
-		"create", "clusterrolebinding", "cluster-administrator:cluster-admin",
-		"--user", "sso:cluster-administrator@vsphere.local",
-		"--clusterrole", "cluster-admin",
+	// Create the shared cluster-administrator binding on a best-effort basis.
+	clusterAdminBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-administrator:cluster-admin"},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: "cluster-admin"},
+		Subjects:   []rbacv1.Subject{{APIGroup: rbacv1.GroupName, Kind: "User", Name: "sso:cluster-administrator@vsphere.local"}},
 	}
-	clusterAdminCmd := e2eframework.NewCommand(
-		e2eframework.WithCommand("kubectl"),
-		e2eframework.WithArgs(clusterAdminArgs...),
-	)
-
-	_, _, err = clusterAdminCmd.Run(ctx)
-	if err != nil {
-		// This is best effort - may already exist
-		framework.Logf("Info: cluster-admin binding may already exist: %v", err)
+	if err := adminClient.Create(ctx, clusterAdminBinding); err != nil && !apierrors.IsAlreadyExists(err) {
+		framework.Logf("Info: failed to create cluster-admin binding: %v", err)
 	}
 
-	// 2. Create custom cluster roles and bindings for Administrator@vsphere.local
 	for _, role := range customRoles {
-		// Create the cluster role
-		createRoleArgs := []string{
-			"--kubeconfig", kubeconfigPath,
-			"--insecure-skip-tls-verify",
-			"create", "clusterrole", role.Name,
-			"--verb", role.Verbs,
-			"--resource", role.Resource + "." + role.APIGroup,
+		clusterRole := &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: role.Name},
+			Rules:      []rbacv1.PolicyRule{{APIGroups: []string{role.APIGroup}, Resources: []string{role.Resource}, Verbs: strings.Split(role.Verbs, ",")}},
 		}
-		createRoleCmd := e2eframework.NewCommand(
-			e2eframework.WithCommand("kubectl"),
-			e2eframework.WithArgs(createRoleArgs...),
-		)
-
-		stderr, err := runKubectlCreateWithRetry(ctx, createRoleCmd)
-		if err != nil {
-			if kubeCreateAlreadyExists(stderr) {
-				framework.Logf("Info: cluster role %q already exists, skipping create", role.Name)
-			} else {
-				return fmt.Errorf("failed to create cluster role %s: %w\nstderr: %s", role.Name, err, string(stderr))
-			}
+		if err := adminClient.Create(ctx, clusterRole); err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create cluster role %s: %w", role.Name, err)
 		}
-
-		// Create the cluster role binding
-		createBindingArgs := []string{
-			"--kubeconfig", kubeconfigPath,
-			"--insecure-skip-tls-verify",
-			"create", "clusterrolebinding", role.Name,
-			"--user", "sso:Administrator@vsphere.local",
-			"--clusterrole", role.Name,
+		clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: role.Name},
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: role.Name},
+			Subjects:   []rbacv1.Subject{{APIGroup: rbacv1.GroupName, Kind: "User", Name: "sso:Administrator@vsphere.local"}},
 		}
-		createBindingCmd := e2eframework.NewCommand(
-			e2eframework.WithCommand("kubectl"),
-			e2eframework.WithArgs(createBindingArgs...),
-		)
-
-		stderr, err = runKubectlCreateWithRetry(ctx, createBindingCmd)
-		if err != nil {
-			if kubeCreateAlreadyExists(stderr) {
-				framework.Logf("Info: cluster role binding %q already exists, skipping create", role.Name)
-			} else {
-				return fmt.Errorf("failed to create cluster role binding %s: %w\nstderr: %s", role.Name, err, string(stderr))
-			}
+		if err := adminClient.Create(ctx, clusterRoleBinding); err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create cluster role binding %s: %w", role.Name, err)
 		}
 	}
-
 	framework.Logf("Successfully set up cluster role bindings for e2e tests")
-
 	return nil
 }
 
-// CleanupClusterRoleBindings removes the cluster role bindings created by SetupClusterRoleBindings.
-// This can be called in test cleanup to avoid leaving test artifacts behind.
+// CleanupClusterRoleBindings removes the shared E2E roles and bindings on a best-effort basis.
 func CleanupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error {
 	ctx := context.TODO()
-
 	e2eframework.Byf("Cleaning up cluster role bindings for e2e tests")
-
-	// Use admin proxy with /etc/kubernetes/admin.conf for elevated privileges.
 	adminProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get admin cluster proxy: %w", err)
 	}
 	defer adminProxy.Dispose(ctx)
-
-	// Define the same custom roles for cleanup
-	customRoles := []RBACRole{
-		{Name: "gce2e-crds"},
-		{Name: "gce2e-cns-batch-attachments"},
-		{Name: "gce2e-cns-unregister-volumes"},
-		{Name: "gce2e-import-operations"},
-	}
-
-	kubeconfigPath := adminProxy.GetKubeconfigPath()
-
-	// Remove cluster-admin binding (best effort)
-	deleteClusterAdminArgs := []string{
-		"--kubeconfig", kubeconfigPath,
-		"--insecure-skip-tls-verify",
-		"delete", "clusterrolebinding", "cluster-administrator:cluster-admin",
-	}
-	deleteClusterAdminCmd := e2eframework.NewCommand(
-		e2eframework.WithCommand("kubectl"),
-		e2eframework.WithArgs(deleteClusterAdminArgs...),
-	)
-
-	_, _, err = deleteClusterAdminCmd.Run(ctx)
+	adminClient, err := adminProxy.GetAdminClient()
 	if err != nil {
-		framework.Logf("Warning: Failed to delete cluster-admin binding: %v", err)
+		return fmt.Errorf("failed to get admin client for RBAC cleanup: %w", err)
 	}
-
-	// Remove custom cluster roles and bindings
-	for _, role := range customRoles {
-		// Delete the cluster role binding
-		deleteBindingArgs := []string{
-			"--kubeconfig", kubeconfigPath,
-			"--insecure-skip-tls-verify",
-			"delete", "clusterrolebinding", role.Name,
+	clusterAdminBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-administrator:cluster-admin"},
+	}
+	if err := adminClient.Delete(ctx, clusterAdminBinding); err != nil && !apierrors.IsNotFound(err) {
+		framework.Logf("Warning: failed to delete cluster-admin binding: %v", err)
+	}
+	for _, name := range []string{
+		"gce2e-crds",
+		"gce2e-cns-batch-attachments",
+		"gce2e-cns-unregister-volumes",
+		"gce2e-import-operations",
+	} {
+		clusterRoleBinding := &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		if err := adminClient.Delete(ctx, clusterRoleBinding); err != nil && !apierrors.IsNotFound(err) {
+			framework.Logf("Warning: failed to delete cluster role binding %s: %v", name, err)
 		}
-		deleteBindingCmd := e2eframework.NewCommand(
-			e2eframework.WithCommand("kubectl"),
-			e2eframework.WithArgs(deleteBindingArgs...),
-		)
-
-		_, _, err := deleteBindingCmd.Run(ctx)
-		if err != nil {
-			framework.Logf("Warning: Failed to delete cluster role binding %s: %v", role.Name, err)
-		}
-
-		// Delete the cluster role
-		deleteRoleArgs := []string{
-			"--kubeconfig", kubeconfigPath,
-			"--insecure-skip-tls-verify",
-			"delete", "clusterrole", role.Name,
-		}
-		deleteRoleCmd := e2eframework.NewCommand(
-			e2eframework.WithCommand("kubectl"),
-			e2eframework.WithArgs(deleteRoleArgs...),
-		)
-
-		_, _, err = deleteRoleCmd.Run(ctx)
-		if err != nil {
-			framework.Logf("Warning: Failed to delete cluster role %s: %v", role.Name, err)
+		clusterRole := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		if err := adminClient.Delete(ctx, clusterRole); err != nil && !apierrors.IsNotFound(err) {
+			framework.Logf("Warning: failed to delete cluster role %s: %v", name, err)
 		}
 	}
-
-	framework.Logf("Successfully cleaned up cluster role bindings for e2e tests")
-
 	return nil
 }

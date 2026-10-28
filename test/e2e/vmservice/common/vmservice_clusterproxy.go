@@ -1,10 +1,8 @@
 package common
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -136,79 +134,6 @@ func NewVMServiceClusterProxy(name string, kubeconfigPath string, scheme *runtim
 	}
 
 	return proxy
-}
-
-// Create wraps `kubectl create` and prints the output so we can see what gets created to the cluster.
-// Overrides the embedded WCPClusterProxy.Create so this also gets the retry behavior of CreateWithArgs.
-func (p *VMServiceClusterProxy) Create(ctx context.Context, resources []byte) error {
-	return p.CreateWithArgs(ctx, resources)
-}
-
-// CreateWithArgs wraps `kubectl create ...` and prints the output so we can see what gets created to
-// the cluster. resources may contain multiple "---"-separated YAML documents; each is split out and
-// created (and retried) independently, so a benign AlreadyExists on one document can't mask a real
-// failure on another -- see the comment on kubectlCreateAlreadySucceeded. It retries on transient
-// connectivity errors (e.g. the conversion webhook being briefly unreachable); see
-// retryKubectlOnTransientError for the retry and classification rules.
-func (p *VMServiceClusterProxy) CreateWithArgs(ctx context.Context, resources []byte, args ...string) error {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Create")
-	Expect(resources).NotTo(BeEmpty(), "resources is required for Create")
-
-	docs, err := splitYAMLDocuments(resources)
-	if err != nil {
-		return fmt.Errorf("failed to split resources into YAML documents: %w", err)
-	}
-
-	for _, doc := range docs {
-		stdout, stderr, err := retryKubectlOnTransientError(ctx, "create", kubectlCreateAlreadySucceeded,
-			func() ([]byte, []byte, error) {
-				return framework.KubectlCreateRawWithArgs(ctx, p.GetKubeconfigPath(), doc, p.args(args)...)
-			})
-		if err != nil {
-			fmt.Println(string(stderr))
-			return fmt.Errorf("%w: %s", err, string(stderr))
-		}
-
-		fmt.Println(string(stdout))
-	}
-
-	return nil
-}
-
-// splitYAMLDocuments splits resources into its individual "---"-separated YAML documents, dropping any
-// documents that are empty or contain only whitespace/comments.
-func splitYAMLDocuments(resources []byte) ([][]byte, error) {
-	reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(resources)))
-
-	var docs [][]byte
-
-	for {
-		doc, err := reader.Read()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		if len(bytes.TrimSpace(doc)) == 0 {
-			continue
-		}
-
-		docs = append(docs, doc)
-	}
-
-	return docs, nil
-}
-
-// CreateRawWithArgs is the non-retrying counterpart to CreateWithArgs: it returns stdout/stderr/err
-// as-is from a single attempt, for callers that need to inspect an expected failure (e.g. asserting
-// on a specific admission error message) rather than have it retried away.
-func (p *VMServiceClusterProxy) CreateRawWithArgs(ctx context.Context, resources []byte, args ...string) ([]byte, []byte, error) {
-	Expect(ctx).NotTo(BeNil(), "ctx is required for Create")
-	Expect(resources).NotTo(BeEmpty(), "resources is required for Create")
-
-	return framework.KubectlCreateRawWithArgs(ctx, p.GetKubeconfigPath(), resources, p.args(args)...)
 }
 
 // Delete wraps `kubectl delete` and prints the output so we can see what gets deleted from the cluster.

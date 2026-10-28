@@ -29,7 +29,7 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 - [x] T010 [S1.a] [PR #1649 / vmop-3747] Add `CapabilityKeyVMServiceClasslessVM = "vm_service_classless_vm"` constant — `pkg/config/capabilities/capabilities.go`
 - [x] T011 [S1.a] [PR #1649 / vmop-3747 + PR #1667 / vmop-3748] Wire feature gate check — vim.vmware.com scheme registered in `pkg/manager/manager.go` only when capability enabled; `controllers/vim/controllers.go` stub added with kubebuilder RBAC markers
-- [ ] T012 [S1.a] [vmop-3746] Gate the future `ConfigTarget`-based VM admission check on `Features.FlexVMClasses` — `webhooks/virtualmachine/validation/`. This check is not implemented on main; the existing discovery webhook registration in `webhooks/webhooks.go` is already gated. Complete with T114, not as part of policy removal.
+- [ ] T012 [S1.a] [vmop-3746] Gate the future `ConfigTarget`-based VM admission check on `Features.VMServiceClasslessVM` — `webhooks/virtualmachine/validation/`. This check is not implemented on main; the existing discovery webhook registration in `webhooks/webhooks.go` is already gated. Complete with T114, not as part of policy removal.
 - [x] T013 [S1.a] [PR #1649 / vmop-3747] Unit tests for capability gate logic — `pkg/config/capabilities/capabilities_test.go`
 - [x] T014 [S1.b] [PR #1667 / vmop-3748] Install the three environment-browser CRDs (`ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions`) via `config/crd/external-crds/` in the Supervisor chart; the originally installed policy CRD is removed by vmop-4318
 - [x] T015a [S1.b] [PR #1667 / vmop-3748] Extend `config/rbac/role.yaml` with get/list/watch on `zones`
@@ -60,7 +60,7 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 - [x] T060 [S5.a] [PR #1711 / vmop-3757] Author `webhooks/configtarget/validation/configtarget_validator.go` — immutable spec.id; valid cluster MoID format for metadata.name
 - [ ] T061 [S5.a] [PR #1711 / vmop-3757 — webhook half only] Register ConfigTarget webhook in `controllers/controllers.go` and `webhooks/` suite files
-- [x] T061a [S5.a] Register ConfigTarget controller in `controllers/controllers.go`, gated on `Features.FlexVMClasses`
+- [x] T061a [S5.a] Register ConfigTarget controller in `controllers/controllers.go`, gated on `Features.VMServiceClasslessVM`
 - [x] T062 [S5.a] [PR #1711 / vmop-3757] Unit and integration tests — `webhooks/configtarget/validation/configtarget_validator_unit_test.go`, `configtarget_validator_intg_test.go`
 - [x] T063 [S5.b] Author `controllers/configtarget/configtarget_controller.go` — cluster-scope path: QueryConfigTarget + QueryConfigOptionDescriptor; populate status; fan out VirtualMachineConfigOptions
 - [x] T064 [S5.b] Add `GetVirtualMachineConfigTarget` (QueryConfigTarget + QueryConfigOptionDescriptor) — implemented directly on `pkg/providers/vsphere/vmprovider.go` (see note below) instead of a new `environment_browser.go` file

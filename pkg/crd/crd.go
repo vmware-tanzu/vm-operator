@@ -233,7 +233,7 @@ func Install( //nolint:gocyclo
 					obj *unstructured.Unstructured,
 					shouldRemoveFields bool) error {
 
-					if !features.TelcoVMServiceAPI {
+					if !features.VMServiceClasslessVM {
 						if err := removeFields(
 							ctx,
 							k,
@@ -390,7 +390,7 @@ func Install( //nolint:gocyclo
 						}
 					}
 
-					if !features.TelcoVMServiceAPI {
+					if !features.VMServiceClasslessVM {
 						if err := removeFields(
 							ctx,
 							k,
@@ -534,7 +534,7 @@ func Install( //nolint:gocyclo
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				features.FlexVMClasses,
+				features.VMServiceClasslessVM,
 				c,
 				k,
 				nil); err != nil {

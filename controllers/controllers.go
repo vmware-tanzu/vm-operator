@@ -100,7 +100,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.FlexVMClasses {
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		// ConfigTarget fans out VirtualMachineConfigOptions, so it's
 		// registered first.
 		if err := configtarget.AddToManager(ctx, mgr); err != nil {

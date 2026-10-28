@@ -331,8 +331,7 @@ func updateCapabilitiesFeaturesFromCRD(
 		case CapabilityKeyVlanSubinterface:
 			fs.VMVlanSubinterface = capStatus.Activated
 		case CapabilityKeyVMServiceClasslessVM:
-			fs.TelcoVMServiceAPI = capStatus.Activated
-			fs.VirtualMachineConfigPolicy = capStatus.Activated
+			fs.VMServiceClasslessVM = capStatus.Activated
 		case CapabilityKeyPerNamespaceNetworkProvider:
 			fs.PerNamespaceNetworkProvider = capStatus.Activated
 		case CapabilityKeyWorkloadIPv6:

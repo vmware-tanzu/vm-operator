@@ -20,7 +20,7 @@ Introduce a Kubernetes-native pipeline that:
 2. Materializes that discovery as a set of cluster-scoped CRDs: `ConfigTarget`, `VirtualMachineConfigOptions`, and `VirtualMachineGuestOptions`. There is no per-host CRD; all per-host data is aggregated onto `ConfigTarget.status`.
 3. Checks hardware-version feasibility at VM admission via `ConfigTarget.status.maxHardwareVersion` (remaining admission work is tracked separately).
 
-The whole pipeline shares the `vm_service_classless_vm` Supervisor capability with the Telco VM Service APIs (vmop-4313). This disabled-by-default capability replaces `vm_service_classless_vm` and `supports_telco_vm_service_api`; activating or deactivating it updates both feature states together. The retired keys alone do not enable either feature.
+The whole pipeline shares the `vm_service_classless_vm` Supervisor capability with the Telco VM Service APIs (vmop-4313). This disabled-by-default capability replaces `supports_vm_service_vm_config_policy` and `supports_telco_vm_service_api`; activating or deactivating it updates the shared classless VM feature state. The retired keys alone do not enable the feature.
 
 ---
 

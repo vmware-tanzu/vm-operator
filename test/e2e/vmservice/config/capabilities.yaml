@@ -1,6 +1,9 @@
 ---
 # Capabilities for cayman-vm-operator to enable through the UTS workload for E2E tests.
 capabilities:
-  - supports_vm_service_vm_config_policy
-  - supports_telco_vm_service_api
-  - supports_infrapolicy_vm_evacuation
+  - capability: supports_telco_vm_service_api
+    alias: telcovmsvc
+  - capability: supports_vm_service_k8s_workload_mgmt_api
+    alias: k8sworkload
+  - capability: supports_vm_service_vm_config_policy
+    alias: configpolicy

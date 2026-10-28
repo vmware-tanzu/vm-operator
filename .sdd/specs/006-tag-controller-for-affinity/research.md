@@ -62,11 +62,11 @@ if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
 ctx = vmconfig.Register(ctx, bootoptions.New())
 ```
 
-That registry has exactly one consumer — the `OnResult` loop in `pkg/providers/vsphere/session/session_vm_update.go:136`, itself gated on `Features.BringYourOwnEncryptionKey || Features.TelcoVMServiceAPI`:
+That registry has exactly one consumer — the `OnResult` loop in `pkg/providers/vsphere/session/session_vm_update.go:136`, itself gated on `Features.BringYourOwnEncryptionKey || Features.VMServiceClasslessVM`:
 
 ```go
 features := pkgcfg.FromContext(vmCtx).Features
-if features.BringYourOwnEncryptionKey || features.TelcoVMServiceAPI {
+if features.BringYourOwnEncryptionKey || features.VMServiceClasslessVM {
     for _, r := range vmconfig.FromContext(vmCtx) {
         if err := r.OnResult(vmCtx, vmCtx.VM, vmCtx.MoVM, updateErr); err != nil {
 ```

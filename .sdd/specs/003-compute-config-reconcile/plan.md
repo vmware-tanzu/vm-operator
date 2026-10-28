@@ -30,10 +30,10 @@ Implement the compute configuration surface described in `spec.md` within the `g
 
 Three independent boolean flags interact here:
 
-- `pkgcfg.Features.TelcoVMServiceAPI` gates the entire compute surface — whether `OverwriteSpecComputeConfig` runs at all, and whether the webhook accepts `spec.resources`/`cpuAdvanced`/`memoryAdvanced` in the first place. Externally this is the `supports_telco_vm_service_api` Supervisor capability.
+- `pkgcfg.Features.VMServiceClasslessVM` gates the entire compute surface — whether `OverwriteSpecComputeConfig` runs at all, and whether the webhook accepts `spec.resources`/`cpuAdvanced`/`memoryAdvanced` in the first place. Externally this is the `vm_service_classless_vm` Supervisor capability.
 - `pkgcfg.Features.VMResize` gates the *full* class-resize path (device changes included). When enabled, it takes precedence over `VMResizeCPUMemory` at every call site in `session_vm_update.go` — the two are mutually exclusive by construction (`if VMResize {...} else {... checks VMResizeCPUMemory ...}`), not independently combinable.
 - `pkgcfg.Features.VMResizeCPUMemory` gates the *narrow* CPU/memory-only resize path, and only takes effect when `VMResize` is disabled.
-- Regardless of which resize flag (if any) is active, `TelcoVMServiceAPI` independently decides whether the compute-specific sync/overwrite calls run within that path.
+- Regardless of which resize flag (if any) is active, `VMServiceClasslessVM` independently decides whether the compute-specific sync/overwrite calls run within that path.
 
 ---
 
@@ -88,7 +88,7 @@ pkg/util/vsphere/watcher/watcher.go      MODIFY — extend DefaultWatchedPropert
 
 webhooks/virtualmachine/validation/virtualmachine_validator_compute.go
                                           NEW    — Go validation for the new fields (cross-field rules +
-                                                   the supports_telco_vm_service_api gate); simple structural
+                                                   the vm_service_classless_vm gate); simple structural
                                                    rules (vnumaNodeCount/coresPerSocket co-presence,
                                                    latencySensitivity enum) are CEL on the type instead
 
@@ -108,7 +108,7 @@ test/e2e/vmservice/vmservice/virtualmachine/
 
 ### Phase 1 — API surface (Foundations)
 
-1. Add `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` to `VirtualMachineSpec`, each optional and rejected outright by the webhook when `supports_telco_vm_service_api` is disabled.
+1. Add `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` to `VirtualMachineSpec`, each optional and rejected outright by the webhook when `vm_service_classless_vm` is disabled.
 2. Add `VirtualMachineConditionComputeConfigSynced`. Of its three reasons, only `ComputeConfigMismatch` is new — `PrerequisiteNotMet` and `PowerOffRequired` are pre-existing, generic "used on synced conditions" reason constants already shared by other conditions (e.g. `pkg/vmconfig/networkextraconfig`). Reuse the existing declarations; do not redeclare them.
 3. Regenerate deepcopy and CRD manifests.
 
@@ -132,7 +132,7 @@ test/e2e/vmservice/vmservice/virtualmachine/
 
    **Why the sync must run before `OverwriteSpecComputeConfig`**: the class is authoritative during a resize — `ResizeNeeded` firing means the user (or an automated policy) asked to move the VM onto a different class's compute shape. Without syncing first, `OverwriteSpecComputeConfig` would diff the *current* `vm.Spec` — which may still hold stale values from before the resize, or backfilled values from schema upgrade — against the live config. Because spec wins over class in the normal (non-resize) reconcile path, the resize's class-derived values would never make it into the `ConfigSpec` without this step. Syncing into spec first makes the class's intent visible to the same diff-and-apply function used for every other reconcile, so there is one code path for applying compute config, not two.
 
-   **Why the narrow path omits topology, hot-add flags, and latency sensitivity**: `VMResizeCPUMemory` is the narrower, earlier resize feature, scoped explicitly to CPU count, memory size, and their host-level allocations — that is the resize contract it was designed for, and this plan does not widen it. Topology (`coresPerSocket`/`vnumaNodeCount`), hot-add flags, and `latencySensitivity` are newer surface introduced under `supports_telco_vm_service_api`; pulling them into a CPU/memory-only resize would silently change fields the user never asked that narrower resize to touch. As noted under "Feature gates" above, `VMResize` and `VMResizeCPUMemory` are mutually exclusive by construction, so the narrow path's limited scope only ever applies when `VMResize` is off.
+   **Why the narrow path omits topology, hot-add flags, and latency sensitivity**: `VMResizeCPUMemory` is the narrower, earlier resize feature, scoped explicitly to CPU count, memory size, and their host-level allocations — that is the resize contract it was designed for, and this plan does not widen it. Topology (`coresPerSocket`/`vnumaNodeCount`), hot-add flags, and `latencySensitivity` are newer surface introduced under `vm_service_classless_vm`; pulling them into a CPU/memory-only resize would silently change fields the user never asked that narrower resize to touch. As noted under "Feature gates" above, `VMResize` and `VMResizeCPUMemory` are mutually exclusive by construction, so the narrow path's limited scope only ever applies when `VMResize` is off.
 3. Wire both `OverwriteSpecComputeConfig` and the class-sync calls into `session_vm_update.go` (powered-off, powered-on, and both resize entry points — see Diagrams A-D in `spec.md`).
 4. Add the schema-upgrade backfill in `pkg/providers/vsphere/upgrade/virtualmachine/backfill/compute.go`, populating only fields the DevOps user has not already set.
 5. Extend `DefaultWatchedPropertyPaths` in `watcher.go`.
@@ -156,7 +156,7 @@ default:
 
 ### Phase 4 — Webhook validation
 
-Implement `validateComputeConfig` and its sub-validators in `virtualmachine_validator_compute.go`: the `supports_telco_vm_service_api` gate, resource ordering (including the `-1` unlimited sentinel and its interaction with the ordering checks), `reservationLockedToMax` mutual exclusion, `latencySensitivity` full-reservation requirement, vNUMA topology co-presence, and the UPTv2 memory-reservation requirement. Every rule is enumerated in `model.md`. The `vnumaNodeCount`/`coresPerSocket` co-presence rule and the `latencySensitivity` enum are expressed as CEL directly on the CRD schema instead of Go, per `architectural-standards.md`.
+Implement `validateComputeConfig` and its sub-validators in `virtualmachine_validator_compute.go`: the `vm_service_classless_vm` gate, resource ordering (including the `-1` unlimited sentinel and its interaction with the ordering checks), `reservationLockedToMax` mutual exclusion, `latencySensitivity` full-reservation requirement, vNUMA topology co-presence, and the UPTv2 memory-reservation requirement. Every rule is enumerated in `model.md`. The `vnumaNodeCount`/`coresPerSocket` co-presence rule and the `latencySensitivity` enum are expressed as CEL directly on the CRD schema instead of Go, per `architectural-standards.md`.
 
 ### Phase 5 — Tests
 
@@ -214,4 +214,4 @@ Condition precedence (`PrerequisiteNotMet` > `PowerOffRequired` > `ComputeConfig
 | `VMResize` and `VMResizeCPUMemory` both enabled unexpectedly | Mutually exclusive by construction — `VMResize` always takes precedence, so behavior is deterministic even if both flags are set |
 | CRD schema drift between hand-written doc comments and generated manifests | `make generate-manifests` is run after every type/doc-comment change; manifests are never hand-edited |
 
-**Disable path**: set `supports_telco_vm_service_api` to `false` on the Supervisor. The webhook reverts to rejecting `spec.resources`/`cpuAdvanced`/`memoryAdvanced` outright; the schema-upgrade backfill stops running for VMs that haven't already been backfilled; existing values already written to a VM's spec are preserved but no longer reconciled against the live config until the capability is re-enabled.
+**Disable path**: set `vm_service_classless_vm` to `false` on the Supervisor. The webhook reverts to rejecting `spec.resources`/`cpuAdvanced`/`memoryAdvanced` outright; the schema-upgrade backfill stops running for VMs that haven't already been backfilled; existing values already written to a VM's spec are preserved but no longer reconciled against the live config until the capability is re-enabled.

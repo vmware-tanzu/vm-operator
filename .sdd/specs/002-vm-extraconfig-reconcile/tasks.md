@@ -20,7 +20,7 @@ against; no product-code task is included here.
 
 ## Phase 1 — Setup
 
-- [x] T001 [P] Add `TelcoVMServiceAPICapabilityName = "supports_telco_vm_service_api"` to `test/e2e/vmservice/consts/consts.go`
+- [x] T001 [P] Add `VMServiceClasslessVMCapabilityName = "vm_service_classless_vm"` to `test/e2e/vmservice/consts/consts.go`
 - [x] T002 [P] Add `default/wait-vm-extraconfig-synced` (`5m`/`10s`) interval to `test/e2e/vmservice/config/wcp.yaml`; power-state waits reuse the existing `default/wait-virtual-machine-powerstate` key
 
 ## Phase 2 — Foundational

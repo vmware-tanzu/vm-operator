@@ -7,7 +7,7 @@ This task list produces the E2E suite specified in `e2e.md`: coverage for per-NI
 
 ## Phase 1 — Setup
 
-- [x] T001 [P] Add `TelcoVMServiceAPICapabilityName = "supports_telco_vm_service_api"` to `test/e2e/vmservice/consts/consts.go` (skip if already added by a sibling PR for the `spec.advanced` VM-level ExtraConfig suite)
+- [x] T001 [P] Add `VMServiceClasslessVMCapabilityName = "vm_service_classless_vm"` to `test/e2e/vmservice/consts/consts.go` (skip if already added by a sibling PR for the `spec.advanced` VM-level ExtraConfig suite)
 - [x] T002 [P] Add `default/wait-vm-nic-extra-config-synced` (`5m`/`10s`) interval to `test/e2e/vmservice/config/wcp.yaml`; power-state waits reuse the existing `default/wait-virtual-machine-powerstate` interval
 
 ## Phase 2 — Foundational
@@ -34,7 +34,7 @@ This task list produces the E2E suite specified in `e2e.md`: coverage for per-NI
 
 ## Phase 6 — User Story: DeviceChange fields are gated by prerequisites and, when met, apply per their power-state mode
 
-- [x] T013 [US4] Add scenario: patch `uptv2Enabled=true` on a VM without `memoryAdvanced.reservationLockedToMax`, assert the patch is deterministically rejected at admission with the memory-reservation validation message (`validateUPTv2MemoryReservation` always runs under `TelcoVMServiceAPI`, so `PrerequisiteNotMet` is unreachable here), delete the VM; then create a second VM with `reservationLockedToMax=true`+`minHardwareVersion=20`, patch `uptv2Enabled=true`, and assert the condition reason is never `PrerequisiteNotMet` (`vm_nic_extra_config.go`)
+- [x] T013 [US4] Add scenario: patch `uptv2Enabled=true` on a VM without `memoryAdvanced.reservationLockedToMax`, assert the patch is deterministically rejected at admission with the memory-reservation validation message (`validateUPTv2MemoryReservation` always runs under `VMServiceClasslessVM`, so `PrerequisiteNotMet` is unreachable here), delete the VM; then create a second VM with `reservationLockedToMax=true`+`minHardwareVersion=20`, patch `uptv2Enabled=true`, and assert the condition reason is never `PrerequisiteNotMet` (`vm_nic_extra_config.go`)
 - [x] T014 [P] [US4] Add scenario: patch `vnumaNodeID=1` on a VM with `minHardwareVersion=20`+`vnumaNodeCount=2` but no EFI firmware, assert `NetworkConfigSynced=False/PrerequisiteNotMet` and assert the condition `Message` contains `"EFI firmware required"`, delete the VM; then create a second VM with `minHardwareVersion=20`+`bootOptions.firmware=EFI`+`cpuAdvanced.topology.vnumaNodeCount=2`+`cpuAdvanced.topology.coresPerSocket=1`, patch `vnumaNodeID=1` while powered on, assert `PowerOffRequired`, power off, assert `NetworkConfigSynced=True`, and independently verify via govmomi that the `VirtualVmxnet3` device's `NumaNode` equals `1` (`vm_nic_extra_config.go`)
 
 ## Phase 7 — Characterization: spec-level NIC reordering cross-wires ExtraConfig (known limitation)

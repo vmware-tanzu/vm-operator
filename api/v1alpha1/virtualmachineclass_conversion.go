@@ -60,13 +60,8 @@ func Convert_v1alpha1_VirtualMachineClassSpec_To_v1alpha6_VirtualMachineClassSpe
 	if err := autoConvert_v1alpha1_VirtualMachineClassSpec_To_v1alpha6_VirtualMachineClassSpec(in, out, s); err != nil {
 		return err
 	}
-	out.Resources.Size.CPU = vmopv1.FixedClassResource(*resource.NewQuantity(in.Hardware.Cpus, resource.DecimalSI))
-	out.Resources.Size.Memory = vmopv1.FixedClassResource(in.Hardware.Memory)
-	out.Resources.Requests.CPU = vmopv1.FixedClassResource(in.Policies.Resources.Requests.Cpu)
-	out.Resources.Requests.Memory = vmopv1.FixedClassResource(in.Policies.Resources.Requests.Memory)
-	out.Resources.Limits.CPU = vmopv1.FixedClassResource(in.Policies.Resources.Limits.Cpu)
-	out.Resources.Limits.Memory = vmopv1.FixedClassResource(in.Policies.Resources.Limits.Memory)
-	return nil
+	out.Resources.Size = vmopv1.FixedClassResourcePair(*resource.NewQuantity(in.Hardware.Cpus, resource.DecimalSI), in.Hardware.Memory)
+	return Convert_v1alpha1_VirtualMachineClassResources_To_v1alpha6_VirtualMachineClassResources(&in.Policies.Resources, &out.Resources, s)
 }
 
 // Convert_v1alpha6_VirtualMachineClassSpec_To_v1alpha1_VirtualMachineClassSpec projects class defaults into legacy fields.
@@ -74,14 +69,10 @@ func Convert_v1alpha6_VirtualMachineClassSpec_To_v1alpha1_VirtualMachineClassSpe
 	if err := autoConvert_v1alpha6_VirtualMachineClassSpec_To_v1alpha1_VirtualMachineClassSpec(in, out, s); err != nil {
 		return err
 	}
-	cpu := vmopv1.ClassResourceDefault(in.Resources.Size.CPU)
+	cpu, memory := vmopv1.ClassResourcePairDefaults(in.Resources.Size)
 	out.Hardware.Cpus = cpu.Value()
-	out.Hardware.Memory = vmopv1.ClassResourceDefault(in.Resources.Size.Memory)
-	out.Policies.Resources.Requests.Cpu = vmopv1.ClassResourceDefault(in.Resources.Requests.CPU)
-	out.Policies.Resources.Requests.Memory = vmopv1.ClassResourceDefault(in.Resources.Requests.Memory)
-	out.Policies.Resources.Limits.Cpu = vmopv1.ClassResourceDefault(in.Resources.Limits.CPU)
-	out.Policies.Resources.Limits.Memory = vmopv1.ClassResourceDefault(in.Resources.Limits.Memory)
-	return nil
+	out.Hardware.Memory = memory
+	return Convert_v1alpha6_VirtualMachineClassResources_To_v1alpha1_VirtualMachineClassResources(&in.Resources, &out.Policies.Resources, s)
 }
 
 // Convert_v1alpha1_VirtualMachineClassHardware_To_v1alpha6_VirtualMachineClassHardware converts hardware presets; resources are moved by the spec conversion.
@@ -95,33 +86,29 @@ func Convert_v1alpha6_VirtualMachineClassHardware_To_v1alpha1_VirtualMachineClas
 }
 
 // Convert_v1alpha1_VirtualMachineClassResources_To_v1alpha6_VirtualMachineClassResources converts legacy allocation quantities.
-func Convert_v1alpha1_VirtualMachineClassResources_To_v1alpha6_VirtualMachineClassResources(in *VirtualMachineClassResources, out *vmopv1.VirtualMachineClassResources, _ apiconversion.Scope) error {
-	out.Requests.CPU = vmopv1.FixedClassResource(in.Requests.Cpu)
-	out.Requests.Memory = vmopv1.FixedClassResource(in.Requests.Memory)
-	out.Limits.CPU = vmopv1.FixedClassResource(in.Limits.Cpu)
-	out.Limits.Memory = vmopv1.FixedClassResource(in.Limits.Memory)
-	return nil
+func Convert_v1alpha1_VirtualMachineClassResources_To_v1alpha6_VirtualMachineClassResources(in *VirtualMachineClassResources, out *vmopv1.VirtualMachineClassResources, s apiconversion.Scope) error {
+	if err := Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec(&in.Requests, &out.Requests, s); err != nil {
+		return err
+	}
+	return Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec(&in.Limits, &out.Limits, s)
 }
 
 // Convert_v1alpha6_VirtualMachineClassResources_To_v1alpha1_VirtualMachineClassResources projects allocation defaults.
-func Convert_v1alpha6_VirtualMachineClassResources_To_v1alpha1_VirtualMachineClassResources(in *vmopv1.VirtualMachineClassResources, out *VirtualMachineClassResources, _ apiconversion.Scope) error {
-	out.Requests.Cpu = vmopv1.ClassResourceDefault(in.Requests.CPU)
-	out.Requests.Memory = vmopv1.ClassResourceDefault(in.Requests.Memory)
-	out.Limits.Cpu = vmopv1.ClassResourceDefault(in.Limits.CPU)
-	out.Limits.Memory = vmopv1.ClassResourceDefault(in.Limits.Memory)
-	return nil
+func Convert_v1alpha6_VirtualMachineClassResources_To_v1alpha1_VirtualMachineClassResources(in *vmopv1.VirtualMachineClassResources, out *VirtualMachineClassResources, s apiconversion.Scope) error {
+	if err := Convert_v1alpha6_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
+		return err
+	}
+	return Convert_v1alpha6_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s)
 }
 
 // Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec converts legacy allocations to fixed ranges.
 func Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec(in *VirtualMachineResourceSpec, out *vmopv1.VirtualMachineClassResourceSpec, _ apiconversion.Scope) error {
-	out.CPU = vmopv1.FixedClassResource(in.Cpu)
-	out.Memory = vmopv1.FixedClassResource(in.Memory)
+	*out = vmopv1.FixedClassResourcePair(in.Cpu, in.Memory)
 	return nil
 }
 
 // Convert_v1alpha6_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineResourceSpec projects allocation defaults.
 func Convert_v1alpha6_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(in *vmopv1.VirtualMachineClassResourceSpec, out *VirtualMachineResourceSpec, _ apiconversion.Scope) error {
-	out.Cpu = vmopv1.ClassResourceDefault(in.CPU)
-	out.Memory = vmopv1.ClassResourceDefault(in.Memory)
+	out.Cpu, out.Memory = vmopv1.ClassResourcePairDefaults(*in)
 	return nil
 }

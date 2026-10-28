@@ -453,6 +453,64 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 
 })
 
+var _ = Describe("VMClass allocation conversions", Label("api"), func() {
+	for _, version := range []struct {
+		name         string
+		newResources func() any
+	}{
+		{"v1alpha1", func() any { return &vmopv1a1.VirtualMachineClassResources{} }},
+		{"v1alpha2", func() any { return &vmopv1a2.VirtualMachineClassResources{} }},
+		{"v1alpha3", func() any { return &vmopv1a3.VirtualMachineClassResources{} }},
+		{"v1alpha4", func() any { return &vmopv1a4.VirtualMachineClassResources{} }},
+		{"v1alpha5", func() any { return &vmopv1a5.VirtualMachineClassResources{} }},
+	} {
+		Context(version.name, func() {
+			It("updates allocations without replacing size and isolates quantity storage", func() {
+				scheme := runtime.NewScheme()
+				Expect(vmopv1a1.AddToScheme(scheme)).To(Succeed())
+				Expect(vmopv1a2.AddToScheme(scheme)).To(Succeed())
+				Expect(vmopv1a3.AddToScheme(scheme)).To(Succeed())
+				Expect(vmopv1a4.AddToScheme(scheme)).To(Succeed())
+				Expect(vmopv1a5.AddToScheme(scheme)).To(Succeed())
+				Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
+				spoke := version.newResources()
+				Expect(json.Unmarshal([]byte(`{"requests":{"cpu":"123456789012345678901234567890","memory":"1Gi"},"limits":{"cpu":"4","memory":"8Gi"}}`), spoke)).To(Succeed())
+				before, err := json.Marshal(spoke)
+				Expect(err).NotTo(HaveOccurred())
+				size := vmopv1.FixedClassResourcePair(resource.MustParse("7"), resource.MustParse("9Gi"))
+				hub := vmopv1.VirtualMachineClassResources{Size: *size.DeepCopy()}
+				Expect(scheme.Convert(spoke, &hub, nil)).To(Succeed())
+				Expect(hub.Size).To(Equal(size))
+				originalCPU := resource.MustParse("123456789012345678901234567890")
+				Expect(hub.Requests.CPU.Default.Cmp(originalCPU)).To(BeZero())
+				Expect(hub.Requests.Memory.Default.String()).To(Equal("1Gi"))
+				Expect(hub.Limits.CPU.Default.String()).To(Equal("4"))
+				Expect(hub.Limits.Memory.Default.String()).To(Equal("8Gi"))
+
+				projected := version.newResources()
+				Expect(scheme.Convert(&hub, projected, nil)).To(Succeed())
+				actual, err := json.Marshal(projected)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(actual).To(MatchJSON(before))
+				hub.Requests.CPU.Default.Add(resource.MustParse("1"))
+				Expect(hub.Requests.CPU.Min.Cmp(originalCPU)).To(BeZero())
+				Expect(hub.Requests.CPU.Max.Cmp(originalCPU)).To(BeZero())
+				var fromOriginal, fromProjected vmopv1.VirtualMachineClassResources
+				Expect(scheme.Convert(spoke, &fromOriginal, nil)).To(Succeed())
+				Expect(scheme.Convert(projected, &fromProjected, nil)).To(Succeed())
+				Expect(fromOriginal.Requests.CPU.Default.Cmp(originalCPU)).To(BeZero())
+				Expect(fromProjected.Requests.CPU.Default.Cmp(originalCPU)).To(BeZero())
+				actual, err = json.Marshal(spoke)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(actual).To(MatchJSON(before))
+				actual, err = json.Marshal(projected)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(actual).To(MatchJSON(before))
+			})
+		})
+	}
+})
+
 func classWithPolicies() *vmopv1.VirtualMachineClass {
 	minimum, maximum, def := resource.MustParse("2"), resource.MustParse("16"), resource.MustParse("4")
 	memory := resource.MustParse("4Gi")

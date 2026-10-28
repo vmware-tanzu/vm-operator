@@ -342,6 +342,19 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				Expect(hub.Annotations).NotTo(HaveKey(utilconversion.AnnotationKey))
 			})
 
+			It("copies metadata before preserving class policies", func() {
+				hub := classWithPolicies()
+				hub.Annotations = map[string]string{"user": "keep"}
+				hub.Labels = map[string]string{"user": "keep"}
+				before := hub.DeepCopy()
+				spoke := version.newSpoke()
+				Expect(spoke.ConvertFrom(hub)).To(Succeed())
+				Expect(hub).To(Equal(before))
+				spoke.(metav1.Object).GetLabels()["user"] = "changed"
+				spoke.(metav1.Object).GetAnnotations()["user"] = "changed"
+				Expect(hub).To(Equal(before))
+			})
+
 			It("honors older-writer edits without discarding other policies", func() {
 				hub := classWithPolicies()
 				spoke := version.newSpoke()
@@ -399,14 +412,45 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 		Expect(restored.Items[0].Spec).To(Equal(hub.Items[0].Spec))
 	})
 
-	It("preserves immutable class instance policies", func() {
-		hub := &vmopv1.VirtualMachineClassInstance{Spec: vmopv1.VirtualMachineClassInstanceSpec{VirtualMachineClassSpec: classWithPolicies().Spec}}
-		var spoke vmopv1a5.VirtualMachineClassInstance
-		Expect(spoke.ConvertFrom(hub)).To(Succeed())
-		var restored vmopv1.VirtualMachineClassInstance
-		Expect(spoke.ConvertTo(&restored)).To(Succeed())
-		Expect(restored.Spec).To(Equal(hub.Spec))
-	})
+	for _, version := range []struct {
+		name     string
+		newSpoke func() ctrlconversion.Convertible
+	}{
+		{"v1alpha4", func() ctrlconversion.Convertible { return &vmopv1a4.VirtualMachineClassInstance{} }},
+		{"v1alpha5", func() ctrlconversion.Convertible { return &vmopv1a5.VirtualMachineClassInstance{} }},
+	} {
+		Context(version.name+" class instances", func() {
+			It("preserves policies and isolates source metadata in both directions", func() {
+				hub := &vmopv1.VirtualMachineClassInstance{
+					ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"user": "keep"}, Labels: map[string]string{"user": "keep"}},
+					Spec:       vmopv1.VirtualMachineClassInstanceSpec{VirtualMachineClassSpec: classWithPolicies().Spec},
+				}
+				beforeHub := hub.DeepCopy()
+				spoke := version.newSpoke()
+				Expect(spoke.ConvertFrom(hub)).To(Succeed())
+				Expect(hub).To(Equal(beforeHub))
+				beforeSpoke := spoke.DeepCopyObject()
+				var restored vmopv1.VirtualMachineClassInstance
+				Expect(spoke.ConvertTo(&restored)).To(Succeed())
+				Expect(restored.Spec).To(Equal(hub.Spec))
+				Expect(restored.Annotations).NotTo(HaveKey(utilconversion.AnnotationKey))
+				restored.Labels["user"] = "changed"
+				restored.Annotations["user"] = "changed"
+				Expect(spoke).To(Equal(beforeSpoke))
+				spoke.(metav1.Object).GetLabels()["user"] = "changed"
+				spoke.(metav1.Object).GetAnnotations()["user"] = "changed"
+				Expect(hub).To(Equal(beforeHub))
+			})
+			It("returns malformed annotations without changing source metadata", func() {
+				spoke := version.newSpoke()
+				spoke.(metav1.Object).SetAnnotations(map[string]string{utilconversion.AnnotationKey: "{", "user": "keep"})
+				before := spoke.DeepCopyObject()
+				Expect(spoke.ConvertTo(&vmopv1.VirtualMachineClassInstance{})).To(MatchError(ContainSubstring("restore VMClassInstance conversion data")))
+				Expect(spoke).To(Equal(before))
+			})
+		})
+	}
+
 })
 
 func classWithPolicies() *vmopv1.VirtualMachineClass {

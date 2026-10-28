@@ -26,6 +26,11 @@ var sensitiveVarAssignmentPattern = regexp.MustCompile(`(?i)([\w-]*(?:password|s
 // so the value can be redacted before command output is logged.
 var sensitiveOutputLinePattern = regexp.MustCompile(`(?im)^([ \t]*(?:pwd|password|passwd)[ \t]*:[ \t]*)\S.*$`)
 
+// sensitiveJSONFieldPattern matches JSON string fields whose key is a password
+// or other secret (e.g. decryptK8Pwd.py --json prints "pwd": "<secret>"), so
+// the value can be redacted before command output is logged.
+var sensitiveJSONFieldPattern = regexp.MustCompile(`(?i)("[\w-]*(?:password|secret|pwd|passwd)[\w-]*"[ \t]*:[ \t]*)"(?:[^"\\]|\\.)*"`)
+
 // RedactSensitiveFlags returns a copy of cmd with the values of any
 // password- or secret-like flags replaced with '***'. It is safe to call
 // on any CLI command string before printing or logging it.
@@ -35,8 +40,10 @@ func RedactSensitiveFlags(cmd string) string {
 }
 
 // RedactSensitiveOutput returns a copy of output with the values of any
-// "pwd:"/"password:"/"passwd:" style lines replaced with '***'. It is safe
-// to call on any command output before printing or logging it.
+// "pwd:"/"password:"/"passwd:" style lines, and of any password- or
+// secret-like JSON string fields, replaced with '***'. It is safe to call on
+// any command output before printing or logging it.
 func RedactSensitiveOutput(output string) string {
-	return sensitiveOutputLinePattern.ReplaceAllString(output, "${1}***")
+	output = sensitiveOutputLinePattern.ReplaceAllString(output, "${1}***")
+	return sensitiveJSONFieldPattern.ReplaceAllString(output, `${1}"***"`)
 }

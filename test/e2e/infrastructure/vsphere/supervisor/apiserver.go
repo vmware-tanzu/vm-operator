@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"regexp"
 
 	"golang.org/x/crypto/ssh"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
@@ -23,6 +22,8 @@ import (
 
 const (
 	APIServerSSHPort = 22
+	// APIServerSSHUser is the SSH user for legacy Supervisor control plane VMs, used when vCenter does not
+	// report one.
 	APIServerSSHUser = "root"
 )
 
@@ -30,7 +31,8 @@ var (
 	managementAPIServerIP = os.Getenv("MANAGEMENT_API_SERVER_IP")
 )
 
-// GetAPIServerCommandRunner returns SSH command runner configured with the SV cluster API server as root user.
+// GetAPIServerCommandRunner returns SSH command runner configured with the SV cluster API server as the SSH user
+// reported by vCenter.
 func GetAPIServerCommandRunner(ctx context.Context, path string) (e2essh.SSHCommandRunner, error) {
 	apiServerURL := kubectl.GetKubectlClusterForCurrentContext(ctx, path)
 
@@ -73,7 +75,7 @@ type ControlPlaneVMConnectionDetails struct {
 	Password string
 }
 
-// GetControlPlaneVMConnectionDetails fetches the internal server IP and root credentials.
+// GetControlPlaneVMConnectionDetails fetches the internal server IP and SSH credentials.
 func GetControlPlaneVMConnectionDetails(ctx context.Context, path string, apiServerIP string) (ControlPlaneVMConnectionDetails, error) {
 	vCenterHostname := vcenter.GetVCPNIDFromKubeconfig(ctx, path)
 	e2eframework.Logf("VC: %s", vCenterHostname)
@@ -114,30 +116,12 @@ func GetControlPlaneVMConnectionDetails(ctx context.Context, path string, apiSer
 		return ControlPlaneVMConnectionDetails{}, fmt.Errorf("error getting ssh runner: %w", err)
 	}
 
-	cmd := "python3 /usr/lib/vmware-wcp/decryptK8Pwd.py"
-
-	out, err := vcSSHCommandRunner.RunCommand(cmd)
+	supervisors, err := getSupervisorPasswords(vcSSHCommandRunner)
 	if err != nil {
-		return ControlPlaneVMConnectionDetails{}, fmt.Errorf("error running command over ssh: %w", err)
+		return ControlPlaneVMConnectionDetails{}, err
 	}
 
-	// Dual-stack testbeds report this line as "IP: <ipv4>,<ipv6>" -- allow an
-	// optional ",<rest-of-line>" suffix after the IP we're matching so this
-	// still finds the entry on both single- and dual-stack testbeds.
-	re := regexp.MustCompile(fmt.Sprintf("IP:\\s*%s(?:,\\S*)?\\s*\\nPWD:\\s*(.*)\\n", regexp.QuoteMeta(managementAPIServerIP)))
-
-	matches := re.FindStringSubmatch(string(out))
-	if matches == nil {
-		return ControlPlaneVMConnectionDetails{}, fmt.Errorf("unable to find the api server info from output: %v", string(out))
-	}
-
-	apiServerPassword := matches[1]
-
-	return ControlPlaneVMConnectionDetails{
-		ManagementAPIServerIP: managementAPIServerIP,
-		Username:              APIServerSSHUser,
-		Password:              apiServerPassword,
-	}, nil
+	return supervisors.connectionDetails(managementAPIServerIP)
 }
 
 func GetSvAPIServerAsGateway(ctx context.Context, kubeconfigPath string) (*e2essh.Gateway, error) {

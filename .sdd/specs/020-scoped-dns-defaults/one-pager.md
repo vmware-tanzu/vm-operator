@@ -4,7 +4,7 @@
 |---|---|---|---|
 | TBD | TBD | TBD | vmop-4255 |
 
-**Status:** WIP. Rollout decisions, provider integration, and additional E2E coverage remain open.
+**Status:** WIP. The branch implements scoped DNS selection and provider-nameserver handling. SubnetPort DNS ingestion, provider migration, resolver validation, and validation of the E2E cases on a real Supervisor remain pending.
 
 **Draft PR:** [Implementation PR #2005](https://github.com/vmware-tanzu/vm-operator/pull/2005)
 
@@ -44,12 +44,12 @@ A Supervisor can be configured with cluster wide default DNS nameservers and sea
 - For Cloud-Init and Sysprep, apply VM-level nameservers only to static interfaces, filtered to their address families; apply Supervisor nameservers only to the primary interface, filtered to its gateway families.
 - Preserve explicit interface DNS and VM-level DNS ahead of Supervisor defaults. For per-interface nameservers, provider nameservers sit between interface-level and VM-level nameservers. LinuxPrep merges VM-level and provider nameservers in that order without duplicates. Providers do not supply search domains.
 - Set VM-level and default nameservers to Windows through the per-adapter GOSC fields it honors.
-- Keep already-configured VMs detected by the existing-guest markers on legacy behavior when the capability is activated, with an explicit per-VM override.
+- Keep already-configured VMs, detected by existing-guest markers or a powered-on state, on legacy behavior when the capability is activated, with an explicit per-VM override.
 
 ## Non Goals
 
 - New VM API fields, schema changes, or changes to which DNS fields admission accepts.
-- DHCP override support.
+- Adding new controls for accepting or overriding DHCP-provided DNS.
 - Per-adapter Sysprep search domains, or applying Supervisor search domains to LinuxPrep, Sysprep, or ordinary non-cluster Cloud-Init VMs.
 - DNS auto-records, PodVM proxies, ImageFetcher, and DNS conflict reporting.
 
@@ -65,6 +65,8 @@ The network provider supplies the initial addresses, gateways, and DHCP settings
 | VM search domains | Per-interface precedence; VM-level copy only to static interfaces | VM-level only | VM-level only |
 | Supervisor search domains | For VKS VMs only: primary interface when VM-level and interface search domains are empty | Not applied | Not applied |
 
+The first interface determines eligibility for Supervisor defaults; later interfaces are never promoted. Cloud-Init and Sysprep apply default nameservers there. LinuxPrep applies them globally, potentially overriding DHCP DNS on other interfaces.
+
 Nameservers and search domains fall back independently. A non-empty VM-level nameserver list prevents Supervisor nameserver fallback even when family filtering removes every entry.
 
 ## User Workflows
@@ -77,17 +79,30 @@ For a Windows VM, use VM-level nameservers for static adapters or interface-leve
 
 For LinuxPrep, set DNS at VM level. Linux customization only applies global lists, so any non-empty nameserver list also overrides DHCP on other interfaces. Example 9 shows this remaining limitation. A Linux VM with no bootstrap spec can add `spec.bootstrap.linuxPrep` to make VM-level DNS fields available to admission.
 
-With the scoped DNS capability enabled, VM Operator automatically pins each VM to a mode:
+## Mode selection and rollout
+
+VM Operator writes `vmoperator.vmware.com/dns-defaults` automatically; VKS does not need to manage it. With `supports_vm_service_scoped_dns_defaults` disabled, all VMs use legacy behavior and the annotation is untouched. Capability deactivation after enablement is not supported.
+
+With the capability enabled, the next bootstrap reconcile selects the mode:
 
 | VM state | Selected behavior | Annotation action |
 |---|---|---|
-| no mode, existing-guest marker present | Legacy | Set `legacy` |
-| no mode, no existing-guest marker | Scoped | Set `scoped` |
+| no mode, existing-guest marker present or already powered on | Legacy | Set `legacy` |
+| no mode, no existing-guest marker and not powered on | Scoped | Set `scoped` |
 | mode `legacy` | Legacy | Retain it |
 | mode `scoped` | Scoped | Retain it |
 | unknown non-empty mode | Legacy | Retain it |
 
-Users who can edit a VM can add, change, or remove `vmoperator.vmware.com/dns-defaults` without privileged-account status. Set `legacy` to select the prior behavior or `scoped` to select scoped behavior. Removing or clearing the annotation resets automatic selection: the next bootstrap reconcile writes `legacy` when existing-guest markers are present and `scoped` otherwise. Changing a VM's pinned mode can change its bootstrap hash and guest configuration.
+Existing-guest markers are the bootstrap hash, `first-boot-done`, `restored-vm`, `imported-vm`, and `failed-over-vm` annotations. Users who can edit a VM can select either mode without privileged-account status. Removing or clearing the annotation reruns automatic selection; it does not permanently opt out of pinning. An intentional mode change can change bootstrap hashes and guest configuration.
+
+Legacy output remains unchanged, so capability activation alone does not change the bootstrap hash of a VM pinned to legacy. User or network changes can still trigger normal bootstrap updates. During VKS node replacement, clusters can contain both legacy and scoped DNS layouts.
+
+The release note should call out:
+
+- Only the first interface gets the Supervisor defaults, and only when it has a static IP address and a gateway. The default nameservers are filtered to the IP families it has a gateway for.
+- Cloud-Init no longer copies `spec.network.nameservers` or `spec.network.searchDomains` to DHCP or NoIPAM interfaces. Set them on the interface instead.
+- Sysprep now applies `spec.network.nameservers` to each static adapter, filtered to the adapter's IP families.
+
 
 ## Architecture Areas
 
@@ -131,28 +146,12 @@ No network bootstrap engine means vAppConfig only, bootstrap disabled, or no eff
 
 Bootstrap templates continue to use `.Net.Nameservers`. It is the VM-level list, with rolled-up interface/provider nameservers for LinuxPrep, falling back to the unfiltered Supervisor list when needed. Sysprep and vAppConfig template lists do not incorporate provider DNS or the per-adapter family filter. Scoped Sysprep and vAppConfig resolution can now read the ConfigMap even when every adapter has DNS, whereas legacy could leave the template list empty. Legacy template output remains unchanged. Example 19 contrasts status and template values.
 
-### Capability and mode selection
-
-The Supervisor capability is `supports_vm_service_scoped_dns_defaults`. Once enabled, it remains enabled. When bootstrap arguments are next resolved, automatic mode selection uses the bootstrap hash, `first-boot-done`, `restored-vm`, `imported-vm`, or `failed-over-vm` annotations as existing-guest markers.
-
-Pinning prevents capability activation from rewriting Cloud-Init guestinfo or re-customizing LinuxPrep and Sysprep VMs at their next power-on when `customizeAtNextPowerOn` is unset.
-
-### Compatibility and rollout
-
-- Because the prior behavior's output is unchanged, VMs pinned to it do not acquire a changed bootstrap hash merely from capability activation. Subsequent user or network changes can still cause normal bootstrap updates.
-- Multi-NIC VKS clusters will have a mix of DNS layouts during rollout: existing nodes keep the prior behavior and new nodes get the new one, until every node has been replaced.
-
-The release note should call out:
-
-- Only the first interface gets the Supervisor defaults, and only when it has a static IP address and a gateway. The default nameservers are filtered to the IP families it has a gateway for.
-- Cloud-Init no longer copies `spec.network.nameservers` or `spec.network.searchDomains` to DHCP or NoIPAM interfaces. Set them on the interface instead.
-- Sysprep now applies `spec.network.nameservers` to each static adapter, filtered to the adapter's IP families.
-
 ### Risks and open questions
 
-- Decide whether admission should warn when Cloud-Init VM-level DNS is accepted but all interfaces use DHCP (example 6).
-- Existing-guest detection may miss VMs upgraded from builds predating bootstrap hash annotations or powered on outside VM Operator. Consider whether a powered-on VM should also select `legacy`.
-- Interface status currently omits provider DNS when the interface has neither static nor DHCP IP configuration. Provider integration needs coverage for this case, especially NoIPAM.
+- **Provider precedence:** agreement with the upstream proposal remains open; see Supervisor DNS integration requirements below. The Big Picture table describes the implemented behavior.
+- **DHCP-only VKS nodes:** confirm that VKS/CAPV does not rely on VM-level DNS for these nodes, since scoped Cloud-Init does not apply it. Decide whether admission should warn (example 6).
+- **NoIPAM with explicit addresses:** the implementation excludes these interfaces from VM-level and Supervisor DNS. Decide whether they should qualify as static for Cloud-Init (example 16).
+- **Provider DNS status:** interface status omits DNS when there is neither static nor DHCP IP configuration. Provider integration needs coverage for this case, especially NoIPAM.
 
 ### Supervisor DNS integration requirements
 
@@ -162,30 +161,14 @@ The Supervisor DNS proposal (WIKI page 2485688854) requires the following work b
 |---|---|
 | Migration (WIKI page 2485688854, comment 2512616389) | Define migration for already-scoped VMs before SubnetPorts supply DNS. New provider values change their bootstrap and can trigger Cloud-Init guestinfo updates or GOSC re-customization. |
 | Resolver validation (WIKI page 2485688854, comment 3126531699) | Before each node switches to the VPC resolver, automated checks must verify required workload-name resolution, including forwarding to Supervisor workload DNS where needed. These checks remain VKS/NSX integration work. |
-| Precedence and DHCP (WIKI page 2485688854, comment 2517809043) | Agree on the contract with the upstream VM CR > DHCP > VPC resolver > Supervisor proposal. Current Cloud-Init/Sysprep behavior places provider nameservers ahead of VM-level nameservers. Cloud-Init adds them to DHCP DNS; Sysprep overrides DHCP per adapter; LinuxPrep overrides it globally. DHCP override support remains separate. |
+| Precedence and DHCP (WIKI page 2485688854, comment 2517809043) | Agree on the contract with the upstream VM CR > DHCP > VPC resolver > Supervisor proposal. Current Cloud-Init/Sysprep behavior places provider nameservers ahead of VM-level nameservers. Cloud-Init adds them to DHCP DNS; Sysprep overrides DHCP per adapter; LinuxPrep overrides it globally. New controls for accepting or overriding DHCP DNS remain separate. |
 | Provider integration (WIKI page 2485688854, comment 2912673119) | NSX Operator must publish resolver IPs for the VPC associated with each SubnetPort, and VM Operator must ingest them. Resolver reachability requires validation outside this bootstrap change. |
 
 ### Testing
 
-- Network unit tests cover interface/provider precedence, static and primary selection, address/gateway families, and ordered family filtering. Non-IP nameserver entries are preserved by the filter.
-- Bootstrap argument unit tests cover legacy/scoped modes, every existing-guest marker, unknown annotations, each bootstrap engine, DHCP/NoIPAM, VM-level DNS, cluster labels, provider-DNS rollup, and status/template separation.
-- Capability tests cover the feature mapping; webhook unit tests verify that non-privileged users can create a VM with either mode, add the annotation, change it in both directions, and remove it. Bootstrap tests cover automatic reselection after removal or clearing and explicit scoped selection on an existing guest.
-
-Current E2E coverage is capability-gated and `experimental`: Cloud-Init metadata/global status, LinuxPrep global status, and non-admin mode edits/removal with automatic legacy reselection. The following five scenarios extend coverage to fixed multi-NIC layouts and guest DNS, with the capability already enabled:
-
-| Scenario | Setup and essential assertions |
-|---|---|
-| Legacy and scoped VMs coexist | Create a Cloud-Init VM with `vmoperator.vmware.com/dns-defaults: legacy` and an equivalent VM without the annotation. Verify legacy output for the first VM and automatic `scoped` selection with scoped output for the second. Subsequent unchanged reconciles preserve each VM's mode, metadata, bootstrap hash, and guest DNS. |
-| Cloud-Init defaults on a multi-NIC VKS node | Two static interfaces, the first with an IPv4 gateway, no VM/interface/provider DNS, and mixed IPv4/IPv6 Supervisor nameservers. Only the first interface receives Supervisor nameservers and search domains, and only IPv4 nameservers survive filtering. |
-| Cloud-Init VM-level DNS preserves DHCP DNS | One IPv4 static interface and one DHCP interface; VM-level IPv4/IPv6 nameservers and search domains supplied. Only the static interface receives VM-level DNS, with nameservers filtered to IPv4. The DHCP interface retains its leased DNS, and neither interface receives Supervisor defaults. |
-| LinuxPrep respects the first interface | With DHCP first and static second, explicit LinuxPrep supplies no Supervisor nameservers and preserves DHCP DNS. With static first and DHCP second, implicit LinuxPrep applies Supervisor nameservers filtered to the first interface's gateway families globally, overriding DHCP DNS as expected. Neither variant receives Supervisor search domains. Both omit VM-level and provider DNS. |
-| Windows receives VM-level DNS | Sysprep with an IPv4 static adapter, a DHCP adapter, VM-level IPv4/IPv6 nameservers, and VM-level search domains. Windows uses only the IPv4 VM-level nameservers on the static adapter; the DHCP adapter retains its leased DNS. The GOSC global nameserver list is empty, and the global suffix list contains only the VM-level search domains. |
-
-Check guest resolver settings and resolution of a known name alongside generated netplan/GOSC configuration and corresponding global/interface DNS status. Use distinct, non-empty Supervisor, VM-level, and DHCP DNS inputs; IPv4 networking with mixed-family DNS inputs covers family filtering. The multi-NIC cases need a second workload network; Windows needs a suitable image and guest access.
-
-Retain the non-admin annotation test. Automatic pinning of existing VMs and the full precedence, family, RA, NoIPAM, and existing-guest marker combinations remain unit coverage. Capability activation against existing VMs can be exercised separately in upgrade testing.
-
-When SubnetPort ingestion lands, add an E2E proving that real `status.dnsResolverIPs` values reach a scoped Cloud-Init guest while VM-level search domains remain intact.
+- Unit tests cover mode selection (including the powered-on case and every existing-guest marker), capability mapping, annotation permissions, DNS precedence and family filtering, each bootstrap engine, DHCP/NoIPAM, and status/template separation.
+- E2E tests are capability-gated and `experimental`. They assert on the rendered Cloud-Init metadata and VM status, not on the guest. Coexistence of legacy and scoped VMs, VM-level and interface-level Cloud-Init DNS, LinuxPrep global DNS, and Sysprep per-adapter DNS run on every network provider, using two interfaces on the default network. The Sysprep case creates its own Windows VM and checks status without waiting for the guest to boot. Cases that need DHCP run on VPC only, where the test creates the Subnet. Non-admin mode edits and removal are also covered. [plan.md](./plan.md#e2e-coverage) has the scenarios.
+- Not covered by E2E: DHCP on VDS and NSX-T, Supervisor defaults for Sysprep, and guest resolver state. SubnetPort ingestion also needs a provider-path E2E. Capability activation against existing VMs can be exercised in upgrade testing.
 
 ## References
 
@@ -213,6 +196,8 @@ data:
   nameservers: "10.0.0.53 fd00::53"
   searchsuffixes: "corp.local"
 ```
+
+The non-empty `searchsuffixes` value is an example input, not a claim that Supervisor normally populates it. If the key is absent or empty, there are no Supervisor search domains to apply.
 
 Unless stated otherwise, the capability is activated and the VM has selected `scoped`. Interfaces shown with static addresses are on networks with IPAM, with DHCPv4, DHCPv6, and Router Advertisements disabled unless an example says otherwise. An address in the VM Spec alone does not establish this: provider addressing mode still matters. DHCP is shown the way it is usually configured, by the network: the interface's provider CR status reports it, either a NetOP `NetworkInterface` with `ipAssignmentMode: dhcp` or, in examples 10 and 13, a VPC `SubnetPort` with no address on a Subnet where DHCP is not deactivated. The examples don't set the VM Spec `dhcp4` and `dhcp6` fields, which override the provider's result. Provider-DNS examples 7, 10, 13, and 18 use synthetic `dnsResolverIPs` provider input; reading those values from SubnetPorts is a follow-up.
 
@@ -542,7 +527,7 @@ network:
         addresses: ["192.168.1.53"]
 ```
 
-The provider's nameservers take the place of interface-level nameservers on eth0, so eth0 doesn't get the VM-level nameservers. Setting `nameservers` on eth0 would override the provider's.
+eth0 sets no nameservers of its own, so the provider's `10.1.0.53` is used as its interface-level nameservers, and eth0 doesn't fall back to the VM-level `192.168.1.53`. eth1 has no provider nameservers, so it falls back to the VM-level list. Setting `nameservers` on eth0 would replace the provider's. Each interface resolves nameservers in the order interface, provider, VM-level, then Supervisor defaults. That order is still open against the upstream proposal; see Supervisor DNS integration requirements.
 
 - **Prior behavior**: provider DNS is ignored, and both interfaces get `192.168.1.53`.
 

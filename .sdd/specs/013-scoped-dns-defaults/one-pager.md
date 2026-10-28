@@ -542,7 +542,7 @@ network:
         addresses: ["192.168.1.53"]
 ```
 
-The provider's nameservers take the place of interface-level nameservers on eth0, so eth0 doesn't get the VM-level nameservers. Setting `nameservers` on eth0 would override the provider's.
+eth0 sets no nameservers of its own, so the provider's `10.1.0.53` is used as its interface-level nameservers, and eth0 doesn't fall back to the VM-level `192.168.1.53`. eth1 has no provider nameservers, so it falls back to the VM-level list. Setting `nameservers` on eth0 would replace the provider's. Each interface resolves nameservers in the order interface, provider, VM-level, then Supervisor defaults. That order is still open against the upstream proposal; see Supervisor DNS integration requirements.
 
 - **Prior behavior**: provider DNS is ignored, and both interfaces get `192.168.1.53`.
 

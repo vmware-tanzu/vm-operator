@@ -56,6 +56,7 @@ pkg/lifecycle/
   stage.go                           # ReconcileStage,
                                      # GetOrCreateLifecycleState,
                                      # AbandonStage,
+                                     # MarkUnknown,
                                      # ReleaseLifecycleState,
                                      # ErrHooksBlocked,
                                      # statusChangedPredicate
@@ -124,6 +125,7 @@ Envtest needs no extra wiring: `test/builder/test_suite.go` loads all of `config
 - **`vm`**: only `vm.Status.Conditions` is mutated, via `conditions.Set`; the caller's patch persists it. `LifecycleHookReady` gets `reason=<stageName>Stage` and the status and message from model.md "New `VirtualMachine` API surface". It is not written when the stage has no hook.
 - **Writes** patch `state` in place with `MergeFromWithOptimisticLock` against `state.DeepCopy()`, so `state` holds the new `resourceVersion` afterwards. A `409` is returned as a plain error and retried by the caller's requeue. A stale copy can delay a stage but never let it run early (model.md "Stale copies").
 - **Capability off**: returns `Proceed=true`; no `LifecycleState` access. A `LifecycleHookReady` left from before is not touched.
+- **Evaluation failure**: when `GetOrCreateLifecycleState` or a pause/release write fails at a checkpoint with anything other than a `409`, the call site sets `LifecycleHookReady` `Unknown`, `reason=<stageName>Stage`, message `Could not evaluate <stageName> hooks: <error>` (`lifecycle.MarkUnknown`), and returns the error, so the action stays held and is retried. A `409` writes no condition. The reconcile-start get-or-create (§2) has no stage and writes no condition.
 
 | `LifecycleState` | Stage's `spec.stages[]` entry | `workflowPaused` | Stage's `status.stages[]` entry | Action | `Proceed` |
 |---|---|---|---|---|---|
@@ -262,7 +264,8 @@ Per `testing-standards.md`: one `_test.go` and one `_suite_test.go` per package,
   - Release → `(false, true)`, `state` carries the new `resourceVersion`; condition `True` on `AllHooksSucceeded`/`NoHooksRegistered`, `False` with the hook-failed message on `True/HookFailed`. Next reach of any stage re-pauses once the status entry is gone and waits while it is present.
   - Create then pause in one pass with no intermediate read.
   - ResourceDelete release also removes the finalizer and releases any other paused stage in the same write, other finalizers kept; an object without the finalizer releases normally.
-  - A stale-copy or concurrently-modified pause/release → `409` returned, not retried internally.
+  - A stale-copy or concurrently-modified pause/release → `409` returned, not retried internally, no condition written.
+  - `GetOrCreateLifecycleState` or a pause/release failing with an API error or binding mismatch → error returned, `LifecycleHookReady` `Unknown` with the stage reason and error message, including at the first stage reached.
 - **`ReleaseLifecycleState`**: removes only VM Operator's finalizer under the lock; absent or `nil` → no patch; a concurrent writer's finalizer → conflict, theirs kept. Capability off → one `APIReader` `Get` and the finalizer removed; `NotFound` or no-match → no-op.
 - **Capability off**: the four stage call sites make zero `LifecycleState`/`LifecycleSubscribedStages` calls (call-counting fake); a leftover `LifecycleHookReady` is left unchanged.
 - **`AbandonStage`**: paused, with `HooksReady` absent, `False` or `True` → `(false, true)`, condition `True`; not paused or `nil` → no patch.

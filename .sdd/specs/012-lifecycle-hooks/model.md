@@ -39,7 +39,7 @@ The coordination surface VM Operator reads and writes at each stage checkpoint.
 | `metadata.labels[target-group]`, `[target-kind]` | creator | With the owner reference, the binding VM Operator verifies after every lookup; a mismatch is retried, never treated as "no hook". |
 | `metadata.finalizers` | **VM Operator** | Added by get-or-create, including to adopted `LifecycleState`s; removed once `ResourceDelete` resolves. See "Namespace-deletion protection". |
 | `spec.stages[].name` | creator; Lifecycle Operator for hooks added later | Entry present = the stage has a hook; missing = proceed. |
-| `spec.stages[].workflowPaused` / `.workflowResumed` | **VM Operator** | Pause `(true, false)`, release `(false, true)`; no other transition is admitted. |
+| `spec.stages[].workflowPaused` / `.workflowResumed` | **VM Operator** | Both `false`: never held. **Pause** sets `workflowPaused=true`, `workflowResumed=false`: the stage is held. **Release** sets `workflowPaused=false`, `workflowResumed=true`: the hold is over and the action may run. No other transition is admitted. |
 | `status.stages[]` | Lifecycle Operator | Created on pause, removed after release. Its presence before a pause means the previous hold has not been cleared. |
 | `status.stages[].conditions[HooksReady]` | Lifecycle Operator | `True` is the resume signal. Status and reason drive `LifecycleHookReady`. |
 
@@ -49,22 +49,22 @@ The coordination surface VM Operator reads and writes at each stage checkpoint.
 
 1. **Get or create.**
    - Get the `LifecycleState` by name and verify the binding.
-   - If it is absent and `LifecycleSubscribedStages` lists stages, create it (owner reference, finalizer) with every listed stage at `(false, false)`. If none are listed, create nothing.
+   - If it is absent and `LifecycleSubscribedStages` lists stages, create it (owner reference, finalizer) with every listed stage as never held (both switches `false`). If none are listed, create nothing.
    - On `AlreadyExists`, another creator won; re-read.
-   - Add VM Operator's finalizer if it is missing (adoption).
-2. **Decide**, first match wins:
+   - Add VM Operator's finalizer if it is missing (adoption). 
+2. **Decide.** Check the rows top to bottom; the first row that matches decides what VM Operator does.
 
-| What's happening | `LifecycleState` shows | VM Operator |
-|---|---|---|
-| No hook for this stage | No `LifecycleState`, or no `spec.stages[]` entry for the stage | Proceed. |
+| What's happening | `LifecycleState` shows | VM Operator                                           |
+|---|---|-------------------------------------------------------|
+| No hook for this stage | No `LifecycleState`, or no `spec.stages[]` entry for the stage | Proceed.                                              |
 | Previous hold still being cleared | `workflowPaused=false`, the stage's `status.stages[]` entry still present | Wait. Pausing now would reuse the previous hold's results. |
-| Ready to hold | `workflowPaused=false`, no `status.stages[]` entry | Pause `(true, false)`, then wait. |
-| Hooks running | `workflowPaused=true`, `HooksReady` absent or not `True` | Wait. |
-| Hooks finished | `workflowPaused=true`, `HooksReady=True` | Release `(false, true)`, proceed. |
+| Ready to hold | `workflowPaused=false`, no `status.stages[]` entry | Pause the stage, then wait.                           |
+| Hooks running | `workflowPaused=true`, `HooksReady` absent or not `True` | Wait.                                                 |
+| Hooks finished | `workflowPaused=true`, `HooksReady=True` | Release the stage, proceed.                           |
 
-   One hold: pause → hooks run → `HooksReady=True` → release → the Lifecycle Operator clears the status entry → the next reach can pause again.
+   Definition of a hold:  pause → hooks run → `HooksReady=True` → release → the Lifecycle Operator clears the status entry → the next reach can pause again.
 
-   **Abandon**: when the caller will no longer run the stage's action, a paused stage is released `(false, true)`, ignoring whatever `HooksReady` says. For example: `spec.powerState` is reverted while a power change is held, the VM is deleted while `Create` or a power change is held, or the vSphere VM is already gone while `Delete` is held.
+   **Abandon**: when the caller will no longer run the stage's action, VM Operator releases the paused stage without running the action, ignoring whatever `HooksReady` says. This ends the hold, so hook owners stop waiting and abort in-flight work. For example: `spec.powerState` is reverted while a power change is held, the VM is deleted while `Create` or a power change is held, or the vSphere VM is already gone while `Delete` is held.
 
 3. **Watch.** The `LifecycleState` watch re-triggers the VM on status changes and when the Lifecycle Operator creates a State.
 4. **Finish.** Once `ResourceDelete` resolves, VM Operator removes its finalizer. It never deletes the `LifecycleState`; GC or the namespace controller does.
@@ -90,7 +90,7 @@ One new condition type, `VirtualMachineConditionLifecycleHookReady` (`"Lifecycle
 | Field | Value |
 |---|---|
 | `reason` | The stage: `CreateStage`, `PowerStateChangeStage`, `DeleteStage`, `ResourceDeleteStage`. |
-| `status` | `True` when the stage's hooks finished without failure, or the hold was abandoned. `False` while blocked, or when a hook failed. Never `Unknown`. |
+| `status` | `True` when the stage's hooks finished without failure, or the hold was abandoned. `False` while blocked, or when a hook failed. `Unknown` when VM Operator could not evaluate the stage's hooks. |
 | `message` | The stage's `HooksReady` message, prefixed by VM Operator (below). |
 | `lastTransitionTime` | Set by `conditions.Set`: updated when status, reason or message changes. |
 
@@ -103,6 +103,7 @@ One new condition type, `VirtualMachineConditionLifecycleHookReady` (`"Lifecycle
 | `HooksReady=True/AllHooksSucceeded` or `NoHooksRegistered` | released | `True` | `<msg>` |
 | `HooksReady=True/HookFailed` | released, action runs | `False` | `<Stage> hook failed, <Stage> proceeded: <msg>` |
 | Abandon | released | `True` | — |
+| The stage's hooks cannot be evaluated (e.g. reading the `LifecycleState` fails) | held, retried | `Unknown` | `Could not evaluate <Stage> hooks: <error>` |
 
 The prefix comes from `HooksReady`'s status and reason. `False` does not by itself mean blocked; the message says which. The condition is absent until a stage with hooks is reached, and never written for a VM in a namespace with no hooks; consumers treat absent as `True`. At most one stage is blocked at a time (`Delete` resolves before `ResourceDelete`; `Create`, `PowerStateChange` and `Delete` are mutually exclusive by VM phase).
 
@@ -261,7 +262,7 @@ status:
       message: 0 of 1 hooks completed
 ```
 
-**`Create` ready to resume, with a failed hook.** VM Operator releases `(false, true)`, sets `LifecycleHookReady` to `status=False`, `reason=CreateStage`, `message: "Create hook failed, Create proceeded: domain-join-hook: timed out connecting to domain controller"`, then creates the VM.
+**`Create` ready to resume, with a failed hook.** VM Operator releases the stage, sets `LifecycleHookReady` to `status=False`, `reason=CreateStage`, `message: "Create hook failed, Create proceeded: domain-join-hook: timed out connecting to domain controller"`, then creates the VM.
 
 ```yaml
 status:

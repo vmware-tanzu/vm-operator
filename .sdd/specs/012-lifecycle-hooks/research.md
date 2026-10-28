@@ -108,6 +108,7 @@ The current contract is one `LifecycleHookReady` condition with reasons `CreateS
 - `False` can mean hooks are pending, a hook failed while other hooks remain pending, or a hook failed and the stage has already proceeded. The message distinguishes these cases.
 - A later stage without hooks leaves the earlier condition unchanged. A historical `False` must not be interpreted as a current hold or a failure of the VM operation itself.
 - `True` reports successful hook completion or an abandoned hold; it does not certify completion of the underlying VM operation or Node readiness.
+- `Unknown` means VM Operator could not evaluate the stage's hooks, for example because reading the `LifecycleState` failed; the action stays held and is retried. It must not be treated as `True`.
 
 CAPV/VKS may need to propagate lifecycle context so users can distinguish an intentional wait from generic provisioning, powering-on, or deleting status. This is a likely localized improvement. Adding `LifecycleHookReady` to an existing list that treats every false prerequisite as an error would not preserve its semantics.
 

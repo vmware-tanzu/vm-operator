@@ -5,12 +5,9 @@
 package v1alpha4
 
 import (
-	"fmt"
-
 	"k8s.io/apimachinery/pkg/api/resource"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 
-	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -33,28 +30,9 @@ func Convert_v1alpha4_VirtualMachineClass_To_v1alpha6_VirtualMachineClass(in *Vi
 	if err := autoConvert_v1alpha4_VirtualMachineClass_To_v1alpha6_VirtualMachineClass(in, out, s); err != nil {
 		return err
 	}
-	out.ObjectMeta = *in.ObjectMeta.DeepCopy()
-	var preserved vmopv1.VirtualMachineClass
-	ok, err := utilconversion.UnmarshalData(out, &preserved)
-	if len(out.Annotations) == 0 {
-		out.Annotations = nil
-	}
-	if err != nil {
-		return fmt.Errorf("restore VMClass conversion data: %w", err)
-	}
-	if !ok {
-		return nil
-	}
-	var spoke VirtualMachineClassSpec
-	if err := Convert_v1alpha6_VirtualMachineClassSpec_To_v1alpha4_VirtualMachineClassSpec(&preserved.Spec, &spoke, s); err != nil {
-		return err
-	}
-	var projected vmopv1.VirtualMachineClassSpec
-	if err := Convert_v1alpha4_VirtualMachineClassSpec_To_v1alpha6_VirtualMachineClassSpec(&spoke, &projected, s); err != nil {
-		return err
-	}
-	vmopv1.RestoreClassPolicies(&out.Spec, &preserved.Spec, &projected)
-	return nil
+	return vmopv1.RestoreClassConversionData(&in.ObjectMeta, out,
+		Convert_v1alpha6_VirtualMachineClassSpec_To_v1alpha4_VirtualMachineClassSpec,
+		Convert_v1alpha4_VirtualMachineClassSpec_To_v1alpha6_VirtualMachineClassSpec, s)
 }
 
 // Convert_v1alpha6_VirtualMachineClass_To_v1alpha4_VirtualMachineClass preserves policies that this API cannot express.
@@ -62,11 +40,7 @@ func Convert_v1alpha6_VirtualMachineClass_To_v1alpha4_VirtualMachineClass(in *vm
 	if err := autoConvert_v1alpha6_VirtualMachineClass_To_v1alpha4_VirtualMachineClass(in, out, s); err != nil {
 		return err
 	}
-	out.ObjectMeta = *in.ObjectMeta.DeepCopy()
-	if err := utilconversion.MarshalData(in, out); err != nil {
-		return fmt.Errorf("preserve VMClass conversion data: %w", err)
-	}
-	return nil
+	return vmopv1.PreserveClassConversionData(in, &out.ObjectMeta)
 }
 
 // Convert_v1alpha4_VirtualMachineClassSpec_To_v1alpha6_VirtualMachineClassSpec converts legacy scalar presets to fixed policies.

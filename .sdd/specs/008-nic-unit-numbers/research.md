@@ -52,7 +52,7 @@ When `FindMatchingEthCard` fails (backing changed, e.g. network migration), the 
 - per-device field Edits — `NumaNode`, `Uptv2Enabled` — through `reconcileNICFields` → `findOrCreateDeviceEdit` (`nic_fields.go:123-125`, `:206-224`);
 - per-interface status — `vnumaNodeID`, `vmxnet3` — through `updateInterfaceStatus` (`reconciler.go:330-375`), which locates its status entry **by interface name**, making it a third consumer of the G13 empty-name miss.
 
-The whole reconciler is gated on `TelcoVMServiceAPI` (`reconciler.go:98-100`), which does **not** make it a two-flag corner case: this spec's own argument for a standalone feature-version bit is that Telco and `VMNetworkUnitNumbers` are independent.
+The whole reconciler is gated on `VMServiceClasslessVM` (`reconciler.go:98-100`), which does **not** make it a two-flag corner case: this spec's own argument for a standalone feature-version bit is that Telco and `VMNetworkUnitNumbers` are independent.
 
 Its ConfigSpec is shared with the ethernet device changes, which is what makes the Remove/Edit collision reachable: `getConfigSpecForPoweredOffVM` appends `ethCardDeviceChanges` (`session_vm_update.go:740-744`), `poweredOffReconfigure` passes that same spec into `doReconfigure` (`:473-509`), and `doReconfigure` runs `reconcileNetworkExtraConfig` against it (`:1563-1575`). The resize path repeats the shape at `:1023-1027`. `findOrCreateDeviceEdit` dedupes only against existing **Edit** entries, never checking for a Remove.
 
@@ -97,11 +97,11 @@ Extending `NetworkInterfaceResult` is preferred: it flows the unit number throug
 
 `FeatureVersionVMSharedDisks` (bit 2) in `vm_schema_upgrade.go` is the closest prior art. It reads `moVM.Config.Hardware.Device`, identifies disk controllers and volumes by device type and key, and backfills `spec.hardware.*Controllers` and per-volume `{controllerType, controllerBusNumber, unitNumber}`. The NIC unit number backfill follows the identical structure in `pkg/providers/vsphere/upgrade/virtualmachine/backfill/nic.go`.
 
-The existing `NICConfigFromMoVM` function (TelcoVMServiceAPI gate) already uses `collectEthernetDevicesFromMoVM`. The new `NICUnitNumbersFromMoVM` backfill **must** run as a separate feature-version step (`FeatureVersionNICUnitNumbers`), not inside `NICConfigFromMoVM`, because:
+The existing `NICConfigFromMoVM` function (VMServiceClasslessVM gate) already uses `collectEthernetDevicesFromMoVM`. The new `NICUnitNumbersFromMoVM` backfill **must** run as a separate feature-version step (`FeatureVersionNICUnitNumbers`), not inside `NICConfigFromMoVM`, because:
 
 - **The Telco gate is one-shot.** `ReconcileSchemaUpgrade` runs `NICConfigFromMoVM` only when the VM's feature-version annotation lacks `FeatureVersionTelcoVMServiceAPI`, then stamps the bit. Any VM already stamped with the Telco bit would never re-run it, so a backfill living there would never execute for those VMs. Only a new bit re-triggers the upgrade pass for already-upgraded VMs (`ActivatedFeatureVersion` grows, `IsOrSuperset` fails, the pass re-runs).
-- `TelcoVMServiceAPI` may be disabled while `VMNetworkUnitNumbers` is enabled; the two flags are orthogonal.
-- The TelcoVMServiceAPI step uses positional zip (with a `TODO(BV)` for real matching).
+- `VMServiceClasslessVM` may be disabled while `VMNetworkUnitNumbers` is enabled; the two flags are orthogonal.
+- The VMServiceClasslessVM step uses positional zip (with a `TODO(BV)` for real matching).
 - The unit-number backfill must match spec interfaces to VC devices using the existing hodgepodge (since `unitNumber` is not yet on the spec during the first pass), then write the observed `VirtualDevice.UnitNumber` back. For devices the hodgepodge cannot uniquely match, it falls back to positional zip so every interface still receives its observed value.
 - After the unit-number backfill completes, the `NICConfigFromMoVM` positional zip can be upgraded to use unit-number-based matching (resolves the `TODO(BV)`).
 
@@ -383,7 +383,7 @@ if !equality.Semantic.DeepEqual(newIfaces, oldIfaces) {
 }
 ```
 
-**The only gap is its gate:** it runs under `Features.TelcoVMServiceAPI` only (`:3502-3509`), and `VMNetworkUnitNumbers` is orthogonal to Telco — the same argument this spec already makes for keeping the unit-number backfill out of `NICConfigFromMoVM`. So the guard must also apply when `VMNetworkUnitNumbers` is enabled (T034).
+**The only gap is its gate:** it runs under `Features.VMServiceClasslessVM` only (`:3502-3509`), and `VMNetworkUnitNumbers` is orthogonal to Telco — the same argument this spec already makes for keeping the unit-number backfill out of `NICConfigFromMoVM`. So the guard must also apply when `VMNetworkUnitNumbers` is enabled (T034).
 
 This closes the ordering story with the same three-part shape disks use, and it is worth stating as one sequence because each part alone looks incomplete:
 

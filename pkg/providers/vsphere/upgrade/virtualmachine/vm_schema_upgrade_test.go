@@ -323,10 +323,10 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 					})
 				})
 
-				When("TelcoVMServiceAPI feature is enabled", func() {
+				When("VMServiceClasslessVM feature is enabled", func() {
 					BeforeEach(func() {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.TelcoVMServiceAPI = true
+							config.Features.VMServiceClasslessVM = true
 						})
 
 						vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{

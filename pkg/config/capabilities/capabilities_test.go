@@ -226,8 +226,7 @@ var _ = Describe("UpdateCapabilities", func() {
 							config.Features.VMVlanSubinterface = true
 							config.Features.PerNamespaceNetworkProvider = true
 							config.Features.WorkloadIPv6 = true
-							config.Features.VirtualMachineConfigPolicy = true
-							config.Features.TelcoVMServiceAPI = true
+							config.Features.VMServiceClasslessVM = true
 							config.Features.WorkloadNetworkConfiguration = true
 							config.Features.VMEviction = true
 							config.Features.ControlledRebalancingPolicy = true
@@ -292,8 +291,7 @@ var _ = Describe("UpdateCapabilities", func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
 					})
 					Specify(capabilities.CapabilityKeyVMServiceClasslessVM, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
-						Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(BeTrue())
+						Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeTrue())
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeTrue())
@@ -368,8 +366,7 @@ var _ = Describe("UpdateCapabilities", func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
 					})
 					Specify(capabilities.CapabilityKeyVMServiceClasslessVM, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
-						Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(BeTrue())
+						Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeTrue())
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeTrue())
@@ -528,8 +525,7 @@ var _ = Describe("UpdateCapabilities", func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeFalse())
 					})
 					Specify(capabilities.CapabilityKeyVMServiceClasslessVM, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
-						Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(BeFalse())
+						Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeFalse())
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeFalse())
@@ -619,8 +615,7 @@ var _ = Describe("UpdateCapabilities", func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeFalse())
 					})
 					Specify(capabilities.CapabilityKeyVMServiceClasslessVM, func() {
-						Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
-						Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(BeFalse())
+						Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeFalse())
 					})
 					Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 						Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeFalse())
@@ -982,17 +977,15 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 		})
 		Context(capabilities.CapabilityKeyVMServiceClasslessVM, func() {
 			BeforeEach(func() {
-				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
-				Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(BeFalse())
+				Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeFalse())
 				obj.Status.Supervisor[capabilities.CapabilityKeyVMServiceClasslessVM] = capv1.CapabilityStatus{
 					Activated: true,
 				}
 			})
 			Specify("Enabled", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("TelcoVMServiceAPI=true,VirtualMachineConfigPolicy=true"))
-				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
-				Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(BeTrue())
+				Expect(diff).To(Equal("VMServiceClasslessVM=true"))
+				Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeTrue())
 			})
 		})
 		Context(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
@@ -1213,8 +1206,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMVlanSubinterface = true
 					config.Features.PerNamespaceNetworkProvider = true
 					config.Features.WorkloadIPv6 = true
-					config.Features.VirtualMachineConfigPolicy = true
-					config.Features.TelcoVMServiceAPI = true
+					config.Features.VMServiceClasslessVM = true
 					config.Features.WorkloadNetworkConfiguration = true
 					config.Features.ExtensionCompatConstraint = true
 					config.Features.VMEviction = true
@@ -1284,8 +1276,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeTrue())
 			})
 			Specify(capabilities.CapabilityKeyVMServiceClasslessVM, func() {
-				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeTrue())
-				Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(BeTrue())
+				Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeTrue())
 			})
 			Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeTrue())
@@ -1330,8 +1321,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 					config.Features.VMVlanSubinterface = false
 					config.Features.PerNamespaceNetworkProvider = false
 					config.Features.WorkloadIPv6 = false
-					config.Features.VirtualMachineConfigPolicy = false
-					config.Features.TelcoVMServiceAPI = false
+					config.Features.VMServiceClasslessVM = false
 					config.Features.WorkloadNetworkConfiguration = false
 					config.Features.ExtensionCompatConstraint = false
 					config.Features.VMEviction = false
@@ -1343,7 +1333,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			})
 			Specify("capabilities changed", func() {
 				Expect(ok).To(BeTrue())
-				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,TelcoVMServiceAPI=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMHardAffinityDuringExecution=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,VirtualMachineConfigPolicy=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
+				Expect(diff).To(Equal("BringYourOwnEncryptionKey=true,CSIBackupAPI=true,ControlledRebalancingPolicy=true,ExtensionCompatConstraint=true,GuestCustomizationVCDParity=true,ImmutableClasses=true,InventoryContentLibrary=true,MutableNetworks=true,PerNamespaceNetworkProvider=true,StoragePolicyMutability=true,TKGMultipleCL=true,TaggingAPI=true,VMAffinityDuringExecution=true,VMEviction=true,VMGroups=true,VMHardAffinityDuringExecution=true,VMNetworkUnitNumbers=true,VMPlacementPolicies=true,VMServiceClasslessVM=true,VMSharedDisks=true,VMSnapshots=true,VMVlanSubinterface=true,VMWaitForFirstConsumerPVC=true,VSpherePolicies=true,WorkloadDomainIsolation=true,WorkloadIPv6=true,WorkloadNetworkConfiguration=true"))
 			})
 			Specify(capabilities.CapabilityKeyBringYourOwnKeyProvider, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey).To(BeFalse())
@@ -1400,8 +1390,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadIPv6).To(BeFalse())
 			})
 			Specify(capabilities.CapabilityKeyVMServiceClasslessVM, func() {
-				Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
-				Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(BeFalse())
+				Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeFalse())
 			})
 			Specify(capabilities.CapabilityKeyWorkloadNetworkConfiguration, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.WorkloadNetworkConfiguration).To(BeFalse())
@@ -1430,12 +1419,11 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 })
 
 var _ = Describe("Classless VM capability", func() {
-	DescribeTable("updates both feature states together",
-		func(initialTelco, initialPolicy, activated bool) {
+	DescribeTable("updates the classless VM feature state",
+		func(initial, activated bool) {
 			ctx := pkgcfg.NewContext()
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = initialTelco
-				config.Features.VirtualMachineConfigPolicy = initialPolicy
+				config.Features.VMServiceClasslessVM = initial
 			})
 			obj := capv1.Capabilities{}
 			obj.Status.Supervisor = map[capv1.CapabilityName]capv1.CapabilityStatus{
@@ -1444,19 +1432,16 @@ var _ = Describe("Classless VM capability", func() {
 				"supports_vm_service_vm_config_policy":         {Activated: !activated},
 			}
 			_, changed := capabilities.UpdateCapabilitiesFeatures(ctx, obj)
-			Expect(changed).To(Equal(initialTelco != activated || initialPolicy != activated))
-			Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(Equal(activated))
-			Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(Equal(activated))
+			Expect(changed).To(Equal(initial != activated))
+			Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(Equal(activated))
 		},
-		Entry("enable both", false, false, true),
-		Entry("disable both despite legacy keys", true, true, false),
-		Entry("enable policy when only Telco was enabled", true, false, true),
-		Entry("enable Telco when only policy was enabled", false, true, true),
-		Entry("already enabled", true, true, true),
-		Entry("already disabled despite legacy keys", false, false, false),
+		Entry("enable", false, true),
+		Entry("disable despite legacy keys", true, false),
+		Entry("already enabled", true, true),
+		Entry("already disabled despite legacy keys", false, false),
 	)
 
-	It("does not enable either feature from the retired keys alone", func() {
+	It("does not enable the feature from the retired keys alone", func() {
 		ctx := pkgcfg.NewContext()
 		obj := capv1.Capabilities{}
 		obj.Status.Supervisor = map[capv1.CapabilityName]capv1.CapabilityStatus{
@@ -1465,7 +1450,6 @@ var _ = Describe("Classless VM capability", func() {
 		}
 		_, changed := capabilities.UpdateCapabilitiesFeatures(ctx, obj)
 		Expect(changed).To(BeFalse())
-		Expect(pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI).To(BeFalse())
-		Expect(pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy).To(BeFalse())
+		Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeFalse())
 	})
 })

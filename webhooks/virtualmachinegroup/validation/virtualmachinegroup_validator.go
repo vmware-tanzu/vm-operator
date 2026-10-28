@@ -264,12 +264,12 @@ func (v validator) validateGroupName(
 }
 
 // validatePowerOffDelay validates that spec.bootOrder[].powerOffDelay is only
-// set when the TelcoVMServiceAPI capability is enabled.
+// set when the VMServiceClasslessVM capability is enabled.
 func (v validator) validatePowerOffDelay(
 	ctx *pkgctx.WebhookRequestContext,
 	vmGroup *vmopv1.VirtualMachineGroup) field.ErrorList {
 
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		return nil
 	}
 

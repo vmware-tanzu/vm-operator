@@ -19,7 +19,7 @@ func mutateOnUpdateDefaultNetworkInterfaceType(
 	_ ctrlclient.Client,
 	newVM, _ *vmopv1.VirtualMachine) (bool, error) {
 
-	if !pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if !pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		return false, nil
 	}
 	return SetDefaultNetworkInterfaceTypesOnUpdate(newVM)

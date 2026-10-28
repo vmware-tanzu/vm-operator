@@ -46,7 +46,7 @@ func vmExtraConfigTests() {
 	BeforeEach(func() {
 		parentCtx = newVMTestParentContext()
 		// Set up vmconfig context so OnResult can be dispatched via the
-		// vmconfig framework when TelcoVMServiceAPI is enabled.
+		// vmconfig framework when VMServiceClasslessVM is enabled.
 		parentCtx = vmconfig.WithContext(parentCtx)
 		parentCtx = vmconfig.Register(parentCtx, vmconfextraconfig.New())
 		parentCtx = vmconfig.Register(parentCtx, vmconfnetworkextraconfig.New())
@@ -54,7 +54,7 @@ func vmExtraConfigTests() {
 		pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 			config.AsyncCreateEnabled = false
 			config.AsyncSignalEnabled = false
-			config.Features.TelcoVMServiceAPI = true
+			config.Features.VMServiceClasslessVM = true
 		})
 		testConfig = newVMTestConfig()
 

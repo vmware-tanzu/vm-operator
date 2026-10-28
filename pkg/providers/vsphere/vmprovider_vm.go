@@ -2722,7 +2722,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		return err
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 		if err := vmconfextraconfig.Reconcile(
 			vmCtx,
 			vs.k8sClient,

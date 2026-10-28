@@ -177,7 +177,7 @@ func (r *Reconciler) ReconcileNormal(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.FlexVMClasses {
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		if err := r.reconcileConfigTargets(ctx, obj); err != nil {
 			errs = append(errs, err)
 		}

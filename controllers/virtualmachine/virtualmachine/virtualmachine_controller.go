@@ -375,7 +375,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 	ctx = vmconfig.Register(ctx, bootoptions.New())
 
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		ctx = vmconfig.Register(ctx, vmconfextraconfig.New())
 		ctx = vmconfig.Register(ctx, vmconfnetworkextraconfig.New())
 	}

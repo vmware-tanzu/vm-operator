@@ -318,7 +318,7 @@ var _ = Describe(
 			ctx = pkgcfg.WithContext(ctx, pkgcfg.Default())
 			ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.WorkloadDomainIsolation = true
-				config.Features.FlexVMClasses = true
+				config.Features.VMServiceClasslessVM = true
 			})
 			ctx = cource.WithContext(ctx)
 			ctx = watcher.WithContext(ctx)

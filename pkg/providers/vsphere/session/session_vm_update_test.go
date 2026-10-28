@@ -2084,7 +2084,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		})
 	})
 
-	When("CPU/memory resize via VMResizeCPUMemory with TelcoVMServiceAPI enabled", func() {
+	When("CPU/memory resize via VMResizeCPUMemory with VMServiceClasslessVM enabled", func() {
 
 		var wantNumCPUs int32
 
@@ -2109,12 +2109,12 @@ var _ = Describe("UpdateVirtualMachine", func() {
 
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 				config.Features.VMResizeCPUMemory = true
-				config.Features.TelcoVMServiceAPI = true
+				config.Features.VMServiceClasslessVM = true
 			})
 
 			// Mirror the controller's per-reconcile context setup: register the
 			// vmconfig reconcilers that UpdateVirtualMachine depends on when
-			// TelcoVMServiceAPI is enabled.
+			// VMServiceClasslessVM is enabled.
 			vmCtx.Context = vmconfig.WithContext(vmCtx.Context)
 			vmCtx.Context = vmconfig.Register(vmCtx.Context, vmconfextraconfig.New())
 

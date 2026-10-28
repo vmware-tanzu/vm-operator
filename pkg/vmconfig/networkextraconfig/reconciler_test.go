@@ -67,7 +67,7 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContext()
 		ctx = pkgcfg.UpdateContext(ctx, func(cfg *pkgcfg.Config) {
-			cfg.Features.TelcoVMServiceAPI = true
+			cfg.Features.VMServiceClasslessVM = true
 		})
 
 		vm = &vmopv1.VirtualMachine{}
@@ -86,10 +86,10 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 		configSpec = &vimtypes.VirtualMachineConfigSpec{}
 	})
 
-	Context("when TelcoVMServiceAPI is disabled", func() {
+	Context("when VMServiceClasslessVM is disabled", func() {
 		It("returns nil and makes no changes", func() {
 			ctx2 := pkgcfg.UpdateContext(ctx, func(cfg *pkgcfg.Config) {
-				cfg.Features.TelcoVMServiceAPI = false
+				cfg.Features.VMServiceClasslessVM = false
 			})
 			Expect(r.Reconcile(ctx2, nil, nil, vm, moVM, configSpec)).To(Succeed())
 			Expect(configSpec.ExtraConfig).To(BeEmpty())
@@ -359,7 +359,7 @@ var _ = Describe("networkextraconfig.OnResult", func() {
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContext()
 		ctx = pkgcfg.UpdateContext(ctx, func(cfg *pkgcfg.Config) {
-			cfg.Features.TelcoVMServiceAPI = true
+			cfg.Features.VMServiceClasslessVM = true
 		})
 
 		vm = &vmopv1.VirtualMachine{}
@@ -368,10 +368,10 @@ var _ = Describe("networkextraconfig.OnResult", func() {
 		moVM = mo.VirtualMachine{}
 	})
 
-	Context("when TelcoVMServiceAPI is disabled", func() {
+	Context("when VMServiceClasslessVM is disabled", func() {
 		It("returns nil without setting condition", func() {
 			ctx2 := pkgcfg.UpdateContext(ctx, func(cfg *pkgcfg.Config) {
-				cfg.Features.TelcoVMServiceAPI = false
+				cfg.Features.VMServiceClasslessVM = false
 			})
 			Expect(r.OnResult(ctx2, vm, moVM, nil)).To(Succeed())
 			Expect(vm.Status.Conditions).To(BeEmpty())

@@ -135,7 +135,7 @@ Before any code begins, the following wiki documents must be updated or created 
 
 #### F1. Capability + feature gate (Story S1 / vmop-3738)
 
-- Add `CapabilityKeyVMServiceClasslessVM` to `pkg/config/capabilities/capabilities.go`.
+- Use `CapabilityKeyVMServiceClasslessVM` (`vm_service_classless_vm`) with `pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM` for both Telco VM APIs and the environment-browser pipeline (vmop-4313). The Supervisor catalog and manifest retemplate use the same key, disabled by default.
 - Wire a feature gate in `pkg/config/capabilities/` that controls controller registration and webhook short-circuit.
 - Install the three `vim.vmware.com` CRDs (`ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions`) via the Supervisor chart install hook and `config/crd/external-crds/`. No `HostSystem` CRD exists.
 
@@ -147,7 +147,7 @@ const CapabilityKeyVMServiceClasslessVM = "vm_service_classless_vm"
 
 ```go
 // controllers/controllers.go — gated registration
-if pkgcfg.FromContext(ctx).Features.FlexVMClasses {
+if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
     must(controllers.AddConfigTargetController(mgr))
     must(controllers.AddVirtualMachineConfigOptionsController(mgr))
     // ...

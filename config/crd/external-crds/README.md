@@ -32,3 +32,4 @@ These CRDs are referenced only in local dev (`config/local`) or test suite setup
 * `imageregistry.vmware.com_contentlibraries.yaml` is used by virtualmachinepublishrequest_controller_suite_test.go for the integration tests
 * `imageregistry.vmware.com_clustercontentlibraryitems.yaml` is used by the clustercontentlibraryitem_controller_suite_test.go for the integration tests
 * `imageregistry.vmware.com_contentlibraryitems.yaml` is used by the contentlibraryitem_controller_suite_test.go for the integration tests
+* `lifecycle.vcfa.vmware.com_lifecyclestates.yaml`, `lifecycle.vcfa.vmware.com_lifecyclesubscribedstages.yaml`, `lifecycle.vcfa.vmware.com_lifecyclehooks.yaml` are used by the lifecycle hooks integration tests; the Lifecycle Operator installs these CRDs in production, not VM Operator

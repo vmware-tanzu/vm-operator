@@ -60,33 +60,6 @@ const (
 	// VirtualMachineConditionCreated indicates that the VM has been created.
 	VirtualMachineConditionCreated = "VirtualMachineCreated"
 
-	// VirtualMachineConditionCreateHooksReady indicates whether the Create
-	// lifecycle stage is blocked by hooks. It is False with reason
-	// VirtualMachineLifecycleHooksBlockedReason while blocked, and True once
-	// the stage has been evaluated and is not blocked. An absent condition is
-	// equivalent to True.
-	VirtualMachineConditionCreateHooksReady = "VirtualMachineCreateHooksReady"
-
-	// VirtualMachineConditionPowerStateChangeHooksReady indicates whether the
-	// PowerStateChange lifecycle stage is blocked by hooks. It is absent until
-	// a power state transition is attempted, and an absent condition is
-	// equivalent to True.
-	VirtualMachineConditionPowerStateChangeHooksReady = "VirtualMachinePowerStateChangeHooksReady"
-
-	// VirtualMachineConditionDeleteHooksReady indicates whether the Delete
-	// (vSphere-side deletion) lifecycle stage is blocked by hooks. An absent
-	// condition is equivalent to True.
-	VirtualMachineConditionDeleteHooksReady = "VirtualMachineDeleteHooksReady"
-
-	// VirtualMachineConditionResourceDeleteHooksReady indicates whether the
-	// ResourceDelete (finalizer removal) lifecycle stage is blocked by hooks.
-	// An absent condition is equivalent to True.
-	VirtualMachineConditionResourceDeleteHooksReady = "VirtualMachineResourceDeleteHooksReady"
-
-	// VirtualMachineLifecycleHooksBlockedReason is the reason set on a stage's
-	// HooksReady condition while the stage is blocked by hooks.
-	VirtualMachineLifecycleHooksBlockedReason = "HooksBlocked"
-
 	// VirtualMachineClassConfigurationSynced indicates that the VM's current configuration is synced to the
 	// current version of its VirtualMachineClass.
 	VirtualMachineClassConfigurationSynced = "VirtualMachineClassConfigurationSynced"

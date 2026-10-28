@@ -454,14 +454,14 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 })
 
 func classWithPolicies() *vmopv1.VirtualMachineClass {
-	min, max, def := resource.MustParse("2"), resource.MustParse("16"), resource.MustParse("4")
+	minimum, maximum, def := resource.MustParse("2"), resource.MustParse("16"), resource.MustParse("4")
 	memory := resource.MustParse("4Gi")
 	devices := []vmopv1.VGPUDevice{{ProfileName: "gpu-a"}}
 	return &vmopv1.VirtualMachineClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "class", Namespace: "tenant"},
 		Spec: vmopv1.VirtualMachineClassSpec{
 			Resources: vmopv1.VirtualMachineClassResources{Size: vmopv1.VirtualMachineClassResourceSpec{
-				CPU:    &vmopv1.ResourceQuantityRange{Min: &min, Max: &max, Default: &def},
+				CPU:    &vmopv1.ResourceQuantityRange{Min: &minimum, Max: &maximum, Default: &def},
 				Memory: &vmopv1.ResourceQuantityRange{Default: &memory},
 			}},
 			Hardware:          vmopv1.VirtualMachineClassHardware{Devices: vmopv1.VirtualDevices{VGPUDevices: devices}},

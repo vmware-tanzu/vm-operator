@@ -24,7 +24,7 @@
 7. Reserved capacity follows the VM: a class offers reserved profiles as a governed field, the VM carries the profile it uses and must match its shape, and the profiles themselves are read from `VirtualMachineReservedProfile` objects that the provider publishes.
 8. `VirtualMachineConfigPolicy` is removed.
 
-Milestone 1 (provider classes) ships all of the above with one governing class per zone, behind a Supervisor capability. Milestone 2 (tenant classes) adds `parentClassRefs`, so a class can be bounded by another class.
+Milestone 1 (provider classes) ships all of the above with one governing class per zone, behind the `vm_service_classless_vm` Supervisor capability. Milestone 2 (tenant classes) adds `parentClassRefs`, so a class can be bounded by another class.
 
 ---
 
@@ -176,6 +176,8 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 2. **Given** the environment-browser pipeline from spec 001, **when** the policy is removed, **then** `ConfigTarget`, `VirtualMachineConfigOptions` and `VirtualMachineGuestOptions` keep working unchanged.
 
 ### US12 — Platform engineer: flex behavior is behind a capability (P1)
+
+The capability is `vm_service_classless_vm` (vmop-4313). It replaces both `supports_telco_vm_service_api` and `supports_vm_service_vm_config_policy`, so the Telco VM APIs and the configuration-policy/environment-browser pipeline share one switch. It defaults to disabled until vmop-4337; the old keys do not enable the new capability. Removing the policy API remains separate work.
 
 **Acceptance scenarios**:
 

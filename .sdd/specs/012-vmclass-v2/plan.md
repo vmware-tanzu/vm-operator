@@ -20,7 +20,7 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 | API | `vmoperator.vmware.com/v1alpha6` (hub, reshaped in place: it exists only on main, and the 9.1 release ends at v1alpha5); conversion from v1alpha1–v1alpha5 |
 | Inputs | `ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions` from spec 001 |
 | Testing | Ginkgo/Gomega; envtest for CRD, CEL and conversion behavior; vcsim; E2E on a Supervisor in the quarantined capability pipeline |
-| Feature gate | The Flex VM Classes Supervisor capability (vmop-4313); Milestone 2 adds the Tenant VM Classes capability (vmop-4339), which depends on it |
+| Feature gate | The `vm_service_classless_vm` Supervisor capability (vmop-4313); Milestone 2 adds the Tenant VM Classes capability (vmop-4339), which depends on it |
 | Provider | Class and namespace APIs, class API generation and drift checks, reserved profile publication, capability advertisement, Supervisor integration; tracked in the provider's spec (tasks.md T910–T916) |
 
 ## Constitution check
@@ -126,6 +126,8 @@ Tracked in the provider's spec and listed in tasks.md as dependency tasks T910�
 - E2E ships inside each story, in the quarantined capability pipeline (vmop-4314); the enablement story (vmop-4337) takes it out of quarantine after a full sweep.
 
 ## Rollout
+
+- Replace `supports_telco_vm_service_api` and `supports_vm_service_vm_config_policy` with `vm_service_classless_vm` in VM Operator and the Supervisor capability catalog. The new key drives both existing `TelcoVMServiceAPI` and `VirtualMachineConfigPolicy` feature states while policy removal is pending. The Supervisor retemplate step passes both manifest options from that one capability, and the affected E2E suites check the same key.
 
 - Existing classes convert with no manual step; no class governs until an admin adds `governs`, so behavior doesn't change on upgrade.
 - The capability stays off until vmop-4337. vm-operator turns flex behavior on only when the provider advertises the capability, which it does once its contract is met (spec, "Provider contract"); the Supervisor model choice is on WIKI page 3119061412.

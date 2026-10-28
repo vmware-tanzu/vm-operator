@@ -42,7 +42,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — Flex VM Classes capability (vmop-4313)
 
-- [ ] T100 [US12] [vmop-4313] Add the Flex VM Classes capability and gate every new behavior on it; v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the Flex VM Classes capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement); toggling it on or off takes effect without a restart (test both directions) — `pkg/config/capabilities`, `pkg/config`
+- [ ] T100 [US12] [vmop-4313] Merge `supports_telco_vm_service_api` and `supports_vm_service_vm_config_policy` into `vm_service_classless_vm` in VM Operator and the Supervisor capability catalog, update manifest gating and E2E capability checks, and gate every new behavior on it; v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the Flex VM Classes capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement); toggling it on or off takes effect without a restart (test both directions) — `pkg/config/capabilities`, `pkg/config`
 
 ### Story — Quarantined capability pipeline (vmop-4314)
 

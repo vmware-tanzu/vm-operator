@@ -398,7 +398,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 	Context("Boot order power-off delay", func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.TelcoVMServiceAPICapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMServiceClasslessVMCapabilityName)
 		})
 
 		It("Should power off group members in reverse boot order with the expected delay", Label("experimental"), func() {

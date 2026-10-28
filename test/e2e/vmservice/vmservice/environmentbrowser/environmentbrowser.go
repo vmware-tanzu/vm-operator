@@ -82,7 +82,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 	Context("When a workload namespace has zones", func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.FlexVMClassesCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VMServiceClasslessVMCapabilityName)
 		})
 
 		It("Should have at least one ConfigTarget derived from the zone's pool MoIDs",
@@ -120,7 +120,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 	Context("When the ConfigTarget controller reconciles a cluster's ConfigTarget", func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.FlexVMClassesCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VMServiceClasslessVMCapabilityName)
 		})
 
 		It("Should populate ConfigTarget.status from QueryConfigTarget and mark Ready=True",

@@ -115,7 +115,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 		DeferCleanup(vcenter.LogoutVimClient, vimClient)
 
 		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy,
-			consts.TelcoVMServiceAPICapabilityName)
+			consts.VMServiceClasslessVMCapabilityName)
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
 			ctx,

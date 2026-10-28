@@ -12,7 +12,6 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -180,8 +179,8 @@ var _ = Describe("Utils", func() {
 							obj, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
 							Expect(err).ToNot(HaveOccurred())
 							Expect(obj).ToNot(BeNil())
-							Expect(obj.Spec.Hardware.Cpus).To(Equal(int64(2)))
-							Expect(obj.Spec.Hardware.Memory.String()).To(Equal("1Gi"))
+							Expect(obj.Spec.Resources.Size.CPU.Default.String()).To(Equal("2"))
+							Expect(obj.Spec.Resources.Size.Memory.Default.String()).To(Equal("1Gi"))
 							configSpec, err := util.UnmarshalConfigSpecFromJSON(obj.Spec.ConfigSpec)
 							Expect(err).ToNot(HaveOccurred())
 							Expect(configSpec.NumCPUs).To(Equal(int32(2)))
@@ -1536,10 +1535,6 @@ var _ = Describe("Utils", func() {
 		When("VM Class exists without ConfigSpec", func() {
 			BeforeEach(func() {
 				vmClass.Spec.ConfigSpec = nil
-				vmClass.Spec.Hardware = vmopv1.VirtualMachineClassHardware{
-					Cpus:   int64(4),
-					Memory: resource.MustParse("4Gi"),
-				}
 				initObjects = append(initObjects, vmClass)
 			})
 

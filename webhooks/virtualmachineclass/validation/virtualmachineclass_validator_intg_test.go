@@ -13,6 +13,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -66,8 +67,8 @@ func intgTestsValidateCreate() {
 		vmClass := ctx.vmClass.DeepCopy()
 
 		if !expectedAllowed {
-			vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("2Gi")
-			vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("1Gi")
+			vmClass.Spec.Resources.Requests.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))}
+			vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))}
 		}
 
 		err := ctx.Client.Create(ctx, vmClass)
@@ -81,6 +82,17 @@ func intgTestsValidateCreate() {
 		}
 	}
 
+	validateSchema := func(mutator func(*vmopv1.VirtualMachineClass), expectFailure bool) {
+		vmClass := ctx.vmClass.DeepCopy()
+		mutator(vmClass)
+		err := ctx.Client.Create(ctx, vmClass)
+		if expectFailure {
+			Expect(err).To(HaveOccurred())
+		} else {
+			Expect(err).ToNot(HaveOccurred())
+		}
+	}
+
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
 	})
@@ -88,12 +100,43 @@ func intgTestsValidateCreate() {
 		ctx = nil
 	})
 
-	fieldPath := field.NewPath("spec", "policies", "resources", "requests", "memory")
+	fieldPath := field.NewPath("spec", "resources", "requests", "memory")
 	invalidMemField := field.Invalid(fieldPath, "2Gi", "memory request must not be larger than the memory limit")
 	DescribeTable("create table", validateCreate,
 		Entry("should work", true, "", nil),
 		Entry("should not work for invalid", false, invalidMemField.Error(), nil),
 	)
+
+	DescribeTable("class policy schema", validateSchema,
+		Entry("accepts numeric and string quantities", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Size.CPU = &vmopv1.ResourceQuantityRange{
+				Min: ptr.To(resource.MustParse("1")), Max: ptr.To(resource.MustParse("4")), Default: ptr.To(resource.MustParse("2")),
+			}
+			class.Spec.Resources.Size.Memory = &vmopv1.ResourceQuantityRange{
+				Min: ptr.To(resource.MustParse("1Gi")), Max: ptr.To(resource.MustParse("8Gi")), Default: ptr.To(resource.MustParse("4Gi")),
+			}
+		}, false),
+		Entry("rejects bound without default", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Size.CPU = &vmopv1.ResourceQuantityRange{Min: ptr.To(resource.MustParse("1"))}
+		}, true),
+		Entry("rejects default below minimum", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Size.CPU = &vmopv1.ResourceQuantityRange{
+				Min: ptr.To(resource.MustParse("4")), Default: ptr.To(resource.MustParse("2")),
+			}
+		}, true),
+		Entry("rejects default above maximum", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Size.CPU = &vmopv1.ResourceQuantityRange{
+				Max: ptr.To(resource.MustParse("4")), Default: ptr.To(resource.MustParse("8")),
+			}
+		}, true),
+		Entry("rejects fractional CPU size defaults", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Size.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1500m"))}
+		}, true),
+		Entry("rejects CPU size defaults above int32", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Size.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2147483648"))}
+		}, true),
+	)
+
 }
 
 func intgTestsValidateDelete() {

@@ -61,9 +61,24 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 - [ ] T101 [P] [US12] [vmop-4314] A CI pipeline that runs the Flex VM Classes E2E suites with the capability enabled, quarantined until vmop-4337 — `test/e2e`, CI config
 
+### Incremental schema PRs (vmop-4315)
+
+The resource migration (A1) targets spec PR #2067. The device policy (A2) and class reserved-profile policy (A3) PRs independently target A1. Category PRs initially target the foundation in parallel; only actual code dependencies impose further stacking. Every PR includes its generated artifacts, affected consumers, conversion tests, appropriate integration tests, focused end-to-end scenarios, and spec/task updates. A completed category does not complete the broader governance tasks below.
+
+- [x] T103c [US1/US9] [vmop-4315] PR A1: reshape existing typed resources into ranges; preserve legacy devices, instance storage, reserved profile IDs and slots; migrate resource consumers and class-instance hashes. Includes the resource portions of T102, T104 and T106
+- [ ] T103k [US8/US9] [vmop-4315] PR A2: migrate existing class device lists to policies, conversion, consumers and device-specific tests; target PR A1
+- [ ] T103l [US10] [vmop-4315] PR A3: migrate class reserved-profile IDs to policies, conversion, consumers and profile-specific tests; target PR A1
+- [x] T103d [US4] [vmop-4315] PR A1: materialize existing VM resource counterparts in mutation using the existing TelcoVMServiceAPI gate and current CPU conversion; preserve ordinary updates and existing resize behavior. Pulls forward the resource portion of T400
+- [ ] T103e [US1/US9] [vmop-4315] PR A1: execute new-schema E2E and the real baseline-to-candidate upgrade workflow with existing tenant workloads. Both scenarios are written and compile; execution is deferred for draft review while the testbed is provisioned. Covers the foundation portion of T106b
+- [ ] T103f [US1/US4] [vmop-4315] PR B: CPU/memory typed settings, missing specified VM counterparts, conversion, consumers, mutation and category tests
+- [ ] T103g [US1/US4] [vmop-4315] PR C: boot/advanced settings, ExtraConfig ListPolicy and NUMA Int32SetPolicy, conversion, consumers, mutation and category tests
+- [ ] T103h [US8/US10] [vmop-4315] PR D: inline VM device counterparts and default materialization; conversion, consumers and category tests. Implements T108a incrementally
+- [ ] T103i [US10] [vmop-4315] PR E: VM profile selection, mutation and existing-VM backfill, provider consumption and removal, and category tests. Includes applicable portions of T108, T110 and T409
+- [ ] T103j [US1/US4] [vmop-4315] PR F: settled remaining hardware presets and category tests; CPU masks remain top-class presets; T011 remains deferred
+
 ### Story — VM Class v1alpha6 schema (vmop-4315)
 
-- [ ] T102 [US1/US9] [vmop-4315] Wire the round-trip annotation into the `VirtualMachineClass` conversion functions before the rest of the schema lands — `api/utilconversion`, `api/v1alpha*/virtualmachineclass_conversion.go`
+- [x] T102 [US1/US9] [vmop-4315] Wire the round-trip annotation into the `VirtualMachineClass` conversion functions before the rest of the schema lands — `api/utilconversion`, `api/v1alpha*/virtualmachineclass_conversion.go`
 - [ ] T103 [US1/US2/US10] [vmop-4315] Reshape `VirtualMachineClass` v1alpha6 in place: `resources` (size, requests, limits), `cpuAdvanced`, `memoryAdvanced`, `bootOptions`, `advanced` (incl. `extraConfig`, with a `value` `StringPolicy` on its `allowed` entries), `hardware.{vGPUs,dynamicDirectPathIODevices}`, `network.interfaces`, `resources.shares` (with T120), `hardware.instanceStorage`, `hardware.version`, leftover-only `configSpec`, `zones`, `governs` (`zones`, `enforcement`, `existingVMs`), `externalID`, `reservedProfileName`, `parentClassRefs` (reserved, rejected in Milestone 1), `status.zones[]`, the schema-version label — `api/v1alpha6/virtualmachineclass_types.go`
 - [ ] T103a [US10] [vmop-4315] Remove `VirtualMachineReservedProfile` from the vm-operator API and its CRD, and add read-only RBAC for it — `api/v1alpha6/`, `config/crd/`, `config/rbac`
 - [ ] T103b [US10] [vmop-4315] Remove `ReservedProfileID` from `VirtualMachineClassSpec` in v1alpha6 (replaced by `reservedProfileName`); keep it in v1alpha5 and older for conversion; regenerate deepcopy and CRDs — `api/v1alpha6/virtualmachineclass_types.go`, `config/crd/`

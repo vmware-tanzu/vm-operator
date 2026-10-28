@@ -71,7 +71,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	var fieldErrs field.ErrorList
 
-	fieldErrs = append(fieldErrs, v.validatePolicies(ctx, vmClass, field.NewPath("spec", "policies"))...)
+	fieldErrs = append(fieldErrs, v.validatePolicies(ctx, vmClass)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -99,21 +99,22 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) validatePolicies(ctx *pkgctx.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass,
-	polPath *field.Path) field.ErrorList {
+func (v validator) validatePolicies(ctx *pkgctx.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass) field.ErrorList {
 	var allErrs field.ErrorList
 
-	request, limits := vmClass.Spec.Policies.Resources.Requests, vmClass.Spec.Policies.Resources.Limits
-	reqPath := polPath.Child("resources", "requests")
+	request, limits := vmClass.Spec.Resources.Requests, vmClass.Spec.Resources.Limits
+	reqPath := field.NewPath("spec", "resources", "requests")
 
 	// Validate the CPU request.
-	if !isRequestLimitValid(request.Cpu, limits.Cpu) {
-		allErrs = append(allErrs, field.Invalid(reqPath.Child("cpu"), request.Cpu.String(), invalidCPUReqMsg))
+	cpuRequest, cpuLimit := rangeDefault(request.CPU), rangeDefault(limits.CPU)
+	if !isRequestLimitValid(cpuRequest, cpuLimit) {
+		allErrs = append(allErrs, field.Invalid(reqPath.Child("cpu"), cpuRequest.String(), invalidCPUReqMsg))
 	}
 
 	// Validate the memory request.
-	if !isRequestLimitValid(request.Memory, limits.Memory) {
-		allErrs = append(allErrs, field.Invalid(reqPath.Child("memory"), request.Memory.String(), invalidMemoryReqMsg))
+	memoryRequest, memoryLimit := rangeDefault(request.Memory), rangeDefault(limits.Memory)
+	if !isRequestLimitValid(memoryRequest, memoryLimit) {
+		allErrs = append(allErrs, field.Invalid(reqPath.Child("memory"), memoryRequest.String(), invalidMemoryReqMsg))
 	}
 
 	// TODO: Validate req and limit against hardware configuration of the class
@@ -130,6 +131,13 @@ func (v validator) vmClassFromUnstructured(obj runtime.Unstructured) (*vmopv1.Vi
 	return vmClass, nil
 }
 
+func rangeDefault(r *vmopv1.ResourceQuantityRange) resource.Quantity {
+	if r == nil || r.Default == nil {
+		return resource.Quantity{}
+	}
+	return *r.Default
+}
+
 func isRequestLimitValid(request, limit resource.Quantity) bool {
-	return request.IsZero() || limit.IsZero() || request.Value() <= limit.Value()
+	return request.IsZero() || limit.IsZero() || request.Cmp(limit) <= 0
 }

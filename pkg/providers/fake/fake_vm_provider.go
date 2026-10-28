@@ -32,6 +32,7 @@ import (
 // expected to evolve as more tests get added in the future.
 
 type funcs struct {
+	GetVirtualMachineClassResourcesFn   func(context.Context, vmopv1.VirtualMachineClassSpec) (*vmopv1.VirtualMachineResourcesSpec, error)
 	CreateOrUpdateVirtualMachineFn      func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	CreateOrUpdateVirtualMachineAsyncFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (<-chan error, error)
 	DeleteVirtualMachineFn              func(ctx context.Context, vm *vmopv1.VirtualMachine) error
@@ -550,4 +551,12 @@ func SetCreateOrUpdateFunction(
 	}
 
 	provider.CreateOrUpdateVirtualMachineFn = fn
+}
+
+// GetVirtualMachineClassResources resolves class resource defaults for admission.
+func (s *VMProvider) GetVirtualMachineClassResources(ctx context.Context, spec vmopv1.VirtualMachineClassSpec) (*vmopv1.VirtualMachineResourcesSpec, error) {
+	if s.GetVirtualMachineClassResourcesFn != nil {
+		return s.GetVirtualMachineClassResourcesFn(ctx, spec)
+	}
+	return nil, fmt.Errorf("class resource defaults are not configured for the fake provider")
 }

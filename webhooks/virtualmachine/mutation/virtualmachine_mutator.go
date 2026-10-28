@@ -41,6 +41,7 @@ import (
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmclass"
 )
 
 const (
@@ -54,6 +55,7 @@ const (
 // +kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha6-virtualmachine,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,verbs=create;update,versions=v1alpha6,name=default.mutating.virtualmachine.v1alpha6.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses;virtualmachineclassinstances,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages,verbs=get;list;watch
@@ -85,7 +87,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		return err
 	}
 
-	hook, err := builder.NewMutatingWebhook(ctx, mgr, webHookName, NewMutator(mgr.GetClient()))
+	hook, err := builder.NewMutatingWebhook(ctx, mgr, webHookName, NewMutatorWithProvider(mgr.GetClient(), ctx.VMProvider))
 	if err != nil {
 		return fmt.Errorf("failed to create mutation webhook: %w", err)
 	}
@@ -144,15 +146,22 @@ func init() {
 
 // NewMutator returns the package's Mutator.
 func NewMutator(client ctrlclient.Client) builder.Mutator {
+	return NewMutatorWithProvider(client, nil)
+}
+
+// NewMutatorWithProvider returns a mutator with class resource resolution.
+func NewMutatorWithProvider(client ctrlclient.Client, provider vmclass.ResourceDefaultsProvider) builder.Mutator {
 	return mutator{
-		client:    client,
-		converter: runtime.DefaultUnstructuredConverter,
+		resourceProvider: provider,
+		client:           client,
+		converter:        runtime.DefaultUnstructuredConverter,
 	}
 }
 
 type mutator struct {
-	client    ctrlclient.Client
-	converter runtime.UnstructuredConverter
+	resourceProvider vmclass.ResourceDefaultsProvider
+	client           ctrlclient.Client
+	converter        runtime.UnstructuredConverter
 }
 
 // ResolveClassAndClassName resolves the spec.class and
@@ -304,6 +313,10 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			}
 		}
 
+		if _, err := vmclass.ApplyResourceDefaults(ctx, m.client, m.resourceProvider, modified, nil); err != nil {
+			return admission.Denied(err.Error())
+		}
+
 		// Iterate over the externally registered mutate functions.
 		var rangeErr error
 		MutateOnCreateFuncs.Range(func(key, value any) bool {
@@ -329,6 +342,12 @@ func (m mutator) Mutate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 			if _, err := ResolveClassAndClassName(ctx, m.client, modified); err != nil {
 				return admission.Denied(err.Error())
 			}
+		}
+
+		if changed, err := vmclass.ApplyResourceDefaults(ctx, m.client, m.resourceProvider, modified, oldVM); err != nil {
+			return admission.Denied(err.Error())
+		} else if changed {
+			wasMutated = true
 		}
 
 		// When a VM is resized, the last resize instances are set to

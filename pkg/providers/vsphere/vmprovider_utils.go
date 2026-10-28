@@ -125,7 +125,8 @@ func getVirtualMachineClassFromVM(
 
 	var obj vmopv1.VirtualMachineClass
 	obj.Spec.ConfigSpec = rawConfigSpec
-	obj.Spec.Hardware.Cpus = int64(vmCtx.MoVM.Config.Hardware.NumCPU)
+	cpuQuantity := resource.MustParse(fmt.Sprintf("%d", vmCtx.MoVM.Config.Hardware.NumCPU))
+	obj.Spec.Resources.Size.CPU = vmopv1.FixedClassResource(cpuQuantity)
 	// Please note that the VMODL (https://via.vmw.com/vm-configinfo-memorymb)
 	// for a VM's hardware.memoryMB does not indicate this is the scientific
 	// MiB. The name of the property has the suffix "MB", which certainly
@@ -134,8 +135,9 @@ func getVirtualMachineClassFromVM(
 	// of 8192, which is actually 8GiB. Therefore this next line uses the K8s
 	// resource unit (https://via.vmw.com/k8s-meaning-of-mem) for base-2, "Mi",
 	// instead of "M" for base-10.
-	obj.Spec.Hardware.Memory = resource.MustParse(
+	memoryQuantity := resource.MustParse(
 		fmt.Sprintf("%dMi", vmCtx.MoVM.Config.Hardware.MemoryMB))
+	obj.Spec.Resources.Size.Memory = vmopv1.FixedClassResource(memoryQuantity)
 
 	return obj, nil
 }

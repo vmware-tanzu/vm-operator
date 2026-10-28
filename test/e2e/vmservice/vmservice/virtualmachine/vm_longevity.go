@@ -199,12 +199,12 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 					return false
 				}
 
-				cpu_num1 := vmclass1.Spec.Hardware.Cpus
-				memory_num1 := vmoperator.MemoryQuantityToMb(vmclass1.Spec.Hardware.Memory)
-				cpu_num2 := vmclass2.Spec.Hardware.Cpus
-				memory_num2 := vmoperator.MemoryQuantityToMb(vmclass2.Spec.Hardware.Memory)
+				cpu1, memory1 := virtualMachineClassSize(vmclass1)
+				cpu2, memory2 := virtualMachineClassSize(vmclass2)
 
-				return int(cpu_num1) == updatedCpu && int(cpu_num2) == updatedCpu && memory_num1 == updatedMemory && memory_num2 == updatedMemory
+				return int(cpu1) == updatedCpu && int(cpu2) == updatedCpu &&
+					memory1/(1024*1024) == int64(updatedMemory) &&
+					memory2/(1024*1024) == int64(updatedMemory)
 			}, 30*time.Second, 3*time.Second).Should(BeTrue())
 
 			By("VirtualMachinePrereqReadyCondition on VMs should not change")

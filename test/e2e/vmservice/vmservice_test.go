@@ -115,6 +115,17 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
+		Context("VM-CLASS-SCHEMA-UPGRADE", func() {
+			virtualmachine.VMClassSchemaUpgradeSpec(context.TODO(), func() virtualmachine.VMClassSchemaUpgradeInput {
+				return virtualmachine.VMClassSchemaUpgradeInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					WCPClient:        wcpClient,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
 		Context("VM-LONGEVITY", func() {
 			virtualmachine.VMLongevitySpec(context.TODO(), func() virtualmachine.VMLongevityInput {
 				return virtualmachine.VMLongevityInput{

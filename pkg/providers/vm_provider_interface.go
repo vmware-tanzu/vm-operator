@@ -58,6 +58,9 @@ type VirtualMachineProviderInterface interface {
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error
 	DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error
 
+	// GetVirtualMachineClassResources resolves class defaults into VM resource units.
+	GetVirtualMachineClassResources(ctx context.Context, spec vmopv1.VirtualMachineClassSpec) (*vmopv1.VirtualMachineResourcesSpec, error)
+
 	// "Infra" related
 	UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error
 	UpdateVcCreds(ctx context.Context, data map[string][]byte) error

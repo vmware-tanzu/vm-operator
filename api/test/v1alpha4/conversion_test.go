@@ -6,6 +6,8 @@ package v1alpha4_test
 
 import (
 	"encoding/json"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -64,8 +66,19 @@ var _ = Describe("FuzzyConversion", Label("api", "fuzz"), func() {
 		BeforeEach(func() {
 			input = fuzztests.FuzzTestFuncInput{
 				Scheme: scheme,
-				Hub:    &vmopv1.VirtualMachineClass{},
-				Spoke:  &vmopv1a4.VirtualMachineClass{},
+				HubAfterMutation: func(h ctrlconversion.Hub) {
+					if m := h.(metav1.Object); len(m.GetAnnotations()) == 0 {
+						m.SetAnnotations(nil)
+					}
+				},
+				SpokeAfterMutation: func(h ctrlconversion.Convertible) {
+					if m := h.(metav1.Object); len(m.GetAnnotations()) == 0 {
+						m.SetAnnotations(nil)
+					}
+				},
+				Hub:         &vmopv1.VirtualMachineClass{},
+				Spoke:       &vmopv1a4.VirtualMachineClass{},
+				FuzzerFuncs: []fuzzer.FuzzerFuncs{fuzztests.ClassPolicyFuzzerFuncs, overrideVirtualMachineFieldsFuncs},
 			}
 		})
 		Context("Spoke-Hub-Spoke", func() {

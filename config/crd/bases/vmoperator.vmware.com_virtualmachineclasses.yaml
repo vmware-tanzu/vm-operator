@@ -1159,10 +1159,10 @@ spec:
     subresources:
       status: {}
   - additionalPrinterColumns:
-    - jsonPath: .spec.hardware.cpus
+    - jsonPath: .spec.resources.size.cpu.default
       name: CPU
       type: string
-    - jsonPath: .spec.hardware.memory
+    - jsonPath: .spec.resources.size.memory.default
       name: Memory
       type: string
     - jsonPath: .status.capabilities
@@ -1233,13 +1233,8 @@ spec:
                   this field is used to customize the virtual hardware characteristics of
                   any VirtualMachine associated with this VirtualMachineClass.
                 properties:
-                  cpus:
-                    format: int64
-                    type: integer
                   devices:
-                    description: |-
-                      VirtualDevices contains information about the virtual devices associated
-                      with a VirtualMachineClass.
+                    description: Devices describes the class's device configuration.
                     properties:
                       dynamicDirectPathIODevices:
                         items:
@@ -1276,9 +1271,7 @@ spec:
                         x-kubernetes-list-type: map
                     type: object
                   instanceStorage:
-                    description: |-
-                      InstanceStorage provides information used to configure instance
-                      storage volumes for a VirtualMachine.
+                    description: InstanceStorage describes instance storage volumes.
                     properties:
                       storageClass:
                         description: |-
@@ -1309,60 +1302,6 @@ spec:
                           type: object
                         type: array
                     type: object
-                  memory:
-                    anyOf:
-                    - type: integer
-                    - type: string
-                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                    x-kubernetes-int-or-string: true
-                type: object
-              policies:
-                description: |-
-                  Policies describes the configuration of the VirtualMachineClass
-                  attributes related to virtual infrastructure policy. The configuration
-                  specified in this field is used to customize various policies related to
-                  infrastructure resource consumption.
-                properties:
-                  resources:
-                    description: |-
-                      VirtualMachineClassResources describes the virtual hardware resource
-                      reservations and limits configuration to be used by a VirtualMachineClass.
-                    properties:
-                      limits:
-                        description: VirtualMachineResourceSpec describes a virtual
-                          hardware policy specification.
-                        properties:
-                          cpu:
-                            anyOf:
-                            - type: integer
-                            - type: string
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                          memory:
-                            anyOf:
-                            - type: integer
-                            - type: string
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                        type: object
-                      requests:
-                        description: VirtualMachineResourceSpec describes a virtual
-                          hardware policy specification.
-                        properties:
-                          cpu:
-                            anyOf:
-                            - type: integer
-                            - type: string
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                          memory:
-                            anyOf:
-                            - type: integer
-                            - type: string
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                        type: object
-                    type: object
                 type: object
               reservedProfileID:
                 description: |-
@@ -1377,6 +1316,243 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              resources:
+                description: Resources describes guest size, reservations and limits.
+                properties:
+                  limits:
+                    description: Limits describes CPU and memory limits.
+                    properties:
+                      cpu:
+                        description: CPU is measured in vCPUs, including requests
+                          and limits.
+                        properties:
+                          default:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Default is the value supplied by this class.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          max:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Max is the inclusive upper bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          min:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Min is the inclusive lower bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                        x-kubernetes-validations:
+                        - message: a bounded range requires a default
+                          rule: (!has(self.min) && !has(self.max)) || has(self.default)
+                        - message: default must not be below min
+                          rule: '!has(self.min) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.min)))
+                            >= 0'
+                        - message: default must not exceed max
+                          rule: '!has(self.max) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.max)))
+                            <= 0'
+                      memory:
+                        description: Memory is measured in bytes.
+                        properties:
+                          default:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Default is the value supplied by this class.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          max:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Max is the inclusive upper bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          min:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Min is the inclusive lower bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                        x-kubernetes-validations:
+                        - message: a bounded range requires a default
+                          rule: (!has(self.min) && !has(self.max)) || has(self.default)
+                        - message: default must not be below min
+                          rule: '!has(self.min) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.min)))
+                            >= 0'
+                        - message: default must not exceed max
+                          rule: '!has(self.max) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.max)))
+                            <= 0'
+                    type: object
+                  requests:
+                    description: Requests describes CPU and memory reservations.
+                    properties:
+                      cpu:
+                        description: CPU is measured in vCPUs, including requests
+                          and limits.
+                        properties:
+                          default:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Default is the value supplied by this class.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          max:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Max is the inclusive upper bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          min:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Min is the inclusive lower bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                        x-kubernetes-validations:
+                        - message: a bounded range requires a default
+                          rule: (!has(self.min) && !has(self.max)) || has(self.default)
+                        - message: default must not be below min
+                          rule: '!has(self.min) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.min)))
+                            >= 0'
+                        - message: default must not exceed max
+                          rule: '!has(self.max) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.max)))
+                            <= 0'
+                      memory:
+                        description: Memory is measured in bytes.
+                        properties:
+                          default:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Default is the value supplied by this class.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          max:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Max is the inclusive upper bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          min:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Min is the inclusive lower bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                        x-kubernetes-validations:
+                        - message: a bounded range requires a default
+                          rule: (!has(self.min) && !has(self.max)) || has(self.default)
+                        - message: default must not be below min
+                          rule: '!has(self.min) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.min)))
+                            >= 0'
+                        - message: default must not exceed max
+                          rule: '!has(self.max) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.max)))
+                            <= 0'
+                    type: object
+                  size:
+                    description: Size describes the guest-visible CPU and memory configuration.
+                    properties:
+                      cpu:
+                        description: CPU is measured in vCPUs, including requests
+                          and limits.
+                        properties:
+                          default:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Default is the value supplied by this class.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          max:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Max is the inclusive upper bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          min:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Min is the inclusive lower bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                        x-kubernetes-validations:
+                        - message: a bounded range requires a default
+                          rule: (!has(self.min) && !has(self.max)) || has(self.default)
+                        - message: default must not be below min
+                          rule: '!has(self.min) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.min)))
+                            >= 0'
+                        - message: default must not exceed max
+                          rule: '!has(self.max) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.max)))
+                            <= 0'
+                      memory:
+                        description: Memory is measured in bytes.
+                        properties:
+                          default:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Default is the value supplied by this class.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          max:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Max is the inclusive upper bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          min:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: Min is the inclusive lower bound.
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                        x-kubernetes-validations:
+                        - message: a bounded range requires a default
+                          rule: (!has(self.min) && !has(self.max)) || has(self.default)
+                        - message: default must not be below min
+                          rule: '!has(self.min) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.min)))
+                            >= 0'
+                        - message: default must not exceed max
+                          rule: '!has(self.max) || !has(self.default) || quantity(string(self.default)).compareTo(quantity(string(self.max)))
+                            <= 0'
+                    type: object
+                    x-kubernetes-validations:
+                    - message: CPU size min must be a whole number between 0 and 2147483647
+                      rule: '!has(self.cpu) || !has(self.cpu.min) || (quantity(string(self.cpu.min)).isInteger()
+                        && quantity(string(self.cpu.min)).asInteger() >= 0 && quantity(string(self.cpu.min)).asInteger()
+                        <= 2147483647)'
+                    - message: CPU size max must be a whole number between 0 and 2147483647
+                      rule: '!has(self.cpu) || !has(self.cpu.max) || (quantity(string(self.cpu.max)).isInteger()
+                        && quantity(string(self.cpu.max)).asInteger() >= 0 && quantity(string(self.cpu.max)).asInteger()
+                        <= 2147483647)'
+                    - message: CPU size default must be a whole number between 0 and
+                        2147483647
+                      rule: '!has(self.cpu) || !has(self.cpu.default) || (quantity(string(self.cpu.default)).isInteger()
+                        && quantity(string(self.cpu.default)).asInteger() >= 0 &&
+                        quantity(string(self.cpu.default)).asInteger() <= 2147483647)'
+                type: object
             type: object
           status:
             description: VirtualMachineClassStatus defines the observed state of VirtualMachineClass.

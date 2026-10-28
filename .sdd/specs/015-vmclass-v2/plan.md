@@ -12,6 +12,14 @@ The technical design is WIKI page 3118085463 and its child pages (full schema, v
 
 Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `governs`, zones, `externalID` and reserved profiles; enforce governance in the class and VM webhooks; report compatibility and compliance from the class and VM controllers; filter placement by governance; add the mapping markers the provider's class API is generated from; remove `VirtualMachineConfigPolicy`. The provider's work is listed under "Provider work". All of it is behind the `supports_vm_service_classless_vm` capability until the enablement story. Milestone 2 adds `parentClassRefs` behind a second capability.
 
+## Incremental delivery and verification
+
+Start from spec PR #2067 with the resource migration PR (A1) that reshapes existing typed resources. Device policy (A2) and class reserved-profile policy (A3) independently target A1. CPU/memory, boot/advanced, inline VM devices, VM reserved-profile selection and remaining settled hardware presets follow as category PRs targeting the foundation. Actual code dependencies determine any further serial ordering. Keep conversions, consumers, generated artifacts and tests with each change. Before opening each PR, run the applicable tests and review its diff against the constitution and acceptance criteria; fix findings and retest affected behavior.
+
+Class-supplied fields are authoritative. Resource allocation defaults retain legacy precedence: explicit zero requests and limits leave raw ConfigSpec reservations and limits intact. Promoting raw allocation values into typed defaults is deferred. Creation and permitted class changes materialize the applicable values; ordinary updates do not refresh VMs merely because a class changed. Conflicting-edit rejection remains with the validation story. Existing VM fields continue using TelcoVMServiceAPI during this incremental stack; Flex capability wiring remains separate. Preserve the existing Supervisor-wide minimum-frequency conversion of class vCPUs into VM MHz; selecting a cluster-specific frequency is an unresolved follow-up.
+
+Push field/version/value combinations, nil/zero/empty handling, conversion round trips and older-writer edits into unit tests. Use envtest for storage/pruning/CEL/admission and conversion-webhook behavior, and vcsim/provider tests for configuration translation. E2E proves representative complete workflows: a new-shape class produces the expected VM spec and realized configuration; legacy classes and healthy workloads survive a real baseline-to-candidate upgrade and remain usable afterward. Old-version API writes to the candidate alone are not upgrade coverage. Each PR records what lower layers prove and the remaining E2E responsibilities. Test results must distinguish executed checks from unavailable testbed coverage.
+
 ## Technical context
 
 | Field | Value |

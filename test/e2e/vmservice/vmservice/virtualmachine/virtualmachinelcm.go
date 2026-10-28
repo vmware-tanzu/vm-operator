@@ -881,7 +881,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		)
 
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.IaaSComputePoliciesCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.IaaSComputePoliciesCapabilityName)
 
 			By("Creating a tag manager to verify actual tag assignment")
 			restClient, err := vcenter.NewRestClient(ctx, vCenterClient, testbed.AdminUsername, testbed.AdminPassword)
@@ -1106,7 +1106,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		)
 
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.IaaSComputePoliciesCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.IaaSComputePoliciesCapabilityName)
 
 			// Create temporary namespace for isolation.
 			tmpNamespaceName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6))

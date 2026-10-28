@@ -888,11 +888,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			if !incrementalRestoreEnabled {
 				Skip("WCP_VMService_Incremental_Restore FSS is not enabled")
 			}
-
-			asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
-			Expect(err).ToNot(HaveOccurred())
-			extensionCompatConstraintEnabled := utils.IsSupervisorCapabilityEnabled(
-				ctx, svClusterClient, consts.ExtensionCompatConstraintCapabilityName, asyncSupervisorFSSEnabled)
+			extensionCompatConstraintEnabled := config.SupervisorCapabilities[consts.ExtensionCompatConstraintCapabilityName]
 
 			adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 			Expect(err).ToNot(HaveOccurred())

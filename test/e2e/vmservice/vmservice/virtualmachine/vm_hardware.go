@@ -788,14 +788,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				config.GetVariable("EnvFSSIsoSupport"),
 			)
 
-			asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
-			Expect(err).NotTo(HaveOccurred())
-
-			allDisksArePVCapabilityEnabled = utils.IsSupervisorCapabilityEnabled(
-				ctx,
-				svClusterClient,
-				consts.AllDisksArePVCapabilityName,
-				asyncSupervisorFSSEnabled)
+			allDisksArePVCapabilityEnabled = config.SupervisorCapabilities[consts.AllDisksArePVCapabilityName]
 
 			vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, kubeconfigPath)
 			defer vcenter.LogoutVimClient(vCenterClient)
@@ -811,6 +804,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				clusterResources.StorageClassName)
 
 			// Create or get the EZT storage policy.
+			var err error
 			eztStoragePolicyID, err = vcenter.GetOrCreateEZTStoragePolicy(ctx, vCenterClient, eztStorageProfileName,
 				basePolicyID)
 			Expect(err).ShouldNot(HaveOccurred(), "Failed to create EZT storage policy")
@@ -852,7 +846,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			)
 
 			skipper.SkipUnlessInfraIs(config.InfraConfig.InfraName, consts.WCP)
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.SharedDisksCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.SharedDisksCapabilityName)
 		})
 
 		BeforeEach(func() {
@@ -2173,7 +2167,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 		Describe("VM with boot disk as PVC", func() {
 			BeforeEach(func() {
-				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.AllDisksArePVCapabilityName)
+				skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.AllDisksArePVCapabilityName)
 			})
 
 			// The requested boot disk size must be larger than the image's boot
@@ -3127,7 +3121,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			})
 
 			It("Import brownfield VM with shared SCSI controller and shared disk should succeed", Label("experimental"), func() {
-				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.MultiWriterDiskVMotionCapabilityName)
+				skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.MultiWriterDiskVMotionCapabilityName)
 
 				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				defer vcenter.LogoutVimClient(vCenterClient)

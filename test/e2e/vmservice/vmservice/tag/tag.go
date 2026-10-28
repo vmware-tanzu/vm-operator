@@ -99,7 +99,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		svClusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMHardAffinityDuringExecutionCapabilityName)
 
 		var err error
 		adminProxy, err = svClusterProxy.NewAdminClusterProxy(ctx)

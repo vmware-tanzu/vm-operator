@@ -76,7 +76,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 	skipChecks := func() {
 		skipper.SkipUnlessInfraIs(vmSnapshotInput.Config.InfraConfig.InfraName, consts.WCP)
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.VirtualMachineSnapshotCapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(vmSnapshotInput.Config.SupervisorCapabilities, consts.VirtualMachineSnapshotCapabilityName)
 	}
 
 	BeforeEach(func() {
@@ -562,7 +562,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 	When("CSI Backup API is enabled", Label("experimental"), func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.CSIBackupAPICapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(vmSnapshotInput.Config.SupervisorCapabilities, consts.CSIBackupAPICapabilityName)
 
 			createSnapshotVM(ctx, vmSvcE2EConfig, svClusterClient, vmSvcClusterResources, vmSvcNamespace, vmName)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)

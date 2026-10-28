@@ -6,6 +6,7 @@ package crd_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -1564,13 +1565,33 @@ var _ = Describe(
 					// CRD deletion is asynchronous. Wait for finalization before
 					// checking that subsequent installs no longer issue deletes.
 					Eventually(func(g Gomega) {
-						var crds apiextensionsv1.CustomResourceDefinitionList
+						// Avoid fetching large CRD schemas on every poll.
+						var crds metav1.PartialObjectMetadataList
+						crds.SetGroupVersionKind(apiextensionsv1.SchemeGroupVersion.WithKind("CustomResourceDefinitionList"))
 						g.Expect(envTestClient.List(ctx, &crds)).To(Succeed())
 						for _, crd := range crds.Items {
 							g.Expect(crd.DeletionTimestamp.IsZero()).To(BeTrue(),
 								"CRD %s is still terminating", crd.Name)
 						}
-					}).WithTimeout(time.Minute).Should(Succeed())
+					}).WithTimeout(3*time.Minute).WithPolling(time.Second).Should(Succeed(), func() string {
+						// Fetch status only on failure to help diagnose slow cleanup.
+						var crds apiextensionsv1.CustomResourceDefinitionList
+						if err := envTestClient.List(ctx, &crds); err != nil {
+							return fmt.Sprintf("Failed to collect CRD cleanup diagnostics: %v", err)
+						}
+						var diagnostics []string
+						for _, crd := range crds.Items {
+							if !crd.DeletionTimestamp.IsZero() {
+								diagnostics = append(diagnostics, fmt.Sprintf(
+									"CRD %s: deletionTimestamp=%v, finalizers=%v, conditions=%+v",
+									crd.Name, crd.DeletionTimestamp, crd.Finalizers, crd.Status.Conditions))
+							}
+						}
+						if len(diagnostics) == 0 {
+							return "No CRDs remain terminating while collecting cleanup diagnostics."
+						}
+						return strings.Join(diagnostics, "\n")
+					})
 				}
 				if !cleanup {
 					// Creation always removes disabled feature fields, so allow

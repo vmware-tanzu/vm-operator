@@ -27,7 +27,7 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S1 — Capability + feature gate (vmop-3738)
 
-- [x] T010 [S1.a] [PR #1649 / vmop-3747] Add `CapabilityKeyFlexVMClasses = "supports_vm_service_vm_config_policy"` constant — `pkg/config/capabilities/capabilities.go`
+- [x] T010 [S1.a] [PR #1649 / vmop-3747] Add `CapabilityKeyVMServiceClasslessVM = "vm_service_classless_vm"` constant — `pkg/config/capabilities/capabilities.go`
 - [x] T011 [S1.a] [PR #1649 / vmop-3747 + PR #1667 / vmop-3748] Wire feature gate check — vim.vmware.com scheme registered in `pkg/manager/manager.go` only when capability enabled; `controllers/vim/controllers.go` stub added with kubebuilder RBAC markers
 - [ ] T012 [S1.a] [vmop-3746] Gate the future `ConfigTarget`-based VM admission check on `Features.FlexVMClasses` — `webhooks/virtualmachine/validation/`. This check is not implemented on main; the existing discovery webhook registration in `webhooks/webhooks.go` is already gated. Complete with T114, not as part of policy removal.
 - [x] T013 [S1.a] [PR #1649 / vmop-3747] Unit tests for capability gate logic — `pkg/config/capabilities/capabilities_test.go`

@@ -63,8 +63,8 @@ type VMExtraConfigSpecInput struct {
 // Each It block creates its own VM and cleans up after itself, so all blocks are
 // independently runnable via TEST_FOCUS or LABEL_FILTER.
 //
-// All blocks are skipped when the TelcoVMServiceAPI supervisor capability
-// (supports_telco_vm_service_api) is not enabled on the cluster.
+// All blocks are skipped when the classless VM Supervisor capability
+// (vm_service_classless_vm) is not enabled on the cluster.
 func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpecInput) {
 	const specName = "vm-extraconfig"
 
@@ -94,7 +94,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			"Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
-		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.TelcoVMServiceAPICapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
 
 		config = input.Config
 		clusterProxy = input.ClusterProxy

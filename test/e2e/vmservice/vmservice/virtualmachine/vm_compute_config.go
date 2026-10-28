@@ -111,7 +111,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 		storageClass = config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName
 		vmClassName = config.InfraConfig.ManagementClusterConfig.Resources.VMClassName
 		wcpClient = input.WCPClient
-		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.TelcoVMServiceAPICapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
 
 		vimClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 		DeferCleanup(vcenter.LogoutVimClient, vimClient)

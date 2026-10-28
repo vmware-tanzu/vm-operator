@@ -339,7 +339,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(),
 			"Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.TelcoVMServiceAPICapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources

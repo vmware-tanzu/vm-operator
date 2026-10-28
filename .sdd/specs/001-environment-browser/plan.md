@@ -92,7 +92,7 @@ webhooks/
 
 pkg/
 ├── config/capabilities/
-│   └── capabilities.go                 MODIFY — add CapabilityKeyFlexVMClasses
+│   └── capabilities.go                 MODIFY — add CapabilityKeyVMServiceClasslessVM
 └── providers/vsphere/
 │   └── environment_browser.go          NEW — QueryConfigTarget, QueryConfigOptionDescriptor,
 │                                              QueryConfigOptionEx, per-host PropertyCollector
@@ -135,14 +135,14 @@ Before any code begins, the following wiki documents must be updated or created 
 
 #### F1. Capability + feature gate (Story S1 / vmop-3738)
 
-- Add `CapabilityKeyFlexVMClasses` to `pkg/config/capabilities/capabilities.go`.
+- Add `CapabilityKeyVMServiceClasslessVM` to `pkg/config/capabilities/capabilities.go`.
 - Wire a feature gate in `pkg/config/capabilities/` that controls controller registration and webhook short-circuit.
 - Install the three `vim.vmware.com` CRDs (`ConfigTarget`, `VirtualMachineConfigOptions`, `VirtualMachineGuestOptions`) via the Supervisor chart install hook and `config/crd/external-crds/`. No `HostSystem` CRD exists.
 
 **Key contracts**:
 ```go
 // pkg/config/capabilities/capabilities.go
-const CapabilityKeyFlexVMClasses = "supports_vm_service_vm_config_policy"
+const CapabilityKeyVMServiceClasslessVM = "vm_service_classless_vm"
 ```
 
 ```go
@@ -243,7 +243,7 @@ No standalone controller; reconciled by the `VirtualMachineConfigOptions` contro
 
 Earlier drafts introduced `VirtualMachineConfigPolicy` to govern VM configuration. That API and its enforcement never shipped; its types, CRD, Zone fan-out, and RBAC are removed because governance belongs to the Flex VM Classes specification (vmop-4034, PR #2067). No upgrade cleanup or migration is required.
 
-The environment-browser gate is named `Features.FlexVMClasses` and `CapabilityKeyFlexVMClasses` in Go. Its external capability string remains `supports_vm_service_vm_config_policy` to preserve the Supervisor integration contract.
+The environment-browser gate is named `Features.FlexVMClasses` and `CapabilityKeyVMServiceClasslessVM` in Go. Its external capability string remains `vm_service_classless_vm` to preserve the Supervisor integration contract.
 
 #### I6.a. Admin-only discovery access (vmop-4319)
 
@@ -386,4 +386,4 @@ No per-host CRD is created; the per-host data is owned entirely by `ConfigTarget
 | Capability disabled mid-deployment | Controllers deregister cleanly; webhook short-circuits |
 | CRD schema break | `spec.id` immutability enforced at webhook, not only at API server level |
 
-**Disable path**: Set `CapabilityKeyFlexVMClasses` to `false` in the capabilities ConfigMap. Controllers stop reconciling. CRDs remain installed (safe to list); existing objects are preserved. Re-enabling resumes reconciliation from current state.
+**Disable path**: Set `CapabilityKeyVMServiceClasslessVM` to `false` in the capabilities ConfigMap. Controllers stop reconciling. CRDs remain installed (safe to list); existing objects are preserved. Re-enabling resumes reconciliation from current state.

@@ -894,7 +894,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 			// functions exercise a real IPv6 address end-to-end instead of
 			// only ever having IPv4 to work with.
 			BeforeEach(func() {
-				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.WorkloadIPv6CapabilityName)
+				skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.WorkloadIPv6CapabilityName)
 			})
 
 			// Reuse the same OVF image and property keys across all three

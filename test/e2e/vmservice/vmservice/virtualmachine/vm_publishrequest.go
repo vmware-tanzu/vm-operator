@@ -361,7 +361,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			)
 
 			BeforeAll(func() {
-				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.InventoryContentLibraryCapabilityName)
+				skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.InventoryContentLibraryCapabilityName)
 
 				kubeConfig := clusterProxy.GetKubeconfigPath()
 				svClusterClient = clusterProxy.GetClient()
@@ -484,7 +484,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 			)
 
 			BeforeAll(func() {
-				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.InventoryContentLibraryCapabilityName)
+				skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.InventoryContentLibraryCapabilityName)
 
 				kubeConfig := clusterProxy.GetKubeconfigPath()
 				svClusterClient = clusterProxy.GetClient()

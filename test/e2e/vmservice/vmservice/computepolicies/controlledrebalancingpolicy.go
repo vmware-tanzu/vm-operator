@@ -75,7 +75,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = clusterProxy.GetClient()
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.ControlledRebalancingPolicyCapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.ControlledRebalancingPolicyCapabilityName)
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
 			ctx,

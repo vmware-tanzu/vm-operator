@@ -81,7 +81,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		clusterProxy := input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.K8sWorkloadMgmtAPICapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.K8sWorkloadMgmtAPICapabilityName)
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)

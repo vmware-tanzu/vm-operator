@@ -32,7 +32,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -131,11 +130,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
-
-		asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
-		Expect(err).ToNot(HaveOccurred())
-		extensionCompatConstraintEnabled = utils.IsSupervisorCapabilityEnabled(
-			ctx, svClusterClient, consts.ExtensionCompatConstraintCapabilityName, asyncSupervisorFSSEnabled)
+		extensionCompatConstraintEnabled = config.SupervisorCapabilities[consts.ExtensionCompatConstraintCapabilityName]
 
 		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
 	})

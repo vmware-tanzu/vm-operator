@@ -91,9 +91,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMGroupsCapabilityName)
+
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
 		DeferCleanup(cancelPodWatches)
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMGroupsCapabilityName)
 
 		svClusterClient = clusterProxy.GetClient()
 		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -390,7 +391,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 	Context("Boot order power-off delay", func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.TelcoVMServiceAPICapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.TelcoVMServiceAPICapabilityName)
 		})
 
 		It("Should power off group members in reverse boot order with the expected delay", Label("experimental"), func() {
@@ -793,7 +794,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		BeforeEach(func() {
 			skipper.SkipUnlessStretchSupervisorIsEnabled()
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMPlacementPoliciesCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMPlacementPoliciesCapabilityName)
 
 			By("Verifying there are at least 3 zones bound with the Supervisor")
 
@@ -926,7 +927,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		})
 
 		It("Should place VMs without a group on the same host using host affinity", Label("experimental"), func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMHardAffinityDuringExecutionCapabilityName)
 
 			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
 			appLabels := map[string]string{"app": vmgRootName}
@@ -965,7 +966,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		})
 
 		It("Should place VMs without a group on different hosts using host anti-affinity", Label("experimental"), func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMHardAffinityDuringExecutionCapabilityName)
 
 			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
 			appLabels := map[string]string{"app": vmgRootName}
@@ -1013,7 +1014,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			BeforeEach(func() {
 				skipper.SkipUnlessStretchSupervisorIsEnabled()
-				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+				skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMHardAffinityDuringExecutionCapabilityName)
 
 				namespaceZones, err := utils.ListZonesByNamespace(ctx, input.ClusterProxy.GetClient(), tmpNamespaceName)
 				Expect(err).NotTo(HaveOccurred())
@@ -1291,7 +1292,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			)
 
 			BeforeEach(func() {
-				skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.IaaSComputePoliciesCapabilityName)
+				skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.IaaSComputePoliciesCapabilityName)
 
 				By("Creating a tag manager to verify actual tag assignment")
 
@@ -1437,11 +1438,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(vm1Zone).ToNot(Equal(vm2Zone))
 				Expect(vm1Zone).ToNot(Equal(vm3Zone))
 				Expect(vm2Zone).ToNot(Equal(vm3Zone))
-
-				asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
-				Expect(err).ToNot(HaveOccurred())
-				vmHardAffinityDuringExecutionEnabled := utils.IsSupervisorCapabilityEnabled(
-					ctx, svClusterClient, consts.VMHardAffinityDuringExecutionCapabilityName, asyncSupervisorFSSEnabled)
+				vmHardAffinityDuringExecutionEnabled := config.SupervisorCapabilities[consts.VMHardAffinityDuringExecutionCapabilityName]
 
 				verifyTagsFunc := vmservice.VerifyVMTagsAndPolicyAssignment
 				if vmHardAffinityDuringExecutionEnabled {
@@ -1831,8 +1828,8 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			topologyKey = hostTopoKey
 
 			skipper.SkipUnlessStretchSupervisorIsEnabled()
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMPlacementPoliciesCapabilityName)
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMAffinityDuringExecutionCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMPlacementPoliciesCapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMAffinityDuringExecutionCapabilityName)
 			skipper.SkipUnlessSupervisorHasAtleastOneZoneWithHostCount(ctx, clusterProxy, 3)
 
 			supervisorID := vcenter.GetSupervisorIDFromKubeconfig(ctx, config.InfraConfig.KubeconfigPath)
@@ -1955,7 +1952,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			When("VMs specify requiredDuringSchedulingRequiredDuringExecution", Label("experimental"), func() {
 				BeforeEach(func() {
 					skipper.SkipUnlessStretchSupervisorIsEnabled()
-					skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+					skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMHardAffinityDuringExecutionCapabilityName)
 				})
 
 				var (

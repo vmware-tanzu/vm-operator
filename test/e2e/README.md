@@ -234,6 +234,10 @@ var _ = Describe("My Feature", Label("my-feature"), func() {
 
 ### Helper Libraries
 
+#### Capability checks (`vmservice/skipper`)
+
+Suite setup snapshots capabilities in `config.SupervisorCapabilities`; treat the map as read-only. Use `SkipUnlessSupervisorCapabilityEnabled(config.SupervisorCapabilities, capabilityName)` before expensive setup in `BeforeEach`. Capability changes take effect on the next suite run.
+
 #### VM Operations (`lib/vmoperator`)
 
 Prefer a direct `vmopv1.VirtualMachine` literal for ordinary VM fixtures. Use `CreateVirtualMachine` to create it and immediately register failure diagnostics and deferred cleanup. Pass the same cluster proxy used by the test's kubectl operations: its client loads that proxy's kubeconfig and current context, without overriding the Kubernetes user. When refactoring an existing fixture, preserve its API version using the corresponding versioned Go type.

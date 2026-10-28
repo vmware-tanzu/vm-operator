@@ -1,9 +1,5 @@
 # Pull requests
 
-## Associated tickets
-
-* Always add a comment or PR link to the associated Jira ticket when creating a PR. Include every companion PR across repositories and any related specification PR. Update the ticket when the PR set changes, and avoid duplicate links. External comments must end with `— Faisal + Codex`.
-
 ## Reviewing
 
 * Submitting a pull request using AI tooling does not obviate a reviewer of the responsibility to validate the generated comments. It is **not** the responsibility of the change's author to spend time determining which feedback is actually valid.

@@ -25,7 +25,9 @@ import (
 	vmconfigoptions "github.com/vmware-tanzu/vm-operator/controllers/virtualmachineconfigoptions"
 	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -80,6 +82,7 @@ func unitTestsReconcile() {
 		configTarget = &vimv1.ConfigTarget{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "cluster-config-target",
+				UID:  types.UID("cluster-config-target"),
 			},
 			Spec: vimv1.ConfigTargetSpec{
 				ID: vimv1.ManagedObjectID{
@@ -110,6 +113,7 @@ func unitTestsReconcile() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
+		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.FlexVMClasses = true })
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		reconciler = vmconfigoptions.NewReconciler(
 			ctx,
@@ -628,11 +632,11 @@ func unitTestsReconcile() {
 
 			BeforeEach(func() {
 				configTargetHigher = &vimv1.ConfigTarget{
-					ObjectMeta: metav1.ObjectMeta{Name: "cluster-config-target-higher"},
+					ObjectMeta: metav1.ObjectMeta{Name: "cluster-config-target-higher", UID: types.UID("higher")},
 					Spec:       vimv1.ConfigTargetSpec{ID: vimv1.ManagedObjectID{ID: higherClusterMoID}},
 				}
 				configTargetLower = &vimv1.ConfigTarget{
-					ObjectMeta: metav1.ObjectMeta{Name: "cluster-config-target-lower"},
+					ObjectMeta: metav1.ObjectMeta{Name: "cluster-config-target-lower", UID: types.UID("lower")},
 					Spec:       vimv1.ConfigTargetSpec{ID: vimv1.ManagedObjectID{ID: lowerClusterMoID}},
 				}
 
@@ -670,6 +674,40 @@ func unitTestsReconcile() {
 					queriedClusterMoID = clusterMoID
 					return &vimtypes.VirtualMachineConfigOption{}, nil
 				}
+			})
+
+			It("selects the oldest host version and build, and refreshes when any owner changes", func() {
+				revision := "initial"
+				calls := 0
+				fakeVMProvider.GetEnvironmentBrowserInventoryFn = func(_ context.Context, id string) (providers.EnvironmentBrowserInventory, error) {
+					v, build := "9.0.0", uint64(100)
+					if id == higherClusterMoID {
+						v, build = "8.0.3", 90
+					}
+					if id == lowerClusterMoID {
+						v, build = "8.0.3", 100
+					}
+					return providers.EnvironmentBrowserInventory{Revision: revision, MinHostVersion: v, MinHostBuild: build}, nil
+				}
+				fakeVMProvider.QueryConfigOptionExFn = func(_ context.Context, id, _ string) (*vimtypes.VirtualMachineConfigOption, error) {
+					calls++
+					queriedClusterMoID = id
+					return &vimtypes.VirtualMachineConfigOption{Description: revision}, nil
+				}
+				for range 3 {
+					_, err := doReconcile()
+					Expect(err).NotTo(HaveOccurred())
+				}
+				Expect(queriedClusterMoID).To(Equal(higherClusterMoID))
+				Expect(calls).To(Equal(1))
+				revision = "host-added"
+				_, err := doReconcile()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(calls).To(Equal(2))
+				var got vimv1.VirtualMachineConfigOptions
+				Expect(ctx.Client.Get(ctx, objKey, &got)).To(Succeed())
+				Expect(got.Status.Description).To(Equal(revision))
+				Expect(got.Annotations["vmoperator.vmware.com/environment-browser-cluster"]).To(Equal(higherClusterMoID))
 			})
 
 			It("deterministically queries the lexicographically lowest cluster MoID", func() {
@@ -809,6 +847,7 @@ func vcsimTestsReconcile() {
 
 	BeforeEach(func() {
 		vcsimCtx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		pkgcfg.SetContext(vcsimCtx, func(c *pkgcfg.Config) { c.Features.FlexVMClasses = true })
 
 		provider := vsphere.NewVSphereVMProviderFromClient(vcsimCtx, vcsimCtx.Client, vcsimCtx.Recorder)
 

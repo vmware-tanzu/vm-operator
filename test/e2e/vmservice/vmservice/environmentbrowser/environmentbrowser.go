@@ -6,6 +6,15 @@ package environmentbrowser
 
 import (
 	"context"
+	"fmt"
+
+	appsv1 "k8s.io/api/apps/v1"
+	authv1 "k8s.io/api/authorization/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -58,7 +67,11 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 			"Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 
 		svClusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
-		svClusterClient = input.ClusterProxy.GetClient()
+		adminProxy, err := svClusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { adminProxy.Dispose(ctx) })
+		svClusterClient, err = adminProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("Should not install the VirtualMachineConfigPolicy API",
@@ -79,6 +92,96 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					"the policy CRD should not be installed")
 			}, input.Config.GetIntervals("default", "wait-vm-config-options-deletion")...).Should(Succeed())
 		})
+
+	It("Should restrict discovery to platform admins and vm-operator", Label("extended-functional", "experimental"), func() {
+		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.FlexVMClassesCapabilityName)
+		adminProxy, err := svClusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		defer adminProxy.Dispose(ctx)
+		adminClient, err := adminProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred())
+		cfg := rest.CopyConfig(adminProxy.GetRESTConfig())
+		cfg.Insecure, cfg.CAData = true, nil
+		adminDynamic, err := dynamic.NewForConfig(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		resources := []string{"configtargets", "virtualmachineconfigoptions", "virtualmachineguestoptions"}
+		names := map[string]string{}
+		for _, name := range resources {
+			api := adminDynamic.Resource(schema.GroupVersionResource{Group: vimv1.GroupName, Version: vimv1.GroupVersion.Version, Resource: name})
+			objects, err := api.List(ctx, metav1.ListOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(objects.Items).NotTo(BeEmpty(), "discovery must have converged before checking authorization")
+			names[name] = objects.Items[0].GetName()
+			_, err = api.Get(ctx, names[name], metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			watch, err := api.Watch(ctx, metav1.ListOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			watch.Stop()
+		}
+		var deployment appsv1.Deployment
+		Expect(adminClient.Get(ctx, ctrlclient.ObjectKey{Namespace: input.Config.GetVariable("VMOPNamespace"), Name: input.Config.GetVariable("VMOPDeploymentName")}, &deployment)).To(Succeed())
+		operatorUser := fmt.Sprintf("system:serviceaccount:%s:%s", deployment.Namespace, deployment.Spec.Template.Spec.ServiceAccountName)
+		for _, name := range resources {
+			for _, verb := range []string{"get", "list", "watch", "create", "update", "patch", "delete"} {
+				review := &authv1.SubjectAccessReview{Spec: authv1.SubjectAccessReviewSpec{
+					User:               operatorUser,
+					Groups:             []string{"system:authenticated", "system:serviceaccounts", "system:serviceaccounts:" + deployment.Namespace},
+					ResourceAttributes: &authv1.ResourceAttributes{Group: vimv1.GroupName, Resource: name, Verb: verb},
+				}}
+				Expect(adminClient.Create(ctx, review)).To(Succeed())
+				Expect(review.Status.Allowed).To(BeTrue(), "operator must retain %s on %s: %s", verb, name, review.Status.Reason)
+			}
+		}
+
+		// Give a real service-account identity each namespace-user role in turn.
+		// A namespace admin must not acquire cluster hardware access either.
+		for _, role := range []string{"view", "edit", "admin"} {
+			account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{GenerateName: "eb-rbac-", Namespace: input.WCPNamespaceName}}
+			Expect(adminClient.Create(ctx, account)).To(Succeed())
+			DeferCleanup(func() { Expect(adminClient.Delete(ctx, account)).To(Succeed()) })
+			binding := &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{Name: account.Name, Namespace: account.Namespace},
+				RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: role},
+				Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: account.Name, Namespace: account.Namespace}},
+			}
+			Expect(adminClient.Create(ctx, binding)).To(Succeed())
+			DeferCleanup(func() { Expect(adminClient.Delete(ctx, binding)).To(Succeed()) })
+			tenantConfig := rest.CopyConfig(cfg)
+			tenantConfig.Impersonate = rest.ImpersonationConfig{
+				UserName: fmt.Sprintf("system:serviceaccount:%s:%s", account.Namespace, account.Name),
+				Groups:   []string{"system:authenticated", "system:serviceaccounts", "system:serviceaccounts:" + account.Namespace},
+			}
+			tenant, err := dynamic.NewForConfig(tenantConfig)
+			Expect(err).NotTo(HaveOccurred())
+			// Verify the namespace role is effective before asserting isolation.
+			Eventually(func(g Gomega) {
+				review := &authv1.SubjectAccessReview{Spec: authv1.SubjectAccessReviewSpec{
+					User: tenantConfig.Impersonate.UserName, Groups: tenantConfig.Impersonate.Groups,
+					ResourceAttributes: &authv1.ResourceAttributes{Namespace: account.Namespace, Resource: "pods", Verb: "get"},
+				}}
+				g.Expect(adminClient.Create(ctx, review)).To(Succeed())
+				g.Expect(review.Status.Allowed).To(BeTrue())
+			}, input.Config.GetIntervals("default", "wait-config-target-condition-update")...).Should(Succeed())
+
+			for _, name := range resources {
+				for _, verb := range []string{"create", "update", "patch", "delete"} {
+					review := &authv1.SubjectAccessReview{Spec: authv1.SubjectAccessReviewSpec{User: tenantConfig.Impersonate.UserName, Groups: tenantConfig.Impersonate.Groups, ResourceAttributes: &authv1.ResourceAttributes{Group: vimv1.GroupName, Resource: name, Verb: verb}}}
+					Expect(adminClient.Create(ctx, review)).To(Succeed())
+					Expect(review.Status.Allowed).To(BeFalse(), "%s must not %s %s", role, verb, name)
+				}
+				api := tenant.Resource(schema.GroupVersionResource{Group: vimv1.GroupName, Version: vimv1.GroupVersion.Version, Resource: name})
+				_, err = api.Get(ctx, names[name], metav1.GetOptions{})
+				Expect(apierrors.IsForbidden(err)).To(BeTrue(), "%s must not get %s: %v", role, name, err)
+				_, err = api.List(ctx, metav1.ListOptions{})
+				Expect(apierrors.IsForbidden(err)).To(BeTrue(), "%s must not list %s: %v", role, name, err)
+				watch, err := api.Watch(ctx, metav1.ListOptions{})
+				if watch != nil {
+					watch.Stop()
+				}
+				Expect(apierrors.IsForbidden(err)).To(BeTrue(), "%s must not watch %s: %v", role, name, err)
+			}
+		}
+	})
 
 	Context("When a workload namespace has zones", func() {
 		BeforeEach(func() {
@@ -169,11 +272,32 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					// re-queried live rather than cached, so this always
 					// reflects the cluster's current inventory.
 					realCT := queryRealConfigTarget(ctx, vCenterClient, name)
+					cluster := object.NewClusterComputeResource(vCenterClient, vimtypes.ManagedObjectReference{Type: "ClusterComputeResource", Value: name})
+					browser, err := cluster.EnvironmentBrowser(ctx)
+					Expect(err).NotTo(HaveOccurred())
+					descriptors, err := browser.QueryConfigOptionDescriptor(ctx)
+					Expect(err).NotTo(HaveOccurred())
+					var expectedMax vimtypes.HardwareVersion
+					var expectedDefault string
+					for _, descriptor := range descriptors {
+						if descriptor.DefaultConfigOption {
+							expectedDefault = descriptor.Key
+						}
+						if !descriptor.CreateSupported {
+							continue
+						}
+						hv, err := vimtypes.ParseHardwareVersion(descriptor.Key)
+						if err == nil && hv.IsValid() && hv > expectedMax {
+							expectedMax = hv
+						}
+					}
 
 					Eventually(func(g Gomega) {
 						ct := &vimv1.ConfigTarget{}
 						g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: name}, ct)).To(Succeed())
 
+						g.Expect(ct.Status.DefaultHardwareVersion).To(Equal(expectedDefault))
+						g.Expect(ct.Status.MaxHardwareVersion).To(Equal(expectedMax.String()))
 						g.Expect(ct.Status.MaxHardwareVersion).ToNot(BeEmpty(),
 							"ConfigTarget %q status.maxHardwareVersion should be populated", name)
 						_, err := vimtypes.ParseHardwareVersion(ct.Status.MaxHardwareVersion)
@@ -224,7 +348,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				}, input.Config.GetIntervals("default", "wait-vm-config-options-creation")...).Should(Succeed())
 			})
 
-		It("Should populate status.guestOSIdentifiers on each VirtualMachineConfigOptions",
+		It("Should populate hardware limits, capabilities and guest identifiers on each VirtualMachineConfigOptions",
 			Label("core-functional", "experimental"),
 			func() {
 				var vcoList vimv1.VirtualMachineConfigOptionsList
@@ -243,6 +367,14 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 						g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "VirtualMachineConfigOptions %q should be Ready", name)
 						g.Expect(vco.Status.ObservedGeneration).To(Equal(vco.Generation),
 							"VirtualMachineConfigOptions %q status.observedGeneration should match metadata.generation", name)
+
+						g.Expect(vco.Annotations["vmoperator.vmware.com/environment-browser-cluster"]).NotTo(BeEmpty())
+						g.Expect(vco.Status.HardwareOptions).NotTo(BeNil())
+						g.Expect(vco.Status.HardwareOptions.HardwareVersion).To(Equal(vco.Spec.HardwareVersion))
+						g.Expect(vco.Status.HardwareOptions.NumCPU).NotTo(BeEmpty())
+						g.Expect(vco.Status.HardwareOptions.Memory).NotTo(BeNil())
+						g.Expect(vco.Status.HardwareOptions.Memory.Max.Value()).To(BeNumerically(">", 0))
+						g.Expect(vco.Status.Capabilities).NotTo(BeNil())
 
 						g.Expect(vco.Status.Description).ToNot(BeEmpty(),
 							"VirtualMachineConfigOptions %q status.description should be populated from QueryConfigOptionEx", name)

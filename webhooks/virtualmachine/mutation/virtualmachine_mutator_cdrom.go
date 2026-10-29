@@ -130,9 +130,9 @@ func processExplicitCdroms(
 
 // processImplicitCdroms processes CD-ROMs that need placement assignment.
 // It handles partial placements (controller type and bus specified) and full
-// auto-assignment (all fields empty). For full auto-assignment, it tries IDE
-// controllers first, then falls back to SATA controllers. Returns true if any
-// CD-ROMs were assigned.
+// auto-assignment (all fields empty). For full auto-assignment, it tries
+// existing IDE controllers first, then falls back to SATA controllers, adding
+// a new SATA controller if needed. Returns true if any CD-ROMs were assigned.
 func processImplicitCdroms(
 	ctx *pkgctx.WebhookRequestContext,
 	implicitPlacementCdroms []*vmopv1.VirtualMachineCdromSpec,
@@ -166,16 +166,22 @@ func processImplicitCdroms(
 			cdrom.UnitNumber == nil:
 			// All controller fields are omitted,
 			// auto-assign by trying IDE first, then SATA.
+			//
+			// IDE controllers are never created here, only reused. They are
+			// platform default devices that are backfilled from the vSphere
+			// VM, and some platforms (e.g. ARM) do not support them at all.
 
 			desiredCtrl.BusNumber = findNextAvailableBusNumber(
 				occupiedSlots,
-				desiredCtrl.ControllerType)
+				desiredCtrl.ControllerType,
+				false)
 
 			if desiredCtrl.BusNumber == -1 {
 				desiredCtrl.ControllerType = vmopv1.VirtualControllerTypeSATA
 				desiredCtrl.BusNumber = findNextAvailableBusNumber(
 					occupiedSlots,
-					desiredCtrl.ControllerType)
+					desiredCtrl.ControllerType,
+					true)
 			}
 
 			if desiredCtrl.BusNumber == -1 {
@@ -272,11 +278,12 @@ func addControllerAndInitSlotMap(
 
 // findNextAvailableBusNumber finds the next available bus number for the
 // specified controller type. It first tries to find existing controllers with
-// available slots, then looks for unused bus numbers to create new controllers.
-// Returns -1 if no bus numbers are available.
+// available slots, then, if allowNew is true, looks for unused bus numbers to
+// create new controllers. Returns -1 if no bus numbers are available.
 func findNextAvailableBusNumber(
 	occupiedSlots map[pkgutil.ControllerID]sets.Set[int32],
-	ctrlType vmopv1.VirtualControllerType) int32 {
+	ctrlType vmopv1.VirtualControllerType,
+	allowNew bool) int32 {
 
 	firstAvailableBusNumber := int32(-1)
 
@@ -293,7 +300,7 @@ func findNextAvailableBusNumber(
 			if unitNum != -1 {
 				return busNum
 			}
-		} else if firstAvailableBusNumber == -1 {
+		} else if allowNew && firstAvailableBusNumber == -1 {
 			firstAvailableBusNumber = busNum
 		}
 	}

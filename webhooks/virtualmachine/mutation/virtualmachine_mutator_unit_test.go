@@ -1754,22 +1754,26 @@ func unitTestsMutating() {
 		})
 	})
 
-	Describe("SetDefaultControllers", func() {
+	Describe("MutateOnCreateFuncs", func() {
 
 		Context("When vm.Spec.Hardware is nil", func() {
 			BeforeEach(func() {
 				ctx.vm.Spec.Hardware = nil
 			})
 
-			It("should initialize Hardware and set default IDE controllers", func() {
-				wasMutated, err := mutation.SetDefaultControllers(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
+			// IDE controllers are backfilled from the vSphere VM by the schema
+			// upgrade since not all platforms support them, e.g. ARM.
+			It("should not set default IDE controllers", func() {
+				mutation.MutateOnCreateFuncs.Range(func(_, value any) bool {
+					fn := value.(mutation.MutateOnCreateFn)
+					_, err := fn(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
+					Expect(err).ToNot(HaveOccurred())
+					return true
+				})
 
-				Expect(err).ToNot(HaveOccurred())
-				Expect(wasMutated).To(BeTrue())
-				Expect(ctx.vm.Spec.Hardware).ToNot(BeNil())
-				Expect(ctx.vm.Spec.Hardware.IDEControllers).To(HaveLen(2))
-				Expect(ctx.vm.Spec.Hardware.IDEControllers[0].BusNumber).To(Equal(int32(0)))
-				Expect(ctx.vm.Spec.Hardware.IDEControllers[1].BusNumber).To(Equal(int32(1)))
+				if ctx.vm.Spec.Hardware != nil {
+					Expect(ctx.vm.Spec.Hardware.IDEControllers).To(BeEmpty())
+				}
 			})
 		})
 	})

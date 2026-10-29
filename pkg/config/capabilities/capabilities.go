@@ -156,7 +156,7 @@ const (
 	// CapabilityKeyVMNetworkUnitNumbers is the name of the capability key
 	// defined in the Supervisor capabilities CRD for the VM Service's support
 	// for VM network interface unit numbers.
-	CapabilityKeyVMNetworkUnitNumbers = "supports_VM_service_network_unit_numbers"
+	CapabilityKeyVMNetworkUnitNumbers = "supports_vm_service_network_unit_numbers"
 
 	// CapabilityKeyK8sWorkloadMgmtAPI is the name of the capability key
 	// defined in the Supervisor capabilities CRD for the VirtualMachineReplicaSet

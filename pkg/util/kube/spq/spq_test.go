@@ -20,9 +20,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	spqutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/spq"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -648,7 +650,7 @@ var _ = Describe("GetWebhookCABundle", func() {
 
 		config = &admissionv1.ValidatingWebhookConfiguration{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: spqutil.ValidatingWebhookConfigName,
+				Name: pkgconst.ValidatingWebhookConfigurationName,
 				Annotations: map[string]string{
 					"cert-manager.io/inject-ca-from": fmt.Sprintf("%s/vmware-system-vmop-serving-cert", namespace),
 				},
@@ -766,5 +768,74 @@ var _ = Describe("GetWebhookCABundle", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unable to get CA bundle from secret"))
 		})
+	})
+})
+
+var _ = Describe("ValidatingWebhookConfigurationToStoragePolicyQuotaMapper", func() {
+	var (
+		ctx       context.Context
+		objects   []ctrlclient.Object
+		webhook   *admissionv1.ValidatingWebhookConfiguration
+		listCalls int
+		listError error
+		requests  []reconcile.Request
+	)
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContextWithDefaultConfig()
+		listCalls = 0
+		listError = nil
+		webhook = &admissionv1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{Name: pkgconst.ValidatingWebhookConfigurationName},
+		}
+		// No usages or CA source are needed to enqueue a quota. Include the same
+		// quota name in different namespaces to verify keys retain their scope.
+		objects = []ctrlclient.Object{
+			&spqv1.StoragePolicyQuota{ObjectMeta: metav1.ObjectMeta{Name: "quota", Namespace: "namespace-a"}},
+			&spqv1.StoragePolicyQuota{ObjectMeta: metav1.ObjectMeta{Name: "quota", Namespace: "namespace-b"}},
+			&spqv1.StoragePolicyQuota{ObjectMeta: metav1.ObjectMeta{Name: "other-quota", Namespace: "namespace-b"}},
+		}
+	})
+	JustBeforeEach(func() {
+		client := builder.NewFakeClientWithInterceptors(interceptor.Funcs{
+			Get: func(context.Context, ctrlclient.WithWatch, ctrlclient.ObjectKey,
+				ctrlclient.Object, ...ctrlclient.GetOption) error {
+				Fail("the mapper must leave CA lookup to quota reconciliation")
+				return nil
+			},
+			List: func(ctx context.Context, c ctrlclient.WithWatch, list ctrlclient.ObjectList,
+				opts ...ctrlclient.ListOption) error {
+				Expect(list).To(BeAssignableToTypeOf(&spqv1.StoragePolicyQuotaList{}),
+					"the mapper must not list usages")
+				listCalls++
+				if listError != nil {
+					return listError
+				}
+				return c.List(ctx, list, opts...)
+			},
+		}, objects...)
+		requests = spqutil.ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(client)(ctx, webhook)
+	})
+	It("fans out to every quota without inspecting usages or CA sources", func() {
+		Expect(listCalls).To(Equal(1))
+		Expect(requests).To(ConsistOf(
+			reconcile.Request{NamespacedName: ctrlclient.ObjectKey{Name: "quota", Namespace: "namespace-a"}},
+			reconcile.Request{NamespacedName: ctrlclient.ObjectKey{Name: "quota", Namespace: "namespace-b"}},
+			reconcile.Request{NamespacedName: ctrlclient.ObjectKey{Name: "other-quota", Namespace: "namespace-b"}},
+		))
+	})
+	When("the configuration is unrelated", func() {
+		BeforeEach(func() { webhook.Name = "unrelated" })
+		It("does not list quotas or enqueue requests", func() {
+			Expect(listCalls).To(BeZero())
+			Expect(requests).To(BeEmpty())
+		})
+	})
+	When("no quotas exist", func() {
+		BeforeEach(func() { objects = nil })
+		It("does not enqueue requests", func() { Expect(requests).To(BeEmpty()) })
+	})
+	When("listing quotas fails", func() {
+		BeforeEach(func() { listError = errors.New("quota list failed") })
+		It("does not enqueue incomplete requests", func() { Expect(requests).To(BeEmpty()) })
 	})
 })

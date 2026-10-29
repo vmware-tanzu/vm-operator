@@ -12,17 +12,24 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -50,6 +57,29 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
+		Watches(&admissionv1.ValidatingWebhookConfiguration{},
+			handler.EnqueueRequestsFromMapFunc(
+				spqutil.ValidatingWebhookConfigurationToStoragePolicyQuotaMapper(r.Client)),
+			ctrlbuilder.WithPredicates(
+				// The manager cache (pkg/manager) already restricts
+				// ValidatingWebhookConfiguration list/watch to the single
+				// VM Operator configuration by metadata.name, so the name
+				// checks below are not needed with that cache. They are
+				// kept so this controller stays correct when it is
+				// constructed with a manager whose cache is not filtered,
+				// as in tests. The mapper applies the same name check.
+				predicate.Funcs{
+					CreateFunc: func(e event.CreateEvent) bool {
+						return e.Object.GetName() == pkgconst.ValidatingWebhookConfigurationName
+					},
+					UpdateFunc: func(e event.UpdateEvent) bool {
+						return e.ObjectNew.GetName() == pkgconst.ValidatingWebhookConfigurationName
+					},
+					DeleteFunc:  func(event.DeleteEvent) bool { return false },
+					GenericFunc: func(event.GenericEvent) bool { return false },
+				},
+				kubeutil.TypedResourceVersionChangedPredicate[client.Object]{},
+			)).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, 0),
 			LogConstructor:          pkglog.ControllerLogConstructor(controllerNameShort, controlledType, mgr.GetScheme()),
@@ -57,6 +87,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Complete(r)
 }
 
+// NewReconciler returns a reconciler for storage quotas.
 func NewReconciler(
 	ctx context.Context,
 	client client.Client,
@@ -93,6 +124,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyquotas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyusages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cns.vmware.com,resources=storagepolicyusages/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;watch
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)

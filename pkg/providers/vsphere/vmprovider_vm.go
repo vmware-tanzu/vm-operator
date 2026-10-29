@@ -1937,14 +1937,12 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		&memberStatus,
 		vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 	) {
-		return pkgerr.NoRequeueError{
-			Message: "VM Group placement is not ready",
-		}
+		return pkgerr.NoRequeueErrorf("waiting for group placement")
 	}
 
 	placementStatus := memberStatus.Placement
 	if placementStatus == nil {
-		return fmt.Errorf("VM Group placement is empty")
+		return fmt.Errorf("group placement status is empty")
 	}
 
 	// This should be logged once and helpful to debug group placement issues.

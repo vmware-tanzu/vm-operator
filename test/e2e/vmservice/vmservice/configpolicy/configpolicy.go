@@ -65,7 +65,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		svClusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = input.ClusterProxy.GetClient()
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VirtualMachineConfigPolicyCapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VirtualMachineConfigPolicyCapabilityName)
 	})
 
 	Context("When a workload namespace has zones", func() {

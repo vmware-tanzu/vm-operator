@@ -1,3 +1,7 @@
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package skipper
 
 import (
@@ -5,14 +9,10 @@ import (
 	"os"
 
 	. "github.com/onsi/gomega"
-	"golang.org/x/crypto/ssh"
+
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/util"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
-	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
@@ -44,23 +44,11 @@ func SkipUnlessStretchSupervisorIsEnabled() {
 	}
 }
 
-func SkipUnlessSupervisorCapabilityEnabled(ctx context.Context, vmSvcClusterProxy framework.ClusterProxyInterface, capabilityName string) {
-	sshCommandRunner, _ := e2essh.NewSSHCommandRunner(
-		vcenter.GetVCPNIDFromKubeconfigFile(ctx, vmSvcClusterProxy.GetKubeconfigPath()),
-		vcenter.VCSSHPort,
-		testbed.RootUsername,
-		[]ssh.AuthMethod{
-			ssh.Password(testbed.RootPassword),
-		},
-	)
-	isAsyncSvUpgradeEnabled, _ := util.IsFSSEnabled(sshCommandRunner, utils.SupervisorAsyncUpgradeFSS)
-
-	if !utils.IsSupervisorCapabilityEnabled(
-		ctx,
-		vmSvcClusterProxy.GetClient(),
-		capabilityName,
-		isAsyncSvUpgradeEnabled,
-	) {
+// SkipUnlessSupervisorCapabilityEnabled checks the snapshot loaded during suite
+// setup and skips when the capability is missing or disabled.
+func SkipUnlessSupervisorCapabilityEnabled(capabilities map[string]bool, capabilityName string) {
+	Expect(capabilities).NotTo(BeNil(), "Supervisor capabilities must be loaded during suite setup")
+	if !capabilities[capabilityName] {
 		framework.SkipInternalf(1, "skip the test due to Supervisor capability %q is not enabled", capabilityName)
 	}
 }

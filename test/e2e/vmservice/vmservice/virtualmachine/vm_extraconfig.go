@@ -94,11 +94,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			"Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
-		skipper.SkipUnlessSupervisorCapabilityEnabled(
-			ctx,
-			input.ClusterProxy,
-			consts.TelcoVMServiceAPICapabilityName,
-		)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.TelcoVMServiceAPICapabilityName)
 
 		config = input.Config
 		clusterProxy = input.ClusterProxy

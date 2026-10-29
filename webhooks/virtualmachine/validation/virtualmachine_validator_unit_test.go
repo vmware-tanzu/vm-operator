@@ -64,6 +64,7 @@ const (
 	dummyPausedVMLabelVal          = "dummy-devops"
 	dummyVmiName                   = "vmi-dummy"
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
+	dummyDefaultStorageClassName   = "dummy-default-storage-class"
 	dummyClusterModuleAnnVal       = "dummy-cluster-module"
 	dummyGroupName                 = "dummy-group"
 	dummyPVCName                   = "dummy-pvc"
@@ -263,6 +264,17 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	vm.Name = "dummy-vm"
 	vm.Namespace = dummyNamespaceName
 
+	defaultSC := builder.DummyStorageClass()
+	defaultSC.Name = dummyDefaultStorageClassName
+
+	// The storage class is required on create
+	vm.Spec.StorageClass = defaultSC.Name
+
+	defaultQuota := builder.DummyResourceQuota(
+		dummyNamespaceName,
+		defaultSC.Name+".storageclass.storage.k8s.io/persistentvolumeclaims")
+	defaultQuota.Name = defaultSC.Name + "-quota"
+
 	var (
 		oldVM  *vmopv1.VirtualMachine
 		oldObj *unstructured.Unstructured
@@ -281,7 +293,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 	az := builder.DummyAvailabilityZone()
 	zone := builder.DummyZone(dummyNamespaceName)
-	initObjects := []client.Object{az, zone}
+	initObjects := []client.Object{az, zone, defaultSC, defaultQuota}
 
 	return &unitValidatingWebhookContext{
 		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, initObjects...),
@@ -1694,6 +1706,25 @@ func unitTestsValidateCreate() {
 	Context("StorageClass", func() {
 
 		DescribeTable("StorageClass create", doTest,
+			Entry("storage class is empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.StorageClass = ""
+					},
+					validate: doValidateWithMsg(
+						`spec.storageClass: Required value`),
+				},
+			),
+			Entry("storage class is empty for a privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Spec.StorageClass = ""
+					},
+					validate: doValidateWithMsg(
+						`spec.storageClass: Required value`),
+				},
+			),
 			Entry("storage class not found",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -1802,6 +1833,23 @@ func unitTestsValidateCreate() {
 		})
 
 		DescribeTable("VolumeAttributesClass create", doTest,
+			Entry("volume attributes class specified without a storage class",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.StorageClass = ""
+
+						volumeAttributesClass := builder.DummyVolumeAttributesClass()
+						Expect(ctx.Client.Create(ctx, volumeAttributesClass)).To(Succeed())
+						ctx.vm.Spec.VolumeAttributesClassName = volumeAttributesClass.Name
+
+						storagePolicyQuota := builder.DummyStoragePolicyQuota(
+							volumeAttributesClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "id42")
+						Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+					},
+					validate: doValidateWithMsg(
+						`spec.storageClass: Required value`),
+				},
+			),
 			Entry("volume attributes class not found",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -5405,6 +5453,7 @@ type updateArgs struct {
 	changeImageRef              bool
 	changeImageName             bool
 	changeStorageClass          bool
+	emptyStorageClass           bool
 	changeResourcePolicy        bool
 	assignZoneName              bool
 	changeZoneName              bool
@@ -5430,6 +5479,11 @@ func setupOldVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 	ctx.oldVM.Spec.Reserved.ResourcePolicyName = "policy"
 	ctx.oldVM.Spec.InstanceUUID = args.oldInstanceUUID
 	ctx.oldVM.Spec.BiosUUID = args.oldBiosUUID
+
+	if args.emptyStorageClass {
+		// Simulate a VM created before the storage class was required.
+		ctx.oldVM.Spec.StorageClass = ""
+	}
 
 	if args.oldPowerState != "" {
 		ctx.oldVM.Spec.PowerState = args.oldPowerState
@@ -5467,6 +5521,9 @@ func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 	}
 	if args.changeBiosUUID {
 		ctx.vm.Spec.BiosUUID += updateSuffix
+	}
+	if args.emptyStorageClass {
+		ctx.vm.Spec.StorageClass = ""
 	}
 	if args.changeStorageClass {
 		ctx.vm.Spec.StorageClass += updateSuffix
@@ -5598,6 +5655,8 @@ func unitTestsValidateUpdate() {
 		Entry("should deny instance uuid change", updateArgs{changeInstanceUUID: true, oldInstanceUUID: "uuid"}, false, msg, nil),
 		Entry("should deny bios uuid change", updateArgs{changeBiosUUID: true, oldBiosUUID: "uuid"}, false, msg, nil),
 		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, msg, nil),
+		Entry("should allow update of VM with empty storageClass", updateArgs{emptyStorageClass: true}, true, nil, nil),
+		Entry("should deny setting storageClass on VM with empty storageClass", updateArgs{emptyStorageClass: true, changeStorageClass: true}, false, msg, nil),
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
 
 		Entry("should allow empty instance uuid change", updateArgs{changeInstanceUUID: true}, true, nil, nil),

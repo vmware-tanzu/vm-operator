@@ -1055,10 +1055,10 @@ var _ = Describe("UpdateCapabilitiesFeatures", func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeTrue())
 			})
 		})
-		Context(capabilities.CapabilityKeyVMNetworkUnitNumbers, func() {
+		Context(capabilities.CapabilityKeyVMServiceNetworkInterfaceUnitNumbers, func() {
 			BeforeEach(func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMNetworkUnitNumbers).To(BeFalse())
-				obj.Status.Supervisor[capabilities.CapabilityKeyVMNetworkUnitNumbers] = capv1.CapabilityStatus{
+				obj.Status.Supervisor[capabilities.CapabilityKeyVMServiceNetworkInterfaceUnitNumbers] = capv1.CapabilityStatus{
 					Activated: true,
 				}
 			})
@@ -1166,7 +1166,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			capabilities.CapabilityKeyControlledRebalancingPolicy: {
 				Activated: true,
 			},
-			capabilities.CapabilityKeyVMNetworkUnitNumbers: {
+			capabilities.CapabilityKeyVMServiceNetworkInterfaceUnitNumbers: {
 				Activated: true,
 			},
 			capabilities.CapabilityKeyVMHardAffinityDuringExecution: {
@@ -1290,7 +1290,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeTrue())
 			})
-			Specify(capabilities.CapabilityKeyVMNetworkUnitNumbers, func() {
+			Specify(capabilities.CapabilityKeyVMServiceNetworkInterfaceUnitNumbers, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMNetworkUnitNumbers).To(BeTrue())
 			})
 			Specify(capabilities.CapabilityKeyVMHardAffinityDuringExecution, func() {
@@ -1404,7 +1404,7 @@ var _ = Describe("WouldUpdateCapabilitiesFeatures", func() {
 			Specify(capabilities.CapabilityKeyControlledRebalancingPolicy, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy).To(BeFalse())
 			})
-			Specify(capabilities.CapabilityKeyVMNetworkUnitNumbers, func() {
+			Specify(capabilities.CapabilityKeyVMServiceNetworkInterfaceUnitNumbers, func() {
 				Expect(pkgcfg.FromContext(ctx).Features.VMNetworkUnitNumbers).To(BeFalse())
 			})
 			Specify(capabilities.CapabilityKeyVMHardAffinityDuringExecution, func() {

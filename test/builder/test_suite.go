@@ -133,10 +133,15 @@ func (s *TestSuite) GetEnvTestConfig() *rest.Config {
 	return s.config
 }
 
+// GetLogger returns the context logger, the manager logger, or the default
+// controller-runtime logger when the suite has no manager.
 func (s *TestSuite) GetLogger() logr.Logger {
 	logger, err := logr.FromContext(s.Context)
 	if err != nil {
-		return s.manager.GetLogger()
+		if s.manager != nil {
+			return s.manager.GetLogger()
+		}
+		return pkglog.FromContextOrDefault(s.Context)
 	}
 	return logger
 }

@@ -172,6 +172,14 @@ const (
 	// CapabilityKeyCSIBackupAPI is the name of the capability key defined in
 	// the Supervisor capabilities CRD for exposing disk lists in VM snapshots.
 	CapabilityKeyCSIBackupAPI = "supports_CSI_Backup_API"
+
+	// CapabilityKeyHostLocalStorage is the name of the capability key defined
+	// in the Supervisor capabilities CRD for host-local storage support: VM
+	// placement pinned to the specific ESXi host that owns a host-local
+	// (direct attached VMFS, single-host) datastore. This capability
+	// is activated on vCenter's side by the FSS HostLocalStorageSupport; VM
+	// Operator only ever observes the resulting Supervisor capability state.
+	CapabilityKeyHostLocalStorage = "supports_host_local_storage"
 )
 
 var (
@@ -364,6 +372,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMHardAffinityDuringExecution = capStatus.Activated
 		case CapabilityKeyCSIBackupAPI:
 			fs.CSIBackupAPI = capStatus.Activated
+		case CapabilityKeyHostLocalStorage:
+			fs.HostLocalStorage = capStatus.Activated
 		}
 
 	}

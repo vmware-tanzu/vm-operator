@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/google/uuid"
@@ -1051,6 +1052,50 @@ var _ = Describe("UpdateVirtualMachine", func() {
 				Expect(sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)).To(Succeed())
 				Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
 				assertUpdate()
+			})
+		})
+
+		When("the VM was created by a restore, a failover or an import", func() {
+			BeforeEach(func() {
+				vm.Annotations[vmopv1.RestoredVMAnnotation] = ""
+				vm.Annotations[vmopv1.FailedOverVMAnnotation] = ""
+				vm.Annotations[vmopv1.ImportedVMAnnotation] = "true"
+				vm.Annotations["foo"] = "bar"
+			})
+
+			assertMarkersRemoved := func() {
+				GinkgoHelper()
+				Expect(vm.Annotations).ToNot(HaveKey(vmopv1.RestoredVMAnnotation))
+				Expect(vm.Annotations).ToNot(HaveKey(vmopv1.FailedOverVMAnnotation))
+				Expect(vm.Annotations).ToNot(HaveKey(vmopv1.ImportedVMAnnotation))
+				Expect(vm.Annotations).To(HaveKeyWithValue("foo", "bar"))
+			}
+
+			It("should remove the annotations that mark the create", func() {
+				_ = sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+				assertMarkersRemoved()
+			})
+
+			It("should remove the annotations that mark the create when the VM is paused by an admin", func() {
+				vmCtx.MoVM.Config.ExtraConfig = append(vmCtx.MoVM.Config.ExtraConfig,
+					&vimtypes.OptionValue{Key: vmopv1.PauseVMExtraConfigKey, Value: "True"})
+				_ = sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+				Expect(vm.Labels).To(HaveKeyWithValue(vmopv1.PausedVMLabelKey, "admin"))
+				assertMarkersRemoved()
+			})
+		})
+
+		When("the VM was not created by a restore, a failover or an import", func() {
+			BeforeEach(func() {
+				vm.Annotations["foo"] = "bar"
+			})
+
+			It("should keep the annotations", func() {
+				expected := maps.Clone(vm.Annotations)
+				_ = sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+				for k, v := range expected {
+					Expect(vm.Annotations).To(HaveKeyWithValue(k, v))
+				}
 			})
 		})
 

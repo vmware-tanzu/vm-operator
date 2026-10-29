@@ -2674,15 +2674,15 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.FirstBootDoneAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
-	if vm.Annotations[vmopv1.RestoredVMAnnotation] != oldVM.Annotations[vmopv1.RestoredVMAnnotation] {
+	if annotationChanged(vm, oldVM, vmopv1.RestoredVMAnnotation) {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.RestoredVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
-	if vm.Annotations[vmopv1.FailedOverVMAnnotation] != oldVM.Annotations[vmopv1.FailedOverVMAnnotation] {
+	if annotationChanged(vm, oldVM, vmopv1.FailedOverVMAnnotation) {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.FailedOverVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
-	if vm.Annotations[vmopv1.ImportedVMAnnotation] != oldVM.Annotations[vmopv1.ImportedVMAnnotation] {
+	if annotationChanged(vm, oldVM, vmopv1.ImportedVMAnnotation) {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(vmopv1.ImportedVMAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
@@ -2707,9 +2707,26 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		if clusterModuleName != oldVM.Annotations[pkgconst.ClusterModuleNameAnnotationKey] {
 			allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.ClusterModuleNameAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
 		}
+
+		// VM Operator detects a vendor's restore of the VM by comparing this
+		// annotation with the backup version in the VM's ExtraConfig.
+		backupVersionKey := vmopv1.VirtualMachineBackupVersionAnnotation
+		if annotationChanged(vm, oldVM, backupVersionKey) {
+			allErrs = append(allErrs, field.Forbidden(
+				annotationPath.Key(backupVersionKey),
+				modifyAnnotationNotAllowedForNonAdmin))
+		}
 	}
 
 	return allErrs
+}
+
+// annotationChanged returns true if the annotation key is added to, removed
+// from, or changed on vm when compared with oldVM.
+func annotationChanged(vm, oldVM *vmopv1.VirtualMachine, key string) bool {
+	newVal, inNew := vm.Annotations[key]
+	oldVal, inOld := oldVM.Annotations[key]
+	return inNew != inOld || newVal != oldVal
 }
 
 func (v validator) validateMinHardwareVersion(

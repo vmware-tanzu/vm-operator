@@ -137,6 +137,16 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 
 			t.registerVM(ctx, lost.moID)
 
+			// RegisterVM creates the VM with the restored VM annotation, which
+			// VM Operator removes once it manages the restored vSphere VM.
+			By("Verify VM Operator removed the restored VM annotation after the create")
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vm.Status.UniqueID).To(Equal(lost.moID))
+				g.Expect(vm.Annotations).ToNot(HaveKey(vmopv1.RestoredVMAnnotation))
+			}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+
 			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, lost.diskCount, clusterProxy, config, svClusterClient, input.WCPClient)
 
 			By("Verify the seeded data on both disks matches the backup")
@@ -229,7 +239,9 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 			Eventually(func(g Gomega) {
 				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(vm.Annotations).To(HaveKey(vmopv1.RestoredVMAnnotation))
+				// RegisterVM marks its update of the VM with the restored VM
+				// annotation, which VM Operator removes at its next reconcile.
+				g.Expect(vm.Annotations).ToNot(HaveKey(vmopv1.RestoredVMAnnotation))
 				g.Expect(vm.Annotations).To(HaveKeyWithValue(restoreMarkerAnnotation, markerBeforeBackup))
 				g.Expect(vm.Annotations).ToNot(HaveKey(vmopv1.PauseAnnotation))
 				g.Expect(pvcNames(vm)).ToNot(ContainElement(BeElementOf(oldVolumes)), "VM still uses the PVCs of the overwritten disks")

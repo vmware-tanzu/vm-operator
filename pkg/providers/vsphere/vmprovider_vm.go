@@ -20,7 +20,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/pbm"
 	pbmtypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/tags"
@@ -731,7 +730,7 @@ func (vs *vSphereVMProvider) vmCreatePathName(
 
 	vc := vcClient.VimClient()
 
-	pc, err := pbm.NewClient(vmCtx, vc)
+	pc, err := vcClient.NewPbmClient(vmCtx)
 	if err != nil {
 		return err
 	}

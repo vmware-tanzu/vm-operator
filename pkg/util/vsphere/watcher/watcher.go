@@ -25,6 +25,7 @@ import (
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
 const (
@@ -414,6 +415,14 @@ func Start(
 	logger := pkglog.FromContextOrDefault(ctx).WithName("vSphereWatcher")
 
 	logger.Info("Started watching VMs")
+
+	// Mark the watcher's traffic no-replay before any vCenter call, so both
+	// newWatcher's setup calls and the WaitForUpdatesEx loop inherit it. A
+	// re-login must happen, but a replay must not: the watcher owns
+	// session-scoped server state -- a property collector, property filter
+	// and container/list views -- that a re-login destroys. The setup calls
+	// still surface their auth faults so the service's restart loop runs.
+	ctx = pkgclient.WithNoReplay(ctx)
 
 	w, err := newWatcher(
 		ctx,

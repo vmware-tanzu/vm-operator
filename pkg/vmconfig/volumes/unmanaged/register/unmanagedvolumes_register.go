@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vmware/govmomi/pbm"
 	pbmtypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -35,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
+	pkgclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	pkgdatastore "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/datastore"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
@@ -392,7 +392,10 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 
 	// For information on lookup up the profile ID for a disk, see the doc
 	// https://developer.broadcom.com/xapis/vmware-storage-policy-api/latest/pbm.ServerObjectRef.html.
-	pbmClient, err := pbm.NewClient(ctx, vimClient)
+	// pkgclient.NewPbmClient, not pbm.NewClient: it reads any inline
+	// re-login wrapper off vimClient itself, so this flow inherits it
+	// without having to be handed the vSphere client.
+	pbmClient, err := pkgclient.NewPbmClient(ctx, vimClient)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get pbm client: %w", err)
 	}

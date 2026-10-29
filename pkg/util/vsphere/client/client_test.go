@@ -24,6 +24,7 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	_ "github.com/vmware/govmomi/vapi/simulator" // load VAPI simulator
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/soap"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -91,13 +92,14 @@ var _ = Describe("Client", Label(testlabels.VCSim), func() {
 			}
 
 			config = client.Config{
-				Host:       server.URL.Hostname(),
-				Port:       server.URL.Port(),
-				Username:   expectedUsername,
-				Password:   expectedPassword,
-				CAFilePath: serverCertFile,
-				Insecure:   false,
-				Datacenter: datacenter.Reference().Value,
+				Host:                 server.URL.Hostname(),
+				Port:                 server.URL.Port(),
+				Username:             expectedUsername,
+				Password:             expectedPassword,
+				CAFilePath:           serverCertFile,
+				Insecure:             false,
+				Datacenter:           datacenter.Reference().Value,
+				InlineReloginEnabled: false,
 			}
 		})
 
@@ -107,6 +109,33 @@ var _ = Describe("Client", Label(testlabels.VCSim), func() {
 			server = nil
 			serverCertFile = ""
 			config = client.Config{}
+		})
+
+		When("inline re-login is disabled", func() {
+			It("does not recover a terminated session inline", func() {
+				c, err := client.NewClient(ctx, config)
+				Expect(err).ToNot(HaveOccurred())
+
+				vc := c.VimClient()
+				sm := session.NewManager(vc)
+				adminC, err := vim25.NewClient(ctx, soap.NewClient(vc.URL(), true))
+				Expect(err).ToNot(HaveOccurred())
+				adminM := session.NewManager(adminC)
+				Expect(adminM.Login(
+					ctx,
+					url.UserPassword(config.Username, config.Password))).To(Succeed())
+
+				sess, err := sm.UserSession(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(sess).NotTo(BeNil())
+				Expect(adminM.TerminateSession(ctx, []string{sess.Key})).To(Succeed())
+
+				// With the flag off the fault surfaces to the caller; only
+				// the timer-driven keepalive would heal the session.
+				_, err = methods.GetCurrentTime(ctx, vc)
+				Expect(err).To(HaveOccurred())
+				Expect(client.IsNotAuthenticatedError(err)).To(BeTrue())
+			})
 		})
 
 		When("credentials are valid", func() {

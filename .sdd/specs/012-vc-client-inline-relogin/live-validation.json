@@ -1,0 +1,164 @@
+{
+  "date": "2026-10-24",
+  "production_commit": "60866ca9531cfb4e4c1109bf4a48e8043174a172",
+  "vcenter_version": "9.2.0",
+  "vcenter_build": "25863067",
+  "race_detector": true,
+  "account": "Disposable local SSO person user with ReadOnly permission",
+  "lockout_policy_unchanged": {
+    "Description": " ",
+    "MaxFailedAttempts": 5,
+    "FailedAttemptIntervalSec": 180,
+    "AutoUnlockIntervalSec": 300
+  },
+  "cases": [
+    {
+      "case": "create read-only test account",
+      "duration_ms": 297,
+      "error": "",
+      "passed": true
+    },
+    {
+      "case": "production client baseline SOAP REST PBM",
+      "duration_ms": 1183,
+      "error": "",
+      "passed": true
+    },
+    {
+      "case": "SOAP terminated session",
+      "duration_ms": 3493,
+      "error": "",
+      "passed": true,
+      "recovery_ms": 265,
+      "rest_logins": 0,
+      "soap_logins": 1
+    },
+    {
+      "case": "SOAP CurrentTime keepalive request after termination",
+      "duration_ms": 3438,
+      "error": "",
+      "passed": true,
+      "recovery_ms": 211,
+      "rest_logins": 0,
+      "soap_logins": 1
+    },
+    {
+      "case": "PBM terminated SOAP session",
+      "duration_ms": 3456,
+      "error": "",
+      "passed": true,
+      "recovery_ms": 233,
+      "rest_logins": 0,
+      "soap_logins": 1
+    },
+    {
+      "case": "REST expired session",
+      "duration_ms": 583,
+      "error": "",
+      "passed": true,
+      "recovery_ms": 524,
+      "rest_logins": 1,
+      "soap_logins": 0
+    },
+    {
+      "case": "REST replacement session expires again",
+      "duration_ms": 492,
+      "error": "",
+      "passed": true,
+      "recovery_ms": 434,
+      "rest_logins": 1,
+      "soap_logins": 0
+    },
+    {
+      "case": "20 concurrent SOAP callers",
+      "duration_ms": 3817,
+      "error": "",
+      "passed": true,
+      "recovery_ms": 590,
+      "rest_logins": 0,
+      "soap_logins": 1
+    },
+    {
+      "case": "20 concurrent REST callers",
+      "duration_ms": 666,
+      "error": "",
+      "passed": true,
+      "recovery_ms": 601,
+      "rest_logins": 1,
+      "soap_logins": 0
+    },
+    {
+      "case": "WithNoReplay recovers without hiding original fault",
+      "duration_ms": 3490,
+      "error": "",
+      "passed": true,
+      "recovery_ms": 262,
+      "rest_logins": 0,
+      "soap_logins": 1
+    },
+    {
+      "case": "WaitForUpdatesEx returns fault for expired collector",
+      "duration_ms": 3555,
+      "error": "",
+      "passed": true,
+      "recovery_ms": 274,
+      "rest_logins": 0,
+      "soap_logins": 1
+    },
+    {
+      "case": "password rotation rejects cached credentials once per call",
+      "duration_ms": 7904,
+      "error": "",
+      "passed": true
+    },
+    {
+      "case": "rebuilt client uses rotated password",
+      "duration_ms": 1308,
+      "error": "",
+      "passed": true
+    },
+    {
+      "case": "disabled account rejects recovery",
+      "duration_ms": 7758,
+      "error": "",
+      "passed": true
+    },
+    {
+      "case": "re-enabled account recovers with same client",
+      "duration_ms": 1295,
+      "error": "",
+      "passed": true
+    },
+    {
+      "case": "lockout rejects correct cached credentials",
+      "duration_ms": 35982,
+      "error": "",
+      "passed": true
+    },
+    {
+      "case": "unlocked account recovers with same client",
+      "duration_ms": 1101,
+      "error": "",
+      "passed": true
+    },
+    {
+      "case": "legacy mode returns auth faults without inline login",
+      "duration_ms": 4576,
+      "error": "",
+      "passed": true
+    },
+    {
+      "case": "cleanup",
+      "duration_ms": 773,
+      "error": "",
+      "passed": true
+    }
+  ],
+  "cleanup_verified": true,
+  "not_exercised": [
+    "vpxd restart",
+    "deployed Supervisor reconciliation",
+    "natural idle timeout or five-minute keepalive tick",
+    "certificate-based solution-user authentication"
+  ]
+}

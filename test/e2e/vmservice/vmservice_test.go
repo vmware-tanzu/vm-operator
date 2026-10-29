@@ -334,6 +334,18 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
+		Context("VM-VCSESSION", func() {
+			virtualmachine.VCSessionRecoverySpec(context.TODO(), func() virtualmachine.VCSessionRecoverySpecInput {
+				return virtualmachine.VCSessionRecoverySpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					ArtifactFolder:   artifactFolder,
+					SkipCleanup:      skipCleanup,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
 		Context("VM-COMPUTE-CONFIG", func() {
 			virtualmachine.VMComputeConfigSpec(context.TODO(), func() virtualmachine.VMComputeConfigSpecInput {
 				return virtualmachine.VMComputeConfigSpecInput{

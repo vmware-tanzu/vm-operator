@@ -34,6 +34,10 @@ type Config struct {
 	CAFilePath string
 	Insecure   bool
 	Datacenter string
+
+	// InlineReloginEnabled selects the inline re-login round trippers
+	// instead of the timer-driven keepalive handlers.
+	InlineReloginEnabled bool
 }
 
 type Client struct {
@@ -49,7 +53,7 @@ type Client struct {
 
 // NewClient returns a new client.
 func NewClient(ctx context.Context, config Config) (*Client, error) {
-	vimClient, sm, err := NewVimClient(ctx, config)
+	vimClient, sm, keeper, err := newVimClient(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -59,12 +63,12 @@ func NewClient(ctx context.Context, config Config) (*Client, error) {
 		return nil, err
 	}
 
-	restClient, err := newRestClient(ctx, vimClient, config)
+	restClient, err := newRestClient(ctx, vimClient, config, keeper)
 	if err != nil {
 		return nil, err
 	}
 
-	pbmClient, err := pbm.NewClient(ctx, vimClient)
+	pbmClient, err := NewPbmClient(ctx, vimClient)
 	if err != nil {
 		return nil, err
 	}
@@ -142,11 +146,13 @@ func RestKeepAliveHandlerFn(
 	}
 }
 
-// newRestClient creates a rest client which is configured to use a custom keepalive handler function.
+// newRestClient creates a rest client which is configured to use a custom keepalive handler
+// function. When keeper is non-nil, the client also gets the inline re-login round tripper.
 func newRestClient(
 	ctx context.Context,
 	vimClient *vim25.Client,
-	config Config) (*rest.Client, error) {
+	config Config,
+	keeper *sessionKeeper) (*rest.Client, error) {
 
 	log := pkglog.FromContextOrDefault(ctx).WithName("newRestClient")
 
@@ -155,11 +161,29 @@ func newRestClient(
 
 	userInfo := url.UserPassword(config.Username, config.Password)
 
-	// Set a custom keepalive handler function
+	if keeper != nil {
+		// Inline re-login chain: the re-login wrapper is innermost and the
+		// keepalive handler outermost. NewHandlerREST reads c.Transport at
+		// construction, so the wrapper must be installed first. The initial
+		// login below then starts the ticker.
+		keeper.setRestClient(restClient)
+		restClient.Transport = newReloginREST(restClient.Transport, keeper)
+	}
+
+	// Set a custom keepalive handler function. In inline mode the send func
+	// is keeper-aware: rest.Client.Session swallows a 401 and returns
+	// (nil, nil), which the wrapper never sees a failure to act on, so the
+	// probe must heal the session itself.
+	var send func() error
+	if keeper != nil {
+		send = keeper.restKeepAlive
+	} else {
+		send = RestKeepAliveHandlerFn(ctx, restClient, userInfo)
+	}
 	restClient.Transport = keepalive.NewHandlerREST(
 		restClient,
 		keepAliveIdleTime,
-		RestKeepAliveHandlerFn(ctx, restClient, userInfo))
+		send)
 
 	// Initial login. This will also start the keepalive.
 	if err := restClient.Login(ctx, userInfo); err != nil {
@@ -170,18 +194,20 @@ func newRestClient(
 	return restClient, nil
 }
 
-// NewVimClient creates a new vim25 client which is configured to use a custom
-// keepalive handler function.
-func NewVimClient(
+// newVimClient creates a new vim25 client which is configured to use a custom
+// keepalive handler function. When the config enables inline re-login, the
+// returned session keeper is non-nil and shared by the vim25, REST and PBM
+// clients; otherwise it is nil.
+func newVimClient(
 	ctx context.Context,
-	config Config) (*vim25.Client, *session.Manager, error) {
+	config Config) (*vim25.Client, *session.Manager, *sessionKeeper, error) {
 
-	log := pkglog.FromContextOrDefault(ctx).WithName("NewVimClient")
+	log := pkglog.FromContextOrDefault(ctx).WithName("newVimClient")
 
 	log.Info("Creating new vim Client", "VcPNID", config.Host, "VcPort", config.Port)
 	soapURL, err := soap.ParseURL(net.JoinHostPort(config.Host, config.Port))
 	if err != nil {
-		return nil, nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"failed to parse %s:%s: %w", config.Host, config.Port, err)
 	}
 
@@ -189,24 +215,53 @@ func NewVimClient(
 	if config.CAFilePath != "" {
 		err = soapClient.SetRootCAs(config.CAFilePath)
 		if err != nil {
-			return nil, nil, fmt.Errorf(
+			return nil, nil, nil, fmt.Errorf(
 				"failed to set root CA %s: %w", config.CAFilePath, err)
 		}
 	}
 
 	vimClient, err := vim25.NewClient(ctx, soapClient)
 	if err != nil {
-		return nil, nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"error creating a new vim client for url: %v: %w", soapURL, err)
 	}
 
 	if err := vimClient.UseServiceVersion(); err != nil {
-		return nil, nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"error setting vim client version for url: %v: %w", soapURL, err)
 	}
 
 	userInfo := url.UserPassword(config.Username, config.Password)
 	sm := session.NewManager(vimClient)
+
+	if config.InlineReloginEnabled {
+		// Inline re-login chain (arrangement B): the keepalive handler is
+		// outermost so its ping travels through the re-login wrapper and a
+		// dead session heals with no application traffic. The re-login
+		// wrapper wraps the raw soap client -- never vimClient.RoundTripper,
+		// which would be an infinite loop -- and the keeper's send tolerates
+		// transient ping errors so the ticker survives them. The chain is
+		// installed before the first login because the keepalive ticker is
+		// started only by a login body traversing the handler.
+		keeper := newSessionKeeper(ctx, sm, userInfo)
+		rt := newReloginSOAP(soapClient, keeper)
+		vimClient.RoundTripper = &keeperRoundTripper{
+			RoundTripper: keepalive.NewHandlerSOAP(
+				rt,
+				keepAliveIdleTime,
+				keeper.soapKeepAlive(rt)),
+			keeper: keeper,
+		}
+
+		// Initial login. This will also start the keepalive.
+		if err = sm.Login(ctx, userInfo); err != nil {
+			// Log message used by VMC LINT. Refer to before making changes
+			return nil, nil, nil, fmt.Errorf(
+				"login failed for url: %v: %w", soapURL, err)
+		}
+
+		return vimClient, sm, keeper, nil
+	}
 
 	// Set a custom keepalive handler function
 	vimClient.RoundTripper = keepalive.NewHandlerSOAP(
@@ -217,11 +272,11 @@ func NewVimClient(
 	// Initial login. This will also start the keepalive.
 	if err = sm.Login(ctx, userInfo); err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
-		return nil, nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"login failed for url: %v: %w", soapURL, err)
 	}
 
-	return vimClient, sm, err
+	return vimClient, sm, nil, err
 }
 
 func newFinder(
@@ -270,6 +325,45 @@ func (c *Client) Datacenter() *object.Datacenter {
 
 func (c *Client) PbmClient() *pbm.Client {
 	return c.pbmClient
+}
+
+// NewPbmClient returns a new PBM client that shares the given vim25 client's
+// vCenter session, including its inline re-login behavior when that session
+// has it. Build every ad-hoc PBM client through this constructor rather than
+// pbm.NewClient, so none of them silently misses the inline re-login wrapper.
+//
+// Whether the wrapper applies is read off vimClient itself, so a caller that
+// only has a *vim25.Client -- a vmconfig.Reconciler, say -- needs nothing
+// handed down to it and cannot be given a keeper belonging to some other
+// session.
+func NewPbmClient(
+	ctx context.Context,
+	vimClient *vim25.Client) (*pbm.Client, error) {
+
+	pbmClient, err := pbm.NewClient(ctx, vimClient)
+	if err != nil {
+		return nil, err
+	}
+
+	if keeper := keeperFromVimClient(vimClient); keeper != nil {
+		// pbmClient.Client is the derived raw *soap.Client and
+		// pbm.Client.RoundTrip dispatches through the RoundTripper field,
+		// so this is the correct injection point. Replay works because
+		// pbm.NewClient sets the SOAP cookie to a method value that reads
+		// the vim25 client's cookie jar live on every request, so once the
+		// vim25 session is refreshed the replay carries the new cookie.
+		pbmClient.RoundTripper = newReloginSOAP(pbmClient.Client, keeper)
+	}
+
+	return pbmClient, nil
+}
+
+// NewPbmClient returns a new PBM client that shares this client's vCenter
+// session, including its inline re-login behavior when enabled.
+func (c *Client) NewPbmClient(
+	ctx context.Context) (*pbm.Client, error) {
+
+	return NewPbmClient(ctx, c.vimClient)
 }
 
 func (c *Client) RestClient() *rest.Client {

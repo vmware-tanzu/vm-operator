@@ -1434,6 +1434,26 @@ func unitTestsMutating() {
 			mutation.SetImageNameFromCdrom(&ctx.WebhookRequestContext, ctx.vm)
 			Expect(ctx.vm.Spec.ImageName).To(Equal("vmi-new"))
 		})
+
+		DescribeTable("should not set the image name from CD-ROM if the VM is created by a restore, a failover or an import",
+			func(key, value string) {
+				ctx.vm.Spec.ImageName = ""
+				ctx.vm.Spec.Hardware.Cdrom[0].Connected = ptr.To(true)
+				if ctx.vm.Annotations == nil {
+					ctx.vm.Annotations = map[string]string{}
+				}
+				ctx.vm.Annotations[key] = value
+				expectedCdrom := ctx.vm.Spec.Hardware.DeepCopy().Cdrom
+
+				mutation.SetImageNameFromCdrom(&ctx.WebhookRequestContext, ctx.vm)
+				Expect(ctx.vm.Spec.ImageName).To(BeEmpty())
+				Expect(ctx.vm.Spec.Hardware.Cdrom).To(Equal(expectedCdrom))
+			},
+			Entry("restored VM annotation with an empty value", vmopv1.RestoredVMAnnotation, ""),
+			Entry("restored VM annotation with a value", vmopv1.RestoredVMAnnotation, "true"),
+			Entry("failed over VM annotation with an empty value", vmopv1.FailedOverVMAnnotation, ""),
+			Entry("imported VM annotation with a value", vmopv1.ImportedVMAnnotation, "true"),
+		)
 	})
 
 	Describe("CleanupApplyPowerStateChangeTimeAnno", func() {

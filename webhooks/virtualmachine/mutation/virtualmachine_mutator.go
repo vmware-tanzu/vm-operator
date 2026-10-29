@@ -946,6 +946,14 @@ func SetImageNameFromCdrom(
 		return
 	}
 
+	// Return early if the VM is created by a restore, a failover or an
+	// import, which leaves the VM without an image and its CD-ROMs as given.
+	if metav1.HasAnnotation(vm.ObjectMeta, vmopv1.RestoredVMAnnotation) ||
+		metav1.HasAnnotation(vm.ObjectMeta, vmopv1.FailedOverVMAnnotation) ||
+		metav1.HasAnnotation(vm.ObjectMeta, vmopv1.ImportedVMAnnotation) {
+		return
+	}
+
 	var cdromImageName string
 	for _, cdrom := range vm.Spec.Hardware.Cdrom {
 		// Set the image name to the first connected CD-ROM image name.

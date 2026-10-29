@@ -18,6 +18,7 @@ replace (
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ../../external/tanzu-topology
 	github.com/vmware-tanzu/vm-operator/external/vim/api => ../../external/vim/api
 	github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver => ../../external/vsphere-csi-driver
+	github.com/vmware-tanzu/vm-operator/external/lifecycle => ../../external/lifecycle
 	github.com/vmware-tanzu/vm-operator/external/vsphere-policy => ../../external/vsphere-policy
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api => ../../pkg/backup/api
 	github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels => ../../pkg/constants/testlabels
@@ -69,6 +70,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/vim/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver v0.0.0-00010101000000-000000000000
+	github.com/vmware-tanzu/vm-operator/external/lifecycle v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/vsphere-policy v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api v0.0.0-00010101000000-000000000000
 	github.com/vmware/govmomi v0.57.0-alpha.0.0.20260930024634-9b65cf3964d3

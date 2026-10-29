@@ -61,6 +61,7 @@ const (
 	dummyRegisteredAnnVal          = "dummy-registered-annotation"
 	dummyImportedAnnVal            = "dummy-imported-annotation"
 	dummyFailedOverAnnVal          = "dummy-failedover-annotation"
+	dummyBackupVersionVal          = "1001"
 	dummyPausedVMLabelVal          = "dummy-devops"
 	dummyVmiName                   = "vmi-dummy"
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
@@ -1493,6 +1494,14 @@ func unitTestsValidateCreate() {
 					expectAllowed: true,
 				},
 			),
+			Entry("should allow creating VM with backup version annotation set by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = dummyBackupVersionVal
+					},
+					expectAllowed: true,
+				},
+			),
 			Entry("should disallow creating VM with cluster module without resource policy",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -1504,6 +1513,29 @@ func unitTestsValidateCreate() {
 			),
 		)
 
+		DescribeTable("create with a create marker that has an empty value",
+			func(key string, privileged bool) {
+				var validate func(admission.Response)
+				if !privileged {
+					validate = doValidateWithMsg(
+						field.Forbidden(annotationPath.Key(key), "modifying this annotation is not allowed for non-admin users").Error())
+				}
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = privileged
+						ctx.vm.Annotations[key] = ""
+					},
+					validate:      validate,
+					expectAllowed: privileged,
+				})
+			},
+			Entry("should disallow restored VM annotation by SSO user", vmopv1.RestoredVMAnnotation, false),
+			Entry("should disallow failed over VM annotation by SSO user", vmopv1.FailedOverVMAnnotation, false),
+			Entry("should disallow imported VM annotation by SSO user", vmopv1.ImportedVMAnnotation, false),
+			Entry("should allow restored VM annotation by service user", vmopv1.RestoredVMAnnotation, true),
+			Entry("should allow failed over VM annotation by service user", vmopv1.FailedOverVMAnnotation, true),
+			Entry("should allow imported VM annotation by service user", vmopv1.ImportedVMAnnotation, true),
+		)
 	})
 
 	Context("Label", func() {
@@ -5950,6 +5982,76 @@ func unitTestsValidateUpdate() {
 			),
 		)
 
+		DescribeTable("update of the backup version annotation",
+			func(oldVal, newVal *string, privileged bool, expectAllowed bool) {
+				var validate func(admission.Response)
+				if !expectAllowed {
+					validate = doValidateWithMsg(
+						field.Forbidden(annotationPath.Key(vmopv1.VirtualMachineBackupVersionAnnotation), "modifying this annotation is not allowed for non-admin users").Error())
+				}
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = privileged
+						delete(ctx.oldVM.Annotations, vmopv1.VirtualMachineBackupVersionAnnotation)
+						delete(ctx.vm.Annotations, vmopv1.VirtualMachineBackupVersionAnnotation)
+						if oldVal != nil {
+							ctx.oldVM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = *oldVal
+						}
+						if newVal != nil {
+							ctx.vm.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation] = *newVal
+						}
+					},
+					validate:      validate,
+					expectAllowed: expectAllowed,
+				})
+			},
+			Entry("should allow changing it by service user", ptr.To(dummyBackupVersionVal), ptr.To(dummyBackupVersionVal+"0"), true, true),
+			Entry("should allow removing it by service user", ptr.To(dummyBackupVersionVal), nil, true, true),
+			Entry("should allow keeping it by SSO user", ptr.To(dummyBackupVersionVal), ptr.To(dummyBackupVersionVal), false, true),
+			Entry("should disallow changing it by SSO user", ptr.To(dummyBackupVersionVal), ptr.To(dummyBackupVersionVal+"0"), false, false),
+			Entry("should disallow removing it by SSO user", ptr.To(dummyBackupVersionVal), nil, false, false),
+			Entry("should disallow removing it while empty by SSO user", ptr.To(""), nil, false, false),
+			Entry("should disallow adding it by SSO user", nil, ptr.To(dummyBackupVersionVal), false, false),
+		)
+
+		DescribeTable("update of a create marker that has an empty value",
+			func(key string, inOld, inNew, privileged bool) {
+				expectAllowed := privileged || inOld == inNew
+				var validate func(admission.Response)
+				if !expectAllowed {
+					validate = doValidateWithMsg(
+						field.Forbidden(annotationPath.Key(key), "modifying this annotation is not allowed for non-admin users").Error())
+				}
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = privileged
+						if inOld {
+							ctx.oldVM.Annotations[key] = ""
+						}
+						if inNew {
+							ctx.vm.Annotations[key] = ""
+						}
+					},
+					validate:      validate,
+					expectAllowed: expectAllowed,
+				})
+			},
+			Entry("should disallow adding restored VM annotation by SSO user", vmopv1.RestoredVMAnnotation, false, true, false),
+			Entry("should disallow adding failed over VM annotation by SSO user", vmopv1.FailedOverVMAnnotation, false, true, false),
+			Entry("should disallow adding imported VM annotation by SSO user", vmopv1.ImportedVMAnnotation, false, true, false),
+			Entry("should disallow removing restored VM annotation by SSO user", vmopv1.RestoredVMAnnotation, true, false, false),
+			Entry("should disallow removing failed over VM annotation by SSO user", vmopv1.FailedOverVMAnnotation, true, false, false),
+			Entry("should disallow removing imported VM annotation by SSO user", vmopv1.ImportedVMAnnotation, true, false, false),
+			Entry("should allow keeping restored VM annotation by SSO user", vmopv1.RestoredVMAnnotation, true, true, false),
+			Entry("should allow keeping failed over VM annotation by SSO user", vmopv1.FailedOverVMAnnotation, true, true, false),
+			Entry("should allow keeping imported VM annotation by SSO user", vmopv1.ImportedVMAnnotation, true, true, false),
+			Entry("should allow adding restored VM annotation by service user", vmopv1.RestoredVMAnnotation, false, true, true),
+			Entry("should allow adding failed over VM annotation by service user", vmopv1.FailedOverVMAnnotation, false, true, true),
+			Entry("should allow adding imported VM annotation by service user", vmopv1.ImportedVMAnnotation, false, true, true),
+			Entry("should allow removing restored VM annotation by service user", vmopv1.RestoredVMAnnotation, true, false, true),
+			Entry("should allow removing failed over VM annotation by service user", vmopv1.FailedOverVMAnnotation, true, false, true),
+			Entry("should allow removing imported VM annotation by service user", vmopv1.ImportedVMAnnotation, true, false, true),
+		)
 	})
 
 	Context("Bootstrap", func() {

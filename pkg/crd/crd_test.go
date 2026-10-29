@@ -7,6 +7,7 @@ package crd_test
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -22,12 +23,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgcrd "github.com/vmware-tanzu/vm-operator/pkg/crd"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 const (
@@ -1774,3 +1778,106 @@ func (c *writeRecordingClient) Patch(
 	c.writes = append(c.writes, "patch/"+obj.GetName())
 	return c.Client.Patch(ctx, obj, patch, opts...)
 }
+
+var _ = Describe("Flex VM and Zone API schema", Label(testlabels.API, testlabels.EnvTest), func() {
+	var ctx context.Context
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContextWithDefaultConfig()
+		Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+		_, err := envtest.InstallCRDs(envTestEnv.Config, envtest.CRDInstallOptions{
+			Paths:              []string{filepath.Join(testutil.GetRootDirOrDie(), "config", "crd", "external-crds", "topology.tanzu.vmware.com_zones.yaml")},
+			ErrorIfPathMissing: true,
+		})
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	newVM := func() *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "vmoperator.vmware.com/v1alpha6", "kind": "VirtualMachine",
+			"metadata": map[string]any{"generateName": "flex-api-", "namespace": "default"},
+			"spec": map[string]any{
+				"reservedProfileName": "",
+				"hardware": map[string]any{
+					"vGPUs": []any{
+						map[string]any{"name": "gpu-0", "profileName": "gpu-small", "enableUVM": true},
+						map[string]any{"name": "gpu-1", "profileName": "gpu-small"},
+					},
+					"dynamicDirectPathIODevices": []any{
+						map[string]any{"name": "pci-0", "vendorID": int64(4318), "deviceID": int64(0), "customLabel": "device"},
+						map[string]any{"name": "pci-1"},
+					},
+				},
+			},
+		}}
+	}
+
+	It("preserves the VM spec and observed status through API server storage", func() {
+		vm := newVM()
+		wantHardware, _, err := unstructured.NestedMap(vm.Object, "spec", "hardware")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() error { return envTestClient.Create(ctx, vm) }).Should(Succeed())
+		DeferCleanup(func() { Expect(envTestClient.Delete(ctx, vm)).To(Succeed()) })
+		storedHardware, found, err := unstructured.NestedMap(vm.Object, "spec", "hardware")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(storedHardware).To(Equal(wantHardware))
+		profile, found, err := unstructured.NestedString(vm.Object, "spec", "reservedProfileName")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(profile).To(BeEmpty())
+		expectedSpec := vm.Object["spec"]
+		hardware := map[string]any{
+			"firmware": "efi", "sevEnabled": false, "sevSnpEnabled": true, "tdxEnabled": false, "smcPresent": true,
+			"cpu":                        map[string]any{"hotRemoveEnabled": false},
+		}
+		status := map[string]any{
+			"governingClassNames": []any{"ceiling"}, "changeBlockTracking": false, "hardware": hardware,
+			"conditions": []any{map[string]any{"type": vmopv1.VirtualMachineConditionGovernanceCompliant, "status": "False", "reason": vmopv1.VirtualMachineNoGoverningClassReason, "message": "No class governs this zone", "lastTransitionTime": "2026-10-29T00:00:00Z"}},
+		}
+		vm.Object["status"] = status
+		Expect(envTestClient.Status().Update(ctx, vm)).To(Succeed())
+		Expect(envTestClient.Get(ctx, ctrlclient.ObjectKeyFromObject(vm), vm)).To(Succeed())
+		Expect(vm.Object["spec"]).To(Equal(expectedSpec))
+		Expect(vm.Object["status"]).To(Equal(status))
+		// Removing the pointer-valued selection preserves omission, not empty.
+		Expect(unstructured.SetNestedField(vm.Object, "reserved-small", "spec", "reservedProfileName")).To(Succeed())
+		Expect(envTestClient.Update(ctx, vm)).To(Succeed())
+		unstructured.RemoveNestedField(vm.Object, "spec", "reservedProfileName")
+		Expect(envTestClient.Update(ctx, vm)).To(Succeed())
+		Expect(envTestClient.Get(ctx, ctrlclient.ObjectKeyFromObject(vm), vm)).To(Succeed())
+		_, found, err = unstructured.NestedFieldNoCopy(vm.Object, "spec", "reservedProfileName")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeFalse())
+	})
+
+	DescribeTable("rejects invalid device lists", func(hardware map[string]any) {
+		vm := newVM()
+		Expect(unstructured.SetNestedMap(vm.Object, hardware, "spec", "hardware")).To(Succeed())
+		err := envTestClient.Create(ctx, vm)
+		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected schema rejection, got %v", err)
+	},
+		Entry("vGPU missing name", map[string]any{"vGPUs": []any{map[string]any{"profileName": "gpu"}}}),
+		Entry("vGPU empty name", map[string]any{"vGPUs": []any{map[string]any{"name": "", "profileName": "gpu"}}}),
+		Entry("duplicate vGPU name", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0", "profileName": "a"}, map[string]any{"name": "gpu-0", "profileName": "b"}}}),
+		Entry("DirectPath device missing name", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"vendorID": int64(1)}}}),
+		Entry("invalid PCI ID", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "pci-0", "vendorID": int64(65536), "deviceID": int64(1)}}}),
+		Entry("duplicate DirectPath device name", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "pci-0", "vendorID": int64(1)}, map[string]any{"name": "pci-0", "vendorID": int64(2)}}}),
+	)
+
+	It("preserves the Zone governance mirror", func() {
+		zone := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "topology.tanzu.vmware.com/v1alpha1", "kind": "Zone",
+			"metadata": map[string]any{"generateName": "flex-api-", "namespace": "default"},
+			"spec":     map[string]any{"availabilityZoneReference": map[string]any{"apiVersion": "topology.tanzu.vmware.com/v1alpha1", "name": "zone-a"}},
+		}}
+		Expect(envTestClient.Create(ctx, zone)).To(Succeed())
+		DeferCleanup(func() { Expect(envTestClient.Delete(ctx, zone)).To(Succeed()) })
+		zone.Object["status"] = map[string]any{"governingClasses": []any{"ceiling"}}
+		Expect(envTestClient.Status().Update(ctx, zone)).To(Succeed())
+		Expect(envTestClient.Get(ctx, ctrlclient.ObjectKeyFromObject(zone), zone)).To(Succeed())
+		names, found, err := unstructured.NestedStringSlice(zone.Object, "status", "governingClasses")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(names).To(Equal([]string{"ceiling"}))
+	})
+})

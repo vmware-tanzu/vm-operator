@@ -7,6 +7,7 @@ import (
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/backuprestore"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/computepolicies"
@@ -20,6 +21,11 @@ import (
 )
 
 var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label("virtualmachine"), Label("vmservice"), func() {
+	Context("VM-FLEX-API", func() {
+		virtualmachine.VMFlexAPISpec(context.TODO(), func() ctrlclient.Client {
+			return svClusterProxy.GetClient()
+		})
+	})
 	Context("VI-ADMIN-VM-CLASS", func() {
 		viadmin.VIAdminVMClassSpec(context.TODO(), func() viadmin.VIAdminVMClassSpecInput {
 			return viadmin.VIAdminVMClassSpecInput{

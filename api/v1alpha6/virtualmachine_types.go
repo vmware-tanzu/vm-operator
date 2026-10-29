@@ -14,6 +14,15 @@ import (
 )
 
 const (
+	// VirtualMachineConditionGovernanceCompliant reports whether the VM's
+	// observed configuration complies with the classes governing its zone.
+	VirtualMachineConditionGovernanceCompliant = "GovernanceCompliant"
+
+	// VirtualMachineNoGoverningClassReason indicates that no class governs the
+	// VM's zone. GovernanceCompliant is False for a classless VM and True for
+	// a class-backed VM in this case.
+	VirtualMachineNoGoverningClassReason = "NoGoverningClass"
+
 	// VirtualMachineConditionClassReady indicates that a referenced
 	// VirtualMachineClass is ready.
 	//
@@ -815,6 +824,14 @@ const (
 type VirtualMachineSpec struct {
 	// +optional
 
+	// ReservedProfileName identifies a VirtualMachineReservedProfile in this
+	// namespace. Omission inherits the class or governing class default; an
+	// explicit empty string selects no profile. A selected profile must match
+	// the VM's CPU, memory and passthrough device configuration.
+	ReservedProfileName *string `json:"reservedProfileName,omitempty"`
+
+	// +optional
+
 	// Image describes the reference to the VirtualMachineImage or
 	// ClusterVirtualMachineImage resource used to deploy this VM.
 	//
@@ -1428,6 +1445,14 @@ type VirtualMachineProviderStatus struct {
 
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
 type VirtualMachineStatus struct {
+	// +optional
+	// +listType=set
+
+	// GoverningClassNames lists the names of the VirtualMachineClasses in this
+	// namespace that govern the VM's zone. It is computed from the classes,
+	// independently of the class selected by spec.className.
+	GoverningClassNames []string `json:"governingClassNames,omitempty"`
+
 	// +optional
 
 	// Class is a reference to the VirtualMachineClass resource used to deploy

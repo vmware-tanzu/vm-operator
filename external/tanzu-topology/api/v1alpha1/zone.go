@@ -179,6 +179,13 @@ type ZoneSpec struct {
 // ZoneStatus defines the observed state of Zone.
 type ZoneStatus struct {
 	// +optional
+	// +listType=set
+	// GoverningClasses lists the names of the VirtualMachineClasses in this
+	// namespace that govern this zone. This is a read-only projection of the
+	// classes, not an input to governance decisions.
+	GoverningClasses []string `json:"governingClasses,omitempty"`
+
+	// +optional
 	// Conditions describes the observed conditions of the Zone
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 

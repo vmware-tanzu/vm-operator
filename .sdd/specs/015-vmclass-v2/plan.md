@@ -139,3 +139,9 @@ Tracked in the provider's spec and listed in tasks.md as dependency tasks T910�
 |---|---|---|
 | `*[]string` zone lists distinguish unset from `[]` | "No zones" and "all zones" must not collapse | A plain list: dropping `[]` would make a class available everywhere |
 | The VM reconciler writes VM spec (same-class resize, schema upgrade, class change re-default) | These values come from the class and must follow it; precedent `vm_schema_upgrade.go`. A separate spec patch with an optimistic lock, apart from the deferred status patch | Asking users to re-apply the class: drift between the class and its VMs, and no backfill on upgrade |
+
+## VM and Zone API foundation (vmop-4317)
+
+T108–T109 land on the specification branch independently of the class reshape: optional VM profile selection, per-type device lists (`hardware.vGPUs`, `hardware.dynamicDirectPathIODevices`; item `name` plus the identity fields, no count), observed status fields, governance condition constants and the Zone mirror schema. Device Go types are VM-specific so this change does not reshape existing class device lists. The schema is available without the capability; the later webhook and controller stories gate runtime behavior. T110 follows vmop-4313 and the vmop-4315 profile schema, retaining the planned class-default backfill rather than adding an interim reader of `reservedProfileID`.
+
+Validation covers v1alpha1–v1alpha5 conversion round trips (including omitted versus explicit empty selection and false versus unknown booleans), deep-copy isolation, API-server persistence and rejection of invalid device lists (missing or duplicate item names, out-of-range PCI IDs), and an experimental E2E check of the installed VM and Zone schemas. The Zone type change follows the explicit external-API scope of T109 and regenerates its deep copy and external CRD; it changes no Zone reconciliation.

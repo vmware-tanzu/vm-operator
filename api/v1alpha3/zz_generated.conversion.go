@@ -4084,6 +4084,7 @@ func autoConvert_v1alpha3_VirtualMachineSpec_To_v1alpha6_VirtualMachineSpec(in *
 }
 
 func autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha3_VirtualMachineSpec(in *v1alpha6.VirtualMachineSpec, out *VirtualMachineSpec, s conversion.Scope) error {
+	// WARNING: in.ReservedProfileName requires manual conversion: does not exist in peer-type
 	out.Image = (*VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
@@ -4223,6 +4224,7 @@ func autoConvert_v1alpha3_VirtualMachineStatus_To_v1alpha6_VirtualMachineStatus(
 }
 
 func autoConvert_v1alpha6_VirtualMachineStatus_To_v1alpha3_VirtualMachineStatus(in *v1alpha6.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
+	// WARNING: in.GoverningClassNames requires manual conversion: does not exist in peer-type
 	out.Class = (*v1alpha3common.LocalObjectRef)(unsafe.Pointer(in.Class))
 	// WARNING: in.NodeName requires manual conversion: does not exist in peer-type
 	out.PowerState = VirtualMachinePowerState(in.PowerState)

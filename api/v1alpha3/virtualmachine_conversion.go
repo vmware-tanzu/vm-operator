@@ -534,6 +534,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 
 	// BEGIN RESTORE
 
+	dst.Spec.ReservedProfileName = restored.Spec.ReservedProfileName
+
 	restore_v1alpha6_VirtualMachineBootstrapCloudInitWaitOnNetwork(dst, restored)
 	restore_v1alpha6_VirtualMachineBootstrapLinuxPrep(dst, restored)
 	restore_v1alpha6_VirtualMachineBootstrapSysprep(dst, restored)

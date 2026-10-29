@@ -488,6 +488,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 
 	// BEGIN RESTORE
 
+	dst.Spec.ReservedProfileName = restored.Spec.ReservedProfileName
+
 	restore_v1alpha6_VirtualMachineHardware(dst, restored)
 	restore_v1alpha6_VirtualMachinePolicies(dst, restored)
 	restore_v1alpha6_VirtualMachineBootOptions(dst, restored)

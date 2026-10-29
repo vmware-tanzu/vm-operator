@@ -346,6 +346,15 @@ spec:
                   workloads that don't use a reserved Virtual Machine class instance can use
                   a DirectPath device.
                 type: boolean
+              governingClasses:
+                description: |-
+                  GoverningClasses lists the names of the VirtualMachineClasses in this
+                  namespace that govern this zone. This is a read-only projection of the
+                  classes, not an input to governance decisions.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
               markedForRemoval:
                 description: |-
                   MarkedForRemoval describes if the Zone is marked for removal from the

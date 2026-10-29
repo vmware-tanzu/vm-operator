@@ -12,13 +12,24 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/types"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
+	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/netplan"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
@@ -139,6 +150,107 @@ func VMVPCSpec(ctx context.Context, inputGetter func() VMVPCSpecInput) {
 			},
 		}
 	})
+
+	It("Should configure CloudInit DHCP overrides with interface nameservers",
+		Label("extended-functional", "experimental"),
+		func() {
+			vm := &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: input.WCPNamespaceName,
+					Name:      vm1Name,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+					},
+					ImageName:    vmTemplate.Spec.ImageName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1.VirtualMachinePowerStateOn,
+					Network:      &vmopv1.VirtualMachineNetworkSpec{},
+				},
+			}
+
+			for i, networkKind := range []string{utils.SubnetKind, utils.SubnetSetKind} {
+				By("Creating a private DHCP " + networkKind)
+				networkName := fmt.Sprintf("%s-dhcp-%d", vm1Name, i)
+				network, err := manifestbuilders.DHCPSubnetOrSubnetSet(manifestbuilders.SubnetOrSubnetSet{
+					Kind:      networkKind,
+					Name:      networkName,
+					Namespace: input.WCPNamespaceName,
+				}, true)
+				Expect(err).ToNot(HaveOccurred())
+				DeferCleanup(vmoperator.DeleteSubnetOrSubnetSetAndWait, ctx, config, svClusterClient, input.WCPNamespaceName, networkName, networkKind)
+
+				Eventually(func(g Gomega) {
+					g.Expect(svClusterClient.Create(ctx, network)).To(Succeed())
+				}, config.GetIntervals("default", "wait-subnet-creation")...).Should(Succeed())
+				vmservice.VerifySubnetOrSubnetSetCreation(ctx, config, svClusterClient, input.WCPNamespaceName, networkName, networkKind)
+
+				iface := vmopv1.VirtualMachineNetworkInterfaceSpec{
+					Name: fmt.Sprintf("eth%d", i),
+					Network: &vmopv1common.PartialObjectRef{
+						TypeMeta: metav1.TypeMeta{
+							APIVersion: vpcAPIVersion,
+							Kind:       networkKind,
+						},
+						Name: networkName,
+					},
+					Gateway4:    "None",
+					Nameservers: []string{"192.0.2.53"},
+					Routes:      []vmopv1.VirtualMachineNetworkRouteSpec{{To: "198.51.100.0/24", Via: "192.0.2.1"}},
+				}
+				vm.Spec.Network.Interfaces = append(vm.Spec.Network.Interfaces, iface)
+			}
+
+			By("Creating a VM that inherits DHCP from the network with explicit DNS and route suppression")
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, false)
+			vmMoRef := types.ManagedObjectReference{
+				Type:  "VirtualMachine",
+				Value: vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name),
+			}
+			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			propCollector := property.DefaultCollector(vCenterClient)
+
+			By("Verifying the CloudInit network metadata sent to the guest")
+			Eventually(func(g Gomega) {
+				var vmMO mo.VirtualMachine
+				g.Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.extraConfig"}, &vmMO)).To(Succeed())
+				g.Expect(vmMO.Config).ToNot(BeNil())
+
+				var encodedMetadata string
+				for _, value := range vmMO.Config.ExtraConfig {
+					if option := value.GetOptionValue(); option.Key == constants.CloudInitGuestInfoMetadata {
+						encodedMetadata, _ = option.Value.(string)
+						break
+					}
+				}
+				g.Expect(encodedMetadata).ToNot(BeEmpty())
+				data, err := pkgutil.TryToDecodeBase64Gzip([]byte(encodedMetadata))
+				g.Expect(err).ToNot(HaveOccurred())
+
+				var metadata struct {
+					Network netplan.Network `json:"network"`
+				}
+				g.Expect(yaml.Unmarshal([]byte(data), &metadata)).To(Succeed())
+				g.Expect(metadata.Network.Ethernets).To(HaveLen(2))
+				for _, iface := range vm.Spec.Network.Interfaces {
+					g.Expect(metadata.Network.Ethernets).To(HaveKey(iface.Name))
+					eth := metadata.Network.Ethernets[iface.Name]
+					g.Expect(eth.Dhcp4).To(HaveValue(BeTrue()))
+					g.Expect(eth.Dhcp4Overrides).ToNot(BeNil())
+					g.Expect(eth.Dhcp4Overrides.UseDNS).To(HaveValue(BeFalse()))
+					g.Expect(eth.Dhcp4Overrides.UseRoutes).To(HaveValue(BeFalse()))
+					g.Expect(eth.Dhcp6Overrides).To(BeNil())
+					g.Expect(eth.Nameservers).ToNot(BeNil())
+					g.Expect(eth.Nameservers.Addresses).To(Equal(iface.Nameservers))
+					g.Expect(eth.Gateway4).To(BeNil())
+					g.Expect(eth.Routes).To(HaveLen(1))
+					g.Expect(eth.Routes[0].To).To(HaveValue(Equal("198.51.100.0/24")))
+				}
+			}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(Succeed())
+		},
+	)
 
 	Context("VPC DHCP should successfully create VMs", func() {
 		It("using customized DHCP Subnet/SubnetSet to assign valid ip addresses and ping each other", Label("smoke"), func() {

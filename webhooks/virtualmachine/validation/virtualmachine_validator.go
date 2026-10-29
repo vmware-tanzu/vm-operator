@@ -1222,7 +1222,7 @@ func (v validator) validateNetworkInterfaceSpec(
 				"dhcp4 cannot be used with IPv4 addresses in addresses field"))
 		}
 
-		if gw := interfaceSpec.Gateway4; gw != "" {
+		if gw := interfaceSpec.Gateway4; gw != "" && gw != "None" {
 			p := interfacePath.Child("gateway4")
 			allErrs = append(allErrs, field.Invalid(p, gw, "gateway4 is mutually exclusive with dhcp4"))
 		}
@@ -1235,7 +1235,7 @@ func (v validator) validateNetworkInterfaceSpec(
 				"dhcp6 cannot be used with IPv6 addresses in addresses field"))
 		}
 
-		if gw := interfaceSpec.Gateway6; gw != "" {
+		if gw := interfaceSpec.Gateway6; gw != "" && gw != "None" {
 			p := interfacePath.Child("gateway6")
 			allErrs = append(allErrs, field.Invalid(p, gw, "gateway6 is mutually exclusive with dhcp6"))
 		}
@@ -1517,6 +1517,28 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 				strings.Join(searchDomains, ","),
 				"searchDomains is available only with the following bootstrap providers: CloudInit",
 			))
+		}
+	}
+
+	dhcp4 := ptr.DerefWithDefault(interfaceSpec.DHCP4, false)
+	dhcp6 := ptr.DerefWithDefault(interfaceSpec.DHCP6, false)
+	ignoreRoutes4 := interfaceSpec.Gateway4 == "None"
+	ignoreRoutes6 := interfaceSpec.Gateway6 == "None"
+
+	if cloudInit != nil {
+		if dhcp4 && dhcp6 && ignoreRoutes4 != ignoreRoutes6 {
+			allErrs = append(allErrs, field.Invalid(interfacePath,
+				interfaceSpec.Name, "dual-stack DHCP requires identical DHCP overrides; "+
+					"set both gateway4 and gateway6 to None to ignore DHCP routes"))
+		}
+	} else {
+		if dhcp4 && ignoreRoutes4 {
+			allErrs = append(allErrs, field.Invalid(interfacePath.Child("gateway4"),
+				interfaceSpec.Gateway4, "gateway4 is mutually exclusive with dhcp4"))
+		}
+		if dhcp6 && ignoreRoutes6 {
+			allErrs = append(allErrs, field.Invalid(interfacePath.Child("gateway6"),
+				interfaceSpec.Gateway6, "gateway6 is mutually exclusive with dhcp6"))
 		}
 	}
 

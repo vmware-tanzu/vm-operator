@@ -762,15 +762,18 @@ func (v validator) validateStorageFields(
 
 	var allErrs field.ErrorList
 
-	if vm.Spec.StorageClass == "" {
-		return allErrs
+	objPath := field.NewPath("spec", "storageClass")
+	objName := vm.Spec.StorageClass
+
+	if objName == "" {
+		// The storage class is required on create. Return here since the
+		// checks below all resolve objects by the storage class name.
+		return append(allErrs,
+			field.Required(objPath, ""))
 	}
 
 	// Storage policyID mutability via storage VolumeAttributeClass objects
 	// VolumeAttributeClass's policyID trumps StorageClass's policyID.
-
-	objPath := field.NewPath("spec", "storageClass")
-	objName := vm.Spec.StorageClass
 
 	if vm.Spec.VolumeAttributesClassName != "" {
 		objPath = field.NewPath("spec", "volumeAttributesClassName")

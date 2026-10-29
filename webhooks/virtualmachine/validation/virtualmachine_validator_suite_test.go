@@ -26,6 +26,7 @@ func TestWebhook(t *testing.T) {
 		config.Features.VMSharedDisks = true
 		config.Features.WorkloadIPv6 = true
 		config.Features.MutableNetworks = true
+		config.Features.VMNetworkUnitNumbers = true
 		config.BuildVersion = testBuildVersion // Match annotations set in test VMs
 	})
 

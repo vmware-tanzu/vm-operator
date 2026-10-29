@@ -880,6 +880,8 @@ func (v validator) validateNetwork(
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(ctx, p, interfaceSpec, vm.Name, providerTypes)...)
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpecWithBootstrap(ctx, p, interfaceSpec, vm)...)
 		}
+
+		allErrs = append(allErrs, v.validateNICUnitNumbers(ctx, vm, oldVM, p)...)
 	}
 
 	if len(networkSpec.VLANs) > 0 {

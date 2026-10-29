@@ -1,9 +1,8 @@
 // Copyright (c) 2026 Broadcom. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package configpolicy contains E2E tests for the VirtualMachineConfigPolicy
-// feature, covering cluster capability discovery and policy enforcement.
-package configpolicy
+// Package environmentbrowser contains E2E tests for environment-browser discovery.
+package environmentbrowser
 
 import (
 	"context"
@@ -14,6 +13,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,14 +38,9 @@ type SpecInput struct {
 	WCPNamespaceName string
 }
 
-// Spec verifies the VirtualMachineConfigPolicy feature end-to-end.
-// Currently covers zone controller fan-out (S3) and the ConfigTarget
-// controller's cluster-scope capability discovery, including
-// status.maxHardwareVersion and non-SR-IOV device categories (S5.b/S5.c).
-// SR-IOV per-host enrichment, option enumeration (S6/S7), and policy
-// enforcement (S8/S9) will be added here.
+// Spec verifies environment-browser discovery and removal of the policy API.
 func Spec(ctx context.Context, inputGetter func() SpecInput) {
-	const specName = "vm-config-policy"
+	const specName = "environment-browser"
 
 	var (
 		input           SpecInput
@@ -64,11 +59,32 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		svClusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = input.ClusterProxy.GetClient()
-
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VirtualMachineConfigPolicyCapabilityName)
 	})
 
+	It("Should not install the VirtualMachineConfigPolicy API",
+		Label("extended-functional", "experimental"),
+		func() {
+			adminProxy, err := svClusterProxy.NewAdminClusterProxy(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			defer adminProxy.Dispose(ctx)
+			adminClient, err := adminProxy.GetAdminClient()
+			Expect(err).ToNot(HaveOccurred())
+
+			Eventually(func(g Gomega) {
+				var crd apiextensionsv1.CustomResourceDefinition
+				err := adminClient.Get(ctx, ctrlclient.ObjectKey{
+					Name: "virtualmachineconfigpolicies.vim.vmware.com",
+				}, &crd)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+					"the policy CRD should not be installed")
+			}, input.Config.GetIntervals("default", "wait-vm-config-options-deletion")...).Should(Succeed())
+		})
+
 	Context("When a workload namespace has zones", func() {
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.FlexVMClassesCapabilityName)
+		})
+
 		It("Should have at least one ConfigTarget derived from the zone's pool MoIDs",
 			Label("extended-functional", "experimental"),
 			func() {
@@ -100,31 +116,13 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 					}
 				}
 			})
-
-		It("Should have a VirtualMachineConfigPolicy for each zone in the namespace",
-			Label("extended-functional", "experimental"),
-			func() {
-				zoneList, err := utils.ListZonesByNamespace(ctx, svClusterClient, input.WCPNamespaceName)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(zoneList.Items).ToNot(BeEmpty(),
-					"expected at least one Zone in namespace %q", input.WCPNamespaceName)
-
-				for i := range zoneList.Items {
-					z := &zoneList.Items[i]
-					policy := &vimv1.VirtualMachineConfigPolicy{}
-					Expect(svClusterClient.Get(ctx,
-						ctrlclient.ObjectKey{Name: z.Name, Namespace: input.WCPNamespaceName},
-						policy)).To(Succeed(),
-						"VirtualMachineConfigPolicy %q/%q should exist", input.WCPNamespaceName, z.Name)
-
-					Expect(policy.Spec.Zone).To(Equal(z.Name),
-						"VirtualMachineConfigPolicy %q/%q should reference zone %q",
-						input.WCPNamespaceName, z.Name, z.Name)
-				}
-			})
 	})
 
 	Context("When the ConfigTarget controller reconciles a cluster's ConfigTarget", func() {
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.FlexVMClassesCapabilityName)
+		})
+
 		It("Should populate ConfigTarget.status from QueryConfigTarget and mark Ready=True",
 			Label("core-functional", "experimental"),
 			func() {

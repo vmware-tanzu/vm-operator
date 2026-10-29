@@ -530,12 +530,11 @@ func Install( //nolint:gocyclo
 		// case "WebConsoleRequest":
 		case "ConfigTarget",
 			"VirtualMachineConfigOptions",
-			"VirtualMachineConfigPolicy",
 			"VirtualMachineGuestOptions":
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				features.VirtualMachineConfigPolicy,
+				features.FlexVMClasses,
 				c,
 				k,
 				nil); err != nil {

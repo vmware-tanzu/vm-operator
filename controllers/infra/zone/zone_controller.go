@@ -90,7 +90,6 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=zones,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=zones/status,verbs=get
 // +kubebuilder:rbac:groups=vim.vmware.com,resources=configtargets,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=vim.vmware.com,resources=virtualmachineconfigpolicies,verbs=get;list;watch;create;update;patch
 
 func (r *Reconciler) Reconcile(
 	ctx context.Context,
@@ -178,12 +177,8 @@ func (r *Reconciler) ReconcileNormal(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VirtualMachineConfigPolicy {
+	if pkgcfg.FromContext(ctx).Features.FlexVMClasses {
 		if err := r.reconcileConfigTargets(ctx, obj); err != nil {
-			errs = append(errs, err)
-		}
-
-		if err := r.reconcileVMConfigPolicy(ctx, obj); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -213,37 +208,6 @@ func (r *Reconciler) reconcileConfigTargets(
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ConfigTarget %s: %w", clusterMoID, err)
 		}
-	}
-
-	return nil
-}
-
-// reconcileVMConfigPolicy ensures a namespace-scoped VirtualMachineConfigPolicy
-// exists for the zone. The syncMode is set only on creation to allow manual
-// overrides to persist across reconciles.
-func (r *Reconciler) reconcileVMConfigPolicy(
-	ctx context.Context,
-	zone *topologyv1.Zone) error {
-	policy := &vimv1.VirtualMachineConfigPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      zone.Name,
-			Namespace: zone.Namespace,
-		},
-	}
-
-	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, policy, func() error {
-		policy.Spec.Zone = zone.Name
-		if policy.Spec.SyncMode == "" {
-			// Set the default only when the object is new; the kubebuilder
-			// defaulting webhook ensures SyncMode is never empty on an existing
-			// object, so this preserves any value a user has configured.
-			policy.Spec.SyncMode = vimv1.VirtualMachineConfigPolicySyncModeConfigTarget
-		}
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile VirtualMachineConfigPolicy %s/%s: %w",
-			zone.Namespace, zone.Name, err)
 	}
 
 	return nil

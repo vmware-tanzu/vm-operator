@@ -216,7 +216,7 @@ type FeatureStates struct {
 	TelcoVMServiceAPI             bool
 	PerNamespaceNetworkProvider   bool
 	WorkloadIPv6                  bool
-	VirtualMachineConfigPolicy    bool
+	FlexVMClasses                 bool
 	WorkloadNetworkConfiguration  bool
 	ExtensionCompatConstraint     bool
 	VMEviction                    bool

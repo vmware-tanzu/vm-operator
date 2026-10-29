@@ -49,7 +49,7 @@ The Cursor proxy rules under `.cursor/rules/*.mdc` are **thin pointers** to thes
 
 - Format: `NNN-slug` where `NNN` is a zero-padded, monotonically increasing scalar starting at `000`.
 - The scalar expands beyond three digits when needed (`1000-something`).
-- The `slug` is lowercase kebab-case, derived from the feature title. Keep it short and self-explanatory (`001-class-policy-resize`, `002-async-quota`).
+- The `slug` is lowercase kebab-case, derived from the feature title. Keep it short and self-explanatory (`001-environment-browser`, `002-async-quota`).
 - Never reuse or renumber an existing directory. Abandoned specs stay in tree and are marked `Status: Abandoned` in `spec.md`.
 
 ### Scalar allocation

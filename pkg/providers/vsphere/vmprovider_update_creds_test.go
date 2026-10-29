@@ -39,7 +39,7 @@ var _ = Describe("UpdateVcCreds", func() {
 
 	When("New Credentials", func() {
 
-		It("VC Client is logged out", func() {
+		It("VC Client is logged out and replaced", func() {
 			vcClient, err := vmProvider.VSphereClient(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vcClient).NotTo(BeNil())
@@ -47,11 +47,17 @@ var _ = Describe("UpdateVcCreds", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(session).ToNot(BeNil())
 
+			replaced := vmProvider.VSphereClientReplaced()
+			Expect(replaced).ToNot(BeClosed())
+
 			data := map[string][]byte{
 				"username": []byte("newUser"),
 				"password": []byte("newPassword"),
 			}
 			Expect(vmProvider.UpdateVcCreds(ctx, data)).To(Succeed())
+			By("Replacement is signaled", func() {
+				Expect(replaced).To(BeClosed())
+			})
 			By("Client is logged out", func() {
 				session, err := vcClient.RestClient().Session(ctx)
 				Expect(err).NotTo(HaveOccurred())
@@ -74,7 +80,9 @@ var _ = Describe("UpdateVcCreds", func() {
 				"username": []byte(ctx.VCClientConfig.Username),
 				"password": []byte(ctx.VCClientConfig.Password),
 			}
+			replaced := vmProvider.VSphereClientReplaced()
 			Expect(vmProvider.UpdateVcCreds(ctx, data)).To(Succeed())
+			Expect(replaced).ToNot(BeClosed())
 			By("VC Client is the same", func() {
 				vcClient2, err := vmProvider.VSphereClient(ctx)
 				Expect(err).NotTo(HaveOccurred())

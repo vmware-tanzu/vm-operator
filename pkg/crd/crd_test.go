@@ -649,7 +649,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesVMGroups, externalVIMConfigPolicy)...)
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesVMGroups, externalEnvironmentBrowser)...)
 			})
 
 			It("vmgroup api should have powerOffDelay", func() {
@@ -753,7 +753,7 @@ var _ = Describe("Install", func() {
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalVIMConfigPolicy)...)
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalEnvironmentBrowser)...)
 			})
 			DescribeTable("vm api should have spec fields",
 				func(field string) {

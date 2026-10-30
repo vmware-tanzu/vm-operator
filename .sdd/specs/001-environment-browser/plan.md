@@ -243,7 +243,7 @@ No standalone controller; reconciled by the `VirtualMachineConfigOptions` contro
 
 Earlier drafts introduced `VirtualMachineConfigPolicy` to govern VM configuration. That API and its enforcement never shipped; its types, CRD, Zone fan-out, and RBAC are removed because governance belongs to the Flex VM Classes specification (vmop-4034, PR #2067). No upgrade cleanup or migration is required.
 
-The environment-browser gate is named `Features.FlexVMClasses` and `CapabilityKeyVMServiceClasslessVM` in Go. Its external capability string remains `vm_service_classless_vm` to preserve the Supervisor integration contract.
+The environment-browser pipeline shares `Features.VMServiceClasslessVM` and `CapabilityKeyVMServiceClasslessVM` with the classless VM APIs. The external capability string is `vm_service_classless_vm` (vmop-4313).
 
 #### I6.a. Admin-only discovery access (vmop-4319)
 
@@ -386,4 +386,4 @@ No per-host CRD is created; the per-host data is owned entirely by `ConfigTarget
 | Capability disabled mid-deployment | Controllers deregister cleanly; webhook short-circuits |
 | CRD schema break | `spec.id` immutability enforced at webhook, not only at API server level |
 
-**Disable path**: Set `CapabilityKeyVMServiceClasslessVM` to `false` in the capabilities ConfigMap. Controllers stop reconciling. CRDs remain installed (safe to list); existing objects are preserved. Re-enabling resumes reconciliation from current state.
+**Disable path**: Deactivate `vm_service_classless_vm` in the Supervisor capabilities CRD. Controllers stop reconciling. CRDs remain installed (safe to list); existing objects are preserved. Re-enabling resumes reconciliation from current state.

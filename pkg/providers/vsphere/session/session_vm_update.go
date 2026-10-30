@@ -785,12 +785,13 @@ func (s *Session) reconcileNetworkInterfaces(
 		// changes, don't list orphan interfaces because they need to hang around until
 		// the device is actually removed from the VM.
 		if vmCtx.MoVM.Runtime.PowerState == vimtypes.VirtualMachinePowerStatePoweredOff {
-			orphaned, err := network.ListOrphanedNetworkInterfaces(vmCtx, s.K8sClient, devices)
+			orphaned, external, err := network.ListAllOrphanedNetworkInterfaces(vmCtx, s.K8sClient, devices)
 			if err != nil {
 				return network.NetworkInterfaceResults{},
 					fmt.Errorf("failed to list orphaned network interfaces: %w", err)
 			}
 			results.OrphanedNetworkInterfaces = orphaned
+			results.OrphanedExternalNetworkInterfaces = external
 		}
 	}
 
@@ -1175,6 +1176,18 @@ func (s *Session) reconcileNetworkAndGuestCustomizationState(
 		); ctrlclient.IgnoreNotFound(err) != nil {
 			vmCtx.Logger.Error(err, "failed to delete orphaned network interface")
 		}
+	}
+
+	// External network interfaces are not managed by VM Operator so they are
+	// released instead of deleted.
+	var releaseErrs []error
+	for _, obj := range networkResults.OrphanedExternalNetworkInterfaces {
+		if err := network.ReleaseExternalNetworkInterface(vmCtx, s.K8sClient, obj); err != nil {
+			releaseErrs = append(releaseErrs, err)
+		}
+	}
+	if err := errors.Join(releaseErrs...); err != nil {
+		return err
 	}
 
 	if err := s.fixupMacAddresses(

@@ -33,6 +33,8 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 				config.PoweredOnVMHasIPRequeueDelay = 1 * time.Second
 				config.AsyncSignalEnabled = false
 				config.AsyncCreateEnabled = false
+				config.Features.BringYourOwnNetworkInterface = true
+				config.ClusterNetworkProviderTypes = string(pkgcfg.NetworkProviderTypeVDS)
 			}))),
 	virtualmachine.AddToManager,
 	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {

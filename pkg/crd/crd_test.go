@@ -370,6 +370,35 @@ var _ = Describe("Install", func() {
 		Expect(found).To(Equal(expectPresent))
 	}
 
+	DescribeTable("BYO network interface installed schema cleanup policy",
+		func(cleanup bool) {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.BringYourOwnNetworkInterface = true
+				config.Features.K8sWorkloadMgmtAPI = true
+			})
+			Expect(pkgcrd.Install(ctx, client, nil)).To(Succeed())
+			assertField(true, specFieldPath("network.interfaces.[].externalRef")...)
+			assertFieldForCRD("virtualmachinereplicasets.vmoperator.vmware.com", true,
+				specFieldPath("template.spec.network.interfaces.[].externalRef")...)
+			assertCELRulesContaining("virtualmachinereplicasets.vmoperator.vmware.com",
+				specCELPath("template.spec.network.interfaces.[]"), "externalRef", true)
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.BringYourOwnNetworkInterface = false
+				config.CRDCleanupEnabled = cleanup
+			})
+			Expect(pkgcrd.Install(ctx, client, nil)).To(Succeed())
+			assertField(!cleanup, specFieldPath("network.interfaces.[].externalRef")...)
+			assertCELRulesContaining("virtualmachines.vmoperator.vmware.com",
+				specCELPath("network.interfaces.[]"), "externalRef", !cleanup)
+			assertFieldForCRD("virtualmachinereplicasets.vmoperator.vmware.com", !cleanup,
+				specFieldPath("template.spec.network.interfaces.[].externalRef")...)
+			assertCELRulesContaining("virtualmachinereplicasets.vmoperator.vmware.com",
+				specCELPath("template.spec.network.interfaces.[]"), "externalRef", !cleanup)
+		},
+		Entry("retains schema and CEL when cleanup is disabled", false),
+		Entry("removes schema and CEL when cleanup is enabled", true),
+	)
+
 	When("no crds are installed", func() {
 		When("no capabilities are enabled", func() {
 			It("should get the expected crds", func() {
@@ -419,6 +448,7 @@ var _ = Describe("Install", func() {
 				Entry("network interface vmxnet3", "network.interfaces.[].vmxnet3"),
 				Entry("network interface advancedProperties", "network.interfaces.[].advancedProperties"),
 				Entry("network interface ipamModes", "network.interfaces.[].ipamModes"),
+				Entry("external interface reference", "network.interfaces.[].externalRef"),
 				Entry("resources", "resources"),
 				Entry("cpuAdvanced", "cpuAdvanced"),
 				Entry("memoryAdvanced", "memoryAdvanced"),
@@ -440,6 +470,11 @@ var _ = Describe("Install", func() {
 					"vmxnet3",
 					false,
 				)
+			})
+
+			It("vm api should not have CEL rules referencing externalRef", func() {
+				assertCELRulesContaining("virtualmachines.vmoperator.vmware.com",
+					specCELPath("network.interfaces.[]"), "externalRef", false)
 			})
 
 			It("vm api should not have CEL rules referencing ipamModes", func() {
@@ -793,6 +828,19 @@ var _ = Describe("Install", func() {
 			})
 		})
 
+		When("BYO network interfaces capability is enabled", func() {
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.BringYourOwnNetworkInterface = true
+				})
+			})
+			It("exposes the reference and its CEL rules", func() {
+				assertField(true, specFieldPath("network.interfaces.[].externalRef")...)
+				assertCELRulesContaining("virtualmachines.vmoperator.vmware.com",
+					specCELPath("network.interfaces.[]"), "externalRef", true)
+			})
+		})
+
 		When("VM network unit numbers capability is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
@@ -1027,18 +1075,19 @@ var _ = Describe("Install", func() {
 			Expect(pkgcrd.Install(
 				pkgcfg.WithConfig(pkgcfg.Config{
 					Features: pkgcfg.FeatureStates{
-						FastDeploy:                  true,
-						ImmutableClasses:            true,
-						VMGroups:                    true,
-						VMSnapshots:                 true,
-						VSpherePolicies:             true,
-						VMEviction:                  true,
-						ControlledRebalancingPolicy: true,
-						BringYourOwnEncryptionKey:   true,
-						VMServiceClasslessVM:        true,
-						K8sWorkloadMgmtAPI:          true,
-						TaggingAPI:                  true,
-						VMNetworkUnitNumbers:        true,
+						FastDeploy:                   true,
+						ImmutableClasses:             true,
+						VMGroups:                     true,
+						VMSnapshots:                  true,
+						VSpherePolicies:              true,
+						VMEviction:                   true,
+						ControlledRebalancingPolicy:  true,
+						BringYourOwnEncryptionKey:    true,
+						VMServiceClasslessVM:         true,
+						K8sWorkloadMgmtAPI:           true,
+						TaggingAPI:                   true,
+						VMNetworkUnitNumbers:         true,
+						BringYourOwnNetworkInterface: true,
 					},
 				}),
 				client,
@@ -1146,6 +1195,7 @@ var _ = Describe("Install", func() {
 					Entry("volumes sharingMode", "volumes.[].sharingMode"),
 					Entry("volumes unitNumber", "volumes.[].unitNumber"),
 					Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
+					Entry("external interface reference", "network.interfaces.[].externalRef"),
 				)
 
 				DescribeTable("vm api should have removed status fields",
@@ -1212,6 +1262,7 @@ var _ = Describe("Install", func() {
 					Entry("volumes sharingMode", "volumes.[].sharingMode"),
 					Entry("volumes unitNumber", "volumes.[].unitNumber"),
 					Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
+					Entry("external interface reference", "network.interfaces.[].externalRef"),
 					Entry("advanced preferHtEnabled", "advanced.preferHtEnabled"),
 					Entry("advanced hugePages1GEnabled", "advanced.hugePages1GEnabled"),
 					Entry("advanced timeTrackerLowLatencyEnabled", "advanced.timeTrackerLowLatencyEnabled"),
@@ -1291,6 +1342,7 @@ var _ = Describe("Install", func() {
 						Entry("volumes sharingMode", "volumes.[].sharingMode"),
 						Entry("volumes unitNumber", "volumes.[].unitNumber"),
 						Entry("network interface unitNumber", "network.interfaces.[].unitNumber"),
+						Entry("external interface reference", "network.interfaces.[].externalRef"),
 						Entry("advanced preferHtEnabled", "advanced.preferHtEnabled"),
 						Entry("advanced hugePages1GEnabled", "advanced.hugePages1GEnabled"),
 						Entry("advanced timeTrackerLowLatencyEnabled", "advanced.timeTrackerLowLatencyEnabled"),

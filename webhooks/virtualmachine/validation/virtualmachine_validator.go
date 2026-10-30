@@ -878,12 +878,32 @@ func (v validator) validateNetwork(
 			return nil, err
 		}
 
-		p := networkPath.Child("interfaces")
+		oldExternalRefs := map[string]*vmopv1common.LocalObjectRef{}
+		if oldVM != nil && oldVM.Spec.Network != nil {
+			for _, i := range oldVM.Spec.Network.Interfaces {
+				oldExternalRefs[i.Name] = i.ExternalRef
+			}
+		}
+		// Compare references by API group, kind, and name since the API
+		// version does not change which CR is referenced.
+		externalRefs := sets.New[string]()
 
+		p := networkPath.Child("interfaces")
 		for i, interfaceSpec := range networkSpec.Interfaces {
 			p := p.Index(i)
+
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(ctx, p, interfaceSpec, vm.Name, providerTypes)...)
+			allErrs = append(allErrs, v.validateNetworkInterfaceExternalRef(ctx, p, interfaceSpec, oldExternalRefs[interfaceSpec.Name], providerTypes)...)
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpecWithBootstrap(ctx, p, interfaceSpec, vm)...)
+
+			if ref := interfaceSpec.ExternalRef; ref != nil {
+				if key := kubeutil.NetworkInterfaceReferenceKey(ref.APIVersion, ref.Kind, ref.Name); key != "" {
+					if externalRefs.Has(key) {
+						allErrs = append(allErrs, field.Duplicate(p.Child("externalRef"), ref.Name))
+					}
+					externalRefs.Insert(key)
+				}
+			}
 		}
 
 		allErrs = append(allErrs, v.validateNICUnitNumbers(ctx, vm, oldVM, p)...)
@@ -1046,56 +1066,138 @@ var macAddressSupportNetworkGroups = []string{
 }
 
 type networkProviderValidation struct {
-	group      string
-	apiVersion string
-	kinds      []string
+	group          string
+	apiVersion     string
+	kinds          []string
+	interfaceKinds []string
 }
 
 var networkProviderValidations = map[pkgcfg.NetworkProviderType]networkProviderValidation{
 	pkgcfg.NetworkProviderTypeVDS: {
-		group:      netopv1alpha1.SchemeGroupVersion.Group,
-		apiVersion: netopv1alpha1.SchemeGroupVersion.String(),
-		kinds:      []string{"Network"},
+		group:          netopv1alpha1.SchemeGroupVersion.Group,
+		apiVersion:     netopv1alpha1.SchemeGroupVersion.String(),
+		kinds:          []string{"Network"},
+		interfaceKinds: []string{"NetworkInterface"},
 	},
 	pkgcfg.NetworkProviderTypeNSXT: {
-		group:      ncpv1alpha1.SchemeGroupVersion.Group,
-		apiVersion: ncpv1alpha1.SchemeGroupVersion.String(),
-		kinds:      []string{"VirtualNetwork"},
+		group:          ncpv1alpha1.SchemeGroupVersion.Group,
+		apiVersion:     ncpv1alpha1.SchemeGroupVersion.String(),
+		kinds:          []string{"VirtualNetwork"},
+		interfaceKinds: []string{"VirtualNetworkInterface"},
 	},
 	pkgcfg.NetworkProviderTypeVPC: {
-		group:      vpcv1alpha1.GroupVersion.Group,
-		apiVersion: vpcv1alpha1.SchemeGroupVersion.String(),
-		kinds:      []string{"Subnet", "SubnetSet"},
+		group:          vpcv1alpha1.GroupVersion.Group,
+		apiVersion:     vpcv1alpha1.SchemeGroupVersion.String(),
+		kinds:          []string{"Subnet", "SubnetSet"},
+		interfaceKinds: []string{"SubnetPort"},
 	},
 }
 
-func (v validator) validateNetworkInterfaceNetworkRef(
-	_ *pkgctx.WebhookRequestContext,
-	providerTypes []pkgcfg.NetworkProviderType,
+// validateNetworkInterfaceExternalRef validates an interface that uses an
+// external network interface CR. The CR is not required to exist yet.
+func (v validator) validateNetworkInterfaceExternalRef(
+	ctx *pkgctx.WebhookRequestContext,
 	interfacePath *field.Path,
-	networkGV schema.GroupVersion,
-	networkKind string) field.ErrorList {
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	oldRef *vmopv1common.LocalObjectRef,
+	providerTypes []pkgcfg.NetworkProviderType) field.ErrorList {
 
 	var allErrs field.ErrorList
+
+	ref := interfaceSpec.ExternalRef
+	if ref == nil {
+		return allErrs
+	}
+
+	p := interfacePath.Child("externalRef")
+
+	unchanged := oldRef != nil && *ref == *oldRef
+
+	// With the capability disabled, an unchanged stored reference is allowed
+	// so unrelated updates to the VM still succeed.
+	if !pkgcfg.FromContext(ctx).Features.BringYourOwnNetworkInterface && !unchanged {
+		allErrs = append(allErrs, field.Forbidden(p, "external network interfaces are not enabled"))
+	}
+
+	// Only privileged accounts may set or change an externalRef, since sharing
+	// a network interface between VMs is not supported. Unchanged references
+	// are allowed so non-privileged users can still update the VM.
+	if !ctx.IsPrivilegedAccount && !unchanged {
+		allErrs = append(allErrs, field.Forbidden(p, "only privileged users may set an external network interface"))
+	}
+
+	if interfaceSpec.Network != nil {
+		allErrs = append(allErrs, field.Forbidden(p, "network and externalRef are mutually exclusive"))
+	}
+
+	if interfaceSpec.MACAddr != "" {
+		allErrs = append(allErrs, field.Forbidden(p, "macAddr and externalRef are mutually exclusive"))
+	}
+
+	allErrs = append(allErrs, v.validateExternalRefKind(p, ref, providerTypes)...)
+
+	return allErrs
+}
+
+// validateExternalRefKind checks that the ExternalRef matches the API group of
+// a network provider supported in the namespace and, if so, one of that
+// provider's interface kinds. Unlike a network reference, an ExternalRef is
+// rejected when no supported provider has an external interface kind (e.g.,
+// the Named network provider).
+func (v validator) validateExternalRefKind(
+	p *field.Path,
+	ref *vmopv1common.LocalObjectRef,
+	providerTypes []pkgcfg.NetworkProviderType) field.ErrorList {
+
+	gv, err := schema.ParseGroupVersion(ref.APIVersion)
+	if err != nil {
+		return field.ErrorList{field.Invalid(p.Child("apiVersion"), ref.APIVersion, err.Error())}
+	}
+
+	return validateNetworkProviderGroupKind(
+		providerTypes,
+		p,
+		gv,
+		ref.Kind,
+		func(npv networkProviderValidation) []string { return npv.interfaceKinds },
+		true)
+}
+
+// validateNetworkProviderGroupKind checks that gv matches the API group of one
+// of the network providers in providerTypes and, if so, that kind is one of
+// the kinds returned by kindsFn for that provider. When none of providerTypes
+// has a validation, the reference is rejected if rejectNoProvider is true, and
+// otherwise allowed.
+func validateNetworkProviderGroupKind(
+	providerTypes []pkgcfg.NetworkProviderType,
+	refPath *field.Path,
+	gv schema.GroupVersion,
+	kind string,
+	kindsFn func(networkProviderValidation) []string,
+	rejectNoProvider bool) field.ErrorList {
 
 	// Collect validations for all supported provider types in this namespace.
 	var validations []networkProviderValidation
 	for _, pt := range providerTypes {
-		if v, ok := networkProviderValidations[pt]; ok {
-			validations = append(validations, v)
+		if npv, ok := networkProviderValidations[pt]; ok {
+			validations = append(validations, npv)
 		}
 	}
 
 	if len(validations) == 0 {
 		// No validation for any provider type (e.g., Named network provider).
-		return allErrs
+		if rejectNoProvider {
+			return field.ErrorList{field.Forbidden(refPath,
+				"no network provider in the namespace supports this reference")}
+		}
+		return nil
 	}
 
 	// Each entry in networkProviderValidations has a unique API group, so
 	// there is at most one match.
 	var matched *networkProviderValidation
 	for i := range validations {
-		if networkGV.Group == validations[i].group {
+		if gv.Group == validations[i].group {
 			matched = &validations[i]
 			break
 		}
@@ -1108,21 +1210,31 @@ func (v validator) validateNetworkInterfaceNetworkRef(
 		}
 		// Show the full user-provided APIVersion in the error so the message is
 		// as specific as possible, even though only the group determines matching.
-		return append(allErrs, field.NotSupported(
-			interfacePath.Child("network", "apiVersion"),
-			networkGV.String(),
-			supportedAPIVersions))
+		return field.ErrorList{field.NotSupported(refPath.Child("apiVersion"), gv.String(), supportedAPIVersions)}
 	}
 
 	// Group matched: check the kind against this provider's supported kinds.
-	if !slices.Contains(matched.kinds, networkKind) {
-		allErrs = append(allErrs, field.NotSupported(
-			interfacePath.Child("network", "kind"),
-			networkKind,
-			matched.kinds))
+	if kinds := kindsFn(*matched); !slices.Contains(kinds, kind) {
+		return field.ErrorList{field.NotSupported(refPath.Child("kind"), kind, kinds)}
 	}
 
-	return allErrs
+	return nil
+}
+
+func (v validator) validateNetworkInterfaceNetworkRef(
+	_ *pkgctx.WebhookRequestContext,
+	providerTypes []pkgcfg.NetworkProviderType,
+	interfacePath *field.Path,
+	networkGV schema.GroupVersion,
+	networkKind string) field.ErrorList {
+
+	return validateNetworkProviderGroupKind(
+		providerTypes,
+		interfacePath.Child("network"),
+		networkGV,
+		networkKind,
+		func(npv networkProviderValidation) []string { return npv.kinds },
+		false)
 }
 
 //nolint:gocyclo
@@ -1173,7 +1285,8 @@ func (v validator) validateNetworkInterfaceSpec(
 		allErrs = append(allErrs, field.Invalid(interfacePath.Child("name"), networkIfCRName, "is the resulting network interface name: "+msg))
 	}
 
-	if interfaceSpec.MACAddr != "" {
+	// The macAddr field is not allowed with an ExternalRef.
+	if interfaceSpec.MACAddr != "" && interfaceSpec.ExternalRef == nil {
 		if !slices.Contains(macAddressSupportNetworkGroups, networkGV.Group) {
 			allErrs = append(allErrs, field.Invalid(interfacePath.Child("macAddr"), interfaceSpec.MACAddr,
 				fmt.Sprintf("macAddr is available only with the following network providers: %s",
@@ -2589,6 +2702,9 @@ func (v validator) validateImmutableNetwork(
 		}
 		if !reflect.DeepEqual(newInterface.Network, oldInterface.Network) {
 			allErrs = append(allErrs, field.Forbidden(pi.Child("network"), validation.FieldImmutableErrorMsg))
+		}
+		if !reflect.DeepEqual(newInterface.ExternalRef, oldInterface.ExternalRef) {
+			allErrs = append(allErrs, field.Forbidden(pi.Child("externalRef"), validation.FieldImmutableErrorMsg))
 		}
 
 		allErrs = append(allErrs,

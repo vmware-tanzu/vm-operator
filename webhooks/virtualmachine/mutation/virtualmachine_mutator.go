@@ -478,6 +478,11 @@ func setDefaultNetworkInterfaceNetwork(
 	ifaceIdx int,
 	networkRef common.PartialObjectRef,
 ) bool {
+	if vm.Spec.Network.Interfaces[ifaceIdx].ExternalRef != nil {
+		// The interface uses an external network interface CR instead of a network.
+		return false
+	}
+
 	ifaceNetwork := vm.Spec.Network.Interfaces[ifaceIdx].Network
 
 	if networkRef.Kind == "" {

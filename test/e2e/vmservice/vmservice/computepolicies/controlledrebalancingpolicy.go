@@ -157,7 +157,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 		})
 
 	It("Should re-evaluate an already-created VM when a policy's match is widened",
-		Label("core-functional"),
+		Label("core-functional", "experimental"),
 		func() {
 			suffix := capiutil.RandomString(4)
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "controlled-rebalancing-widen", suffix)

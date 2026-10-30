@@ -23,6 +23,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	netsetutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube/networksettings"
@@ -100,7 +101,7 @@ var _ = Describe("ListOrphanedNetworkInterfaces", func() {
 					Fail(fmt.Sprintf("Unknown network provider type: %v", providerType))
 				}
 
-				obj.SetLabels(map[string]string{network.VMNameLabel: vm.Name})
+				obj.SetLabels(map[string]string{pkgconst.NetworkInterfaceVMNameLabel: vm.Name})
 				if makeOwner {
 					Expect(ctrlutil.SetOwnerReference(vm, obj, ctx.Client.Scheme())).To(Succeed())
 				}
@@ -214,7 +215,7 @@ var _ = Describe("ListNetworkInterfaces", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
 				Namespace: vm.Namespace,
-				Labels:    map[string]string{network.VMNameLabel: vm.Name},
+				Labels:    map[string]string{pkgconst.NetworkInterfaceVMNameLabel: vm.Name},
 			},
 		}
 		if makeOwner {
@@ -228,7 +229,7 @@ var _ = Describe("ListNetworkInterfaces", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
 				Namespace: vm.Namespace,
-				Labels:    map[string]string{network.VMNameLabel: vm.Name},
+				Labels:    map[string]string{pkgconst.NetworkInterfaceVMNameLabel: vm.Name},
 			},
 		}
 		if makeOwner {
@@ -242,7 +243,7 @@ var _ = Describe("ListNetworkInterfaces", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
 				Namespace: vm.Namespace,
-				Labels:    map[string]string{network.VMNameLabel: vm.Name},
+				Labels:    map[string]string{pkgconst.NetworkInterfaceVMNameLabel: vm.Name},
 			},
 		}
 		if makeOwner {
@@ -613,6 +614,98 @@ var _ = Describe("ListNetworkInterfaces", func() {
 					Expect(orphaned).To(BeEmpty())
 				})
 			})
+		})
+	})
+})
+
+var _ = Describe("ListAllOrphanedNetworkInterfaces", func() {
+
+	var (
+		ctx   *builder.TestContextForVCSim
+		vmCtx pkgctx.VirtualMachineContext
+		vm    *vmopv1.VirtualMachine
+	)
+
+	BeforeEach(func() {
+		vm = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "list-external-test-vm",
+				Namespace: "list-external-test-ns",
+				UID:       types.UID(uuid.NewString()),
+			},
+		}
+	})
+
+	JustBeforeEach(func() {
+		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{
+			WithNetworkConfig: []builder.VCSimNetworkConfig{{Provider: pkgcfg.NetworkProviderTypeVPC}},
+		})
+
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.BringYourOwnNetworkInterface = true
+		})
+
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: ctx,
+			Logger:  suite.GetLogger().WithName("list_external_test"),
+			VM:      vm,
+		}
+	})
+
+	newSubnetPort := func(name string, external, owned bool) *vpcv1alpha1.SubnetPort {
+		obj := &vpcv1alpha1.SubnetPort{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Namespace:   vm.Namespace,
+				Labels:      map[string]string{pkgconst.NetworkInterfaceVMNameLabel: vm.Name},
+				Annotations: map[string]string{},
+			},
+		}
+		if external {
+			obj.Annotations[pkgconst.ExternalNetworkInterfaceAnnotation] = "true"
+		}
+		if owned {
+			Expect(ctrlutil.SetOwnerReference(vm, obj, ctx.Client.Scheme())).To(Succeed())
+		}
+		return obj
+	}
+
+	It("only returns unreferenced external SubnetPorts, regardless of owner references", func() {
+		referenced := newSubnetPort(vm.Name+"-referenced", true, false)
+		external := newSubnetPort(vm.Name+"-external", true, false)
+		externalOwned := newSubnetPort(vm.Name+"-external-owned", true, true)
+		managed := newSubnetPort(vm.Name+"-managed", false, true)
+		for _, o := range []*vpcv1alpha1.SubnetPort{referenced, external, externalOwned, managed} {
+			Expect(ctx.Client.Create(ctx, o)).To(Succeed())
+		}
+
+		devices := []network.Device{{
+			ProviderType: pkgcfg.NetworkProviderTypeVPC,
+			InterfaceObj: &vpcv1alpha1.SubnetPort{ObjectMeta: metav1.ObjectMeta{Name: referenced.Name}},
+		}}
+
+		names := func(objs []ctrlclient.Object) []string {
+			var n []string
+			for _, o := range objs {
+				n = append(n, o.GetName())
+			}
+			return n
+		}
+
+		orphaned, external2, err := network.ListAllOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(names(external2)).To(ConsistOf(external.Name, externalOwned.Name))
+		// The managed orphans never include external SubnetPorts.
+		Expect(names(orphaned)).To(ConsistOf(managed.Name))
+
+		By("the capability is disabled", func() {
+			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+				config.Features.BringYourOwnNetworkInterface = false
+			})
+			orphaned, external2, err := network.ListAllOrphanedNetworkInterfaces(vmCtx, ctx.Client, devices)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(external2).To(BeEmpty())
+			Expect(names(orphaned)).To(ConsistOf(managed.Name))
 		})
 	})
 })

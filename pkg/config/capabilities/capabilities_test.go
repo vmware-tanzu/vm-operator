@@ -1453,3 +1453,20 @@ var _ = Describe("Classless VM capability", func() {
 		Expect(pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM).To(BeFalse())
 	})
 })
+
+var _ = Describe("BringYourOwnNetworkInterface capability", func() {
+	It("defaults off and clears an inactive capability", func() {
+		ctx := pkgcfg.NewContext()
+		obj := capv1.Capabilities{}
+		capabilities.UpdateCapabilitiesFeatures(ctx, obj)
+		Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnNetworkInterface).To(BeFalse())
+		obj.Status.Supervisor = map[capv1.CapabilityName]capv1.CapabilityStatus{
+			capabilities.CapabilityKeyBringYourOwnNetworkInterface: {Activated: true},
+		}
+		capabilities.UpdateCapabilitiesFeatures(ctx, obj)
+		Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnNetworkInterface).To(BeTrue())
+		obj.Status.Supervisor[capabilities.CapabilityKeyBringYourOwnNetworkInterface] = capv1.CapabilityStatus{}
+		capabilities.UpdateCapabilitiesFeatures(ctx, obj)
+		Expect(pkgcfg.FromContext(ctx).Features.BringYourOwnNetworkInterface).To(BeFalse())
+	})
+})

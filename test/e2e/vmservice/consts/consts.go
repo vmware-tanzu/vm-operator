@@ -80,4 +80,10 @@ const (
 	// VMHardAffinityDuringExecutionCapabilityName gates the Tag CRD,
 	// controller, and admission webhook (Features.TaggingAPI).
 	VMHardAffinityDuringExecutionCapabilityName = "supports_vm_service_vm_hard_affinity_during_execution"
+
+	// BringYourOwnNetworkInterfaceCapabilityName gates externally managed NICs.
+	BringYourOwnNetworkInterfaceCapabilityName = "supports_vm_service_byo_network_interface"
+
+	// MutableNetworksCapabilityName gates changes to existing VM interfaces.
+	MutableNetworksCapabilityName = "supports_VM_service_mutable_networks"
 )

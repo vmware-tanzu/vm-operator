@@ -37,17 +37,27 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
-	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	pkgnil "github.com/vmware-tanzu/vm-operator/pkg/util/nil"
 )
 
 type NetworkInterfaceResults struct { //nolint:revive
-	Devices                   []Device
-	UpdatedEthCards           bool
+	Devices         []Device
+	UpdatedEthCards bool
+
+	// OrphanedNetworkInterfaces are the network interface CRs that VM Operator
+	// created and owns for the VM, but that are no longer referenced by the
+	// VM's spec, such as when an interface was removed or switched to an
+	// external reference.
 	OrphanedNetworkInterfaces []ctrlclient.Object
+
+	// OrphanedExternalNetworkInterfaces are the external network interfaces
+	// associated with the VM that are no longer referenced by it. These are
+	// released instead of deleted.
+	OrphanedExternalNetworkInterfaces []ctrlclient.Object
 }
 
 // Device contains the information from the network interface CR needed to create or
@@ -91,8 +101,6 @@ const (
 	retryInterval  = 100 * time.Millisecond
 	gatewayIgnored = "None"
 
-	// VMNameLabel is the label put on a network interface CR that identifies its VM by name.
-	VMNameLabel = pkg.VMOperatorKey + "/vm-name"
 	// VMInterfaceNameLabel is the label put on the network interface CR identifies its name
 	// in the VM network interface spec.
 	VMInterfaceNameLabel = pkg.VMOperatorKey + "/vm-interface-name"
@@ -160,12 +168,14 @@ func CreateNetworkDevices(
 
 		var obj ctrlclient.Object
 
-		switch group {
-		case netopv1alpha1.SchemeGroupVersion.Group:
+		switch {
+		case interfaceSpec.ExternalRef != nil:
+			obj, err = getExternalNetworkInterface(ctx, vm, client, group, interfaceSpec)
+		case group == netopv1alpha1.SchemeGroupVersion.Group:
 			obj, err = createNetOPNetworkInterface(ctx, vm, client, interfaceSpec)
-		case ncpv1alpha1.SchemeGroupVersion.Group:
+		case group == ncpv1alpha1.SchemeGroupVersion.Group:
 			obj, err = createNCPNetworkInterface(ctx, vm, client, interfaceSpec)
-		case vpcv1alpha1.SchemeGroupVersion.Group:
+		case group == vpcv1alpha1.SchemeGroupVersion.Group:
 			obj, err = createVPCNetworkInterface(ctx, vm, client, interfaceSpec)
 		default:
 			err = fmt.Errorf("unsupported network API Group: %q", group)
@@ -233,17 +243,24 @@ func CreateNetworkDevices(
 func getNetworkInterfaceAPIGroup(
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) (string, error) {
 
-	network := interfaceSpec.Network
-	if network == nil || network.APIVersion == "" {
+	// VM validation webhook enforces that only one of ExternalRef and Network is set.
+	var apiVersion string
+	if ref := interfaceSpec.ExternalRef; ref != nil {
+		apiVersion = ref.APIVersion
+	} else if network := interfaceSpec.Network; network != nil {
+		apiVersion = network.APIVersion
+	}
+
+	if apiVersion == "" {
 		// The VM mutation webhook will default in the network type based
 		// on the default network provider for this namespace.
 		return "", pkgerr.NoRequeueErrorf("no network API Version")
 	}
 
-	gv, err := schema.ParseGroupVersion(network.APIVersion)
+	gv, err := schema.ParseGroupVersion(apiVersion)
 	if err != nil {
 		// The VM validation webhook will check for invalid values.
-		return "", pkgerr.NoRequeueErrorf("invalid API Version: %s", network.APIVersion)
+		return "", pkgerr.NoRequeueErrorf("invalid API Version: %s", apiVersion)
 	}
 
 	return gv.Group, nil
@@ -519,12 +536,14 @@ func CreateAndWaitForNetworkInterfaces(
 
 		var dev Device
 
-		switch group {
-		case netopv1alpha1.SchemeGroupVersion.Group:
+		switch {
+		case interfaceSpec.ExternalRef != nil:
+			dev, err = getExternalNetworkInterfaceDevice(vmCtx, client, vimClient, clusterMoRef, group, interfaceSpec)
+		case group == netopv1alpha1.SchemeGroupVersion.Group:
 			dev, err = createAndWaitNetOPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
-		case ncpv1alpha1.SchemeGroupVersion.Group:
+		case group == ncpv1alpha1.SchemeGroupVersion.Group:
 			dev, err = createAndWaitNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
-		case vpcv1alpha1.SchemeGroupVersion.Group:
+		case group == vpcv1alpha1.SchemeGroupVersion.Group:
 			dev, err = createAndWaitVPCNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
 		default:
 			err = fmt.Errorf("unsupported network API Group: %q", group)
@@ -697,7 +716,7 @@ func createNetOPNetworkInterface(
 		if netIf.Labels == nil {
 			netIf.Labels = map[string]string{}
 		}
-		netIf.Labels[VMNameLabel] = vm.Name
+		netIf.Labels[pkgconst.NetworkInterfaceVMNameLabel] = vm.Name
 		netIf.Labels[VMInterfaceNameLabel] = interfaceSpec.Name
 
 		// NetOp will update the Spec with the default network name so we don't clear that
@@ -965,7 +984,7 @@ func createNCPNetworkInterface(
 		if vnetIf.Labels == nil {
 			vnetIf.Labels = map[string]string{}
 		}
-		vnetIf.Labels[VMNameLabel] = vm.Name
+		vnetIf.Labels[pkgconst.NetworkInterfaceVMNameLabel] = vm.Name
 		vnetIf.Labels[VMInterfaceNameLabel] = interfaceSpec.Name
 
 		vnetIf.Spec.VirtualNetwork = networkName
@@ -1059,7 +1078,7 @@ func createVPCNetworkInterface(
 		if subnetPort.Labels == nil {
 			subnetPort.Labels = map[string]string{}
 		}
-		subnetPort.Labels[VMNameLabel] = vm.Name
+		subnetPort.Labels[pkgconst.NetworkInterfaceVMNameLabel] = vm.Name
 		subnetPort.Labels[VMInterfaceNameLabel] = interfaceSpec.Name
 
 		if subnetPort.Annotations == nil {

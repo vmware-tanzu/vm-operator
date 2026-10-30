@@ -164,6 +164,9 @@ const (
 	// CapabilityKeyCSIBackupAPI is the name of the capability key defined in
 	// the Supervisor capabilities CRD for exposing disk lists in VM snapshots.
 	CapabilityKeyCSIBackupAPI = "supports_CSI_Backup_API"
+
+	// CapabilityKeyBringYourOwnNetworkInterface enables externally owned interfaces.
+	CapabilityKeyBringYourOwnNetworkInterface = "supports_vm_service_byo_network_interface"
 )
 
 var (
@@ -290,6 +293,7 @@ func updateCapabilitiesFeaturesFromMap(
 	return fs
 }
 
+//nolint:gocyclo
 func updateCapabilitiesFeaturesFromCRD(
 	obj capv1.Capabilities,
 	fs pkgcfg.FeatureStates) pkgcfg.FeatureStates {
@@ -353,8 +357,9 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMHardAffinityDuringExecution = capStatus.Activated
 		case CapabilityKeyCSIBackupAPI:
 			fs.CSIBackupAPI = capStatus.Activated
+		case CapabilityKeyBringYourOwnNetworkInterface:
+			fs.BringYourOwnNetworkInterface = capStatus.Activated
 		}
-
 	}
 	return fs
 }

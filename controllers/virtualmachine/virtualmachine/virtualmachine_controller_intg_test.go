@@ -26,7 +26,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -692,6 +695,81 @@ func intgTestsReconcile() {
 						g.Expect(vm.Status.InstanceUUID).To(Equal(instanceUUID))
 					}).Should(Succeed())
 				})
+			})
+		})
+	})
+
+	Context("External network interface", func() {
+		var (
+			netIf *netopv1alpha1.NetworkInterface
+			calls atomic.Int32
+		)
+
+		BeforeEach(func() {
+			calls.Store(0)
+
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+						ExternalRef: &vmopv1common.LocalObjectRef{
+							APIVersion: netopv1alpha1.SchemeGroupVersion.String(),
+							Kind:       "NetworkInterface",
+							Name:       "my-netif",
+						},
+					},
+				},
+			}
+
+			netIf = &netopv1alpha1.NetworkInterface{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: vm.Namespace,
+					Name:      "my-netif",
+				},
+			}
+
+			providerfake.SetCreateOrUpdateFunction(
+				ctx,
+				intgFakeVMProvider,
+				func(ctx context.Context, obj *vmopv1.VirtualMachine) error {
+					if obj.Name == vm.Name {
+						calls.Add(1)
+					}
+					return nil
+				},
+			)
+		})
+
+		AfterEach(func() {
+			Expect(client.IgnoreNotFound(ctx.Client.Delete(ctx, netIf))).To(Succeed())
+			if err := ctx.Client.Delete(ctx, vm); err == nil {
+				vm := &vmopv1.VirtualMachine{}
+				if err := ctx.Client.Get(ctx, vmKey, vm); err == nil && len(vm.Finalizers) > 0 {
+					vm.Finalizers = nil
+					_ = ctx.Client.Update(ctx, vm)
+				}
+			} else {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+		})
+
+		It("Reconciles the VM when the referenced network interface changes", func() {
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+			// Wait for initial reconcile.
+			waitForVirtualMachineFinalizer(ctx, vmKey)
+			Eventually(calls.Load).Should(BeNumerically(">", 0))
+
+			By("Network interface is created", func() {
+				lastCalls := calls.Load()
+				Expect(ctx.Client.Create(ctx, netIf)).To(Succeed())
+				Eventually(calls.Load).Should(BeNumerically(">", lastCalls))
+			})
+
+			By("Network interface status is updated", func() {
+				lastCalls := calls.Load()
+				netIf.Status.NetworkID = "my-network-id"
+				Expect(ctx.Client.Update(ctx, netIf)).To(Succeed())
+				Eventually(calls.Load).Should(BeNumerically(">", lastCalls))
 			})
 		})
 	})

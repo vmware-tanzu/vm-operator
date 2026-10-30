@@ -435,6 +435,35 @@ status:
    kubectl get networks -n my-namespace
    ```
 
+## Bring your own network interface
+
+When the Supervisor capability `supports_vm_service_byo_network_interface` is active, v1alpha6 VMs can reference existing interface resources in their own namespace. Check the Supervisor's advertised capabilities before submitting a reference. Supported providers are NetOP `NetworkInterface` (`netoperator.vmware.com/v1alpha1`), NCP `VirtualNetworkInterface` (`vmware.com/v1alpha1`), and VPC `SubnetPort` (`crd.nsx.vmware.com/v1alpha1`), restricted to providers supported in the namespace.
+
+```yaml
+spec:
+  network:
+    interfaces:
+    - name: eth0
+      externalRef:
+        apiVersion: crd.nsx.vmware.com/v1alpha1
+        kind: SubnetPort
+        name: precreated-port
+    - name: eth1
+      # The normal default network is selected for this interface.
+```
+
+Set either `externalRef` or `network` on each interface; `macAddr` also cannot be set together with `externalRef`. External references receive no default network. The external resource may become ready after the VM is submitted; creation, status changes, and deletion trigger VM reconciliation. A missing resource is reported as a dependency failure and is never replaced with an automatically created interface.
+
+Other interface-spec overrides remain available under their existing validation and feature gates. Addresses, gateways, DNS, routes, MTU, and DHCP settings customize the guest; an explicit `dhcp4: false` or `dhcp6: false` overrides the provider value. No MAC override is applied to external interfaces, and hardware settings such as `unitNumber` follow their existing rules. These settings do not rewrite the external resource's specification or ask its provider to allocate new addresses; its owner remains responsible for provider allocation and compatibility with the requested settings.
+
+VM Operator does not add VM ownership or delete external resources. For VPC it manages the `vmoperator.vmware.com/vm-name` and `vmoperator.vmware.com/vm-interface-name` labels and the `nsx.vmware.com/attachment_ref` annotation. It releases them once the SubnetPort is no longer referenced by the VM spec and is not attached to any of the VM's current NICs, or when the VM is deleted. Unrelated metadata is preserved. Resources owned by any VirtualMachine, and SubnetPorts labeled with or attached to a different VM, are rejected. Callers must coordinate exclusive use across VMs.
+
+With mutable networking enabled, a powered-off VM can rename an interface while retaining its external reference; for VPC, the interface-name label and attachment annotation are updated. Any NIC changes go through the normal mutable-network device reconcile and wait for the supported powered-off path. Guest naming follows normal bootstrap behavior; a spec rename does not promise a live guest rename. Remove an interface and confirm detachment before deleting its external resource.
+
+v1alpha2 through v1alpha5 preserve references by interface name through conversion data. Edits through older clients that produce an invalid combination, such as setting `network` on an external interface, are rejected by validation; use v1alpha6 for source changes. Switching an existing interface name between managed and external is rejected; remove it and add a new interface.
+
+The capability is disabled by default and independent of mutable networking and NIC unit-number capabilities. Disabled fields and dependent validation rules are removed on initial CRD installation and on updates when CRD cleanup is enabled. If the schema is retained, runtime guards reject new or changed references. If the field is removed, API-server unknown-field handling may reject or prune it, after which ordinary network defaulting applies. Drain BYO workloads before disabling the capability, removing the schema field, or downgrading to a version without this lifecycle support.
+
 ## What's Next
 
 This section covers guest network configuration concepts. For information about exposing VM services to other workloads, see:

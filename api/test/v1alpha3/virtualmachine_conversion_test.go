@@ -1051,4 +1051,52 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(iface.DHCP6).NotTo(BeNil(), "DHCP6 must not be nil")
 		g.Expect(*iface.DHCP6).To(BeTrue(), "DHCP6 must be *true after spoke override")
 	})
+
+	t.Run("spec.network.interfaces externalRef restored by name", func(t *testing.T) {
+		// The hub-only externalRef is restored by interface name from the
+		// annotation, so an old-version UPDATE that reorders interfaces keeps
+		// each reference with its interface.
+		g := NewWithT(t)
+
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Network: &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth0",
+							ExternalRef: &vmopv1common.LocalObjectRef{
+								APIVersion: "crd.nsx.vmware.com/v1alpha1",
+								Kind:       "SubnetPort",
+								Name:       "my-subnetport",
+							},
+						},
+						{
+							Name: "eth1",
+							Network: &vmopv1common.PartialObjectRef{
+								Name: "my-network",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		// Down-convert hub -> spoke (stores hub data in the annotation).
+		var spoke vmopv1a3.VirtualMachine
+		g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+
+		// Simulate the old-version UPDATE: reorder the interfaces.
+		ifaces := spoke.Spec.Network.Interfaces
+		ifaces[0], ifaces[1] = ifaces[1], ifaces[0]
+
+		// Up-convert spoke -> hub: externalRef must follow eth0.
+		var hubAfter vmopv1.VirtualMachine
+		g.Expect(spoke.ConvertTo(&hubAfter)).To(Succeed())
+		g.Expect(hubAfter.Spec.Network.Interfaces).To(HaveLen(2))
+		g.Expect(hubAfter.Spec.Network.Interfaces[0].Name).To(Equal("eth1"))
+		g.Expect(hubAfter.Spec.Network.Interfaces[0].ExternalRef).To(BeNil())
+		g.Expect(hubAfter.Spec.Network.Interfaces[1].Name).To(Equal("eth0"))
+		g.Expect(hubAfter.Spec.Network.Interfaces[1].ExternalRef).To(Equal(hub.Spec.Network.Interfaces[0].ExternalRef))
+		g.Expect(hubAfter.Spec.Network.Interfaces[1].Network).To(BeNil())
+	})
 }

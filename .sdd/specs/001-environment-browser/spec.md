@@ -16,7 +16,7 @@
 
 Introduce a Kubernetes-native pipeline that:
 
-1. Queries each vSphere cluster's `EnvironmentBrowser` for cluster-scope data and walks the cluster's ESX hosts for the per-host fields (max default hardware version, SR-IOV NICs with DVX details) that `QueryConfigTarget` does not return at cluster scope.
+1. Queries each vSphere cluster's `EnvironmentBrowser` for cluster-scope data and derives maximum/default hardware versions from `QueryConfigOptionDescriptor`. Per-host SR-IOV discovery remains separate (vmop-3926).
 2. Materializes that discovery as a set of cluster-scoped CRDs: `ConfigTarget`, `VirtualMachineConfigOptions`, and `VirtualMachineGuestOptions`. There is no per-host CRD; all per-host data is aggregated onto `ConfigTarget.status`.
 3. Checks hardware-version feasibility at VM admission via `ConfigTarget.status.maxHardwareVersion` (remaining admission work is tracked separately).
 
@@ -31,7 +31,7 @@ Zone (existing)
   │
   ├─per cluster─▶ ConfigTarget (cluster-scoped)
   │                  │   (reconcile also walks the cluster's ESX hosts
-  │                  │    and writes max default HW version + per-host
+  │                  │    and writes descriptor-derived HW versions + per-host
   │                  │    SR-IOV NIC details onto ConfigTarget.status)
   │                  │
   │                  └─per HW version─▶ VirtualMachineConfigOptions (cluster-scoped)
@@ -57,7 +57,7 @@ A CSP admin creates a `Zone` on a Supervisor. Without any further action, the sy
 1. **Given** a `Zone` with a valid `spec.namespace.poolMoIDs`, **when** the Zone controller reconciles, **then** a `ConfigTarget` with `metadata.name` equal to the derived cluster MoID exists.
 2. **Given** a `ConfigTarget` exists, **when** the ConfigTarget controller reconciles, **then** `status.numCPUs`, `status.maxCPUsPerVM`, and security flags (`sevSupported`, `tdxSupported`, etc.) are populated from `QueryConfigTarget`.
 3. **Given** a cluster with N supported hardware versions, **when** the ConfigTarget controller reconciles, **then** N `VirtualMachineConfigOptions` objects exist, one per version key (e.g. `vmx-21`, `vmx-22`).
-4. **Given** a cluster with M ESX hosts whose `config.defaultHardwareVersion` values differ (e.g., `vmx-21`, `vmx-22`, `vmx-23`), **when** the ConfigTarget controller reconciles, **then** `ConfigTarget.status.maxHardwareVersion` equals the largest value across those hosts (`vmx-23` in the example), and an additional `Ready=True` reconcile does not change it.
+4. **Given** descriptors with create-supported keys `vmx-21`, `vmx-22`, and `vmx-23`, **when** discovery reconciles, **then** `status.maxHardwareVersion` is `vmx-23`. Deprecated/non-creatable and malformed keys do not contribute. `status.defaultHardwareVersion` comes from the descriptor marked default, independently of the maximum.
 5. **Given** a cluster with SR-IOV-capable hosts, **when** the ConfigTarget controller reconciles, **then** `ConfigTarget.status.sriov` contains one entry per (host, SR-IOV NIC) pair, populated by walking each host's `HostConfigInfo.pciPassthruInfo` (entries where `sriovCapable=true`), with each entry enriched from `HostHardwareInfo.dvxClasses` where `sriovNic=true`, and each entry carrying `hostMoID`, `active`, `maxVFs`, `numVFs`, and `dvxClass*` fields. The cluster-scope `QueryConfigTarget` call is never used for SR-IOV discovery.
 6. **Given** the per-host RPC for one host transiently fails while the others succeed, **when** the ConfigTarget controller reconciles, **then** the failing host's SR-IOV entries are absent from `ConfigTarget.status.sriov` for this pass, the controller records a warning event referencing the host, and the reconcile is requeued so the missing data lands on a later pass. The successful hosts' data is still written.
 
@@ -73,8 +73,8 @@ A CSP admin or an admission webhook needs to know the hardware capabilities of a
 
 **Acceptance scenarios**:
 
-1. **Given** the cluster's hosts default to `vmx-21`, `vmx-22`, and `vmx-23`, **when** the ConfigTarget controller reconciles, **then** `ConfigTarget.status.maxHardwareVersion = vmx-23`.
-2. **Given** a host's `config.defaultHardwareVersion` changes in vSphere, **when** the next ConfigTarget reconcile completes, **then** `ConfigTarget.status.maxHardwareVersion` is recomputed and reflects the new max.
+1. **Given** the cluster supports creation at `vmx-21`, `vmx-22`, and `vmx-23`, **when** the ConfigTarget controller reconciles, **then** `ConfigTarget.status.maxHardwareVersion = vmx-23`.
+2. **Given** a host upgrade changes the cluster's create-supported hardware versions, **when** the next ConfigTarget reconcile completes, **then** `ConfigTarget.status.maxHardwareVersion` is recomputed and reflects the new max.
 3. **Given** a host is removed from the cluster, **when** the next ConfigTarget reconcile completes, **then** its SR-IOV entries are gone from `ConfigTarget.status.sriov` and any reduction in `maxHardwareVersion` is reflected.
 
 ---
@@ -91,7 +91,7 @@ When a hardware version is dropped from a cluster's supported list, or when an E
 
 1. **Given** a `VirtualMachineConfigOptions` for `vmx-19` exists, **when** `QueryConfigOptionDescriptor` no longer returns `vmx-19` in its result, **then** the ConfigTarget controller deletes the `vmx-19` object on its next successful reconcile.
 2. **Given** a transient `QueryConfigTarget` error, **when** the controller retries, **then** no objects are garbage-collected (GC only runs on fully successful cluster-scope queries).
-3. **Given** an ESX host has been evicted from the cluster, **when** the ConfigTarget controller completes its next reconcile, **then** the host's SR-IOV entries no longer appear in `ConfigTarget.status.sriov`, and any reduction in `max(perHostDefaultHardwareVersion)` is reflected in `ConfigTarget.status.maxHardwareVersion`.
+3. **Given** an ESX host has been evicted from the cluster, **when** the ConfigTarget controller completes its next reconcile, **then** the host's SR-IOV entries no longer appear in `ConfigTarget.status.sriov`, and any reduction in `max(createSupportedDescriptorKeys)` is reflected in `ConfigTarget.status.maxHardwareVersion`.
 4. **Given** a `VirtualMachineGuestOptions` has a `status.hardwareVersions` entry for `vmx-19`, **when** the `vmx-19` `VirtualMachineConfigOptions`'s next successful reconcile no longer reports that guest OS in `QueryConfigOptionEx`'s result, **then** the `vmx-19` entry is removed from `status.hardwareVersions`, and the `VirtualMachineGuestOptions` itself is deleted once that removal leaves it with no remaining hardware-version entries.
 
 ---
@@ -161,3 +161,14 @@ Environment-browser discovery exposes cluster hardware and inventory. Access to 
 - [ ] Immutability constraints on `spec.id` are called out.
 - [ ] Out-of-scope items are listed.
 - [ ] Open Spike vmop-3794 (`PlaceVmsXCluster` compatibility for auto-NUMA / auto-placed SR-IOV) is referenced from edge cases and out-of-scope; its conclusions will land as a separate spec/plan/tasks update.
+
+## Discovery completion for Flex classes (vmop-4319)
+
+This implements PR #2067 tasks T107 and T115–T117 and US7.5–US7.6. WIKI page 3118085467 §3.2 is the field-coverage reference. Class compatibility, governance and resolved limits remain the class controller's responsibility.
+
+- An unchanged inventory resync MUST issue zero EnvironmentBrowser RPCs. Inventory observation through PropertyCollector remains necessary; this is not a promise of zero vCenter traffic. A host addition/removal, product version/build change, hardware/capability change or cluster configuration change MUST invalidate discovery. Inventory is checked at least every five minutes.
+- A cache hit MUST still restore missing children and reconcile their status and ownership. Failed queries MUST retry; missing inventory MUST NOT be treated as an unchanged revision. Restart or leader failover MAY perform a cold discovery.
+- Shared hardware-version options MUST use one internally consistent real cluster result, selected by the lowest host product version and numeric build across co-owning clusters, with cluster ID as the final tie-break. The selected cluster is reported in the `vmoperator.vmware.com/environment-browser-cluster` annotation. This is a conservative software-version selection, not an intersection of different clusters' hardware.
+- Config options MUST populate hardware bounds and VM capabilities consumed by Flex classes. Guest options MUST populate firmware choices, hot-add/hot-remove, IOMMU, SGX and persistent-memory support as well as CPU/memory bounds. Missing optional values remain absent; explicit false remains distinguishable from absent.
+- Existing operator RBAC already grants the three resources only to the manager service account. No tenant role or aggregate role may acquire these permissions. Regression tests guard the checked-in roles; E2E checks live authorization for platform admins and namespace view/edit/admin identities.
+- Per-host SR-IOV enrichment (vmop-3926), VM admission, and unrelated device backing/default-device serialization remain outside this slice. The capability-key migration is owned by vmop-4313; this branch uses main's disabled-by-default `Features.FlexVMClasses` gate until that migration lands.

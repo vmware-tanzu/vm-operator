@@ -92,6 +92,10 @@ type VirtualMachineProviderInterface interface {
 	// SyncVMSnapshotTreeStatus syncs the VM's current and root snapshots status.
 	SyncVMSnapshotTreeStatus(ctx context.Context, vm *vmopv1.VirtualMachine) error
 
+	// GetEnvironmentBrowserInventory reads inventory through the property collector,
+	// without issuing EnvironmentBrowser RPCs.
+	GetEnvironmentBrowserInventory(ctx context.Context, clusterMoID string) (EnvironmentBrowserInventory, error)
+
 	// GetVirtualMachineConfigTarget returns the vSphere cluster's
 	// EnvironmentBrowser QueryConfigTarget and QueryConfigOptionDescriptor
 	// results for the cluster identified by clusterMoID.
@@ -103,4 +107,13 @@ type VirtualMachineProviderInterface interface {
 	// desired hardware version string (e.g. "vmx-22"). Returns nil without error
 	// when no config option is found.
 	QueryConfigOptionEx(ctx context.Context, clusterMoID, hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error)
+}
+
+// EnvironmentBrowserInventory identifies the inputs to environment discovery.
+// Revision changes when cluster membership, host software or hardware changes.
+// MinHostVersion and MinHostBuild identify the oldest host software in the cluster.
+type EnvironmentBrowserInventory struct {
+	Revision       string
+	MinHostVersion string
+	MinHostBuild   uint64
 }

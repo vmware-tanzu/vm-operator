@@ -70,7 +70,7 @@ func WaitUpdateNamespaceWithZonesReady(svClusterClient ctrlclient.Client, testNa
 		}
 		// By default, namespace is already bound with zone-1
 		return len(retZoneList.Items) == len(zones)+1
-	}, 180*time.Second, 10*time.Second).Should(BeTrue(), "Zones ", zones, "update namespace with Zones not READY in time")
+	}, 180*time.Second, 10*time.Second).Should(BeTrue(), "Namespace %s did not become READY with zones %v in time", testNamespace, zones)
 }
 
 func WaitForZoneRemovalFromNamespace(svClusterClient ctrlclient.Client, testNamespace string, zone string) {
@@ -89,7 +89,7 @@ func WaitForZoneRemovalFromNamespace(svClusterClient ctrlclient.Client, testName
 
 		// If the zone is not found, it has been successfully removed
 		return true
-	}, 1800*time.Second, 20*time.Second).Should(BeTrue(), "Zone ", zone, "delete zone from namespace failed within the timeout")
+	}, 1800*time.Second, 20*time.Second).Should(BeTrue(), "Zone %s was not removed from namespace %s within the timeout", zone, testNamespace)
 }
 
 func WaitUpdateZoneBindingsSupervisorReady(wcpClient WorkloadManagementAPI, supervisorID string, expectedZones int) {
@@ -119,7 +119,7 @@ func WaitUpdateZoneBindingsSupervisorReady(wcpClient WorkloadManagementAPI, supe
 		}
 
 		return false
-	}, 600*time.Second, 15*time.Second).Should(BeTrue(), "Expected Zones", expectedZones, "update Zone bindings with supervisor is not READY in time")
+	}, 600*time.Second, 15*time.Second).Should(BeTrue(), "Supervisor %s did not become READY with %d zone bindings in time", supervisorID, expectedZones)
 }
 
 // UpdateNamespaceWithZones binds provided Zones for a WCP kubernetes namespace object.

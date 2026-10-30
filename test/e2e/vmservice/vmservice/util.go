@@ -149,7 +149,7 @@ func VerifyVMClassDeletion(wcpClient wcp.WorkloadManagementAPI, vmClassID string
 		var dcliErr wcp.DcliError
 		g.Expect(errors.As(err, &dcliErr)).Should(BeTrue())
 		g.Expect(dcliErr.Response()).To(ContainSubstring(VMClassNotFound))
-	}, 5*time.Minute, 10*time.Second).Should(Succeed(), "failed to delete vmClass ", vmClassID)
+	}, 5*time.Minute, 10*time.Second).Should(Succeed(), "failed to delete vmClass %s", vmClassID)
 }
 
 func VerifyVMClassSpec(actualVMClassSpec wcp.VMClassSpec, expectedVMClassSpec wcp.VMClassSpec) {
@@ -596,7 +596,7 @@ func VerifyVMInZone(ctx context.Context, config *config.E2EConfig, svClusterClie
 		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
 		g.Expect(err).ShouldNot(HaveOccurred())
 		g.Expect(vm.Status.Zone).Should(Equal(zone))
-	}, config.GetIntervals("default", "wait-config-map-creation")...).Should(Succeed(), "Timed out waiting for VirtualMachine %s to be created")
+	}, config.GetIntervals("default", "wait-config-map-creation")...).Should(Succeed(), "Timed out waiting for VirtualMachine %s to be placed in zone %s", vmName, zone)
 }
 
 // CreateLocalContentLibrary Utility function to create a local content library with given name.

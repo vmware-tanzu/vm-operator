@@ -217,7 +217,7 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 			packerCmdOpts.TemplateVariables["publish_location_name"] = "non-existing-content-library"
 			cmdOut, err := RunPackerBuildCmd(ctx, packerCmdOpts)
 			Expect(err).To(HaveOccurred())
-			Expect(string(cmdOut)).To(ContainSubstring("not found"), "packer build error: ", err.Error())
+			Expect(string(cmdOut)).To(ContainSubstring("not found"), "packer build error: %s", err.Error())
 		})
 
 		// Create a new content library used for the following packer command runs.
@@ -236,7 +236,7 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 			packerCmdOpts.TemplateVariables["publish_location_name"] = k8sContentLibraryName
 			cmdOut, err := RunPackerBuildCmd(ctx, packerCmdOpts)
 			Expect(err).To(HaveOccurred())
-			Expect(string(cmdOut)).To(ContainSubstring("not writable"), "packer build error: ", err.Error())
+			Expect(string(cmdOut)).To(ContainSubstring("not writable"), "packer build error: %s", err.Error())
 
 			Expect(wcpClient.DisassociateImageRegistryContentLibrariesFromNamespace(input.WCPNamespaceName, publishCLID)).To(Succeed())
 		})

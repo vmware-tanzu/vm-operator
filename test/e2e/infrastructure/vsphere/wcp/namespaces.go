@@ -104,7 +104,7 @@ func WaitForNamespaceReady(wcpClient WorkloadManagementAPI, namespaceForTest str
 		}
 		// TODO Make this an enum.
 		return details.ConfigStatus == "RUNNING"
-	}, 300*time.Second, 5*time.Second).Should(BeTrue(), "Namespace", namespaceForTest, " did not become READY in time")
+	}, 300*time.Second, 5*time.Second).Should(BeTrue(), "Namespace %s did not become READY in time", namespaceForTest)
 }
 
 func GetNamespace(ctx context.Context, input NamespaceGetInput) (*corev1.Namespace, context.CancelFunc) {

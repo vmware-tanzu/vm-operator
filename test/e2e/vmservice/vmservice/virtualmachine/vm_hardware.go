@@ -1751,7 +1751,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					}
 				}
 
-				Expect(found).To(BeTrue(), "Expected volume %s to be found in the VirtualMachine status",
+				Expect(found).To(BeTrue(), "Expected volume %s to be found in the VirtualMachine status volumes: %v",
 					pvcs[0].VolumeName, vm.Status.Volumes)
 
 				By("Resizing the PVC: " + pvcs[0].ClaimName)

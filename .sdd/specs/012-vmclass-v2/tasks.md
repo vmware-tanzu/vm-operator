@@ -65,7 +65,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 ### Story — VM and Zone API fields (vmop-4317)
 
-- [ ] T108 [P] [US3/US6/US10] [vmop-4317] VM API: `spec.reservedProfileName`, `status.governingClassNames`, the `GovernanceCompliant` condition, and the observed fields (firmware, change block tracking, CPU `reservationLockedToMax`, NUMA fixed auto-affinity, SEV, SEV-SNP, TDX, CPU hot-remove, SMC, DirectPath I/O devices) — `api/v1alpha6/virtualmachine_types.go`
+- [ ] T108 [P] [US3/US6/US10] [vmop-4317] VM API: `spec.reservedProfileName`, `status.governingClassNames`, the `GovernanceCompliant` condition, and the observed fields (firmware, change block tracking, SEV, SEV-SNP, TDX, CPU hot-remove, SMC, DirectPath I/O devices) — `api/v1alpha6/virtualmachine_types.go`
 - [ ] T108a [US8/US10] [vmop-4317] VM API: inline `hardware.devices.vgpuDevices` and `hardware.devices.dynamicDirectPathIODevices`, with the same item fields and key names as the class items (T009e) — `api/v1alpha6/virtualmachine_types.go`
 - [ ] T109 [P] [US2] [vmop-4317] `Zone.status.governingClasses` — `external/tanzu-topology/api/v1alpha1/zone.go`; `make generate-external-manifests`
 - [ ] T110 [US10] [vmop-4317] Schema upgrade fills `spec.reservedProfileName` on existing VMs from their class's `reservedProfileName.default`; this unset-to-set write is exempt from the powered-on lock — `pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go`
@@ -83,6 +83,13 @@ Each open item changes the shape of an API or a check. A task that depends on on
 - [ ] T115 [US7] [vmop-4319] Maximum hardware version per cluster, and a conservative cluster choice for options co-owned by several `ConfigTarget`s (vmop-3964) — `controllers/vim/*`, `controllers/virtualmachineconfigoptions`
 - [ ] T116 [US7] [vmop-4319] No EnvironmentBrowser query on resync when the cluster is unchanged; a cluster change re-queries. Unit test on fake-provider call counts
 - [ ] T117 [US7] [vmop-4319] E2E: a DevOps user gets 403 on the three CRDs; admins succeed
+
+### Story — vmx-23 CPU fields (vmop-4428)
+
+Blocked on a vSphere and govmomi release with the vmx-23 fields. Not a gate for the rest of Milestone 1.
+
+- [ ] T118 [US3/US6] [vmop-4428] VM API and class API: CPU `reservationLockedToMax` and `cpuAdvanced.numaFixedAutoAffinityEnabled` as VM spec fields, `BoolPolicy` class fields at the same paths, and observed status fields — `api/v1alpha6/virtualmachine_types.go`, `api/v1alpha6/virtualmachineclass_types.go`
+- [ ] T119 [US3/US6] [vmop-4428] Support check: reject both on a hardware version below vmx-23 and when the environment browser reports them unsupported; map them in the provider and report them in status — `pkg/providers/vsphere`, governance package
 
 ---
 

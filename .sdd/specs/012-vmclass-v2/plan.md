@@ -44,6 +44,7 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 |---|---|
 | Class API | `api/v1alpha6/virtualmachineclass_types.go`, value types in `api/v1alpha6/`, conversion in `api/v1alpha5` and older, `api/utilconversion` |
 | VM API | `api/v1alpha6/virtualmachine_types.go`: `spec.reservedProfileName`, `status.governingClassNames`, conditions, observed fields |
+| vmx-23 CPU fields | CPU `reservationLockedToMax` and NUMA fixed auto-affinity on the VM, the class and VM status; a separate story (vmop-4428), blocked on vSphere and govmomi with vmx-23 |
 | Zone mirror | `external/tanzu-topology/api/v1alpha1/zone.go`: `status.governingClasses` |
 | Capability | `pkg/config/capabilities`, `pkg/config` |
 | Governance | new package under `pkg/`: resolve the governing class, compare a VM or a class with it |

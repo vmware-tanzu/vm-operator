@@ -116,7 +116,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 1. **Given** `governs.existingVMs: AllowOnViolation` and a VM that falls outside a narrowed range, **when** the VM reconciles, **then** it reports `GovernanceCompliant=False` and keeps running; a power cycle succeeds.
 2. **Given** `governs.existingVMs: DenyPowerOn`, **when** a user requests power-on of a non-compliant VM, **then** the request is rejected; vm-operator never changes the power state itself.
 3. **Given** the governing class of a zone is deleted, **when** VMs there reconcile, **then** classless VMs report `GovernanceCompliant=False` with reason `NoGoverningClass`, and VMs that name a class report `GovernanceCompliant=True` with the same reason.
-4. **Given** a VM, **when** it reconciles, **then** its status reports the observed firmware, change block tracking, CPU `reservationLockedToMax`, NUMA fixed auto-affinity, SEV, SEV-SNP, TDX, CPU hot-remove, SMC and DirectPath I/O devices, so compliance can be read from the VM.
+4. **Given** a VM, **when** it reconciles, **then** its status reports the observed firmware, change block tracking, SEV, SEV-SNP, TDX, CPU hot-remove, SMC and DirectPath I/O devices, so compliance can be read from the VM.
 
 ### US7 — CSP admin: hardware compatibility is reported, not enforced on the class (P1)
 

@@ -81,7 +81,9 @@ Label: the schema-version label records the last CRD version that wrote the clas
 | `spec.reservedProfileName` | string. Filled by the mutation webhook from the class's `reservedProfileName.default` (or the governing class's), like any other default; explicit `""` = no profile. Must be in `allowed`. On a class-backed VM it is class-supplied and can't be edited inline; a classless VM sets or inherits it. Can't change from one set value to another while the VM is powered on; vm-operator may set it from unset (schema upgrade). When set, the VM's CPU count, CPU reservation and limit, memory reservation and limit, and device identities and quantities must equal the profile's; overhead is not compared. vm-operator writes the vCenter profile ID from this field and removes it when the field is empty. |
 | `status.governingClassNames` | The classes governing the VM's zone, computed live. |
 | `conditions[GovernanceCompliant]` | `True`/`False`; reason `NoGoverningClass` when the zone has none (False for classless VMs, True for class-backed VMs). |
-| observed status fields | firmware, change block tracking, CPU `reservationLockedToMax`, NUMA fixed auto-affinity, SEV, SEV-SNP, TDX, CPU hot-remove, SMC, DirectPath I/O devices. |
+| observed status fields | firmware, change block tracking, SEV, SEV-SNP, TDX, CPU hot-remove, SMC, DirectPath I/O devices. CPU `reservationLockedToMax` and NUMA fixed auto-affinity are added with the vmx-23 fields below. |
+
+**vmx-23 fields.** CPU `reservationLockedToMax` and NUMA fixed auto-affinity (`cpuAdvanced.numaFixedAutoAffinityEnabled`) are requested for release 9.2 but exist in vSphere only from hardware version vmx-23. Each is a VM spec field, a `BoolPolicy` at the same class path, and an observed status field, available only when the hardware version is vmx-23 or later. Tracked separately (vmop-4428) and not part of the rest of the VM API. [NEEDS CLARIFICATION: final VM path name for the CPU lock (`cpuAdvanced.reservationLockedToMax` or `cpuAdvanced.cpuReservationLockedToMax`), and the environment-browser capability names in 9.2.]
 
 ## `Zone` (`external/tanzu-topology`)
 

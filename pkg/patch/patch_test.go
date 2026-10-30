@@ -17,19 +17,23 @@ limitations under the License.
 package patch
 
 import (
+	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -351,7 +355,10 @@ func intgTests() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Marking Ready=True")
-					conditions.MarkTrue(obj, vmopv1.ReadyConditionType)
+					// Force distinct transition times without depending on a clock boundary.
+					ready := conditions.TrueCondition(vmopv1.ReadyConditionType)
+					ready.LastTransitionTime = metav1.NewTime(time.Unix(1, 0).UTC())
+					conditions.Set(obj, ready)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj, WithOwnedConditions{Conditions: []string{vmopv1.ReadyConditionType}})).To(Succeed())
@@ -366,7 +373,9 @@ func intgTests() {
 						readyBefore := conditions.Get(obj, vmopv1.ReadyConditionType)
 						readyAfter := conditions.Get(objAfter, vmopv1.ReadyConditionType)
 
-						return cmp.Equal(readyBefore, readyAfter)
+						// Applying the state transition may recalculate LastTransitionTime.
+						return cmp.Equal(readyBefore, readyAfter,
+							cmpopts.IgnoreFields(metav1.Condition{}, "LastTransitionTime"))
 					}, timeout).Should(BeTrue())
 				})
 
@@ -393,7 +402,10 @@ func intgTests() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Marking Ready=True")
-					conditions.MarkTrue(obj, vmopv1.ReadyConditionType)
+					// Force distinct transition times without depending on a clock boundary.
+					ready := conditions.TrueCondition(vmopv1.ReadyConditionType)
+					ready.LastTransitionTime = metav1.NewTime(time.Unix(1, 0).UTC())
+					conditions.Set(obj, ready)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj, WithForceOverwriteConditions{})).To(Succeed())
@@ -408,7 +420,9 @@ func intgTests() {
 						readyBefore := conditions.Get(obj, vmopv1.ReadyConditionType)
 						readyAfter := conditions.Get(objAfter, vmopv1.ReadyConditionType)
 
-						return cmp.Equal(readyBefore, readyAfter)
+						// Applying the state transition may recalculate LastTransitionTime.
+						return cmp.Equal(readyBefore, readyAfter,
+							cmpopts.IgnoreFields(metav1.Condition{}, "LastTransitionTime"))
 					}, timeout).Should(BeTrue())
 				})
 			})
@@ -776,4 +790,96 @@ func TestNewHelperNil(t *testing.T) {
 	g.Expect(err).To(HaveOccurred())
 	_, err = NewHelper(nil, nil)
 	g.Expect(err).To(HaveOccurred())
+}
+
+func TestStatusOptimisticLock(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		locked          bool
+		concurrentWrite bool
+		changeVolumes   bool
+		changeCondition bool
+		changeMetadata  bool
+		wantConflict    bool
+	}{
+		{
+			name:            "default status patch tolerates a concurrent annotation write",
+			concurrentWrite: true, changeVolumes: true,
+		},
+		{
+			name:   "locked status patch preserves a concurrent volume update",
+			locked: true, concurrentWrite: true, changeVolumes: true, wantConflict: true,
+		},
+		{
+			name:   "condition-only patch preserves a concurrent volume update",
+			locked: true, concurrentWrite: true, changeCondition: true,
+		},
+		{
+			name:   "locked status can be patched together with metadata and conditions",
+			locked: true, changeVolumes: true, changeCondition: true, changeMetadata: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := context.Background()
+			vm := &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Name: "vm", Namespace: "default"},
+				Status: vmopv1.VirtualMachineStatus{
+					Volumes: []vmopv1.VirtualMachineVolumeStatus{{Name: "disk"}},
+				},
+			}
+			c := fake.NewClientBuilder().WithScheme(builder.NewScheme()).
+				WithStatusSubresource(vm).WithObjects(vm).Build()
+			key := client.ObjectKeyFromObject(vm)
+			g.Expect(c.Get(ctx, key, vm)).To(Succeed())
+			helper, err := NewHelper(vm, c)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.concurrentWrite {
+				latest := vm.DeepCopy()
+				if tc.locked {
+					latest.Status.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+					g.Expect(c.Status().Update(ctx, latest)).To(Succeed())
+				} else {
+					latest.Annotations = map[string]string{"concurrent": "value"}
+					g.Expect(c.Update(ctx, latest)).To(Succeed())
+				}
+			}
+			if tc.changeVolumes {
+				vm.Status.Volumes[0].Attached = true
+			}
+			if tc.changeCondition {
+				conditions.MarkTrue(vm, vmopv1.ReadyConditionType)
+			}
+			if tc.changeMetadata {
+				vm.Labels = map[string]string{"test": "value"}
+			}
+
+			var opts []Option
+			if tc.locked {
+				opts = append(opts, WithStatusOptimisticLock{})
+			}
+			err = helper.Patch(ctx, vm, opts...)
+			if tc.wantConflict {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			latest := &vmopv1.VirtualMachine{}
+			g.Expect(c.Get(ctx, key, latest)).To(Succeed())
+			g.Expect(latest.Status.Volumes).To(HaveLen(1))
+			g.Expect(latest.Status.Volumes[0].Attached).To(Equal(tc.changeVolumes && !tc.wantConflict))
+			if tc.concurrentWrite && tc.locked {
+				g.Expect(latest.Status.Volumes[0].ControllerType).To(Equal(vmopv1.VirtualControllerTypeSCSI))
+			} else if tc.concurrentWrite {
+				g.Expect(latest.Annotations).To(HaveKeyWithValue("concurrent", "value"))
+			}
+			if tc.changeCondition {
+				g.Expect(conditions.IsTrue(latest, vmopv1.ReadyConditionType)).To(BeTrue())
+			}
+			if tc.changeMetadata {
+				g.Expect(latest.Labels).To(HaveKeyWithValue("test", "value"))
+			}
+		})
+	}
 }

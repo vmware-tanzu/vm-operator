@@ -227,7 +227,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (_ ctr
 		return ctrl.Result{}, fmt.Errorf("failed to init patch helper for %s: %w", volCtx, err)
 	}
 	defer func() {
-		if err := patchHelper.Patch(ctx, vm); err != nil {
+		if err := patchHelper.Patch(ctx, vm, patch.WithStatusOptimisticLock{}); err != nil {
 			if reterr == nil {
 				reterr = err
 			}

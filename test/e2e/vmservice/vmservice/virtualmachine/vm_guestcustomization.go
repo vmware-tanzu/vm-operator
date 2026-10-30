@@ -846,7 +846,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 				}
 			})
 
-			It("should successfully apply vAppConfig properties to VM", Label("experimental"), func() {
+			It("should successfully apply vAppConfig properties to VM", func() {
 				createAndVerifyVM(ctx, v1a2VM.DeepCopy())
 
 				// Verify that the vAppConfig properties are actually applied to the VM

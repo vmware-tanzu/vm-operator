@@ -83,7 +83,7 @@ func VMSetResourcePolicySpec(ctx context.Context, inputGetter func() VMSetResour
 	})
 
 	Context("Basic", func() {
-		It("Should reconcile the child ResourcePool, Folder, and cluster modules", Label("core-functional", "experimental"), func() {
+		It("Should reconcile the child ResourcePool, Folder, and cluster modules", Label("core-functional"), func() {
 			const (
 				resourcePoolName = "e2e-vmsetrp-resource-pool"
 				folderName       = "e2e-vmsetrp-folder"

@@ -148,7 +148,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 				tmpNamespaceName)
 	})
 
-	It("Should verify boot disk storage policy matches VM spec.storageClass for an encrypted VM", func() {
+	It("Should verify boot disk storage policy matches VM spec.storageClass for an encrypted VM", Label("experimental"), func() {
 		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		By("Create VM using encryption storage policy")
@@ -172,7 +172,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		vmoperator.EventuallyBootDiskStoragePolicyMatchesVMStorageClass(ctx, config, vCenterClient, svClusterClient, tmpNamespaceName, vmName)
 	})
 
-	It("Create an Encrypted VirtualMachine using encryption storage policy", Label("smoke"), func() {
+	It("Create an Encrypted VirtualMachine using encryption storage policy", Label("smoke", "experimental"), func() {
 		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
 
 		By("Create VM using encryption storage policy")
@@ -304,7 +304,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
 	})
 
-	It("Create an Encrypted VirtualMachine using encryption class", func() {
+	It("Create an Encrypted VirtualMachine using encryption class", Label("experimental"), func() {
 		if !byokFSSEnabled {
 			Skip("BYOK FSS is not enabled")
 		}
@@ -366,7 +366,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
 	})
 
-	It("Create an Encrypted VirtualMachine using an encryption key id", FlakeAttempts(3), func() {
+	It("Create an Encrypted VirtualMachine using an encryption key id", Label("experimental"), FlakeAttempts(3), func() {
 		if !byokFSSEnabled {
 			Skip("BYOK FSS is not enabled")
 		}
@@ -511,7 +511,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeDisks))
 	})
 
-	It("Encrypt PVC using encryption class annotation on the PVC", func() {
+	It("Encrypt PVC using encryption class annotation on the PVC", Label("experimental"), func() {
 		if !byokFSSEnabled {
 			Skip("BYOK FSS is not enabled")
 		}
@@ -694,7 +694,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for PVC volume encryption with default provider: %s", vmName)
 	})
 
-	It("Re-encrypt VM and PVC when encryption class is updated on both", func() {
+	It("Re-encrypt VM and PVC when encryption class is updated on both", Label("experimental"), func() {
 		if !byokFSSEnabled {
 			Skip("BYOK FSS is not enabled")
 		}
@@ -804,7 +804,7 @@ func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput)
 		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for PVC volume re-encryption: %s", vmName)
 	})
 
-	It("Error when PVC encryption class uses different provider type than VM", func() {
+	It("Error when PVC encryption class uses different provider type than VM", Label("experimental"), func() {
 		if !byokFSSEnabled {
 			Skip("BYOK FSS is not enabled")
 		}

@@ -26,7 +26,7 @@ TODO: fill in [vmop-NNN] tags once story/sub-task tickets are filed under the ep
 
 ## Phase 3 — User Story 1 (DevOps user: setting CPU/memory/flags)
 
-- [ ] T011 [US1] Add webhook validation for the new fields in `webhooks/virtualmachine/validation/virtualmachine_validator_compute.go`, including the `supports_telco_vm_service_api` gate and every cross-field rule listed in `model.md`
+- [ ] T011 [US1] Add webhook validation for the new fields in `webhooks/virtualmachine/validation/virtualmachine_validator_compute.go`, including the `vm_service_classless_vm` gate and every cross-field rule listed in `model.md`
 - [ ] T012 [P] [US1] Add unit tests per `computeFieldDef` (differs/apply/hotPluggable/prerequisite, across the sentinel matrix) in `pkg/util/vmopv1/compute_overwrite_test.go`
 - [ ] T013 [P] [US1] Add unit tests per `syncClass*ToSpec` helper in `pkg/util/vmopv1/resize_class_sync_test.go`
 - [ ] T014 [P] [US1] Add unit tests for every webhook validation rule, including the `-1` unlimited sentinel and its interaction with the requests/limits ordering checks, in `webhooks/virtualmachine/validation/virtualmachine_validator_compute_test.go`

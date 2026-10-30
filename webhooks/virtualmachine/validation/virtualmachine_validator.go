@@ -1276,7 +1276,7 @@ func (v validator) validateNetworkInterfaceSpec(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI && len(interfaceSpec.AdvancedProperties) > 0 {
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM && len(interfaceSpec.AdvancedProperties) > 0 {
 		allErrs = append(allErrs, v.validateNetworkInterfaceAdvancedProperties(
 			interfacePath.Child("advancedProperties"), interfaceSpec.AdvancedProperties)...)
 	}
@@ -2177,8 +2177,8 @@ func (v validator) validateAdvanced(
 		}
 	}
 
-	// Validate extraConfig when TelcoVMServiceAPI is enabled
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	// Validate extraConfig when VMServiceClasslessVM is enabled
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		allErrs = append(allErrs, v.validateAdvancedExtraConfig(ctx, advancedPath, advanced)...)
 	}
 
@@ -3579,8 +3579,8 @@ func (v validator) validateImmutableVMAffinity(
 // - vm.Spec.InstanceUUID (immutable if set)
 // - vm.Spec.Bootstrap.CloudInit.InstanceID (immutable if set)
 // - vm.Spec.Hardware.*Controllers
-// - vm.Spec.Advanced.{vmx-tagged first-class fields} (TelcoVMServiceAPI)
-// - vm.Spec.Network.Interfaces[i].{Type,VMXNet3,VNUMANodeID} (TelcoVMServiceAPI)
+// - vm.Spec.Advanced.{vmx-tagged first-class fields} (VMServiceClasslessVM)
+// - vm.Spec.Network.Interfaces[i].{Type,VMXNet3,VNUMANodeID} (VMServiceClasslessVM)
 // Fields that are immutable will not be validated.
 func (v validator) validateFieldsDuringSchemaUpgrade(
 	ctx *pkgctx.WebhookRequestContext,
@@ -3597,7 +3597,7 @@ func (v validator) validateFieldsDuringSchemaUpgrade(
 			specPath.Child("biosUUID"), notUpgraded))
 	}
 
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		allErrs = append(allErrs,
 			validateAdvancedVMXFieldsNotChanged(specPath, vm.Spec.Advanced, oldVM.Spec.Advanced)...)
 		allErrs = append(allErrs,

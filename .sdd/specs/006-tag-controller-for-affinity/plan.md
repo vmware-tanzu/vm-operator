@@ -192,7 +192,7 @@ Chosen because the `vmconfig.Reconciler` shape is the only extension point in th
 
 #### How it is dispatched
 
-`vmconfig.Register` does **not** dispatch `Reconcile`. In this repository the registry built by `vmconfig.Register` is consumed in exactly one place — the `OnResult` loop at `pkg/providers/vsphere/session/session_vm_update.go:136`, itself gated on `Features.BringYourOwnEncryptionKey || Features.TelcoVMServiceAPI`. Every reconciler's `Reconcile` runs from a hardcoded, individually flag-gated call site inside `doReconfigure` (`reconcileCrypto`, `reconcileVSpherePolicies`, `reconcileCdrom`, …), and `policy`, `cdrom`, `volumes`, `virtualcontroller` and `anno2extraconfig` are never `Register`ed at all. See `research.md` "The `vmconfig.Reconciler` extension point".
+`vmconfig.Register` does **not** dispatch `Reconcile`. In this repository the registry built by `vmconfig.Register` is consumed in exactly one place — the `OnResult` loop at `pkg/providers/vsphere/session/session_vm_update.go:136`, itself gated on `Features.BringYourOwnEncryptionKey || Features.VMServiceClasslessVM`. Every reconciler's `Reconcile` runs from a hardcoded, individually flag-gated call site inside `doReconfigure` (`reconcileCrypto`, `reconcileVSpherePolicies`, `reconcileCdrom`, …), and `policy`, `cdrom`, `volumes`, `virtualcontroller` and `anno2extraconfig` are never `Register`ed at all. See `research.md` "The `vmconfig.Reconciler` extension point".
 
 Therefore:
 

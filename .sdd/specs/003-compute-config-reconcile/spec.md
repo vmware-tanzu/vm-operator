@@ -22,7 +22,7 @@ The feature:
 4. Preserves existing class-based resize behavior: when a VM's class changes, the new `VirtualMachineClass` is authoritative for the compute fields it defines, overriding stale or backfilled spec values, exactly as it does today for backward compatibility.
 5. Backfills these fields into the VM spec — for new VMs, imported VMs, and existing VMs going through schema upgrade — populating only the fields the DevOps user has not already set, from the live vSphere config, once per VM.
 
-This entire surface remains inert — rejected outright by the validating webhook — unless the `supports_telco_vm_service_api` supervisor capability is enabled for the Supervisor.
+This entire surface remains inert — rejected outright by the validating webhook — unless the `vm_service_classless_vm` supervisor capability is enabled for the Supervisor.
 
 ---
 
@@ -57,7 +57,7 @@ A DevOps user sets CPU/memory sizing, reservation and limits, and advanced CPU/m
 
 **Why P0**: This is the primary capability the epic exists to deliver — Classless VM workloads such as Telco VNF workloads MUST need this feature.
 
-**Independent test**: Setting a field in `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced` on a `VirtualMachine` with `supports_telco_vm_service_api` enabled results in the live vSphere `ConfigSpec` converging to the requested value, observable via `kubectl get vm -o yaml` status and a vCenter-side check of the live config.
+**Independent test**: Setting a field in `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced` on a `VirtualMachine` with `vm_service_classless_vm` enabled results in the live vSphere `ConfigSpec` converging to the requested value, observable via `kubectl get vm -o yaml` status and a vCenter-side check of the live config.
 
 **Acceptance scenarios**:
 
@@ -65,7 +65,7 @@ A DevOps user sets CPU/memory sizing, reservation and limits, and advanced CPU/m
 2. **Given** a powered-on VM with `cpuAdvanced.hotAddEnabled` already `true` on the live config, **when** the DevOps user increases `spec.resources.size.cpu`, **then** VM Operator applies the change immediately, without requiring a power cycle.
 3. **Given** a powered-on VM, **when** the DevOps user decreases `spec.resources.size.cpu` (or increases it without hot-add enabled), **then** VM Operator defers the change until the VM is next powered off, and the condition reports `PowerOffRequired`, naming the field.
 4. **Given** a VM below the hardware version a field requires (e.g. `cpuAdvanced.hotAddEnabled` needs vmx-11), **when** the DevOps user sets that field, **then** VM Operator leaves the field unapplied on the live VM, retains the requested value in spec, and reports `PrerequisiteNotMet`, naming the field and the required hardware version.
-5. **Given** the `supports_telco_vm_service_api` capability is disabled, **when** the DevOps user attempts to set any of `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced`, **then** the admission webhook rejects the request.
+5. **Given** the `vm_service_classless_vm` capability is disabled, **when** the DevOps user attempts to set any of `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced`, **then** the admission webhook rejects the request.
 
 ---
 
@@ -109,11 +109,11 @@ A Supervisor can run with the compute-config feature fully disabled, and enablin
 
 **Why P2**: Operational safety; allows phased rollout of a feature this broad in scope.
 
-**Independent test**: With `supports_telco_vm_service_api` disabled, no VM can set `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced`, and reconcile behavior for VMs that never set them is unchanged.
+**Independent test**: With `vm_service_classless_vm` disabled, no VM can set `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced`, and reconcile behavior for VMs that never set them is unchanged.
 
 **Acceptance scenarios**:
 
-1. **Given** the `supports_telco_vm_service_api` capability is `false`, **when** a VM is admitted, **then** the webhook rejects any request that sets `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced`.
+1. **Given** the `vm_service_classless_vm` capability is `false`, **when** a VM is admitted, **then** the webhook rejects any request that sets `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced`.
 2. **Given** the capability is disabled, **when** an existing VM (created before this feature existed) reconciles, **then** its behavior is unchanged — the schema-upgrade backfill does not run, and no new condition is set.
 3. **Given** the capability is re-enabled after being disabled, **when** the VM's next reconcile completes, **then** the backfill runs once (if not already recorded for that VM) and normal compute-config reconciliation begins.
 
@@ -239,7 +239,7 @@ flowchart TD
 - [ ] Each scenario is independently testable.
 - [ ] Sentinel semantics (`nil` / `0` / explicit / `-1`) are specified for every field, including which layer (spec vs. vSphere wire) each `-1` sentinel belongs to.
 - [ ] Condition precedence (`PrerequisiteNotMet` > `PowerOffRequired` > `ComputeConfigMismatch` > `True`) is specified.
-- [ ] `supports_telco_vm_service_api` opt-in behavior is specified.
+- [ ] `vm_service_classless_vm` opt-in behavior is specified.
 - [ ] Backward-compatibility (schema-upgrade backfill and conversion round trip) is specified.
 - [ ] Out-of-scope items are listed.
 - [ ] The `requests` negative-value rejection rule is specified.

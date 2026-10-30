@@ -40,8 +40,8 @@ func (v validator) validateComputeConfig(
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
-	if !pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
-		notEnabled := fmt.Sprintf(featureNotEnabled, "VM Compute Config (via TelcoVMServiceAPI)")
+	if !pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
+		notEnabled := fmt.Sprintf(featureNotEnabled, "VM Compute Config (via VMServiceClasslessVM)")
 		if vm.Spec.Resources != nil {
 			allErrs = append(allErrs, field.Forbidden(
 				specPath.Child("resources"), notEnabled))

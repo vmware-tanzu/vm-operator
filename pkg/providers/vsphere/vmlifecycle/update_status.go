@@ -79,7 +79,7 @@ func ReconcileStatus(
 	errs = append(errs, reconcileStatusNodeName(vmCtx, k8sClient, vcVM, data)...)
 	errs = append(errs, reconcileStatusController(vmCtx, k8sClient, vcVM, data)...)
 
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 		errs = append(errs, reconcileStatusExtraConfig(vmCtx, k8sClient, vcVM, data)...)
 		errs = append(errs, reconcileComputeConfigSynced(vmCtx, k8sClient, vcVM, data)...)
 		errs = append(errs, reconcileStatusNetworkExtraConfig(vmCtx, k8sClient, vcVM, data)...)
@@ -229,7 +229,7 @@ func reconcileStatusHardware(
 			}
 		}
 
-		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 			if a := config.CpuAllocation; a != nil {
 				// Nil or -1 Limit means unlimited in vSphere; only surface explicit positive limits.
 				if lim := a.Limit; lim != nil && *lim >= 0 {
@@ -288,7 +288,7 @@ func reconcileStatusHardware(
 			}
 		}
 
-		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 			if a := config.MemoryAllocation; a != nil {
 				// Nil or -1 Limit means unlimited in vSphere; only surface explicit positive limits.
 				if lim := a.Limit; lim != nil && *lim >= 0 {
@@ -2284,7 +2284,7 @@ func reconcileStatusExtraConfig(
 	vm.Status.ExtraConfig = statusEC
 
 	// Comparing spec.advanced against observed below is only meaningful once
-	// this VM has been through the one-time TelcoVMServiceAPI schema-upgrade
+	// this VM has been through the one-time VMServiceClasslessVM schema-upgrade
 	// backfill (pkg/providers/vsphere/upgrade/virtualmachine/backfill). Before
 	// that, spec.advanced may still be nil/zero for a field a VM Class already
 	// applied directly to vSphere, and comparing against it here would

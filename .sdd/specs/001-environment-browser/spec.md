@@ -20,7 +20,7 @@ Introduce a Kubernetes-native pipeline that:
 2. Materializes that discovery as a set of cluster-scoped CRDs: `ConfigTarget`, `VirtualMachineConfigOptions`, and `VirtualMachineGuestOptions`. There is no per-host CRD; all per-host data is aggregated onto `ConfigTarget.status`.
 3. Checks hardware-version feasibility at VM admission via `ConfigTarget.status.maxHardwareVersion` (remaining admission work is tracked separately).
 
-The whole pipeline is gated behind a single capability/feature switch.
+The whole pipeline shares the `vm_service_classless_vm` Supervisor capability with the Telco VM Service APIs (vmop-4313). This disabled-by-default capability replaces `supports_vm_service_vm_config_policy` and `supports_telco_vm_service_api`; activating or deactivating it updates the shared classless VM feature state. The retired keys alone do not enable the feature.
 
 ---
 
@@ -115,7 +115,7 @@ A Supervisor can be brought up or upgraded without enabling the environment-brow
 
 **Acceptance scenarios**:
 
-1. **Given** the capability `CapabilityKeyFlexVMClasses` (`"supports_vm_service_vm_config_policy"`) is `false`, **when** a `Zone` reconciles, **then** no `ConfigTarget` objects are created.
+1. **Given** the capability `CapabilityKeyVMServiceClasslessVM` (`"vm_service_classless_vm"`) is `false`, **when** a `Zone` reconciles, **then** no `ConfigTarget` objects are created.
 2. **Given** the capability is disabled, **when** a `VirtualMachine` is admitted, **then** the webhook skips all `ConfigTarget`-based capability checks.
 3. **Given** the capability is re-enabled after being disabled, **when** the first `Zone` reconcile completes, **then** the pipeline restores the full set of objects.
 

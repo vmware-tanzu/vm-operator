@@ -9,7 +9,7 @@ This feature adds three optional `VirtualMachine.spec` fields (`resources`, `cpu
 
 Most of the fields below are mutable and some are conditionally mutable. None of the fields should be mutable till VM schema upgrade completes - i.e. before the one-time backfill populates these fields from the live vSphere config for newly created VMs or imported VMs or during schema upgrage. Once the backfill completes, the fields are normal mutable spec fields.
 
-All validation in this document, including the fields themselves, is gated by the `supports_telco_vm_service_api` supervisor capability. When the capability is disabled, setting any of `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced` MUST be rejected outright.
+All validation in this document, including the fields themselves, is gated by the `vm_service_classless_vm` supervisor capability. When the capability is disabled, setting any of `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced` MUST be rejected outright.
 
 ### `VirtualMachine.spec.resources` (`VirtualMachineResourcesSpec`)
 
@@ -52,7 +52,7 @@ Two rules are structural enough to enforce as CEL directly on the CRD schema rat
 
 - A VM MUST NOT set latencySensitivity to High/HighWithHyperthreading unless the VM satisfies full CPU reservation (`requests.cpu == size.cpu (in Mhz)`) AND full memory reservation (`requests.memory == size.memory`, or `memoryAdvanced.reservationLockedToMax=true`).
 - A VM network interface MUST NOT set `spec.network.interfaces[].vmxnet3.uptv2Enabled=true` unless the VM satisfies full guest memory reservation (the same memory rule used for `latencySensitivity` above).
-- All validation for this API surface, including the `supports_telco_vm_service_api` gate, is cross-field depends on spec state outside these three fields.
+- All validation for this API surface, including the `vm_service_classless_vm` gate, is cross-field depends on spec state outside these three fields.
 
 ## Status conditions
 

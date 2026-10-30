@@ -357,7 +357,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(),
 			"Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, input.ClusterProxy, consts.TelcoVMServiceAPICapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, input.ClusterProxy, consts.VMServiceClasslessVMCapabilityName)
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
@@ -621,7 +621,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			// validateUPTv2MemoryReservation (webhooks/virtualmachine/validation/
 			// virtualmachine_validator_compute.go) always rejects uptv2Enabled=true
-			// without full memory reservation whenever TelcoVMServiceAPI is
+			// without full memory reservation whenever VMServiceClasslessVM is
 			// enabled — the same feature this suite requires — so the
 			// reconciler-level PrerequisiteNotMet path is unreachable here via
 			// the API server; the patch must fail at admission, deterministically.

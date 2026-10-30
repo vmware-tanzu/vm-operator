@@ -53,8 +53,7 @@ const (
 	AllDisksArePVCapabilityName             = "supports_vm_service_all_disks_are_pvcs"
 	MultiWriterDiskVMotionCapabilityName    = "supports_multiwriter_disk_vmotion"
 	IaaSComputePoliciesCapabilityName       = "supports_iaas_compute_policies"
-	FlexVMClassesCapabilityName             = "supports_vm_service_vm_config_policy"
-	TelcoVMServiceAPICapabilityName         = "supports_telco_vm_service_api"
+	VMServiceClasslessVMCapabilityName      = "vm_service_classless_vm"
 	WorkloadIPv6CapabilityName              = "supports_workload_ipv6"
 	CSIBackupAPICapabilityName              = "supports_CSI_Backup_API"
 

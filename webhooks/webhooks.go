@@ -89,7 +89,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.FlexVMClasses {
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		if err := virtualmachineconfigoptions.AddToManager(ctx, mgr); err != nil {
 			return fmt.Errorf("failed to initialize VirtualMachineConfigOptions webhooks: %w", err)
 		}

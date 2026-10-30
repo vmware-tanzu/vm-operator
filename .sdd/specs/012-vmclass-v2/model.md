@@ -53,7 +53,7 @@ Device items: independent count bounds and required entries are deferred. A devi
 | `parentClassRefs` | list of `{name}` | Milestone 2. Rejected in Milestone 1. One entry; same namespace. |
 | `resources.size.{cpu,memory}` | Number | CPU in vCPUs. |
 | `resources.{requests,limits}.{cpu,memory}` | Number | CPU in vCPUs; compared with a VM's MHz using the cluster's minimum host frequency. |
-| `cpuAdvanced.*`, `memoryAdvanced.*`, `bootOptions.*`, `advanced.*` | per field | Same paths as `VirtualMachine.spec`. |
+| `cpuAdvanced.*`, `memoryAdvanced.*`, `bootOptions.*`, `advanced.*` | per field | Same paths as `VirtualMachine.spec`, for fields the VM spec has. `bootOptions.firmware`: an image that declares firmware wins over the class default, as today, and must be in `allowed`; a VM value still wins over the image. `bootOptions.networkBootProtocol`: `allowed` only, no class default, because the VM API defaults it to `IP4`. `enterBootSetup` is a one-time request and not a class setting. `cpuAdvanced.topology.exposeVnumaOnCpuHotadd` stays in `configSpec` until the VM has the field [NEEDS CLARIFICATION: whether the observed value is the setting or the effective state]. |
 | `advanced.extraConfig` | `ListPolicy` | At the VM's path. |
 | `hardware.devices.{vgpuDevices,dynamicDirectPathIODevices}` | `ListPolicy` of device items | See "Value shapes". |
 | `hardware.*` | per field | Settings that aren't in the VM spec but are exposed or checked. |

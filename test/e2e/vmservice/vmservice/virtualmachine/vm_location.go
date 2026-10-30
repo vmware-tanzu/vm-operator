@@ -199,7 +199,7 @@ func VMLocationSpec(ctx context.Context, inputGetter func() VMLocationSpecInput)
 			},
 		}
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
-		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachinePoweredOn(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 	}
 
 	// relocateVM moves the VM to the given resource pool and/or folder MoID.

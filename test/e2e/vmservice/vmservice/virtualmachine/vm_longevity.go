@@ -208,9 +208,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			}, 30*time.Second, 3*time.Second).Should(BeTrue())
 
 			By("VirtualMachinePrereqReadyCondition on VMs should not change")
-			vmoperator.CheckVirtualMachinesConditionConsistent(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, classReady)
-			vmoperator.CheckVirtualMachinesConditionConsistent(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, imageReady)
-			vmoperator.CheckVirtualMachinesConditionConsistent(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, storageReady)
+			vmoperator.CheckVirtualMachinesConditionConsistent(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, classReady, imageReady, storageReady)
 
 			By("Deleting VMClass in dcli will trigger VMClass CR get deleted in both associated namespace")
 			vmservice.VerifyVMClassDeletion(wcpClient, vmClassName)

@@ -1233,7 +1233,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 					},
 				}
 				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
-				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+				vmoperator.WaitForVirtualMachinePoweredOn(ctx, config, svClusterClient, tmpNamespaceName, vmName)
 
 				By("Verifying PolicyEvaluation is created and populated with mandatory and optional policies")
 				var policyEvaluation vspherepolv1.PolicyEvaluation
@@ -1300,7 +1300,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 					},
 				}
 				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
-				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, existingVMName)
+				vmoperator.WaitForVirtualMachinePoweredOn(ctx, config, svClusterClient, tmpNamespaceName, existingVMName)
 
 				By("Verifying initial PolicyEvaluation is created with the mandatory policy")
 				existingPEName := fmt.Sprintf("vm-%s", existingVMName)

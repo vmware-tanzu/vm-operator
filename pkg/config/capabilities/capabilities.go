@@ -108,7 +108,7 @@ const (
 
 	// CapabilityKeyVMServiceClasslessVM is the Supervisor capability for
 	// classless VMs. It jointly gates the Telco VM Service APIs and the
-	// VM configuration policy and environment-browser pipeline.
+	// environment-browser pipeline.
 	CapabilityKeyVMServiceClasslessVM = "vm_service_classless_vm"
 
 	// CapabilityKeyPerNamespaceNetworkProvider is the name of the capability key

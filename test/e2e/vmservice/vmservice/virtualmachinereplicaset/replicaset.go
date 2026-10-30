@@ -14,7 +14,6 @@ import (
 
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -147,7 +146,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		By("Verifying every owned VirtualMachine carries the replicaset-name label, an owner reference, and the template spec")
 		owned, err := utils.ListVirtualMachinesOwnedByReplicaSet(ctx, svClusterClient, input.WCPNamespaceName, rsName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(owned).To(HaveLen(int(replicas)))
 
 		seenNames := map[string]struct{}{}
@@ -191,7 +190,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		vmoperator.WaitForVirtualMachineReplicaSetReplicas(ctx, config, svClusterClient, input.WCPNamespaceName, rsName, 2)
 
 		original, err := utils.ListVirtualMachinesOwnedByReplicaSet(ctx, svClusterClient, input.WCPNamespaceName, rsName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		originalNames := namesOf(original)
 
 		By("Scaling spec.replicas from 2 to 5")
@@ -206,7 +205,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		By("Verifying the original 2 replicas were left untouched, not recreated")
 		scaled, err := utils.ListVirtualMachinesOwnedByReplicaSet(ctx, svClusterClient, input.WCPNamespaceName, rsName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(namesOf(scaled)).To(ContainElements(originalNames))
 	})
 
@@ -216,7 +215,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		vmoperator.WaitForVirtualMachineReplicaSetReplicas(ctx, config, svClusterClient, input.WCPNamespaceName, rsName, 4)
 
 		original, err := utils.ListVirtualMachinesOwnedByReplicaSet(ctx, svClusterClient, input.WCPNamespaceName, rsName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		originalNames := namesOf(original)
 
 		By("Scaling spec.replicas from 4 to 1")
@@ -231,7 +230,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		By("Verifying the single remaining replica is one of the original 4, not a new one")
 		remaining, err := utils.ListVirtualMachinesOwnedByReplicaSet(ctx, svClusterClient, input.WCPNamespaceName, rsName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(remaining).To(HaveLen(1))
 		Expect(originalNames).To(ContainElement(remaining[0].Name))
 	})
@@ -242,7 +241,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		vmoperator.WaitForVirtualMachineReplicaSetReplicas(ctx, config, svClusterClient, input.WCPNamespaceName, rsName, 3)
 
 		original, err := utils.ListVirtualMachinesOwnedByReplicaSet(ctx, svClusterClient, input.WCPNamespaceName, rsName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		originalNames := namesOf(original)
 
 		By("Scaling spec.replicas from 3 to 0")
@@ -268,7 +267,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		By("Verifying the replicas created after scaling back up are all fresh, never reusing a name from before scale-to-zero")
 		afterScaleUp, err := utils.ListVirtualMachinesOwnedByReplicaSet(ctx, svClusterClient, input.WCPNamespaceName, rsName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(namesOf(afterScaleUp)).ToNot(ContainElements(originalNames))
 	})
 
@@ -285,7 +284,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		By("Verifying this has the identical effect as editing spec.replicas directly")
 		vmoperator.WaitForVirtualMachineReplicaSetReplicas(ctx, config, svClusterClient, input.WCPNamespaceName, rsName, 4)
 		rs, err := utils.GetVirtualMachineReplicaSet(ctx, svClusterClient, input.WCPNamespaceName, rsName)
-		e2eframework.ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(rs.Spec.Replicas).To(HaveValue(BeEquivalentTo(4)))
 	})
 

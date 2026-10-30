@@ -232,6 +232,10 @@ var _ = Describe("My Feature", Label("my-feature"), func() {
 6. **Use manifest builders** for complex objects
 7. **Validate status conditions** and events
 
+### Assertions
+
+Use Gomega directly for ordinary operation errors: `Expect(err).ToNot(HaveOccurred(), "operation context")`. Use Ginkgo's `Fail` for failures without an error value, and mark assertion helpers with `GinkgoHelper()` so failures identify the caller.
+
 ### Helper Libraries
 
 #### VM Operations (`lib/vmoperator`)

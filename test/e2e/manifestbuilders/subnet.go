@@ -7,10 +7,12 @@ package manifestbuilders
 import (
 	"fmt"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/vpc/v1alpha1"
@@ -107,10 +109,9 @@ func subnetOrSubnetSet(
 // the same as an absent one to the API server, which applies CRD defaults to
 // it, so these are removed to send only the fields that were set.
 func subnetToYAML(obj ctrlclient.Object) []byte {
+	GinkgoHelper()
 	u, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
-	if err != nil {
-		e2eframework.Failf("Failed to convert %T to unstructured: %v", obj, err)
-	}
+	Expect(err).ToNot(HaveOccurred(), "Failed to convert %T to unstructured", obj)
 	if spec, ok := u["spec"].(map[string]any); ok {
 		removeEmptyObjects(spec)
 	}

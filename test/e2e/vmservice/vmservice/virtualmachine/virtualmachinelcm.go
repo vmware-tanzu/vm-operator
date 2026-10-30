@@ -1284,7 +1284,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		})
 
 		When("policies are applied retroactively", func() {
-			It("should create PolicyEvaluation for existing VMs", func() {
+			It("should create PolicyEvaluation for existing VMs", Label("experimental"), func() {
 				By("Creating a VM before applying new policies")
 				existingVMName := fmt.Sprintf("existing-vm-%s", capiutil.RandomString(4))
 				vmToCreate := &vmopv1a5.VirtualMachine{

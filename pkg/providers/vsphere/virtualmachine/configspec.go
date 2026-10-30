@@ -5,6 +5,8 @@
 package virtualmachine
 
 import (
+	"fmt"
+
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -12,7 +14,6 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
@@ -157,11 +158,6 @@ func CreateConfigSpec(
 	} else {
 		initResourceAllocation(&configSpec.MemoryAllocation)
 	}
-
-	// Apply placement policies and tag specs when feature is enabled
-	affinityConstraints := CalculateAffinityConstraints(vmCtx, true)
-	genConfigSpecAffinityPolicies(vmCtx, &configSpec, affinityConstraints)
-	genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec, affinityConstraints)
 
 	return configSpec
 }
@@ -318,10 +314,10 @@ func CreateConfigSpecForPlacement(
 		return vimtypes.VirtualMachineConfigSpec{}, err
 	}
 
-	// Populate the affinity policy for the VM.
-	affinityConstraints := CalculateAffinityConstraints(vmCtx, false)
-	genConfigSpecAffinityPolicies(vmCtx, &configSpec, affinityConstraints)
-	genConfigSpecTagSpecsFromVMLabels(vmCtx, &configSpec, affinityConstraints)
+	// Populate affinity policies and tags for placement.
+	if err := AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &configSpec, true); err != nil {
+		return vimtypes.VirtualMachineConfigSpec{}, fmt.Errorf("build placement affinity config: %w", err)
+	}
 
 	cleanupConfigSpecForPlacement(&configSpec)
 
@@ -333,71 +329,6 @@ func CreateConfigSpecForPlacement(
 	//  - whatever else I'm forgetting
 
 	return configSpec, nil
-}
-
-// CalculateAffinityConstraints calculates the constraints based on vm object
-// in vmCtx & creation/placement workflow.
-//
-// ConfigureZoneRules is true when the VMPlacementPolicies capability is
-// enabled, except:
-//   - It is disabled during VM Create configspec creation unless
-//     VMHardAffinityDuringExecution is enabled, as DRS otherwise only evaluates
-//     zonal policies during placement. Therefore, when the VM is being created,
-//     we want to omit zonal policies from the ConfigSpec
-//   - It is disabled for a VKS node VM (CAPI labels) with a zone label set,
-//     i.e. an explicit zone is already specified by the VM.
-//   - It is disabled when VMAffinityDuringExecution is enabled, VMHardAffinityDuringExecution
-//     is not, and the VM has a zone label set, i.e. an explicit zone is already specified by
-//     the VM.
-//
-// ConfigureHostRules is true when the VMAffinityDuringExecution capability
-// is enabled, except for a VKS node VM (CAPI labels), since its host
-// anti-affinity is handled via cluster modules instead.
-func CalculateAffinityConstraints(
-	vmCtx pkgctx.VirtualMachineContext,
-	isCreateVM bool,
-) AffinityRuleConstraints {
-	constraints := AffinityRuleConstraints{}
-
-	// set base condition for zonal rules based on capability.
-	if pkgcfg.FromContext(vmCtx).Features.VMPlacementPolicies {
-		constraints.ConfigureZoneRules = true
-	}
-
-	// set base condition for host rules based on capability.
-	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution {
-		constraints.ConfigureHostRules = true
-	}
-
-	// conditionals are broken down for readability.
-	// Host anti-affinity for CAPI VMs is handled via cluster modules.
-	isVksNodeVM := kubeutil.HasCAPILabels(vmCtx.VM.Labels)
-	if isVksNodeVM {
-		constraints.ConfigureHostRules = false
-	}
-
-	// All zonal policies are supported on create only when
-	// VMHardAffinityDuringExecution is enabled.
-	if isCreateVM && !pkgcfg.FromContext(vmCtx).Features.VMHardAffinityDuringExecution {
-		constraints.ConfigureZoneRules = false
-	}
-
-	// for vks nodes with zone labels or failure domains set, do not configure zonal affinity rules.
-	// zones are assigned from the zone label.
-	if isVksNodeVM && kubeutil.HasZoneLabel(vmCtx.VM.Labels) {
-		constraints.ConfigureZoneRules = false
-	}
-
-	// for vms with preferred zones, & VMAffinityDuringExecution capability, do not configure zonal rules.
-	// zones are assigned from the zone label. This does not apply when VMHardAffinityDuringExecution is
-	// enabled, since zonal rules are still evaluated alongside the candidate zone.
-	if pkgcfg.FromContext(vmCtx).Features.VMAffinityDuringExecution &&
-		!pkgcfg.FromContext(vmCtx).Features.VMHardAffinityDuringExecution &&
-		kubeutil.HasZoneLabel(vmCtx.VM.Labels) {
-		constraints.ConfigureZoneRules = false
-	}
-
-	return constraints
 }
 
 // Descriptive labels for the INVARIANT extension compatibility

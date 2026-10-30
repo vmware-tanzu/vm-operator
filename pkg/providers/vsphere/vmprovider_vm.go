@@ -2674,7 +2674,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		createArgs.ImageStatus,
 		minCPUFreq)
 
-	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+	features := pkgcfg.FromContext(vmCtx).Features
+	if features.FastDeploy {
 		if err := vs.vmCreateGenConfigSpecImage(vmCtx, createArgs); err != nil {
 			return err
 		}
@@ -2686,7 +2687,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	}
 
 	// Get the encryption class details for the VM.
-	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
+	if features.BringYourOwnEncryptionKey {
 		doCryptoReconcile := true
 		if vmCtx.VM.Spec.Crypto != nil {
 			// If vTPM mode is 'Clone', then we skip the below reconcile.
@@ -2722,7 +2723,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		return err
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if features.TelcoVMServiceAPI {
 		if err := vmconfextraconfig.Reconcile(
 			vmCtx,
 			vs.k8sClient,
@@ -2753,6 +2754,9 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		return err
 	}
 
+	if err := virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &createArgs.ConfigSpec, false); err != nil {
+		return fmt.Errorf("build create affinity config: %w", err)
+	}
 	vmCtx.Logger.V(4).Info("Completed generating config spec for VM create", "ConfigSpec", createArgs.ConfigSpec)
 
 	return nil

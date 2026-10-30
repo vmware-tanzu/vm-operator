@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/vmware/govmomi/vapi/tags"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -20,6 +21,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -125,6 +127,81 @@ func vmConfigSpecTests() {
 		initObjects = nil
 		vmProvider = nil
 		nsInfo = builder.WorkloadNamespaceInfo{}
+	})
+
+	Context("local affinity create", func() {
+		BeforeEach(func() {
+			skipCreateOrUpdateVM = true
+			pkgcfg.SetContext(parentCtx, func(cfg *pkgcfg.Config) {
+				cfg.Features.TaggingAPI = false
+				cfg.Features.VMAffinityDuringExecution = true
+				cfg.Features.VMHardAffinityDuringExecution = true
+			})
+			vm.Labels = map[string]string{"app": "nginx"}
+		})
+		DescribeTable("applies affinity create policies and tags", func(anti, mutable bool) {
+			pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+				c.Features.TaggingAPI = false
+				c.Features.VMAffinityDuringExecution = true
+				c.Features.VMHardAffinityDuringExecution = mutable
+			})
+			vm.Labels = map[string]string{"app": "nginx"}
+			terms := []vmopv1.VMAffinityTerm{{TopologyKey: corev1.LabelHostname, LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}}}}
+			vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAffinity: &vmopv1.VMAffinitySpec{PreferredDuringSchedulingPreferredDuringExecution: terms}}
+			expected := []string{"vmoperator:app:nginx", "vmoperator:af-pp-host-0d65cedea5c5987a-app:nginx"}
+			if anti {
+				vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{PreferredDuringSchedulingPreferredDuringExecution: terms}}
+				policyHash, err := virtualmachine.NewAffinityPolicyHash(virtualmachine.AffinityPolicyTypeGroupedAntiAffinity,
+					vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution,
+					vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost, []virtualmachine.LabelPair{{Key: "app", Value: "nginx"}})
+				Expect(err).NotTo(HaveOccurred())
+				expected[1] = policyHash.TagName
+			}
+			if !mutable {
+				expected = expected[:1]
+			}
+			manager := tags.NewManager(ctx.RestClient)
+			category, err := manager.CreateCategory(ctx, &tags.Category{Name: vm.Namespace, Cardinality: "MULTIPLE", AssociableTypes: []string{"VirtualMachine"}})
+			Expect(err).NotTo(HaveOccurred())
+			for _, name := range expected {
+				_, err := manager.CreateTag(ctx, &tags.Tag{Name: name, CategoryID: category})
+				Expect(err).NotTo(HaveOccurred())
+			}
+			// vcsim does not expose create-time tag associations through its
+			// REST tag inventory. Verify the outgoing create request instead.
+			createSpecs := make(chan vimtypes.VirtualMachineConfigSpec, 1)
+			ctx.SimulatorContext().Map.Handler = func(_ *simulator.Context, m *simulator.Method) (mo.Reference, vimtypes.BaseMethodFault) {
+				if req, ok := m.Body.(*vimtypes.CreateVM_Task); ok {
+					createSpecs <- req.Config
+				}
+				return nil, nil
+			}
+			vcVM, err = createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+			Expect(err).NotTo(HaveOccurred())
+			var created vimtypes.VirtualMachineConfigSpec
+			Expect(createSpecs).To(Receive(&created))
+			var tagNames []string
+			for _, tag := range created.TagSpecs {
+				Expect(tag.Operation).To(Equal(vimtypes.ArrayUpdateOperationAdd))
+				Expect(tag.Id.NameId).NotTo(BeNil())
+				Expect(tag.Id.NameId.Category).To(Equal(vm.Namespace))
+				tagNames = append(tagNames, tag.Id.NameId.Tag)
+			}
+			Expect(tagNames).To(ConsistOf(expected))
+			Expect(created.VmPlacementPolicies).To(HaveLen(1))
+			var current mo.VirtualMachine
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"config"}, &current)).To(Succeed())
+			record, ok := object.OptionValueList(current.Config.ExtraConfig).GetString(virtualmachine.ExtraConfigPlacementPoliciesKey)
+			if mutable {
+				Expect(virtualmachine.RecordedVMTags(current.Config)).To(ConsistOf(expected))
+				Expect(ok).To(BeTrue())
+				Expect(record).To(ContainSubstring(expected[1]))
+			} else {
+				Expect(virtualmachine.RecordedVMTags(current.Config)).To(BeEmpty())
+				Expect(ok).To(BeFalse())
+			}
+		}, Entry("AF", false, true), Entry("grouped AAF", true, true),
+			Entry("legacy AF", false, false), Entry("legacy AAF", true, false))
 	})
 
 	Context("FSS_WCP_MOBILITY_VM_IMPORT_NEW_NET", func() {

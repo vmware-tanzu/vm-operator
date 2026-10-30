@@ -1481,6 +1481,19 @@ func reconcileNetworkExtraConfig(
 		configSpec)
 }
 
+func reconcileAffinity(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	if paused.ByAdmin(moVM) || paused.ByDevOps(vm) {
+		return nil
+	}
+
+	return virtualmachine.UpdateConfigSpecAffinity(ctx, vm, moVM.Config, configSpec)
+}
+
 func doReconfigure(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1489,7 +1502,8 @@ func doReconfigure(
 	moVM mo.VirtualMachine,
 	configSpec vimtypes.VirtualMachineConfigSpec) error {
 
-	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+	features := pkgcfg.FromContext(ctx).Features
+	if features.FastDeploy {
 		if err := reconcileDiskPromo(
 			ctx,
 			k8sClient,
@@ -1502,7 +1516,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+	if features.BringYourOwnEncryptionKey {
 		if err := reconcileCrypto(
 			ctx,
 			k8sClient,
@@ -1515,7 +1529,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+	if features.AllDisksArePVCs {
 		if err := reconcileRegisterUnmanagedDisks(
 			ctx,
 			k8sClient,
@@ -1528,7 +1542,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint {
+	if features.ExtensionCompatConstraint {
 		if err := reconcileExtensionCompatConstraint(
 			ctx,
 			k8sClient,
@@ -1563,7 +1577,7 @@ func doReconfigure(
 		return err
 	}
 
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if features.TelcoVMServiceAPI {
 		if err := reconcileAdvancedExtraConfig(
 			ctx,
 			k8sClient,
@@ -1586,7 +1600,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+	if features.VSpherePolicies {
 		if err := reconcileVSpherePolicies(
 			ctx,
 			k8sClient,
@@ -1599,7 +1613,11 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+	if err := reconcileAffinity(ctx, vm, moVM, &configSpec); err != nil {
+		return err
+	}
+
+	if features.VMSharedDisks {
 		if err := reconcileVirtualControllers(
 			ctx,
 			k8sClient,

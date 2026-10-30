@@ -531,12 +531,18 @@ var _ = Describe("CreateConfigSpec", func() {
 		})
 	})
 
-	Context("AF/AAF policies", func() {
+	Context("affinity creation", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
 				config.Features.VMPlacementPolicies = true
 				config.Features.VMAffinityDuringExecution = true
 			})
+		})
+
+		JustBeforeEach(func() {
+			Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
+			Expect(configSpec.TagSpecs).To(BeEmpty())
+			Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &configSpec, false)).To(Succeed())
 		})
 
 		When("VM spec has affinity policies set", func() {
@@ -856,7 +862,7 @@ var _ = Describe("CreateConfigSpec", func() {
 					&vimtypes.VmVmAffinity{
 						AffinedVmsTag: vimtypes.TagId{
 							NameId: &vimtypes.TagIdNameId{
-								Tag:      "app:db",
+								Tag:      "vmoperator:af-pr-zone-f6cb1f79e599022e-app:db",
 								Category: vmCtx.VM.Namespace,
 							},
 						},
@@ -864,10 +870,11 @@ var _ = Describe("CreateConfigSpec", func() {
 						PolicyTopology:   zone,
 					},
 					&vimtypes.VmToVmGroupsAntiAffinity{
+						SelfTag: expectedAffinitySelfTag(vmCtx, strictness, zone, []virtualmachine.LabelPair{{Key: "app", Value: "web"}}),
 						AntiAffinedVmGroupTags: []vimtypes.TagId{
 							{
 								NameId: &vimtypes.TagIdNameId{
-									Tag:      "app:web",
+									Tag:      "vmoperator:app:web",
 									Category: vmCtx.VM.Namespace,
 								},
 							},
@@ -876,6 +883,8 @@ var _ = Describe("CreateConfigSpec", func() {
 						PolicyTopology:   zone,
 					},
 				))
+				self := expectedAffinitySelfTag(vmCtx, strictness, zone, []virtualmachine.LabelPair{{Key: "app", Value: "web"}})
+				assertVMTags(configSpec, []string{"vmoperator:app:web", self.NameId.Tag}, vmCtx.VM.Namespace)
 			})
 		})
 	})
@@ -2039,17 +2048,20 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 					Expect(configSpec.VmPlacementPolicies).To(ConsistOf(
 						&vimtypes.VmToVmGroupsAntiAffinity{
-							AntiAffinedVmGroupTags: tagIDs("a:1", "b:2"),
+							SelfTag:                expectedAffinitySelfTag(vmCtx, string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution), host, []virtualmachine.LabelPair{{Key: "a", Value: "1"}, {Key: "b", Value: "2"}}),
+							AntiAffinedVmGroupTags: tagIDs("vmoperator:a:1", "vmoperator:b:2"),
 							PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:         host,
 						},
 						&vimtypes.VmToVmGroupsAntiAffinity{
-							AntiAffinedVmGroupTags: tagIDs("c:3", "d:4"),
+							SelfTag:                expectedAffinitySelfTag(vmCtx, string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementRequiredDuringExecution), host, []virtualmachine.LabelPair{{Key: "c", Value: "3"}, {Key: "d", Value: "4"}}),
+							AntiAffinedVmGroupTags: tagIDs("vmoperator:c:3", "vmoperator:d:4"),
 							PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementRequiredDuringExecution),
 							PolicyTopology:         host,
 						},
 						&vimtypes.VmToVmGroupsAntiAffinity{
-							AntiAffinedVmGroupTags: tagIDs("e:5", "f:6"),
+							SelfTag:                expectedAffinitySelfTag(vmCtx, string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution), host, []virtualmachine.LabelPair{{Key: "e", Value: "5"}, {Key: "f", Value: "6"}}),
+							AntiAffinedVmGroupTags: tagIDs("vmoperator:e:5", "vmoperator:f:6"),
 							PolicyStrictness:       string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessPreferredDuringPlacementPreferredDuringExecution),
 							PolicyTopology:         host,
 						},
@@ -2109,10 +2121,10 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 					It("creates one VmVmAffinity policy per tag", func() {
 						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(
-							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("a:1"), PolicyStrictness: reqReq, PolicyTopology: host},
-							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("b:2"), PolicyStrictness: reqReq, PolicyTopology: host},
-							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("c:3"), PolicyStrictness: reqPref, PolicyTopology: host},
-							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("d:4"), PolicyStrictness: prefPref, PolicyTopology: host},
+							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("vmoperator:a:1"), PolicyStrictness: reqReq, PolicyTopology: host},
+							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("vmoperator:b:2"), PolicyStrictness: reqReq, PolicyTopology: host},
+							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("vmoperator:c:3"), PolicyStrictness: reqPref, PolicyTopology: host},
+							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("vmoperator:d:4"), PolicyStrictness: prefPref, PolicyTopology: host},
 						))
 					})
 				})
@@ -2145,15 +2157,17 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 					It("creates VmVmAffinity and grouped anti-affinity zone policies", func() {
 						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(
-							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("a:1"), PolicyStrictness: reqReq, PolicyTopology: zone},
-							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("b:2"), PolicyStrictness: reqPref, PolicyTopology: zone},
+							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("vmoperator:a:1"), PolicyStrictness: reqReq, PolicyTopology: zone},
+							&vimtypes.VmVmAffinity{AffinedVmsTag: tagID("vmoperator:b:2"), PolicyStrictness: reqPref, PolicyTopology: zone},
 							&vimtypes.VmToVmGroupsAntiAffinity{
-								AntiAffinedVmGroupTags: []vimtypes.TagId{tagID("c:3"), tagID("d:4")},
+								SelfTag:                expectedAffinitySelfTag(vmCtx, reqReq, zone, []virtualmachine.LabelPair{{Key: "c", Value: "3"}, {Key: "d", Value: "4"}}),
+								AntiAffinedVmGroupTags: []vimtypes.TagId{tagID("vmoperator:c:3"), tagID("vmoperator:d:4")},
 								PolicyStrictness:       reqReq,
 								PolicyTopology:         zone,
 							},
 							&vimtypes.VmToVmGroupsAntiAffinity{
-								AntiAffinedVmGroupTags: []vimtypes.TagId{tagID("e:5")},
+								SelfTag:                expectedAffinitySelfTag(vmCtx, prefPref, zone, []virtualmachine.LabelPair{{Key: "e", Value: "5"}}),
+								AntiAffinedVmGroupTags: []vimtypes.TagId{tagID("vmoperator:e:5")},
 								PolicyStrictness:       prefPref,
 								PolicyTopology:         zone,
 							},
@@ -2178,8 +2192,13 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 						}
 					})
 
-					It("adds a tag spec for the referenced VM label only", func() {
-						assertVMTags(configSpec, []string{"a:1"}, vmCtx.VM.Namespace)
+					It("adds the referenced VM label, AF hash, and requester self tag", func() {
+						self := expectedAffinitySelfTag(vmCtx, reqReq, host, []virtualmachine.LabelPair{{Key: "b", Value: "2"}})
+						assertVMTags(configSpec, []string{
+							"vmoperator:a:1",
+							"vmoperator:af-rr-host-85da2b053abf2948-a:1",
+							self.NameId.Tag,
+						}, vmCtx.VM.Namespace)
 					})
 				})
 
@@ -2573,7 +2592,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 					config.Features.VMAffinityDuringExecution = false
 				})
 
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 				Expect(constraints.ConfigureHostRules).To(BeFalse())
 				Expect(constraints.ConfigureZoneRules).To(BeFalse())
 			})
@@ -2586,7 +2605,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 					config.Features.VMAffinityDuringExecution = false
 				})
 
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 				Expect(constraints.ConfigureHostRules).To(BeFalse())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue())
 			})
@@ -2599,7 +2618,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 					config.Features.VMAffinityDuringExecution = true
 				})
 
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 				Expect(constraints.ConfigureHostRules).To(BeTrue())
 				Expect(constraints.ConfigureZoneRules).To(BeFalse())
 			})
@@ -2612,7 +2631,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 					config.Features.VMAffinityDuringExecution = true
 				})
 
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 				Expect(constraints.ConfigureHostRules).To(BeTrue())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue())
 			})
@@ -2634,7 +2653,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 					config.Features.VMAffinityDuringExecution = true
 				})
 
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS node VMs should disable host rules")
 				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "VKS node VMs without a zone label are not yet zone-constrained")
 			})
@@ -2645,7 +2664,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 					config.Features.VMAffinityDuringExecution = false
 				})
 
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 				Expect(constraints.ConfigureHostRules).To(BeFalse())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "VKS node VMs without a zone label are not yet zone-constrained")
 			})
@@ -2661,7 +2680,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 						config.Features.VMAffinityDuringExecution = true
 					})
 
-					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 					Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS node VMs should disable host rules")
 					Expect(constraints.ConfigureZoneRules).To(BeFalse(), "zone-labeled VKS node VMs are already zone-constrained")
 				})
@@ -2672,7 +2691,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 						config.Features.VMAffinityDuringExecution = false
 					})
 
-					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 					Expect(constraints.ConfigureHostRules).To(BeFalse())
 					Expect(constraints.ConfigureZoneRules).To(BeFalse(), "zone-labeled VKS node VMs are already zone-constrained")
 				})
@@ -2692,7 +2711,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 					config.Features.VMAffinityDuringExecution = true
 				})
 
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 				Expect(constraints.ConfigureHostRules).To(BeTrue(), "Regular VMs should allow host rules")
 				Expect(constraints.ConfigureZoneRules).To(BeTrue())
 			})
@@ -2707,17 +2726,17 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 			})
 		})
 
-		When("isCreateVM is true (creation workflow)", func() {
+		When("isPlacement is false (creation workflow)", func() {
 			It("should disable zone rules regardless of feature flags", func() {
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, false)
 				Expect(constraints.ConfigureHostRules).To(BeTrue(), "Host rules should still be enabled during creation")
 				Expect(constraints.ConfigureZoneRules).To(BeFalse(), "Zone rules should be disabled during VM creation")
 			})
 		})
 
-		When("isCreateVM is false (placement workflow)", func() {
+		When("isPlacement is true (placement workflow)", func() {
 			It("should allow zone rules when VMPlacementPolicies is enabled", func() {
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 				Expect(constraints.ConfigureHostRules).To(BeTrue())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "Zone rules should be enabled during placement")
 			})
@@ -2734,20 +2753,20 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 		})
 
 		It("should allow zone rules during creation", func() {
-			constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+			constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, false)
 			Expect(constraints.ConfigureHostRules).To(BeTrue())
 			Expect(constraints.ConfigureZoneRules).To(BeTrue())
 		})
 
 		It("should allow zone rules during placement", func() {
-			constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+			constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 			Expect(constraints.ConfigureHostRules).To(BeTrue())
 			Expect(constraints.ConfigureZoneRules).To(BeTrue())
 		})
 
 		It("should keep zone rules for a VM with a zone label", func() {
 			vm.Labels = map[string]string{corev1.LabelTopologyZone: "zone-a"}
-			constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+			constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 			Expect(constraints.ConfigureHostRules).To(BeTrue())
 			Expect(constraints.ConfigureZoneRules).To(BeTrue())
 		})
@@ -2756,7 +2775,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
 				config.Features.VMPlacementPolicies = false
 			})
-			constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+			constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, false)
 			Expect(constraints.ConfigureZoneRules).To(BeFalse())
 		})
 
@@ -2768,14 +2787,14 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 			})
 
 			It("should disable host rules but allow zone rules during creation", func() {
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, false)
 				Expect(constraints.ConfigureHostRules).To(BeFalse())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue())
 			})
 
 			It("should disable zone rules when the VM has a zone label", func() {
 				vm.Labels[corev1.LabelTopologyZone] = "zone-a"
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, false)
 				Expect(constraints.ConfigureHostRules).To(BeFalse())
 				Expect(constraints.ConfigureZoneRules).To(BeFalse())
 			})
@@ -2795,7 +2814,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 			})
 
 			It("should disable both host and zone rules", func() {
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, false)
 				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
 				Expect(constraints.ConfigureZoneRules).To(BeFalse(), "Creation workflow should disable zone rules")
 			})
@@ -2813,7 +2832,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 			})
 
 			It("should disable host rules but allow zone rules when it has no zone label", func() {
-				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+				constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
 				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "VKS nodes without a zone label are not yet zone-constrained")
 			})
@@ -2824,7 +2843,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 				})
 
 				It("should disable both host and zone rules", func() {
-					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+					constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 					Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
 					Expect(constraints.ConfigureZoneRules).To(BeFalse(), "zone-labeled VKS nodes are already zone-constrained")
 				})
@@ -2859,7 +2878,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 							config.Features.VMAffinityDuringExecution = tc.vmAffinity
 						})
 
-						constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+						constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 						Expect(constraints.ConfigureHostRules).To(Equal(tc.expectedHost),
 							"Host rules mismatch for case: %s", tc.description)
 						Expect(constraints.ConfigureZoneRules).To(Equal(tc.expectedZone),
@@ -2886,7 +2905,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 							config.Features.VMAffinityDuringExecution = tc.vmAffinity
 						})
 
-						constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, true)
+						constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, false)
 						Expect(constraints.ConfigureHostRules).To(Equal(tc.expectedHost),
 							"Host rules mismatch for case: %s", tc.description)
 						Expect(constraints.ConfigureZoneRules).To(BeFalse(),
@@ -2923,7 +2942,7 @@ var _ = Describe("CalculateAffinityConstraints", func() {
 							config.Features.VMAffinityDuringExecution = tc.vmAffinity
 						})
 
-						constraints := virtualmachine.CalculateAffinityConstraints(vmCtx, false)
+						constraints := virtualmachine.CalculateAffinityConstraints(vmCtx.Context, vmCtx.VM, true)
 						Expect(constraints.ConfigureHostRules).To(Equal(tc.expectedHost),
 							"Host rules mismatch for case: %s", tc.description)
 						Expect(constraints.ConfigureZoneRules).To(Equal(tc.expectedZone),
@@ -2977,4 +2996,16 @@ func assertVMTags(
 		})
 	}
 	Expect(configSpec.TagSpecs).To(ConsistOf(tagSpecs))
+}
+
+// expectedAffinitySelfTag derives a placement expectation using the policy hash
+// contract, which has separate fixed-vector tests.
+func expectedAffinitySelfTag(vmCtx pkgctx.VirtualMachineContext, strictness, topology string, pairs []virtualmachine.LabelPair) vimtypes.TagId {
+	GinkgoHelper()
+	policyHash, err := virtualmachine.NewAffinityPolicyHash(
+		virtualmachine.AffinityPolicyTypeGroupedAntiAffinity,
+		vimtypes.VmPlacementPolicyVmPlacementPolicyStrictness(strictness),
+		vimtypes.VmPlacementPolicyVmPlacementPolicyTopology(topology), pairs)
+	Expect(err).NotTo(HaveOccurred())
+	return vimtypes.TagId{NameId: &vimtypes.TagIdNameId{Tag: policyHash.TagName, Category: vmCtx.VM.Namespace}}
 }

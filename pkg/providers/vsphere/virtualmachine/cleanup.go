@@ -46,6 +46,7 @@ func CleanupVMServiceState(
 		return nil
 	}
 
+	features := pkgcfg.FromContext(vmCtx).Features
 	configSpec := vimtypes.VirtualMachineConfigSpec{}
 
 	// Remove ExtraConfig keys
@@ -55,13 +56,17 @@ func CleanupVMServiceState(
 	clearManagedBy(moVM.Config, &configSpec)
 
 	// Remove tag associations
-	if pkgcfg.FromContext(vmCtx).Features.VSpherePolicies {
+	if features.VSpherePolicies {
 		removeTagAssociations(moVM.Config, &configSpec)
 	}
 
+	// Recorded names are ours even when TaggingAPI was subsequently disabled.
+	// Read the original config; the cleanup spec clears vmservice.* in this task.
+	ReconcileVMTags(vmCtx.Context, vmCtx.VM, moVM.Config, &configSpec, nil)
+
 	// Clear the extension compatibility constraints VM Operator registered,
 	// since it no longer manages this VM.
-	if pkgcfg.FromContext(vmCtx).Features.ExtensionCompatConstraint {
+	if features.ExtensionCompatConstraint {
 		ClearConfigSpecExtensionCompatibilityConstraint(moVM.Config, &configSpec)
 	}
 

@@ -140,21 +140,23 @@ func UpdateVirtualMachineClassName(ctx context.Context, config *config.E2EConfig
 	}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(Succeed(), "Timed out updating VirtualMachines %s ClassName to %s", vmName, className)
 }
 
-// CheckVirtualMachinesConditionConsistent asserts that the named condition on
-// the VirtualMachine remains at the expected status (and, if False, reason)
+// CheckVirtualMachinesConditionConsistent asserts that the named conditions on
+// the VirtualMachine remain at the expected status (and, if False, reason)
 // for the duration of the "consistent-virtual-machine-condition" interval.
 func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client,
-	ns string, vmName string, expectedCondition metav1.Condition) {
+	ns string, vmName string, expectedConditions ...metav1.Condition) {
+	Expect(expectedConditions).ToNot(BeEmpty(), "at least one expected condition is required")
 	Consistently(func(g Gomega) {
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
-		g.Expect(actualCondition).ToNot(BeNil())
-		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
-
-		if actualCondition.Status == metav1.ConditionFalse {
-			g.Expect(actualCondition.Reason).Should(Equal(expectedCondition.Reason))
+		for _, expectedCondition := range expectedConditions {
+			actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
+			g.Expect(actualCondition).ToNot(BeNil(), "VM %s/%s condition %s is missing", ns, vmName, expectedCondition.Type)
+			g.Expect(actualCondition.Status).To(Equal(expectedCondition.Status), "VM %s/%s condition %s status changed", ns, vmName, expectedCondition.Type)
+			if actualCondition.Status == metav1.ConditionFalse {
+				g.Expect(actualCondition.Reason).To(Equal(expectedCondition.Reason), "VM %s/%s condition %s reason changed", ns, vmName, expectedCondition.Type)
+			}
 		}
 	}, config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed(), "VirtualMachine conditions changed")
 }
@@ -162,11 +164,18 @@ func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config
 // WaitForVirtualMachineCreation waits for the VirtualMachine to exist, be
 // created on vSphere, reach the powered-on state, and have an IPv4 address.
 func WaitForVirtualMachineCreation(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) {
-	By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", ns, vmName))
-	WaitForVirtualMachineToExist(ctx, config, svClusterClient, ns, vmName)
-	WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, ns, vmName)
-	WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+	WaitForVirtualMachinePoweredOn(ctx, config, svClusterClient, ns, vmName)
 	WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
+}
+
+// WaitForVirtualMachinePoweredOn waits for the VirtualMachine to exist, be
+// created on vSphere, and reach the powered-on state. It does not wait for guest
+// networking; callers requiring guest readiness must use WaitForVirtualMachineCreation.
+func WaitForVirtualMachinePoweredOn(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
+	By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", ns, vmName))
+	WaitForVirtualMachineToExist(ctx, config, client, ns, vmName)
+	WaitForVirtualMachineConditionCreated(ctx, config, client, ns, vmName)
+	WaitForVirtualMachinePowerState(ctx, config, client, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
 }
 
 // intervalDurations converts a config Eventually-style interval pair (as

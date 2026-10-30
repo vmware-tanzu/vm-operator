@@ -139,7 +139,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 
 			By("Creating a VM matching the policy's label selector")
 			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
-			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachinePoweredOn(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM's status.policies and the real vSphere tag assignment")
 			vmservice.VerifyVMTagsAndPolicyAssignment(
@@ -172,7 +172,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 
 			By("Creating a VM that does not match the policy yet")
 			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
-			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachinePoweredOn(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM does not have the policy applied yet")
 			curVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
@@ -216,7 +216,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 			By("Creating a VM that explicitly references the policy and matches its label selector")
 			createVMWithExplicitPolicyRefs(ctx, input, svClusterClient, vmName, matchLabel,
 				explicitPolicyRef(controlledRebalancingPolicyKind, rebalancingPolicy.Name))
-			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachinePoweredOn(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM's status.policies and the real vSphere tag assignment")
 			vmservice.VerifyVMTagsAndPolicyAssignment(
@@ -268,7 +268,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 
 			By("Creating a VM matching the policy's label selector")
 			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
-			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachinePoweredOn(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM has the first tag assigned")
 			vmservice.VerifyVMTagsAndPolicyAssignment(
@@ -320,7 +320,7 @@ func ControlledRebalancingSpec(ctx context.Context, inputGetter func() SpecInput
 
 			By("Creating a VM matching the policy's label selector")
 			createMatchingVM(ctx, input, svClusterClient, vmName, matchLabel)
-			vmoperator.WaitForVirtualMachineCreation(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachinePoweredOn(ctx, input.Config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Verifying the VM has the tag and policy assigned before deletion")
 			vmservice.VerifyVMTagsAndPolicyAssignment(

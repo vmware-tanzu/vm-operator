@@ -613,12 +613,16 @@ var _ = DescribeTableSubtree("GetPVCZoneConstraints Table",
 
 var _ = Describe("IsEncryptedStorageClass", func() {
 	var (
-		ok           bool
-		ctx          context.Context
-		err          error
-		client       ctrlclient.Client
-		funcs        interceptor.Funcs
-		storageClass storagev1.StorageClass
+		ok            bool
+		ctx           context.Context
+		err           error
+		client        ctrlclient.Client
+		funcs         interceptor.Funcs
+		storageClass  storagev1.StorageClass
+		storagePolicy infrav1.StoragePolicy
+		withObjs      []ctrlclient.Object
+		profileID     string
+		gotProfileID  string
 	)
 
 	BeforeEach(func() {
@@ -626,21 +630,38 @@ var _ = Describe("IsEncryptedStorageClass", func() {
 			PodNamespace: fakeString,
 		})
 		funcs = interceptor.Funcs{}
+		profileID = uuid.NewString()
 		storageClass = storagev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fakeString,
 				UID:  types.UID(uuid.NewString()),
 			},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: profileID,
+			},
 		}
+		storagePolicy = infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+			},
+			Status: infrav1.StoragePolicyStatus{Encrypted: true},
+		}
+		withObjs = []ctrlclient.Object{&storageClass, &storagePolicy}
 	})
 
 	JustBeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(infrav1.AddToScheme(scheme)).To(Succeed())
+		Expect(storagev1.AddToScheme(scheme)).To(Succeed())
+
 		client = fake.NewClientBuilder().
-			WithObjects(&storageClass).
+			WithScheme(scheme).
+			WithObjects(withObjs...).
 			WithInterceptorFuncs(funcs).
 			Build()
 
-		ok, _, err = kubeutil.IsEncryptedStorageClass(
+		ok, gotProfileID, err = kubeutil.IsEncryptedStorageClass(
 			ctx, client, storageClass.Name)
 	})
 
@@ -687,6 +708,96 @@ var _ = Describe("IsEncryptedStorageClass", func() {
 		It("should not return the error", func() {
 			Expect(err).To(MatchError(apierrors.NewInternalError(errors.New(fakeString)).Error()))
 			Expect(ok).To(BeFalse())
+		})
+	})
+
+	When("the StorageClass has no profile ID", func() {
+		BeforeEach(func() {
+			storageClass.Parameters = nil
+		})
+		It("should return false and an empty profile ID", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+			Expect(gotProfileID).To(BeEmpty())
+		})
+	})
+
+	When("the StoragePolicy is encrypted", func() {
+		It("should return true and the profile ID", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(gotProfileID).To(Equal(profileID))
+		})
+	})
+
+	When("the StoragePolicy is not encrypted", func() {
+		BeforeEach(func() {
+			storagePolicy.Status.Encrypted = false
+		})
+		It("should return false and the profile ID", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+			Expect(gotProfileID).To(Equal(profileID))
+		})
+	})
+
+	When("there is no StoragePolicy", func() {
+		BeforeEach(func() {
+			withObjs = []ctrlclient.Object{&storageClass}
+		})
+		It("should return a not-found error and an empty profile ID", func() {
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			Expect(ok).To(BeFalse())
+			Expect(gotProfileID).To(BeEmpty())
+		})
+	})
+
+	When("getting the StoragePolicy returns a non-404 error", func() {
+		BeforeEach(func() {
+			funcs.Get = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				key ctrlclient.ObjectKey,
+				obj ctrlclient.Object,
+				opts ...ctrlclient.GetOption) error {
+
+				if _, ok := obj.(*infrav1.StoragePolicy); ok {
+					return apierrors.NewInternalError(errors.New(fakeString))
+				}
+				return client.Get(ctx, key, obj, opts...)
+			}
+		})
+		It("should return the error and an empty profile ID", func() {
+			Expect(err).To(MatchError(apierrors.NewInternalError(errors.New(fakeString)).Error()))
+			Expect(ok).To(BeFalse())
+			Expect(gotProfileID).To(BeEmpty())
+		})
+	})
+
+	Context("when StoragePolicyMutability feature is enabled", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.StoragePolicyMutability = true
+			})
+		})
+
+		When("the StoragePolicy is encrypted", func() {
+			It("should return true and the profile ID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeTrue())
+				Expect(gotProfileID).To(Equal(profileID))
+			})
+		})
+
+		When("the StoragePolicy is not encrypted", func() {
+			BeforeEach(func() {
+				storagePolicy.Status.Encrypted = false
+			})
+			It("should return false and the profile ID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeFalse())
+				Expect(gotProfileID).To(Equal(profileID))
+			})
 		})
 	})
 })

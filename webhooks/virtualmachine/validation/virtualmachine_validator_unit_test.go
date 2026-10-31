@@ -1668,7 +1668,7 @@ func unitTestsValidateCreate() {
 						cm := &corev1.ConfigMap{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      config.ProviderConfigMapName,
-								Namespace: ctx.Namespace,
+								Namespace: ctx.WebhookContext.Namespace,
 							},
 							Data: make(map[string]string),
 						}
@@ -1753,7 +1753,7 @@ func unitTestsValidateCreate() {
 						cm := &corev1.ConfigMap{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      config.ProviderConfigMapName,
-								Namespace: ctx.Namespace,
+								Namespace: ctx.WebhookContext.Namespace,
 							},
 							Data: make(map[string]string),
 						}
@@ -1777,7 +1777,7 @@ func unitTestsValidateCreate() {
 						cm := &corev1.ConfigMap{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      config.ProviderConfigMapName,
-								Namespace: ctx.Namespace,
+								Namespace: ctx.WebhookContext.Namespace,
 							},
 							Data: make(map[string]string),
 						}
@@ -1800,7 +1800,7 @@ func unitTestsValidateCreate() {
 						cm := &corev1.ConfigMap{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      config.ProviderConfigMapName,
-								Namespace: ctx.Namespace,
+								Namespace: ctx.WebhookContext.Namespace,
 							},
 							Data: make(map[string]string),
 						}
@@ -9476,8 +9476,8 @@ func unitTestsValidateUpdate() {
 						[]string{
 							"system",
 							"serviceaccount",
-							ctx.Namespace,
-							ctx.ServiceAccountName,
+							ctx.WebhookContext.Namespace,
+							ctx.WebhookContext.ServiceAccountName,
 						}, ":")
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{
@@ -9497,8 +9497,8 @@ func unitTestsValidateUpdate() {
 						[]string{
 							"system",
 							"serviceaccount",
-							ctx.Namespace,
-							ctx.ServiceAccountName,
+							ctx.WebhookContext.Namespace,
+							ctx.WebhookContext.ServiceAccountName,
 						}, ":")
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{
@@ -9568,8 +9568,8 @@ func unitTestsValidateUpdate() {
 						[]string{
 							"system",
 							"serviceaccount",
-							ctx.Namespace,
-							ctx.ServiceAccountName,
+							ctx.WebhookContext.Namespace,
+							ctx.WebhookContext.ServiceAccountName,
 						}, ":")
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{

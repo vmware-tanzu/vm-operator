@@ -160,7 +160,8 @@ func getPlacementCandidates(
 		}
 
 		for _, zone := range zones {
-			// Filter out zone that pending delete, so we don't use it as a candidate.
+			// Preserve explicit zone overrides. Admission restricts requests for
+			// deleting zones to privileged accounts and CAPV service accounts.
 			if preAssignedZoneName == "" && !zone.DeletionTimestamp.IsZero() {
 				continue
 			}
@@ -351,7 +352,7 @@ func getPlacementRecommendation(
 			vcClient,
 			finder,
 			candidateRPMoRefs,
-			[]VMZonePlacementMapping{{
+			[]VMPlacementInput{{
 				ConfigSpec: configSpec,
 				// We do not set ZoneName here as the candidateRPMorefs limited to
 				// the required zone.

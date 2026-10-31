@@ -112,8 +112,7 @@ type validatingWebhookHandler struct {
 
 func (h *validatingWebhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
 	if h.EnableWebhookClientVerification {
-		ctx = pkgcfg.JoinContext(ctx, h.WebhookContext)
-		if err := VerifyWebhookRequest(ctx); err != nil {
+		if err := VerifyWebhookRequest(pkgcfg.JoinContext(ctx, h.WebhookContext)); err != nil {
 			return webhook.Errored(http.StatusBadRequest, err)
 		}
 	}
@@ -156,17 +155,13 @@ func (h *validatingWebhookHandler) Handle(ctx context.Context, req admission.Req
 		return admission.Allowed(string(req.Operation))
 	}
 
-	// Create the webhook request pkgctx.
-	webhookRequestContext := &pkgctx.WebhookRequestContext{
-		WebhookContext:      h.WebhookContext,
-		Op:                  req.Operation,
-		Obj:                 obj,
-		OldObj:              oldObj,
-		UserInfo:            req.UserInfo,
-		IsPrivilegedAccount: IsPrivilegedAccount(h.WebhookContext, req.UserInfo),
-		IsVMOperatorAccount: IsVMOperatorServiceAccount(h.WebhookContext, req.UserInfo),
-		Logger:              h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
-	}
+	webhookRequestContext, cancel := NewWebhookRequestContext(
+		ctx,
+		h.WebhookContext,
+		req,
+		obj,
+		oldObj)
+	defer cancel()
 
 	return h.HandleValidate(req, webhookRequestContext)
 }

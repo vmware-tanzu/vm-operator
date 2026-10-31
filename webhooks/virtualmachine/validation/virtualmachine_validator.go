@@ -1878,7 +1878,7 @@ func (v validator) validateSharedVolumesOrControllers(
 				ctx.Logger.V(4).Info("PVC not found, skipping validation",
 					"volume", vol.Name,
 					"claimName", vol.PersistentVolumeClaim.ClaimName,
-					"namespace", ctx.Namespace,
+					"namespace", vm.Namespace,
 					"error", err.Error(),
 				)
 				return allErrs
@@ -1902,7 +1902,7 @@ func (v validator) validateSharedVolumesOrControllers(
 					"failed to check PVC encryption. Assuming PVC is not encrypted.",
 					"volume", vol.Name,
 					"claimName", vol.PersistentVolumeClaim.ClaimName,
-					"namespace", ctx.Namespace,
+					"namespace", vm.Namespace,
 					"storageClassName", *pvcStorageClassName,
 				)
 			}
@@ -2093,7 +2093,7 @@ func isBackfilledVolume(vol *vmopv1.VirtualMachineVolume) bool {
 
 func (v validator) isNetworkRestrictedForReadinessProbe(ctx *pkgctx.WebhookRequestContext) (bool, error) {
 	configMap := &corev1.ConfigMap{}
-	configMapKey := ctrlclient.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
+	configMapKey := ctrlclient.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.WebhookContext.Namespace}
 	if err := v.client.Get(ctx, configMapKey, configMap); err != nil {
 		return false, fmt.Errorf("error get ConfigMap: %s while validating TCP readiness probe port: %w", configMapKey, err)
 	}

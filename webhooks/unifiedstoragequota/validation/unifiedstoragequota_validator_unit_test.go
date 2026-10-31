@@ -538,7 +538,7 @@ func testVMRequestedCapacityHandlerHandle() {
 				},
 			}
 
-			resp = handler.Handle(req)
+			resp = handler.Handle(context.Background(), req)
 		})
 
 		AfterEach(func() {
@@ -1970,7 +1970,7 @@ func testVMSnapshotRequestedCapacityHandlerHandle() {
 				},
 			}
 
-			resp = handler.Handle(req)
+			resp = handler.Handle(context.Background(), req)
 		})
 
 		AfterEach(func() {

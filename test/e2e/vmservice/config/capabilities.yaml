@@ -1,0 +1,10 @@
+---
+# Supervisor capabilities required by experimental E2E tests.
+# Each entry must include a capability name and a short, meaningful alias.
+capabilities:
+  - capability: supports_telco_vm_service_api
+    alias: telcovmsvc
+  - capability: supports_vm_service_k8s_workload_mgmt_api
+    alias: workloadmgmt
+  - capability: supports_vm_service_vm_config_policy
+    alias: vmconfigpolicy

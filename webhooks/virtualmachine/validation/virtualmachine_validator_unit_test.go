@@ -6528,6 +6528,245 @@ func unitTestsValidateUpdate() {
 
 	affinityValidationCases(doTest)
 
+	Context("Multi-volume external validation", func() {
+		const (
+			rwoPhysicalMsg = `Controller with sharing mode Physical is not allowed for ReadWriteOnce volume`
+			wsfcModeMsg    = `Controller sharing mode must be Physical for a MicrosoftWSFC volume`
+		)
+
+		// expectVolumeErrs asserts that the response reports exactly the
+		// provided volume errors. Every PVC is ReadWriteOnce behind a
+		// Physical-sharing controller, so each disk whose external state is
+		// revalidated adds an error, and the errors identify which disks were
+		// revalidated.
+		expectVolumeErrs := func(msgs ...string) func(admission.Response) {
+			return func(response admission.Response) {
+				reasons := string(response.Result.Reason)
+				for _, m := range msgs {
+					ExpectWithOffset(1, reasons).To(ContainSubstring(m))
+				}
+				ExpectWithOffset(1, strings.Count(reasons, "spec.volumes[")).To(
+					Equal(len(msgs)), reasons)
+			}
+		}
+
+		// moveVolume assigns the volume to the specified controller in both the
+		// old and new VM, so the volume itself is unchanged by the update.
+		moveVolume := func(
+			ctx *unitValidatingWebhookContext,
+			index int,
+			controllerType vmopv1.VirtualControllerType,
+			busNumber int32) {
+
+			for _, vm := range []*vmopv1.VirtualMachine{ctx.vm, ctx.oldVM} {
+				vm.Spec.Volumes[index].ControllerType = controllerType
+				vm.Spec.Volumes[index].ControllerBusNumber = ptr.To(busNumber)
+			}
+		}
+
+		BeforeEach(func() {
+			annotations := ctx.vm.Annotations
+			ctx.vm = builder.DummyBasicVirtualMachine("multi-volume-vm", dummyNamespaceName)
+			ctx.vm.Annotations = annotations
+			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+				IDEControllers: []vmopv1.IDEControllerSpec{
+					{
+						BusNumber: 0,
+					},
+					{
+						BusNumber: 1,
+					},
+				},
+				SCSIControllers: []vmopv1.SCSIControllerSpec{
+					{
+						BusNumber:   0,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+					{
+						BusNumber:   1,
+						Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
+						SharingMode: vmopv1.VirtualControllerSharingModePhysical,
+					},
+				},
+			}
+			for i := range 3 {
+				name := fmt.Sprintf("disk-%d", i)
+				// External state is incompatible with the existing shared
+				// controller.
+				Expect(ctx.Client.Create(ctx, &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ctx.vm.Namespace},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					},
+				})).To(Succeed())
+				if i < 2 {
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+						Name:                name,
+						ApplicationType:     vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+						DiskMode:            vmopv1.VolumeDiskModeIndependentPersistent,
+						ControllerType:      vmopv1.VirtualControllerTypeSCSI,
+						ControllerBusNumber: ptr.To(int32(i)),
+						UnitNumber:          ptr.To(int32(0)),
+						Removable:           ptr.To(true),
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{ClaimName: name},
+							},
+						},
+					})
+				}
+			}
+			ctx.oldVM = ctx.vm.DeepCopy()
+		})
+
+		DescribeTable("update", func(args testParams) {
+			// Preserve the fixture's controller assignments and upgrade annotations.
+			args.skipSetControllerForPVC = true
+			args.skipBypassUpgradeCheck = true
+			doTest(args)
+		},
+			Entry("should skip external checks for all unchanged disks",
+				testParams{
+					setup:         func(*unitValidatingWebhookContext) {},
+					expectAllowed: true,
+				},
+			),
+			Entry("should revalidate every disk after a controller-only change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Hardware.SCSIControllers[1].Type = vmopv1.SCSIControllerTypeLsiLogicSAS
+					},
+					validate: expectVolumeErrs(
+						`spec.volumes[0].controllerBusNumber: Invalid value: "SCSI:0": `+rwoPhysicalMsg,
+						`spec.volumes[1].controllerBusNumber: Invalid value: "SCSI:1": `+rwoPhysicalMsg,
+					),
+				},
+			),
+			Entry("should revalidate only the changed disk",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes[1].PersistentVolumeClaim.ClaimName = "disk-2"
+					},
+					validate: expectVolumeErrs(
+						`spec.volumes[1].controllerBusNumber: Invalid value: "SCSI:1": ` + rwoPhysicalMsg,
+					),
+				},
+			),
+			Entry("should validate a new disk with unchanged hardware",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						vol := ctx.vm.Spec.Volumes[1].DeepCopy()
+						vol.Name = "disk-2"
+						vol.PersistentVolumeClaim.ClaimName = "disk-2"
+						vol.UnitNumber = ptr.To(int32(1))
+						ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, *vol)
+					},
+					validate: expectVolumeErrs(
+						`spec.volumes[2].controllerBusNumber: Invalid value: "SCSI:1": ` + rwoPhysicalMsg,
+					),
+				},
+			),
+			Entry("should look up each disk's own SCSI controller",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						for _, vm := range []*vmopv1.VirtualMachine{ctx.vm, ctx.oldVM} {
+							vm.Spec.Hardware.SCSIControllers[1].SharingMode = vmopv1.VirtualControllerSharingModeNone
+						}
+					},
+					validate: expectVolumeErrs(
+						`spec.volumes[1].applicationType: Invalid value: "MicrosoftWSFC": ` + wsfcModeMsg,
+					),
+				},
+			),
+			Entry("should look up each disk's controller by type",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						for _, vm := range []*vmopv1.VirtualMachine{ctx.vm, ctx.oldVM} {
+							// NVME:0 and SATA:0 share bus number 0 with the
+							// Physical-sharing SCSI:0 controller, but they do
+							// not share their disks.
+							vm.Spec.Hardware.NVMEControllers = []vmopv1.NVMEControllerSpec{
+								{
+									BusNumber:   0,
+									SharingMode: vmopv1.VirtualControllerSharingModeNone,
+								},
+							}
+							vm.Spec.Hardware.SATAControllers = []vmopv1.SATAControllerSpec{
+								{
+									BusNumber: 0,
+								},
+							}
+						}
+						moveVolume(ctx, 0, vmopv1.VirtualControllerTypeNVME, 0)
+						moveVolume(ctx, 1, vmopv1.VirtualControllerTypeSATA, 0)
+					},
+					validate: expectVolumeErrs(
+						`spec.volumes[0].applicationType: Invalid value: "MicrosoftWSFC": `+wsfcModeMsg,
+						`spec.volumes[1].applicationType: Invalid value: "MicrosoftWSFC": `+wsfcModeMsg,
+					),
+				},
+			),
+			Entry("should look up the new VM's controllers after a hardware change",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						// Only the old VM's SCSI:1 controller is shared, so
+						// both the WSFC and the access-mode checks must use
+						// the new VM's controllers.
+						ctx.oldVM.Spec.Hardware.SCSIControllers[1].SharingMode = vmopv1.VirtualControllerSharingModePhysical
+						ctx.vm.Spec.Hardware.SCSIControllers[1].SharingMode = vmopv1.VirtualControllerSharingModeNone
+					},
+					validate: expectVolumeErrs(
+						`spec.volumes[0].controllerBusNumber: Invalid value: "SCSI:0": `+rwoPhysicalMsg,
+						`spec.volumes[1].applicationType: Invalid value: "MicrosoftWSFC": `+wsfcModeMsg,
+					),
+				},
+			),
+			Entry("should allow removing a removable disk without revalidating the remaining disk",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Volumes = ctx.vm.Spec.Volumes[:1]
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should preserve the VM Operator account exemption",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsVMOperatorAccount = true
+						ctx.vm.Spec.Volumes[1].PersistentVolumeClaim.ClaimName = "disk-2"
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should preserve the schema-upgrade exemption",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						delete(ctx.oldVM.Annotations, pkgconst.UpgradedToBuildVersionAnnotationKey)
+						delete(ctx.vm.Annotations, pkgconst.UpgradedToBuildVersionAnnotationKey)
+						// Without the exemption, this change would be
+						// revalidated and rejected.
+						ctx.vm.Spec.Volumes[1].PersistentVolumeClaim.ClaimName = "disk-2"
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("should preserve disabled shared-disk feature gates",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.VMSharedDisks = false
+							config.Features.AllDisksArePVCs = false
+						})
+						ctx.vm.Spec.Volumes[1].PersistentVolumeClaim.ClaimName = "disk-2"
+					},
+					expectAllowed: true,
+				},
+			),
+		)
+	})
+
 	DescribeTable(
 		"spec.class and spec.className update",
 		doTest,

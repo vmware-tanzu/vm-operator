@@ -288,7 +288,9 @@ func IsEncryptedStorageClass(
 		return false, "", nil
 	}
 
-	ok, err := IsEncryptedStorageProfile(ctx, k8sClient, profileID)
+	// The StorageClass above already establishes that the profile exists. Avoid
+	// listing all StorageClasses and VolumeAttributesClasses to verify it again.
+	ok, err := isEncryptedStoragePolicy(ctx, k8sClient, profileID)
 	if err != nil {
 		return false, "", err
 	}
@@ -337,6 +339,16 @@ func IsEncryptedStorageProfile(
 			profileID,
 		)
 	}
+
+	return isEncryptedStoragePolicy(ctx, k8sClient, profileID)
+}
+
+// isEncryptedStoragePolicy reads the encryption state for a profile whose
+// existence has already been established by a StorageClass or VolumeAttributesClass.
+func isEncryptedStoragePolicy(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	profileID string) (bool, error) {
 
 	storagePolicyName := GetStoragePolicyObjectName(profileID)
 	if storagePolicyName == "" {

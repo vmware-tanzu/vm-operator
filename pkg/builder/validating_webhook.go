@@ -111,8 +111,8 @@ type validatingWebhookHandler struct {
 }
 
 func (h *validatingWebhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
+	ctx = pkgcfg.JoinContext(ctx, h.WebhookContext)
 	if h.EnableWebhookClientVerification {
-		ctx = pkgcfg.JoinContext(ctx, h.WebhookContext)
 		if err := VerifyWebhookRequest(ctx); err != nil {
 			return webhook.Errored(http.StatusBadRequest, err)
 		}
@@ -156,9 +156,12 @@ func (h *validatingWebhookHandler) Handle(ctx context.Context, req admission.Req
 		return admission.Allowed(string(req.Operation))
 	}
 
-	// Create the webhook request pkgctx.
+	// Keep context overrides local to this request and preserve HTTP cancellation.
+	webhookContext := *h.WebhookContext
+	webhookContext.Context = ctx
+
 	webhookRequestContext := &pkgctx.WebhookRequestContext{
-		WebhookContext:      h.WebhookContext,
+		WebhookContext:      &webhookContext,
 		Op:                  req.Operation,
 		Obj:                 obj,
 		OldObj:              oldObj,

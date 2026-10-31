@@ -335,11 +335,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			Expect(condPending).ToNot(BeNil())
 
 			By("Powering off VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-
-			By("Waiting for VM to reach PoweredOff state")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Waiting for ComputeConfigSynced=True after power-off")
 			waitForComputeConfigSynced(ctx, svClusterClient, config,
@@ -366,9 +362,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "power-off-required field assertions failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("applies changeBlockTracking while VM is powered off",
@@ -385,9 +379,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				vmNamespace, vmName)
 
 			By("Powering off VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Patching changeBlockTracking while VM is powered off")
 			latest, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -412,9 +404,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "changeBlockTracking assertions failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("applies iommuEnabled after power-off",
@@ -469,11 +459,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				vmNamespace, vmName)
 
 			By("Powering off VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-
-			By("Waiting for VM to reach PoweredOff state")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Waiting for ComputeConfigSynced=True after power-off")
 			waitForComputeConfigSynced(ctx, svClusterClient, config,
@@ -494,9 +480,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "iommuEnabled assertion failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("resizes via VMClass and applies spec compute overlay while powered off",
@@ -538,9 +522,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			Expect(condInitial).ToNot(BeNil())
 
 			By("Powering off VM before class resize")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Patching class-B + spec overlay (hotAddEnabled + cpuLimitP3)")
 			latest, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -579,9 +561,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "class-resize assertions failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("resizes via VMClass while powered on by cycling power after PowerOffRequired",
@@ -631,7 +611,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				"failed to patch className on %s/%s", vmNamespace, vmName)
 
 			By("Powering off VM to allow operator to apply class resize")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, vmopv1.VirtualMachinePowerStateOff)
 
 			By("Waiting for ClassConfigSynced=True after power-off resize")
 			waitForClassConfigSynced(ctx, svClusterClient, config,
@@ -653,9 +633,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "class-resize assertions failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("resizes from guaranteed-xsmall to best-effort-xsmall and clears reservation",
@@ -926,7 +904,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			By("Waiting for operator to restore PoweredOn state (drift recovery)")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 		})
 
 	It("re-applies compute config fields after vSphere VM is destroyed out-of-band",
@@ -1050,9 +1028,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			Expect(condSynced).ToNot(BeNil())
 
 			By("Powering on so VM is running with hotAddEnabled=true live")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Merge-patching spec.resources=null and cpuAdvanced.hotAddEnabled=null")
 			latest, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -1087,9 +1063,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed())
 
 			By("Powering off to apply hotAddEnabled=false")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 			waitForComputeConfigSynced(ctx, svClusterClient, config,
 				types.NamespacedName{Namespace: vmNamespace, Name: vmName},
 				metav1.ConditionTrue, "",
@@ -1504,9 +1478,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			verifyCoresPerNumaNode("powered off")
 
 			By("Powering on VM to confirm coresPerNumaNode persists across the power cycle")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			verifyCoresPerNumaNode("powered on")
 		})
@@ -1574,9 +1546,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				metav1.ConditionTrue, "", condInitial.LastTransitionTime)
 
 			By("Powering on VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Asserting cpu.total=3 after size override")
 			Eventually(func(g Gomega) {

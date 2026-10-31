@@ -146,26 +146,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(Succeed(), "VM reconfigured with second EthernetCard")
 
 		By("Power on VM")
-		Eventually(func() bool {
-			vm := &vmopv1.VirtualMachine{}
-
-			err := svClusterClient.Get(ctx, key, vm)
-			if err != nil {
-				e2eframework.Logf("retry due to: %v", err)
-				return false
-			}
-
-			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-
-			err = svClusterClient.Update(ctx, vm)
-			if err != nil {
-				e2eframework.Logf("retry due to: %v", err)
-				return false
-			}
-
-			return true
-		}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(BeTrue(), "Timed out updating VirtualMachine %s PowerState to On", vmName)
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+		vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 		By("Powered On VM should still have two EthernetCards configured")
@@ -264,26 +245,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(Succeed(), "VM reconfigured with updated EthernetCard")
 
 		By("Power on VM")
-		Eventually(func() bool {
-			vm := &vmopv1.VirtualMachine{}
-			err := svClusterClient.Get(ctx, key, vm)
-			if err != nil {
-				e2eframework.Logf("retry due to: %v", err)
-				return false
-			}
-
-			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-
-			err = svClusterClient.Update(ctx, vm)
-			if err != nil {
-				e2eframework.Logf("retry due to: %v", err)
-				return false
-			}
-
-			return true
-		}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(BeTrue(), "Timed out updating VirtualMachine %s PowerState to On", vmName)
-
-		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+		vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 		By("Powered On VM should still have one EthernetCard configured")

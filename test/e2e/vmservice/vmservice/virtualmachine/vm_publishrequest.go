@@ -455,7 +455,7 @@ func VMPublishRequestSpec(ctx context.Context, inputGetter func() VMPublishReque
 				vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
 				vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
 				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName, vmopv1.VirtualMachinePowerStateOn)
 				vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, newVmName)
 
 				// Clean up the first publish request; the published item remains in the inventory library.

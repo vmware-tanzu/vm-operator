@@ -255,6 +255,19 @@ vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup
 vmoperator.WaitForVirtualMachineCreation(ctx, config, clusterProxy.GetClient(), vm.Namespace, vm.Name)
 ```
 
+Use `PowerOnVirtualMachineAndWait`, `PowerOffVirtualMachineAndWait`, and `SuspendVirtualMachineAndWait` to change an existing VM's power state and wait for its status:
+
+```go
+vmoperator.PowerOffVirtualMachineAndWait(ctx, config, client, namespace, vmName)
+vmoperator.PowerOnVirtualMachineAndWait(ctx, config, client, namespace, vmName)
+vmoperator.SuspendVirtualMachineAndWait(
+    ctx, config, client, namespace, vmName,
+    vmopv1.VirtualMachinePowerOpModeHard,
+)
+```
+
+`SuspendVirtualMachineAndWait` patches the suspend mode and desired power state together. `UpdateVirtualMachinePowerStateAndWait` accepts a `vmopv1.VirtualMachinePowerState` when only the power state needs to change. Power-state update helpers use optimistic locking and retry conflicts. For other spec or metadata changes, `PatchVirtualMachine(ctx, client, namespace, vmName, func(vm *vmopv1.VirtualMachine) error)` fetches the existing VM and applies the callback's changes as a plain merge patch. Append `ctrlclient.MergeFromWithOptimisticLock{}` after the callback to opt into optimistic locking. It returns errors, including NotFound and conflicts, without creating a VM; callers can retry by invoking it again with the same mutation callback.
+
 #### Manifest Builders (`manifestbuilders`)
 
 Avoid introducing `VirtualMachineYaml` just to rename API fields, and set bootstrap configuration with typed API literals rather than inline YAML. The typed `VirtualMachineA5` constructor builds only the VM; build its PVCs with `PersistentVolumeClaims` and create them separately. Use `manifestbuilders.ToYAML` when a test specifically needs a YAML document, such as a kubectl validation test.

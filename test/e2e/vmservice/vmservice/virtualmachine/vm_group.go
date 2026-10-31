@@ -230,7 +230,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Waiting for all VMs to be powered on")
 
 			for _, vmName := range vmMemberNames {
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 			}
 
 			By("Verifying VirtualMachineGroup has Ready condition set to true after power on")
@@ -244,7 +244,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						ms, err := utils.GetVirtualMachineGroupMemberStatus(ctx, svClusterClient, input.WCPNamespaceName, vmgRootName, m.Name, m.Kind)
 						g.Expect(err).ToNot(HaveOccurred())
 						g.Expect(ms.PowerState).ToNot(BeNil(), "member %s/%s power state status is nil", m.Name, m.Kind)
-						g.Expect(*ms.PowerState).To(BeEquivalentTo("PoweredOn"))
+						g.Expect(*ms.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 						// Just check the placement status is not nil here.
 						// The exact placement info will be verified in affinity/anti-affinity tests.
 						g.Expect(ms.Placement).ToNot(BeNil(), "member %s/%s placement status is nil", m.Name, m.Kind)
@@ -321,7 +321,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Waiting for VM4 to be created and powered on")
 			vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vm4Name)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm4Name, "PoweredOn")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm4Name, vmopv1.VirtualMachinePowerStateOn)
 
 			By("Setting VM4 spec.groupName to the VirtualMachineGroup")
 
@@ -349,7 +349,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Waiting for all VMs to be powered off")
 
 			for _, vmName := range vmMemberNames {
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOff)
 			}
 
 			By("Verifying VirtualMachineGroup has Ready condition set to true after power off")
@@ -357,14 +357,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			By("Changing VM1 spec.powerState directly to PoweredOn")
 
-			vm1 := &vmopv1a5.VirtualMachine{}
-			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vm1Name}, vm1)).To(Succeed())
-			base = vm1.DeepCopy()
-			vm1.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOn
-			Expect(svClusterClient.Patch(ctx, vm1, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update VM %q power state", vm1Name)
-
-			By("Waiting for VM1 to be powered on")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name, "PoweredOn")
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name)
 
 			By("Verifying VirtualMachineGroup member status has PowerStateSynced condition set to false for VM1")
 
@@ -380,7 +373,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			vm1MemberStatus, err := utils.GetVirtualMachineGroupMemberStatus(ctx, svClusterClient, input.WCPNamespaceName, vmgRootName, vm1Name, vmKind)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(vm1MemberStatus.PowerState).ToNot(BeNil(), "VM1 member status power state is nil")
-			Expect(*vm1MemberStatus.PowerState).To(BeEquivalentTo("PoweredOn"))
+			Expect(*vm1MemberStatus.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 
 			By("Setting VirtualMachineGroup nextForcePowerStateSyncTime to 'now'")
 
@@ -392,7 +385,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			vmoperator.WaitOnVirtualMachineGroupCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName, readyTrueCondition)
 
 			By("Verifying power state sync forces VM1 back to PoweredOff to match group state")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name, "PoweredOff")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name, vmopv1.VirtualMachinePowerStateOff)
 		})
 	})
 
@@ -430,7 +423,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Waiting for all VMs to be powered on")
 
 			for _, vmName := range vmMemberNames {
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 			}
 
 			By("Creating a VirtualMachineGroup (v1alpha6) with 3 boot order groups and power off delays")
@@ -682,7 +675,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Waiting for all VMs to be powered on")
 
 			for _, vmName := range vmMemberNames {
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 			}
 
 			By("Verifying group member VMs were powered on with specified delays", func() {
@@ -725,7 +718,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Waiting for all VMs to be powered off")
 
 			for _, vmName := range vmMemberNames {
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOff)
 			}
 
 			By("Verifying both VirtualMachineGroups are ready after power off")
@@ -1744,7 +1737,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				powerOnVMFunc(vmName)
 			}
 			for _, vmName := range vmMemberNames {
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 			}
 
 			By("Verifying vm.Status.Host is populated for all VMs after power-on")
@@ -2054,7 +2047,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 						By("Powering on the VM")
 						powerOnVMFunc(vm1Name)
-						vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vm1Name, "PoweredOn")
+						vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vm1Name, vmopv1.VirtualMachinePowerStateOn)
 					})
 				})
 
@@ -2125,7 +2118,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 						By("Verifying the existing VM can still be powered on")
 						powerOnVMFunc(vm1Name)
-						vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vm1Name, "PoweredOn")
+						vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vm1Name, vmopv1.VirtualMachinePowerStateOn)
 					})
 
 					It("Should create 4 VMs with required-required zone AF with each other", func() {
@@ -2445,7 +2438,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					powerOnVMFunc(vmName)
 				}
 				for _, vmName := range vmMemberNames {
-					vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, "PoweredOn")
+					vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 				}
 
 				By("Verifying vm.Status.Zone is populated for all VMs after power-on")

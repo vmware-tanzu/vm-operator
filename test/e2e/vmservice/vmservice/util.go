@@ -1025,8 +1025,7 @@ func DeleteVMResource(
 	vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, config, svClusterClient, vmNamespace, vmName)
 
 	By("Power off the VM")
-	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+	vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 	By("Add the pause annotation to VM")
 
@@ -1115,7 +1114,7 @@ func VerifyPostRegisterVM(
 	wcpClient wcp.WorkloadManagementAPI) {
 	By("Verify that the VM has been created in PoweredOff state")
 	vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmNamespace, vmName)
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, vmopv1.VirtualMachinePowerStateOff)
 
 	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 	Expect(err).ToNot(HaveOccurred())
@@ -1136,8 +1135,7 @@ func VerifyPostRegisterVM(
 		expectedRestoredPVCCount, actualRestoredPVCCount)
 
 	By("Power on the VM")
-	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+	vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 	By("Verify that the VM has an IP assigned")
 	vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, vmNamespace, vmName)

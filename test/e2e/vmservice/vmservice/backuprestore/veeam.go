@@ -199,8 +199,7 @@ func VeeamBackupRestoreSpec(ctx context.Context, inputGetter func() SpecInput) {
 			setMarker(ctx, svClusterClient, vm, markerAfterBackup)
 
 			By("Power off and pause the VM so VM Operator does not overwrite the restored ExtraConfig")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, ns, vmName)
 
 			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
 			Expect(err).ToNot(HaveOccurred())

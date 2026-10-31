@@ -2238,6 +2238,7 @@ spec:
     - name: app-server-2
       kind: VirtualMachine
     powerOnDelay: 5s
+    powerOffDelay: 30s
   - members:
     - name: web-server-1
       kind: VirtualMachine
@@ -2252,12 +2253,29 @@ Boot ordering allows you to control the startup sequence of VMs within a group:
 - **Boot groups**: VMs are organized into sequential boot groups
 - **Parallel startup**: All members within a boot group start simultaneously
 - **Delays**: Optional delays between boot groups ensure dependencies are ready
-- **Power off**: When powering off, all members stop immediately without delays
+- **Power off**: When powering off, boot groups are processed in reverse order, one at a time (see [Power-Off Ordering](#power-off-ordering))
 
 Example use cases:
 - Starting database servers before application servers
 - Ensuring infrastructure services are ready before dependent workloads
 - Implementing multi-tier application startup sequences
+
+### Power-Off Ordering
+
+When a group's `spec.powerState` is set to `PoweredOff`, the boot groups power off in reverse order (last boot group first):
+
+- **One boot group at a time**: A boot group powers off only after every member of the previous boot group is powered off. This applies to every `powerOffMode`. The members of a boot group that waits keep their current desired power state, and their `PowerStateSynced` condition has the reason `Queued`.
+- **Delays count from completion**: `powerOffDelay` is a wait before the members of the boot group power off. It starts when the previous boot group is powered off, and it is not cumulative. In the example above, the web servers power off first, the application servers power off 30 seconds after both web servers are powered off, and the database VM powers off as soon as both application servers are powered off.
+- **Last boot group first, without a delay**: The last boot group has no previous boot group to wait for, so its `powerOffDelay` has no effect.
+- **Power off modes**: `powerOffMode` keeps its usual meaning for each VM. With `TrySoft`, a VM that does not shut down within 5 minutes is powered off hard. With `Soft`, VM Operator never powers off a VM hard, so the next boot group waits until the VM is powered off.
+- **Suspended VMs**: A suspended VM counts as powered off when `powerOffMode` is `Soft`, because a soft power off does not act on a suspended VM. With `Hard` and `TrySoft`, the VM is powered off first.
+- **Missing members**: A member that does not exist, or that does not have `spec.groupName` set to the group, stops the power off at its boot group. Create the member or remove it from `spec.bootOrder` to continue.
+- **Nested groups**: A member group counts as powered off when all of its VMs, at any depth, are powered off. During a power off, the member group's `PowerStateSynced` condition names the VM that is not yet powered off.
+- **Changes during a power off**: The group works out the next step from its current spec and the current state of its members. If a member of a boot group that already started is powered on, the group powers it off again, and later boot groups wait for it. This also applies to the VMs of a member group. Edits to the group, such as a new `powerOffMode` or a changed `spec.bootOrder`, apply from the next step. A guest shutdown that is already running is not interrupted.
+
+The power off is complete when every boot group is powered off. After that, a member whose power state is changed directly is reported with the reason `NotSynced`, and the group does not change it back.
+
+If a power off cannot continue, for example because a guest does not shut down in `Soft` mode, change the group's `powerOffMode`, change `spec.powerState`, or remove the member from `spec.bootOrder`.
 
 ### Nested Groups
 
@@ -2336,7 +2354,7 @@ Groups and their members report various conditions:
 
 **Member Conditions**:
 - `GroupLinked`: Member exists and has `spec.groupName` set to this group
-- `PowerStateSynced`: Member's power state matches the group's desired state
+- `PowerStateSynced`: Member's power state matches the group's desired state. When it is false, the reason is `Pending` while the group's power state is applied, `Queued` while the member waits for an earlier boot group to power off, or `NotSynced` when the member's power state was changed directly
 - `PlacementReady`: Placement decision is available for this member
 
 ### Best Practices

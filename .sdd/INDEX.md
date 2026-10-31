@@ -44,6 +44,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 011 | [snapshot-disk-list](specs/011-snapshot-disk-list/) | Expose Disk List in VirtualMachineSnapshot (CSI Backup API) | In Review | vmop-52730 |
 | 012 | [lifecycle-hooks](specs/012-lifecycle-hooks/) | Blocking Lifecycle Hooks for `VirtualMachine` | Draft | vmop-3377 |
 | 013 | [spq-webhook-watch](specs/013-spq-webhook-watch/) | Consolidate storage quota webhook CA propagation | Draft | vmop-4310 |
+| 014 | [vmgroup-power-off-ordering](specs/014-vmgroup-power-off-ordering/) | VM Group Power-Off Ordering (stateless staged release; `PowerOffDelay` counts from completion of the previous group) | Draft | vmop-4060 |
 
 ### Finding the right spec
 

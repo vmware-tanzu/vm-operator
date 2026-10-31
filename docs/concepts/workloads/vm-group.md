@@ -154,7 +154,7 @@ spec:
 - Members automatically sync to the group's power state
 - New members added to a powered-on group will be powered on
 - Power state changes follow the defined boot order (for power on)
-- Power off operations happen immediately without delays
+- Power off operations process boot groups in reverse order, one at a time: a boot group powers off only after the previous boot group is powered off, and its optional `powerOffDelay` counts from that time (see [Power-Off Ordering](vm.md#power-off-ordering))
 
 ### Individual VM Power Control
 

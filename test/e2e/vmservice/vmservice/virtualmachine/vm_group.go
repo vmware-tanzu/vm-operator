@@ -6,6 +6,7 @@ package virtualmachine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math/rand/v2"
@@ -26,6 +27,8 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1a5cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
+	vmopv1a5common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
@@ -401,10 +404,11 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.TelcoVMServiceAPICapabilityName)
 		})
 
-		It("Should power off group members in reverse boot order with the expected delay", Label("experimental"), func() {
+		It("Should power off each boot order group after the previous one is off, with its delay counted from then", Label("experimental"), func() {
 			const (
 				vm1PowerOffDelay = 1 * time.Minute
 				vm2PowerOffDelay = 30 * time.Second
+				vm3PowerOffDelay = 45 * time.Second
 			)
 
 			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
@@ -448,12 +452,11 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						PowerOffDelay: vm2PowerOffDelay.String(),
 					},
 					{
-						// No power off delay on the last boot order group.
-						// It is processed first in the reverse walk, before
-						// any PowerOffDelay has been added to
-						// applyPowerStateTime, and contributes none itself,
-						// so it powers off immediately.
-						Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm3Name}},
+						// The last boot order group powers off first. It has
+						// no previous boot order group to wait for, so its
+						// PowerOffDelay has no effect.
+						Members:       []vmopv1.GroupMember{{Kind: vmKind, Name: vm3Name}},
+						PowerOffDelay: vm3PowerOffDelay.String(),
 					},
 				},
 			}
@@ -495,7 +498,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				g.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
 			}, "failed to update VirtualMachineGroup power state")
 
-			By("Verifying group member VMs power off in reverse boot order with the expected delay", func() {
+			By("Verifying each boot order group powers off after the previous one, with its delay counted from then", func() {
 				vcClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 				defer vcenter.LogoutVimClient(vcClient)
 
@@ -509,47 +512,280 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				vm2MoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vm2Moid}
 				vm3MoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vm3Moid}
 
-				// vm3 (boot order index 2) is processed first in the reverse
-				// walk (a consequence of being last in spec.bootOrder) and
-				// has no PowerOffDelay of its own, so applyPowerStateTime is
-				// unmodified before its members are stamped — it powers off
-				// immediately.
+				// vm3 (boot order index 2) is released first, as soon as
+				// the group's power state changes. Its PowerOffDelay is
+				// ignored.
 				vm3OffTime := waitForVMPoweredOffTime(ctx, propCollector, vm3MoRef)
 
-				// vm2 (boot order index 1) is processed next; its own
-				// PowerOffDelay (30s) is added to applyPowerStateTime before
-				// its members are stamped, since vm3 added nothing.
+				// vm2 (boot order index 1) is released when vm3 is observed
+				// off, and waits its own PowerOffDelay from then.
 				vm2OffTime := waitForVMPoweredOffTime(ctx, propCollector, vm2MoRef)
 
-				// vm1 (boot order index 0) is processed last; its own
-				// PowerOffDelay (1m) is added on top of vm2's, so vm1's
-				// members are stamped with the cumulative delay
-				// vm2PowerOffDelay + vm1PowerOffDelay (30s + 1m).
+				// vm1 (boot order index 0) is released when vm2 is observed
+				// off, and waits its own PowerOffDelay from then.
 				vm1OffTime := waitForVMPoweredOffTime(ctx, propCollector, vm1MoRef)
 
 				vm3Delay := vm3OffTime.Sub(powerOffStartTime)
-				vm2Delay := vm2OffTime.Sub(powerOffStartTime)
-				vm1Delay := vm1OffTime.Sub(powerOffStartTime)
-				By(fmt.Sprintf("Power-off timing relative to group power-off request: vm3: %v, vm2: %v, vm1: %v",
-					vm3Delay, vm2Delay, vm1Delay))
+				vm2Gap := vm2OffTime.Sub(vm3OffTime)
+				vm1Gap := vm1OffTime.Sub(vm2OffTime)
+				By(fmt.Sprintf("Power-off timing: vm3 after request: %v, vm2 after vm3: %v, vm1 after vm2: %v",
+					vm3Delay, vm2Gap, vm1Gap))
 
-				// The lower bound of each window is the exact nominal delay
-				// (0, vm2PowerOffDelay, and the cumulative
-				// vm2PowerOffDelay+vm1PowerOffDelay); the upper bound adds a
-				// buffer to absorb controller reconcile latency and the
-				// polling interval used by waitForVMPoweredOffTime.
-				const buffer = 20 * time.Second
+				// The lower bound of each gap is the nominal delay, less the
+				// polling interval used by waitForVMPoweredOffTime, since the
+				// previous VM may be observed off up to one interval late.
+				// The upper bound adds a buffer to absorb controller
+				// reconcile latency and the polling interval.
+				const (
+					pollInterval = 2 * time.Second
+					buffer       = 20 * time.Second
+				)
 
-				vm3ExpectedDelay := time.Duration(0)
-				vm2ExpectedDelay := vm2PowerOffDelay
-				vm1ExpectedDelay := vm2PowerOffDelay + vm1PowerOffDelay
+				Expect(vm3Delay).To(BeNumerically("<", vm3PowerOffDelay), "vm3 (last boot order group) should power off without waiting for its PowerOffDelay")
+				Expect(vm3Delay).To(BeNumerically("<=", buffer), "vm3 (last boot order group) should power off almost immediately")
+				Expect(vm2Gap).To(BeNumerically(">=", vm2PowerOffDelay-pollInterval), "vm2 should not power off before its PowerOffDelay elapses after vm3 is off")
+				Expect(vm2Gap).To(BeNumerically("<=", vm2PowerOffDelay+buffer), "vm2 should power off within its PowerOffDelay plus buffer after vm3 is off")
+				Expect(vm1Gap).To(BeNumerically(">=", vm1PowerOffDelay-pollInterval), "vm1 should not power off before its PowerOffDelay elapses after vm2 is off")
+				Expect(vm1Gap).To(BeNumerically("<=", vm1PowerOffDelay+buffer), "vm1 should power off within its PowerOffDelay plus buffer after vm2 is off")
+			})
+		})
+	})
 
-				Expect(vm3Delay).To(BeNumerically(">=", vm3ExpectedDelay), "vm3 should not power off before it is its turn")
-				Expect(vm3Delay).To(BeNumerically("<=", vm3ExpectedDelay+buffer), "vm3 (last boot order group) should power off almost immediately")
-				Expect(vm2Delay).To(BeNumerically(">=", vm2ExpectedDelay), "vm2 should not power off before its own PowerOffDelay elapses")
-				Expect(vm2Delay).To(BeNumerically("<=", vm2ExpectedDelay+buffer), "vm2 power off delay should be at most its own PowerOffDelay plus buffer")
-				Expect(vm1Delay).To(BeNumerically(">=", vm1ExpectedDelay), "vm1 should not power off before the cumulative delay elapses")
-				Expect(vm1Delay).To(BeNumerically("<=", vm1ExpectedDelay+buffer), "vm1 power off delay should be at most the cumulative delay plus buffer")
+	Context("Boot order power-off ordering", func() {
+		var (
+			vmTemplate *vmopv1a5.VirtualMachine
+			groupKey   ctrlclient.ObjectKey
+		)
+
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.TelcoVMServiceAPICapabilityName)
+
+			vmTemplate = &vmopv1a5.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: input.WCPNamespaceName,
+				},
+				Spec: vmopv1a5.VirtualMachineSpec{
+					ImageName:    linuxVMIName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+				},
+			}
+			groupKey = ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}
+		})
+
+		It("Should power off again a released member that a user powers on, and hold the next boot order group", Label("experimental"), func() {
+			// vm2's delay keeps it on for long enough to power on vm3 again
+			// while the request is still pending.
+			const vm2PowerOffDelay = 2 * time.Minute
+
+			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+			createPoweredOnVMs(ctx, config, svClusterClient, vmTemplate, vmMemberNames)
+
+			By("Creating a VirtualMachineGroup with 3 boot order groups")
+
+			vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA6(manifestbuilders.VirtualMachineGroupYaml{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmgRootName,
+				BootOrder: []manifestbuilders.BootOrder{
+					{Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm1Name}}},
+					{
+						Members:       []vmopv1.GroupMember{{Kind: vmKind, Name: vm2Name}},
+						PowerOffDelay: vm2PowerOffDelay.String(),
+					},
+					{Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm3Name}}},
+				},
+			})
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			rootGroup = vmgRoot
+			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
+
+			linkVMsToGroup(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName, vmMemberNames)
+
+			By("Setting VirtualMachineGroup spec.powerState to PoweredOff with Hard power off mode")
+
+			patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				g.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
+			}, "failed to update VirtualMachineGroup power state")
+
+			By("Waiting for vm3 to power off and vm2 to be released")
+
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm3Name, "PoweredOff")
+			Eventually(func(g Gomega) {
+				vm2, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			}, "1m", "2s").Should(Succeed(), "vm2 was not released after vm3 powered off")
+
+			By("Powering on vm3 directly while the group power-off request is pending")
+
+			vm3, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm3Name)
+			Expect(err).NotTo(HaveOccurred())
+			vm3Patch := vm3.DeepCopy()
+			vm3Patch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			Expect(svClusterClient.Patch(ctx, vm3Patch, ctrlclient.MergeFrom(vm3))).To(Succeed(), "failed to power on vm3")
+
+			By("Verifying the group sets vm3 to PoweredOff again and vm1 is not released meanwhile")
+
+			// Only the group sets vm3's desired power state back to off.
+			Eventually(func(g Gomega) {
+				vm3, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm3Name)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm3.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+
+				vm1, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm1Name)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm1.Spec.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOff), "vm1 was released before vm2 powered off")
+			}, "1m", "2s").Should(Succeed(), "the group did not set vm3 back to PoweredOff")
+
+			By("Verifying vm1 powers off only after vm2", func() {
+				propCollector := property.DefaultCollector(vCenterClient)
+
+				vm2MoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)}
+				vm1MoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vm1Name)}
+
+				vm2OffTime := waitForVMPoweredOffTimeWithin(ctx, propCollector, vm2MoRef, vm2PowerOffDelay+time.Minute)
+				vm1OffTime := waitForVMPoweredOffTime(ctx, propCollector, vm1MoRef)
+				Expect(vm1OffTime).To(BeTemporally(">", vm2OffTime), "vm1 powered off before vm2")
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm3Name, "PoweredOff")
+			})
+		})
+
+		When("a guest does not shut down", func() {
+			const (
+				// holdDuration is how long the test verifies the next boot
+				// order group is not released.
+				holdDuration = 2 * time.Minute
+
+				// softTimeout is the default time VM Operator waits for a
+				// guest shutdown in TrySoft mode before it powers off hard.
+				softTimeout = 5 * time.Minute
+			)
+
+			var powerOffStartTime time.Time
+
+			BeforeEach(func() {
+				vmMemberNames = []string{vm1Name, vm2Name}
+
+				By("Creating vm2 with a guest that does not shut down, and vm1")
+
+				secretName := vmgRootName + "-cloud-init"
+				secret := manifestbuilders.InlineCloudInitSecret(manifestbuilders.Secret{
+					Namespace: input.WCPNamespaceName,
+					Name:      secretName,
+				})
+				Expect(svClusterClient.Create(ctx, secret)).To(Succeed(), "failed to create cloud-init Secret")
+				DeferCleanup(func() {
+					Expect(ctrlclient.IgnoreNotFound(svClusterClient.Delete(ctx, secret))).To(Succeed())
+				})
+
+				createPoweredOnVMs(ctx, config, svClusterClient, vmTemplate, []string{vm1Name})
+
+				blockedVM := vmTemplate.DeepCopy()
+				blockedVM.Spec.Bootstrap = &vmopv1a5.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1a5.VirtualMachineBootstrapCloudInitSpec{
+						CloudConfig: shutdownBlockedCloudConfig(secretName),
+					},
+				}
+				createPoweredOnVMs(ctx, config, svClusterClient, blockedVM, []string{vm2Name})
+
+				By("Verifying vm2's guest does not shut down")
+
+				vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, vm2Name)
+				vm2IP := vmoperator.GetVirtualMachineIP(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)
+				verifyGuestCmds(ctx, config, clusterProxy, svClusterClient, input.WCPNamespaceName, vm2IP,
+					[]string{"systemctl is-enabled poweroff.target"}, []string{"masked"})
+
+				By("Creating a VirtualMachineGroup with vm2 powering off before vm1")
+
+				vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA6(manifestbuilders.VirtualMachineGroupYaml{
+					Namespace: input.WCPNamespaceName,
+					Name:      vmgRootName,
+					BootOrder: []manifestbuilders.BootOrder{
+						{Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm1Name}}},
+						{Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm2Name}}},
+					},
+				})
+				Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+				rootGroup = vmgRoot
+				Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
+
+				linkVMsToGroup(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName, vmMemberNames)
+			})
+
+			It("Should hold the next boot order group in Soft mode until the guest is powered off", Label("experimental"), func() {
+				By("Setting VirtualMachineGroup spec.powerState to PoweredOff with Soft power off mode")
+
+				patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+					g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					g.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeSoft
+				}, "failed to update VirtualMachineGroup power state")
+
+				By("Verifying vm2 stays on and vm1 is not released")
+
+				Consistently(func(g Gomega) {
+					vm2, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(vm2.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+
+					vm1, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm1Name)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(vm1.Spec.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOff))
+				}, holdDuration, "10s").Should(Succeed())
+
+				By("Changing the group's power off mode to Hard to get out of the stuck power-off")
+
+				patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+					g.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
+				}, "failed to update VirtualMachineGroup power off mode")
+
+				By("Verifying vm2 powers off, then vm1", func() {
+					propCollector := property.DefaultCollector(vCenterClient)
+
+					vm2MoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)}
+					vm1MoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vm1Name)}
+
+					// A guest shutdown wait that is already running is not
+					// interrupted, so the Hard power off can wait for it to
+					// time out first.
+					vm2OffTime := waitForVMPoweredOffTimeWithin(ctx, propCollector, vm2MoRef, softTimeout+2*time.Minute)
+					vm1OffTime := waitForVMPoweredOffTime(ctx, propCollector, vm1MoRef)
+					Expect(vm1OffTime).To(BeTemporally(">", vm2OffTime), "vm1 powered off before vm2")
+				})
+			})
+
+			It("Should power off hard in TrySoft mode after the soft timeout, and only then release the next boot order group", Label("experimental"), func() {
+				By("Setting VirtualMachineGroup spec.powerState to PoweredOff with TrySoft power off mode")
+
+				powerOffStartTime = time.Now()
+				patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+					g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					g.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+				}, "failed to update VirtualMachineGroup power state")
+
+				By("Verifying vm1 is not released while vm2's guest shutdown is pending")
+
+				Consistently(func(g Gomega) {
+					vm1, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm1Name)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(vm1.Spec.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOff))
+				}, holdDuration, "10s").Should(Succeed())
+
+				By("Verifying vm2 powers off hard after the soft timeout, then vm1", func() {
+					propCollector := property.DefaultCollector(vCenterClient)
+
+					vm2MoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)}
+					vm1MoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vm1Name)}
+
+					vm2OffTime := waitForVMPoweredOffTimeWithin(ctx, propCollector, vm2MoRef, softTimeout+2*time.Minute)
+					vm1OffTime := waitForVMPoweredOffTime(ctx, propCollector, vm1MoRef)
+
+					// The lower bound allows for the time between the group
+					// power-off request and the start of the guest shutdown.
+					Expect(vm2OffTime.Sub(powerOffStartTime)).To(BeNumerically(">=", softTimeout-30*time.Second), "vm2 powered off before the soft timeout")
+					Expect(vm1OffTime).To(BeTemporally(">", vm2OffTime), "vm1 powered off before vm2")
+				})
 			})
 		})
 	})
@@ -2479,15 +2715,120 @@ func waitForVMPoweredOffTime(
 	propCollector *property.Collector,
 	moRef types.ManagedObjectReference) time.Time {
 
+	return waitForVMPoweredOffTimeWithin(ctx, propCollector, moRef, 3*time.Minute)
+}
+
+// waitForVMPoweredOffTimeWithin is waitForVMPoweredOffTime with the given
+// timeout.
+func waitForVMPoweredOffTimeWithin(
+	ctx context.Context,
+	propCollector *property.Collector,
+	moRef types.ManagedObjectReference,
+	timeout time.Duration) time.Time {
+
 	var offTime time.Time
 	Eventually(func(g Gomega) {
 		var vmMO mo.VirtualMachine
 		g.Expect(propCollector.RetrieveOne(ctx, moRef, []string{"runtime.powerState"}, &vmMO)).To(Succeed())
 		g.Expect(vmMO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOff))
 		offTime = time.Now()
-	}, "3m", "2s").Should(Succeed(), "Timed out waiting for VM %v to be powered off", moRef)
+	}, timeout, "2s").Should(Succeed(), "Timed out waiting for VM %v to be powered off", moRef)
 
 	return offTime
+}
+
+// createPoweredOnVMs creates a powered on VM from the template for each of
+// the given names, and waits for them to be powered on.
+func createPoweredOnVMs(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	c ctrlclient.Client,
+	template *vmopv1a5.VirtualMachine,
+	names []string) {
+
+	GinkgoHelper()
+
+	for _, name := range names {
+		vm := template.DeepCopy()
+		vm.Name = name
+		Expect(c.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", name)
+	}
+
+	for _, name := range names {
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, c, template.Namespace, name, "PoweredOn")
+	}
+}
+
+// linkVMsToGroup sets each VM's spec.groupName to the given group, and waits
+// for the VMs to be linked to the group.
+func linkVMsToGroup(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	c ctrlclient.Client,
+	namespace, groupName string,
+	names []string) {
+
+	GinkgoHelper()
+
+	for _, name := range names {
+		vm, err := utils.GetVirtualMachine(ctx, c, namespace, name)
+		Expect(err).ToNot(HaveOccurred(), "failed to get VM %q", name)
+		vmPatch := vm.DeepCopy()
+		vmPatch.Spec.GroupName = groupName
+		Expect(c.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
+			To(Succeed(), "failed to patch groupName for VM %q", name)
+	}
+
+	groupLinked := metav1.Condition{
+		Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+		Status: metav1.ConditionTrue,
+	}
+	for _, name := range names {
+		vmoperator.WaitOnVirtualMachineCondition(ctx, config, c, namespace, name, groupLinked)
+	}
+}
+
+// shutdownBlockedCloudConfig returns a cloud-init config that adds the
+// default login user and masks the systemd power off and halt targets, so a
+// guest shutdown requested through VMware Tools does not power off the guest.
+// The password is read from the vmsvc-pwd key of the named Secret.
+func shutdownBlockedCloudConfig(secretName string) *vmopv1a5cloudinit.CloudConfig {
+	return &vmopv1a5cloudinit.CloudConfig{
+		DefaultUserEnabled: true,
+		SSHPwdAuth:         new(true),
+		Users: []vmopv1a5cloudinit.User{
+			{
+				Name:       consts.DefaultVMUserName,
+				LockPasswd: new(false),
+				Passwd: &vmopv1a5common.SecretKeySelector{
+					Name: secretName,
+					Key:  "vmsvc-pwd",
+				},
+			},
+		},
+		RunCmd: json.RawMessage(`[["systemctl", "mask", "poweroff.target", "halt.target"]]`),
+	}
+}
+
+// verifyGuestCmds logs in to the VM with the given IP and verifies the output
+// of each command contains the expected output.
+func verifyGuestCmds(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	clusterProxy *common.VMServiceClusterProxy,
+	c ctrlclient.Client,
+	namespace, vmIP string,
+	cmds, expectedOutput []string) {
+
+	GinkgoHelper()
+
+	switch config.InfraConfig.NetworkingTopology {
+	case consts.NSX:
+		vmservice.WaitForPodReady(ctx, config, c, namespace, consts.JumpboxPodVMName)
+		vmservice.VerifyLoginAndRunCmdsInNSXSetup(ctx, config, clusterProxy, namespace, consts.JumpboxPodVMName, vmIP, cmds, expectedOutput)
+	case consts.VDS:
+		vmservice.VerifyLoginAndRunCmdsInVDSSetup(config, vmIP, cmds, expectedOutput)
+	}
 }
 
 const (

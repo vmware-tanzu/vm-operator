@@ -10,15 +10,15 @@ Copy each handler's `WebhookContext` by value before constructing `WebhookReques
 
 ## Technical context and structure
 
-The root Go module (Go 1.26.10, controller-runtime admission handlers) changes only `pkg/builder/validating_webhook.go`, `pkg/builder/mutating_webhook.go`, and regression coverage in `pkg/builder/builder_test.go`. No new dependencies or API modules are involved.
+The root Go module (Go 1.26.10, controller-runtime admission handlers) changes only `pkg/builder/validating_webhook.go` and `pkg/builder/mutating_webhook.go`. No new dependencies or API modules are involved.
 
 ## Constitution check and API strategy
 
 - Controller/provider boundaries and API/CRD schemas are unchanged; no generation is required.
 - Existing feature-gate semantics are preserved. This repairs request ownership and cancellation; no new feature flag is introduced.
-- Tests use the external test package and the webhook label, with channels instead of sleeps.
+- Existing test suites remain unchanged.
 - Ticket references remain pending before merge.
-- E2E coverage is explicitly out of scope at the user's direction; handler regressions cover this fix.
+- New handler tests and E2E coverage are out of scope at the user's direction.
 
 ## Webhook impact
 
@@ -26,7 +26,7 @@ Both mutating and validating handlers preserve HTTP cancellation, deadlines, and
 
 ## Test strategy
 
-Run the builder suite with the race detector. Exercise create/update sequential isolation after a rejected request, visibility of later manager configuration updates, concurrent Kubernetes/non-Kubernetes requests, and `ServeHTTP` cancellation reaching a blocked client operation. Keep existing certificate and privilege tests passing. Confirm the sequential regressions fail on the original implementation. Run targeted lint on the modified package.
+Run the existing builder and VM-helper suites with the race detector, including existing certificate and privilege checks. Run targeted lint on the modified package. These existing suites do not directly exercise concurrent request isolation or HTTP cancellation; those behaviors are assessed by source review for this change.
 
 ## Rollout
 

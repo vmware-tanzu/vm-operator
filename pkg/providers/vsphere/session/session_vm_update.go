@@ -94,7 +94,8 @@ func (s *Session) UpdateVirtualMachine(
 
 	vmCtx.Context = pkgctx.WithRestClient(vmCtx.Context, s.Client.RestClient())
 
-	if pkgcfg.FromContext(vmCtx).Features.AllDisksArePVCs {
+	features := pkgcfg.FromContext(vmCtx.Context).Features
+	if features.AllDisksArePVCs {
 		vmCtx.Context = pkgctx.WithFinder(vmCtx.Context, s.Client.Finder())
 	}
 
@@ -132,7 +133,6 @@ func (s *Session) UpdateVirtualMachine(
 		updateErr = fmt.Errorf("updating state failed with %w", updateErr)
 	}
 
-	features := pkgcfg.FromContext(vmCtx).Features
 	if features.BringYourOwnEncryptionKey || features.TelcoVMServiceAPI {
 		for _, r := range vmconfig.FromContext(vmCtx) {
 			if err := r.OnResult(
@@ -245,7 +245,7 @@ func (s *Session) reconcilePoweredOffOrPoweredOnVM(
 		currentPowerState = vmCtx.MoVM.Runtime.PowerState
 		isOff             = currentPowerState == vimtypes.VirtualMachinePowerStatePoweredOff
 		isOffToOn         = isOff && vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn
-		features          = pkgcfg.FromContext(vmCtx).Features
+		features          = pkgcfg.FromContext(vmCtx.Context).Features
 	)
 
 	vmCtx.Logger.V(4).Info("Choosing between resize and update",
@@ -433,12 +433,12 @@ func (s *Session) poweredOnReconfigure(
 	}
 
 	// Apply compute config changes while the VM is powered on.
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx.Context).Features.TelcoVMServiceAPI {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, true, configSpec)
 	}
 
-	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, vmCtx.VM, nil)
-	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, vmCtx.VM.Spec)
+	UpdateConfigSpecExtraConfig(config, configSpec, vmCtx.VM, nil)
+	UpdateConfigSpecChangeBlockTracking(config, configSpec, vmCtx.VM.Spec)
 
 	if err := virtualmachine.UpdateConfigSpecCdromDeviceConnection(vmCtx, s.Client.RestClient(), s.K8sClient, config, configSpec); err != nil {
 		return fmt.Errorf("update CD-ROM device connection error: %w", err)
@@ -485,7 +485,7 @@ func (s *Session) poweredOffReconfigure(
 	}
 
 	// Overlay vm spec compute fields onto the ConfigSpec.
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx.Context).Features.TelcoVMServiceAPI {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, false, configSpec)
 	}
 
@@ -557,7 +557,6 @@ func UpdateEthCardDeviceChanges(
 // At a minimum, config and configSpec must be non-nil, in which case it will
 // just ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig.
 func UpdateConfigSpecExtraConfig(
-	ctx context.Context,
 	config *vimtypes.VirtualMachineConfigInfo,
 	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vm *vmopv1.VirtualMachine,
@@ -624,7 +623,6 @@ func isLinuxPrepAndVAppConfig(vm *vmopv1.VirtualMachine) bool {
 }
 
 func UpdateConfigSpecChangeBlockTracking(
-	ctx context.Context,
 	config *vimtypes.VirtualMachineConfigInfo,
 	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vmSpec vmopv1.VirtualMachineSpec) {
@@ -687,13 +685,13 @@ func updateConfigSpec(
 		return nil, false, err
 	}
 
-	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, vmCtx.VM, updateArgs.ExtraConfig)
+	UpdateConfigSpecExtraConfig(config, configSpec, vmCtx.VM, updateArgs.ExtraConfig)
 	UpdateConfigSpecAnnotation(config, configSpec)
-	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, vmCtx.VM.Spec)
+	UpdateConfigSpecChangeBlockTracking(config, configSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecGuestID(config, configSpec, vmCtx.VM.Spec.GuestID)
 
 	needsResize := false
-	if pkgcfg.FromContext(vmCtx).Features.VMResizeCPUMemory && vmopv1util.ResizeNeeded(*vmCtx.VM, updateArgs.VMClass) {
+	if f := pkgcfg.FromContext(vmCtx.Context).Features; f.VMResizeCPUMemory && vmopv1util.ResizeNeeded(*vmCtx.VM, updateArgs.VMClass) {
 		needsResize = true
 		vmClassSpec := updateArgs.VMClass.Spec
 		UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
@@ -701,7 +699,7 @@ func updateConfigSpec(
 		resize.CompareMemoryAllocation(*config, updateArgs.ConfigSpec, configSpec)
 		// For backward compatibility, sync the class CPU/memory values into vm.Spec so that
 		// OverwriteSpecComputeConfig does not override them with backfilled spec values.
-		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		if f.TelcoVMServiceAPI {
 			vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, updateArgs.ConfigSpec)
 		}
 	}
@@ -780,7 +778,7 @@ func (s *Session) reconcileNetworkInterfaces(
 
 	results := network.NetworkInterfaceResults{Devices: devices}
 
-	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
+	if pkgcfg.FromContext(vmCtx.Context).Features.MutableNetworks {
 		// TODO: Until we are reconfiguring (hot-plug) a powered on VM for network device
 		// changes, don't list orphan interfaces because they need to hang around until
 		// the device is actually removed from the VM.
@@ -887,7 +885,7 @@ func (s *Session) fixupMacAddresses(
 	vcVM *object.VirtualMachine,
 	networkResults *network.NetworkInterfaceResults) error {
 
-	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
+	if pkgcfg.FromContext(vmCtx.Context).Features.MutableNetworks {
 		return s.fixupMacAddressMutableNetworks(vmCtx, vcVM, networkResults)
 	}
 
@@ -989,7 +987,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 			// For backward compatibility, sync class compute fields into spec
 			// before building the diff so that OverwriteSpecComputeConfig
 			// applies the class intent. Scope of sync matches the scope of the resize path.
-			if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+			if pkgcfg.FromContext(vmCtx.Context).Features.TelcoVMServiceAPI {
 				vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, resizeArgs.ConfigSpec)
 			}
 			configSpec, err = resize.CreateResizeCPUMemoryConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
@@ -1001,11 +999,11 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 
 	// Overlay vm spec compute fields after the class-based resize diff so that
 	// spec values take precedence.
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx.Context).Features.TelcoVMServiceAPI {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *moVM.Config, false, &configSpec)
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.MutableNetworks {
+	if pkgcfg.FromContext(vmCtx.Context).Features.MutableNetworks {
 		virtualDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 		currentEthCards := virtualDevices.SelectByType((*vimtypes.VirtualEthernetCard)(nil))
 		ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, resizeArgs.NetworkResults, currentEthCards)
@@ -1032,7 +1030,6 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 	// Without this, a CBT change would not take effect until the VM is next
 	// powered on and reconciled through the update path.
 	UpdateConfigSpecChangeBlockTracking(
-		vmCtx,
 		moVM.Config,
 		&configSpec,
 		vmCtx.VM.Spec)
@@ -1489,7 +1486,9 @@ func doReconfigure(
 	moVM mo.VirtualMachine,
 	configSpec vimtypes.VirtualMachineConfigSpec) error {
 
-	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+	features := pkgcfg.FromContext(ctx).Features
+
+	if features.FastDeploy {
 		if err := reconcileDiskPromo(
 			ctx,
 			k8sClient,
@@ -1502,7 +1501,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+	if features.BringYourOwnEncryptionKey {
 		if err := reconcileCrypto(
 			ctx,
 			k8sClient,
@@ -1515,7 +1514,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+	if features.AllDisksArePVCs {
 		if err := reconcileRegisterUnmanagedDisks(
 			ctx,
 			k8sClient,
@@ -1528,7 +1527,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint {
+	if features.ExtensionCompatConstraint {
 		if err := reconcileExtensionCompatConstraint(
 			ctx,
 			k8sClient,
@@ -1563,7 +1562,7 @@ func doReconfigure(
 		return err
 	}
 
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if features.TelcoVMServiceAPI {
 		if err := reconcileAdvancedExtraConfig(
 			ctx,
 			k8sClient,
@@ -1586,7 +1585,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+	if features.VSpherePolicies {
 		if err := reconcileVSpherePolicies(
 			ctx,
 			k8sClient,
@@ -1599,7 +1598,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+	if features.VMSharedDisks {
 		if err := reconcileVirtualControllers(
 			ctx,
 			k8sClient,

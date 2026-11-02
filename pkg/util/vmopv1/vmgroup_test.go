@@ -1252,7 +1252,7 @@ var _ = Describe("PolicyEvalToVMToVMGroupMapperFunc", func() {
 	})
 })
 
-var _ = Describe("Group power-off completion",
+var _ = Describe("Group power state completion",
 	Label(
 		testlabels.API,
 		testlabels.Group,
@@ -1318,7 +1318,7 @@ var _ = Describe("Group power-off completion",
 			ctx = builder.NewUnitTestContext(objects...)
 		})
 
-		Describe("FirstIncompletePowerOffBootOrder", func() {
+		Describe("FirstIncompleteBootOrder", func() {
 			When("no member is powered off", func() {
 				BeforeEach(func() {
 					objects = []ctrlclient.Object{
@@ -1329,7 +1329,7 @@ var _ = Describe("Group power-off completion",
 					}
 				})
 				It("returns the last boot order group", func() {
-					idx, err := vmopv1util.FirstIncompletePowerOffBootOrder(ctx, ctx.Client, group)
+					idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, ctx.Client, group)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(idx).To(Equal(2))
 				})
@@ -1345,7 +1345,7 @@ var _ = Describe("Group power-off completion",
 					}
 				})
 				It("returns the last boot order group", func() {
-					idx, err := vmopv1util.FirstIncompletePowerOffBootOrder(ctx, ctx.Client, group)
+					idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, ctx.Client, group)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(idx).To(Equal(2))
 				})
@@ -1361,7 +1361,7 @@ var _ = Describe("Group power-off completion",
 					}
 				})
 				It("returns the middle boot order group", func() {
-					idx, err := vmopv1util.FirstIncompletePowerOffBootOrder(ctx, ctx.Client, group)
+					idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, ctx.Client, group)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(idx).To(Equal(1))
 				})
@@ -1377,7 +1377,7 @@ var _ = Describe("Group power-off completion",
 					}
 				})
 				It("still returns the last boot order group", func() {
-					idx, err := vmopv1util.FirstIncompletePowerOffBootOrder(ctx, ctx.Client, group)
+					idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, ctx.Client, group)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(idx).To(Equal(2))
 				})
@@ -1393,7 +1393,7 @@ var _ = Describe("Group power-off completion",
 					}
 				})
 				It("returns -1", func() {
-					idx, err := vmopv1util.FirstIncompletePowerOffBootOrder(ctx, ctx.Client, group)
+					idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, ctx.Client, group)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(idx).To(Equal(-1))
 				})
@@ -1408,7 +1408,7 @@ var _ = Describe("Group power-off completion",
 					}
 				})
 				It("blocks at the last boot order group", func() {
-					idx, err := vmopv1util.FirstIncompletePowerOffBootOrder(ctx, ctx.Client, group)
+					idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, ctx.Client, group)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(idx).To(Equal(2))
 				})
@@ -1419,27 +1419,82 @@ var _ = Describe("Group power-off completion",
 					group.Spec.BootOrder = nil
 				})
 				It("returns -1", func() {
-					idx, err := vmopv1util.FirstIncompletePowerOffBootOrder(ctx, ctx.Client, group)
+					idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, ctx.Client, group)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(idx).To(Equal(-1))
 				})
 			})
+
+			Context("power-on", func() {
+				BeforeEach(func() {
+					group.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				})
+
+				DescribeTable("walks the boot order groups from the first to the last",
+					func(db, api, web1, web2 vmopv1.VirtualMachinePowerState, expected int) {
+						ctx = builder.NewUnitTestContext(
+							newVM("db", groupName, db),
+							newVM("api", groupName, api),
+							newVM("web-1", groupName, web1),
+							newVM("web-2", groupName, web2),
+						)
+						idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, ctx.Client, group)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(idx).To(Equal(expected))
+					},
+					Entry("no member is on",
+						vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff,
+						vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff, 0),
+					Entry("the first boot order group is on",
+						vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOff,
+						vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff, 1),
+					Entry("one member of the last boot order group is still off",
+						vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn,
+						vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOff, 2),
+					Entry("a later boot order group is already on",
+						vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOn,
+						vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn, 0),
+					Entry("a member of the first boot order group is suspended",
+						vmopv1.VirtualMachinePowerStateSuspended, vmopv1.VirtualMachinePowerStateOn,
+						vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn, 0),
+					Entry("every member is on",
+						vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn,
+						vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn, -1),
+				)
+
+				When("a member of the first boot order group is missing", func() {
+					BeforeEach(func() {
+						objects = []ctrlclient.Object{
+							newVM("api", groupName, vmopv1.VirtualMachinePowerStateOn),
+							newVM("web-1", groupName, vmopv1.VirtualMachinePowerStateOn),
+							newVM("web-2", groupName, vmopv1.VirtualMachinePowerStateOn),
+						}
+					})
+					It("blocks at the first boot order group", func() {
+						idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, ctx.Client, group)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(idx).To(Equal(0))
+					})
+				})
+			})
 		})
 
-		Describe("IsGroupMemberPoweredOff", func() {
+		Describe("IsGroupMemberInPowerState", func() {
 			var (
-				member vmopv1.GroupMember
-				mode   vmopv1.VirtualMachinePowerOpMode
+				member     vmopv1.GroupMember
+				powerState vmopv1.VirtualMachinePowerState
+				mode       vmopv1.VirtualMachinePowerOpMode
 			)
 
 			BeforeEach(func() {
 				member = vmMember("vm")
+				powerState = vmopv1.VirtualMachinePowerStateOff
 				mode = vmopv1.VirtualMachinePowerOpModeTrySoft
 			})
 
 			check := func() (bool, string, error) {
-				return vmopv1util.IsGroupMemberPoweredOff(
-					ctx, ctx.Client, ns, groupName, member, mode)
+				return vmopv1util.IsGroupMemberInPowerState(
+					ctx, ctx.Client, ns, groupName, member, powerState, mode)
 			}
 
 			DescribeTable("VM member observed power state",
@@ -1468,6 +1523,33 @@ var _ = Describe("Group power-off completion",
 				Entry("suspended, soft", vmopv1.VirtualMachinePowerStateSuspended, vmopv1.VirtualMachinePowerOpModeSoft, true),
 				Entry("suspended, hard", vmopv1.VirtualMachinePowerStateSuspended, vmopv1.VirtualMachinePowerOpModeHard, false),
 				Entry("suspended, trySoft", vmopv1.VirtualMachinePowerStateSuspended, vmopv1.VirtualMachinePowerOpModeTrySoft, false),
+				Entry("not yet observed", vmopv1.VirtualMachinePowerState(""), vmopv1.VirtualMachinePowerOpModeHard, false),
+			)
+
+			DescribeTable("VM member observed power state for power-on",
+				func(
+					ps vmopv1.VirtualMachinePowerState,
+					m vmopv1.VirtualMachinePowerOpMode,
+					expected bool) {
+
+					objects = []ctrlclient.Object{newVM("vm", groupName, ps)}
+					powerState = vmopv1.VirtualMachinePowerStateOn
+					mode = m
+					ctx = builder.NewUnitTestContext(objects...)
+
+					ok, reason, err := check()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ok).To(Equal(expected))
+					if expected {
+						Expect(reason).To(BeEmpty())
+					} else {
+						Expect(reason).To(ContainSubstring("VirtualMachine/vm"))
+					}
+				},
+				Entry("on", vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerOpModeTrySoft, true),
+				Entry("off", vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerOpModeTrySoft, false),
+				Entry("suspended, soft", vmopv1.VirtualMachinePowerStateSuspended, vmopv1.VirtualMachinePowerOpModeSoft, false),
+				Entry("suspended, hard", vmopv1.VirtualMachinePowerStateSuspended, vmopv1.VirtualMachinePowerOpModeHard, false),
 				Entry("not yet observed", vmopv1.VirtualMachinePowerState(""), vmopv1.VirtualMachinePowerOpModeHard, false),
 			)
 
@@ -1588,6 +1670,40 @@ var _ = Describe("Group power-off completion",
 							newVM("c-1", childName, vmopv1.VirtualMachinePowerStateOff),
 							newVM("c-2", childName, vmopv1.VirtualMachinePowerStateOff),
 						}, grandchild(vmopv1.VirtualMachinePowerStateOn)...)
+					})
+					It("is not complete and names the grandchild VM", func() {
+						ok, reason, err := check()
+						Expect(err).ToNot(HaveOccurred())
+						Expect(ok).To(BeFalse())
+						Expect(reason).To(ContainSubstring("VirtualMachine/gc-1"))
+					})
+				})
+
+				When("powering on and every descendant VM is on", func() {
+					BeforeEach(func() {
+						powerState = vmopv1.VirtualMachinePowerStateOn
+						objects = append([]ctrlclient.Object{
+							child,
+							newVM("c-1", childName, vmopv1.VirtualMachinePowerStateOn),
+							newVM("c-2", childName, vmopv1.VirtualMachinePowerStateOn),
+						}, grandchild(vmopv1.VirtualMachinePowerStateOn)...)
+					})
+					It("is complete", func() {
+						ok, reason, err := check()
+						Expect(err).ToNot(HaveOccurred())
+						Expect(ok).To(BeTrue())
+						Expect(reason).To(BeEmpty())
+					})
+				})
+
+				When("powering on and a grandchild VM is still off", func() {
+					BeforeEach(func() {
+						powerState = vmopv1.VirtualMachinePowerStateOn
+						objects = append([]ctrlclient.Object{
+							child,
+							newVM("c-1", childName, vmopv1.VirtualMachinePowerStateOn),
+							newVM("c-2", childName, vmopv1.VirtualMachinePowerStateOn),
+						}, grandchild(vmopv1.VirtualMachinePowerStateOff)...)
 					})
 					It("is not complete and names the grandchild VM", func() {
 						ok, reason, err := check()

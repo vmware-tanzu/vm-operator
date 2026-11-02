@@ -1,4 +1,14 @@
-# Research: VM Group Power-Off Ordering
+# Research: VM Group Power-On and Power-Off Ordering
+
+## Resume log — 2026-11-02
+
+Scope extended to power-on at the user's request. Decisions: completion is observed `status.powerState == PoweredOn` (no guest or VMware Tools readiness), and the first boot-order group's `PowerOnDelay` has no effect, the same as power-off. Source-backed points:
+
+- vCD power-on is already gated on completion: it waits for a stage's power-on tasks, then waits the stage's `startDelay`, then starts the next stage, with no guest readiness wait (see "VMware Cloud Director vApps" below). Power-on now matches this.
+- Before this change, power-on stamped every member at once with the request time plus cumulative `PowerOnDelay` values, and closed the request after one error-free pass (`reconcileMembers` in `controllers/virtualmachinegroup/virtualmachinegroup_controller.go`).
+- A VM with a `poweron.check.vmoperator.vmware.com/` annotation does not power on until the annotation is removed (`api/v1alpha6/virtualmachine_types.go`, `docs/concepts/workloads/vm.md`). Such a member now blocks later boot-order groups.
+- The mutation webhook opens a request by setting `last-updated-power-state-time` when `spec.powerState` changes or on force sync (`ProcessPowerState` in `webhooks/virtualmachinegroup/mutation/virtualmachinegroup_mutator.go`). The controller treats the request as pending while `status.lastUpdatedPowerStateTime` is not after that time (`shouldUpdatePowerState`). Unchanged.
+
 
 ## Resume log — 2026-10-21
 
@@ -72,6 +82,12 @@ Source: VCF Automation monorepo (`vcf/automation`), `main` at commit `0708a55915
   - A failed power-on is retried once, then the vApp subset is rolled back.
   - There is no wait for guest or VMware Tools readiness.
   - (`backend-core: ParallelPowerOnActivity`, `VAppVmUtils`)
+- **Power-on details, checked 2026-11-02** at commit `56daef6701fdf87336013351aac77accf73590bd`:
+  - A stage is the set of VMs with the same boot `order`. Its delay is the largest `startDelay` of its VMs. The delay is waited after the stage completes, before the next stage starts, and also after the last stage. There is no wait before the first stage. (`VAppVmUtils.computeInputs`, `ParallelPowerOnActivity.AfterGroupPowerOnPhase`)
+  - A stage is complete when the `PowerOnMultiVM` task completes and the inventory shows every VM as `VMOn`, within the inventory update timeout. (`vim-proxy: PowerOnVmActivity.WaitForCompletionPhase`, `FinalPhase`)
+  - Only VMs that are `VMOff` or `VMSuspended` are powered on. VMs that are already on, VMs whose boot action is not power-on, and replication-mode VMs are skipped. (`ParallelPowerOnActivity.InitialPhase`, `filterEligibleVMsForPowerOn`)
+  - **A failed stage stops the sequence.** A timeout fails the operation at once. Any other failure is retried once per VM that is still powered off, with relocation on insufficient-resource faults. If the retry fails, vCD undeploys the stage's VMs that are not deployed and fails the operation. Later stages are not powered on. Earlier stages stay on. A VM that is missing from the database, or a CPU or memory limit violation, also fails the operation. (`ParallelPowerOnActivity.RetryPowerOnVmsPhase`, `AfterRetryPhase`, `RollbackPhase`, `DeployVAppVmSubsetActivity.MarkVAppAsDeployedPhase`)
+  - Compared with VM Operator: both stop later stages after a stage that does not power on. vCD fails the task, and the user must start it again. VM Operator keeps the request open and continues when the member powers on, for example after a `poweron.check` annotation is removed. vCD has no equivalent of the `poweron.check` annotation. The vCD stage delay after stage N is the same as VM Operator's `PowerOnDelay` on stage N+1.
 - **Direct vApp power-off and shutdown are disabled in this snapshot.** `VAppServiceImpl.powerOff` and `shutdown` throw "Operation is permanently disabled". `SerialGroupOperationActivity` (serial, reverse order) is no longer on a live power-off path. Power-off goes through undeploy.
 - **Ordered undeploy is gated on completion.** Ordering applies only with `undeployPowerAction=default`. If the value is not set, it means `powerOff`, with no order and no delay.
   - Stages run highest `order` first, and the VMs in a stage stop in parallel.
@@ -81,7 +97,7 @@ Source: VCF Automation monorepo (`vcf/automation`), `main` at commit `0708a55915
 - **Guest shutdown waits for an observed Off state, up to `VimTimeouts.ShutdownVm`** (seed value 900000 ms, hidden setting). The wait ends early when the VM is off. On timeout, the VM fails with `GUEST_SHUTDOWN_FAILED`. There is no hard power-off fallback. If VMware Tools is not available, the VM fails. (`vim-proxy: ShutdownGuestVmActvity`)
 - **`stopDelay` is a fixed wait after the VM's stop action succeeds.** It is not a shutdown budget. (`fabric-foundation: PowerOperationActivity`)
 - **Suspended VMs are skipped during ordered undeploy.** In `performUndeploy`, `VMOff` and `VMSuspended` both log "Skipping stop" and create no stop operation, so the stage does not wait for them. This applies to every `stopAction`. vCD does not power off a suspended VM even when the stop action is power-off. Checked 2026-10-31 at a newer commit, `56daef6701fdf87336013351aac77accf73590bd`. (`backend-core: UndeployVirtualMachineActivity.performUndeploy`)
-- **Failures do not block later stages.** They are collected and reported at the end. A VM that is already off, already undeployed, or busy is skipped and counted as done.
+- **Undeploy failures do not block later stages.** They are collected and reported at the end. This applies to undeploy only; a power-on failure stops later stages (see above). A VM that is already off, already undeployed, or busy is skipped and counted as done.
 - **The activity framework is in the same monorepo** (`backend/cloud/lib/activity-framework`). Its `waitFor` overload with futures and a timeout moves on when the futures complete. On timeout it raises an event, and `ShutdownGuestVmActvity` handles that event by canceling the wait. Not checked: whether the cell build uses this in-tree copy.
 
 ## Conclusions
@@ -89,6 +105,6 @@ Source: VCF Automation monorepo (`vcf/automation`), `main` at commit `0708a55915
 - Early advance and mode-respecting fallback are the selected VM Operator behavior, independently of product-parity claims.
 - The earlier ESXi finding supports early advance as precedent. It does not establish strict completion ordering after timeout.
 - vCD parity is not a justification for force-off. vCD fails a timed-out guest shutdown and has no hard fallback.
-- vCD is precedent for gating each stage on the completion of the previous stage, for both power-on and power-off. Its delays are fixed waits after completion, not budgets. It also does not let a failed member block later stages.
+- vCD is precedent for gating each stage on the completion of the previous stage, for both power-on and power-off. Its delays are fixed waits after completion, not budgets. For undeploy, it does not let a failed member block later stages. For power-on, a failed stage stops later stages and fails the operation.
 - Kubernetes StatefulSet `OrderedReady` is precedent for a stateless walk: the controller derives the next step from the spec and observed state, stores no plan, and holds later steps behind an unhealthy earlier one (checked in the StatefulSet docs, "Deployment and Scaling Guarantees", 2026-10-28). It has the same limits: a stuck member blocks later steps, and a step already started is not taken back.
 - vCD lets individual members diverge from the vApp and does not revert them. The current VMGroup behavior (`NotSynced`, no revert after the request is propagated) is consistent with this.

@@ -2231,19 +2231,19 @@ spec:
   - members:
     - name: database-vm
       kind: VirtualMachine
-    powerOnDelay: 10s
   - members:
     - name: app-server-1
       kind: VirtualMachine
     - name: app-server-2
       kind: VirtualMachine
-    powerOnDelay: 5s
+    powerOnDelay: 10s
     powerOffDelay: 30s
   - members:
     - name: web-server-1
       kind: VirtualMachine
     - name: web-server-2
       kind: VirtualMachine
+    powerOnDelay: 5s
 ```
 
 ### Boot Ordering
@@ -2253,12 +2253,26 @@ Boot ordering allows you to control the startup sequence of VMs within a group:
 - **Boot groups**: VMs are organized into sequential boot groups
 - **Parallel startup**: All members within a boot group start simultaneously
 - **Delays**: Optional delays between boot groups ensure dependencies are ready
+- **Power on**: When powering on, boot groups are processed in order, one at a time (see [Power-On Ordering](#power-on-ordering))
 - **Power off**: When powering off, boot groups are processed in reverse order, one at a time (see [Power-Off Ordering](#power-off-ordering))
 
 Example use cases:
 - Starting database servers before application servers
 - Ensuring infrastructure services are ready before dependent workloads
 - Implementing multi-tier application startup sequences
+
+### Power-On Ordering
+
+When a group's `spec.powerState` is set to `PoweredOn`, the boot groups power on in order (first boot group first):
+
+- **One boot group at a time**: A boot group powers on only after every member of the previous boot group is powered on. A VM counts as powered on when its `status.powerState` is `PoweredOn`. VM Operator does not wait for the guest operating system or VMware Tools to be ready. The members of a boot group that waits keep their current desired power state, and their `PowerStateSynced` condition has the reason `Queued`.
+- **Delays count from completion**: `powerOnDelay` is a wait before the members of the boot group power on. It starts when the previous boot group is powered on, and it is not cumulative. In the example above, the database VM powers on first, the application servers power on 10 seconds after the database VM is powered on, and the web servers power on 5 seconds after both application servers are powered on.
+- **First boot group first, without a delay**: The first boot group has no previous boot group to wait for, so its `powerOnDelay` has no effect.
+- **Members that do not power on**: A member that does not exist, that does not have `spec.groupName` set to the group, or that cannot power on, stops the power on at its boot group. For example, a VM that has a `poweron.check.vmoperator.vmware.com/` annotation does not power on until the annotation is removed, so later boot groups wait for it. Create or fix the member, or remove it from `spec.bootOrder`, to continue.
+- **Nested groups**: A member group counts as powered on when all of its VMs, at any depth, are powered on. During a power on, the member group's `PowerStateSynced` condition names the VM that is not yet powered on.
+- **Changes during a power on**: The group works out the next step from its current spec and the current state of its members. If a member of a boot group that already started is powered off, the group powers it on again, and later boot groups wait for it. This also applies to the VMs of a member group. Edits to the group, such as a changed `spec.bootOrder`, apply from the next step.
+
+The power on is complete when every boot group is powered on. After that, a member whose power state is changed directly is reported with the reason `NotSynced`, and the group does not change it back.
 
 ### Power-Off Ordering
 

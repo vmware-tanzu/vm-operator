@@ -107,7 +107,7 @@ func VirtualMachineServiceSpec(ctx context.Context, inputGetter func() SpecInput
 		}, dumps...)
 	})
 
-	It("Should remove a VM from VirtualMachineService Endpoints once it no longer matches the selector", Label("core-functional", "experimental"), func() {
+	It("Should remove a VM from VirtualMachineService Endpoints once it no longer matches the selector", Label("core-functional"), func() {
 		By("Creating a VirtualMachineService selecting VMs with a unique label")
 		vmService := &vmopv1.VirtualMachineService{
 			ObjectMeta: metav1.ObjectMeta{

@@ -2852,7 +2852,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				}
 			})
 
-			It("Detaching an unmanaged disk before VM deletion preserves its PVC", Label("experimental"), func() {
+			It("Detaching an unmanaged disk before VM deletion preserves its PVC", func() {
 				if !allDisksArePVCapabilityEnabled {
 					Skip("AllDisksArePVCs capability is not enabled")
 				}
@@ -3270,7 +3270,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			})
 		})
 
-		Describe("Multi-Writer and Encryption Validation Webhook", Label("extended-functional", "experimental"), func() {
+		Describe("Multi-Writer and Encryption Validation Webhook", Label("extended-functional"), func() {
 			BeforeAll(func() {
 				By("Ensuring encryption storage policy and class in test namespace (shared with VMEncryptionSpec)")
 				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -3463,7 +3463,7 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 			})
 		})
 
-		Describe("VM with late-binding PVC powers on", Label("experimental", "core-functional"), func() {
+		Describe("VM with late-binding PVC powers on", Label("core-functional"), func() {
 			const wffcSpecName = "wffc-poweron"
 
 			var (

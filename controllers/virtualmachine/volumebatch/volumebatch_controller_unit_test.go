@@ -1483,14 +1483,7 @@ FaultMessage: ([]vimtypes.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type
 							Name: vmVol1.Name,
 							PersistentVolumeClaim: cnsv1alpha1.PersistentVolumeClaimStatus{
 								ClaimName: claimName1,
-								Conditions: []metav1.Condition{
-									{
-										Type:    cnsv1alpha1.ConditionAttached,
-										Status:  metav1.ConditionTrue,
-										Reason:  "True",
-										Message: "",
-									},
-								},
+								Attached:  true,
 							},
 						},
 					)

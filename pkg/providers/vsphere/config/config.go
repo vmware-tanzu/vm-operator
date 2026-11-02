@@ -223,13 +223,20 @@ func ProviderConfigToConfigMap(
 }
 
 // UpdateVcInConfigMap updates the ConfigMap with the new vCenter PNID and Port. Returns false if no updated needed.
+// A missing VcPort key is compared as DefaultVCPort, the same default ConfigMapToProviderConfig applies, so an
+// installer that omits the key does not cause a patch and a client replacement on every start.
 func UpdateVcInConfigMap(ctx context.Context, client ctrlclient.Client, vcPNID, vcPort string) (bool, error) {
 	configMap, err := getProviderConfigMap(ctx, client)
 	if err != nil {
 		return false, err
 	}
 
-	if configMap.Data[vcPNIDKey] == vcPNID && configMap.Data[vcPortKey] == vcPort {
+	currentVcPort, ok := configMap.Data[vcPortKey]
+	if !ok {
+		currentVcPort = DefaultVCPort
+	}
+
+	if configMap.Data[vcPNIDKey] == vcPNID && currentVcPort == vcPort {
 		// No update needed.
 		return false, nil
 	}

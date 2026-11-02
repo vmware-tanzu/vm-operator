@@ -65,6 +65,8 @@ type vSphereVMProvider struct {
 
 	vcClientLock sync.Mutex
 	vcClient     *vcclient.Client
+	// vcClientReplaced is closed, and then replaced, whenever vcClient is cleared for a new one.
+	vcClientReplaced chan struct{}
 }
 
 func NewVSphereVMProviderFromClient(
@@ -76,6 +78,7 @@ func NewVSphereVMProviderFromClient(
 		k8sClient:         client,
 		eventRecorder:     recorder,
 		globalExtraConfig: getExtraConfig(ctx),
+		vcClientReplaced:  make(chan struct{}),
 	}
 
 	ovfcache.SetGetter(ctx, p.getOvfEnvelope)
@@ -128,6 +131,23 @@ func (vs *vSphereVMProvider) getVcClient(ctx context.Context) (*vcclient.Client,
 	return vcClient, nil
 }
 
+// VSphereClientReplaced returns a channel that is closed when UpdateVcPNID or UpdateVcCreds
+// discards the current vSphere client. Holders of a previous client should then re-fetch it
+// with VSphereClient. Fetch the channel before the client to avoid missing a replacement.
+func (vs *vSphereVMProvider) VSphereClientReplaced() <-chan struct{} {
+	vs.vcClientLock.Lock()
+	defer vs.vcClientLock.Unlock()
+
+	return vs.vcClientReplaced
+}
+
+// signalVcClientReplacedLocked closes the current replaced channel and installs a new one.
+// The caller must hold vcClientLock.
+func (vs *vSphereVMProvider) signalVcClientReplacedLocked() {
+	close(vs.vcClientReplaced)
+	vs.vcClientReplaced = make(chan struct{})
+}
+
 func (vs *vSphereVMProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
 	updated, err := vcconfig.UpdateVcInConfigMap(ctx, vs.k8sClient, vcPNID, vcPort)
 	if err != nil || !updated {
@@ -141,6 +161,7 @@ func (vs *vSphereVMProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort st
 		if vcClient := vs.vcClient; vcClient != nil {
 			// Clear and logout existing clean so new client will be created next call to getVcClient().
 			vs.vcClient = nil
+			vs.signalVcClientReplacedLocked()
 			return vcClient
 		}
 
@@ -167,6 +188,7 @@ func (vs *vSphereVMProvider) UpdateVcCreds(ctx context.Context, data map[string]
 		if vcClient := vs.vcClient; vcClient != nil && vcClient.Config().VcCreds != newVcCreds {
 			// Clear and logout existing clean so new client will be created next call to getVcClient().
 			vs.vcClient = nil
+			vs.signalVcClientReplacedLocked()
 			return vcClient
 		}
 

@@ -6,6 +6,7 @@ package vmwatcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -109,14 +110,18 @@ func (s Service) Start(ctx context.Context) error {
 			// error, then do not treat the error as fatal. This allows the
 			// loop to run again, kicking off another watcher with what should
 			// be updated credentials.
-			if vsphereclient.IsInvalidLogin(err) ||
-				vsphereclient.IsNotAuthenticatedError(err) {
+			switch {
+			case errors.Is(err, errVSphereClientReplaced):
+				logger.V(4).Info("Restarting VM watcher on the replaced vSphere client")
+
+			case vsphereclient.IsInvalidLogin(err) ||
+				vsphereclient.IsNotAuthenticatedError(err):
 
 				logger.V(4).Error(
 					err,
 					"Authn/authz issue trying start vm watcher service")
 
-			} else {
+			default:
 				// Log unexpected error.
 				logger.Error(
 					err,
@@ -232,12 +237,21 @@ func (s Service) vmFolderMoRefWithIDs(
 
 var emptyResult watcher.Result
 
+// errVSphereClientReplaced is returned by waitForChanges after the provider discarded the vSphere
+// client that the watcher was started with. The watcher is restarted on the replacement client
+// rather than waiting for the old session's long poll to fail.
+var errVSphereClientReplaced = errors.New("vSphere client replaced")
+
 func (s Service) waitForChanges(ctx context.Context) error {
 
 	var (
 		logger     = pkglog.FromContextOrDefault(ctx)
 		chanSource = cource.FromContextWithBuffer(ctx, "VirtualMachine", 100)
 	)
+
+	// Fetch the replacement signal before the client so that a replacement racing with the
+	// fetch still restarts the watcher.
+	clientReplaced := s.provider.VSphereClientReplaced()
 
 	vcClient, err := s.provider.VSphereClient(ctx)
 	if err != nil {
@@ -252,9 +266,14 @@ func (s Service) waitForChanges(ctx context.Context) error {
 	logger.Info("Got vm service folders",
 		"refs", slices.Collect(maps.Keys(moRefWithIDs)))
 
+	// Canceling watchCtx stops the watcher's pending WaitForUpdates so a
+	// replaced client does not keep the old watcher alive.
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	defer cancelWatch()
+
 	// Start the watcher.
 	w, err := watcher.Start(
-		ctx,
+		watchCtx,
 		vcClient.VimClient(),
 		nil,
 		nil,
@@ -313,6 +332,14 @@ func (s Service) waitForChanges(ctx context.Context) error {
 			chanSource <- event.GenericEvent{
 				Object: verifiedObj,
 			}
+
+		case <-clientReplaced:
+			logger.Info("vSphere client was replaced, restarting VM watcher")
+			cancelWatch()
+			// Wait for the old watcher to finish so its cleanup cannot clear the
+			// context-registered watcher that the next run installs.
+			<-w.Done()
+			return errVSphereClientReplaced
 
 		case <-w.Done():
 			logger.Info("Received done signal, watcher is closed")

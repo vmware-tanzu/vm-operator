@@ -79,6 +79,8 @@ type VMProvider struct {
 	vmPubMap map[string]vimtypes.TaskInfoState
 
 	isPublishVMCalled bool
+
+	vcClientReplaced chan struct{}
 }
 
 var _ providers.VirtualMachineProviderInterface = &VMProvider{}
@@ -447,6 +449,30 @@ func (s *VMProvider) VSphereClient(ctx context.Context) (*vsclient.Client, error
 		return fn(ctx)
 	}
 	return nil, nil
+}
+
+// VSphereClientReplaced returns a channel that is closed by ReplaceVSphereClient.
+func (s *VMProvider) VSphereClientReplaced() <-chan struct{} {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.vcClientReplaced == nil {
+		s.vcClientReplaced = make(chan struct{})
+	}
+	return s.vcClientReplaced
+}
+
+// ReplaceVSphereClient closes the channel returned by VSphereClientReplaced, simulating a
+// provider that discarded its vSphere client, and installs a new channel.
+func (s *VMProvider) ReplaceVSphereClient() {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.vcClientReplaced == nil {
+		s.vcClientReplaced = make(chan struct{})
+	}
+	close(s.vcClientReplaced)
+	s.vcClientReplaced = make(chan struct{})
 }
 
 func (s *VMProvider) DeleteSnapshot(

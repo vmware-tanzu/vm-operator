@@ -99,6 +99,46 @@ func configTests() {
 				Entry("both VC PNID and Port are updated", "some-pnid", "some-port"),
 				Entry("neither VC PNID and Port are updated", nil, nil),
 			)
+
+			When("the VcPort key is missing from the ConfigMap", func() {
+				var (
+					cmKey ctrlclient.ObjectKey
+					pnid  string
+					cm    *corev1.ConfigMap
+				)
+
+				JustBeforeEach(func() {
+					cmKey = ctrlclient.ObjectKey{
+						Name:      config.ProviderConfigMapName,
+						Namespace: ctx.PodNamespace,
+					}
+					cm = &corev1.ConfigMap{}
+					Expect(ctx.Client.Get(ctx, cmKey, cm)).To(Succeed())
+					pnid = cm.Data["VcPNID"]
+					delete(cm.Data, "VcPort")
+					Expect(ctx.Client.Update(ctx, cm)).To(Succeed())
+				})
+
+				It("does not patch when the requested port is the default port", func() {
+					updated, err := config.UpdateVcInConfigMap(ctx, ctx.Client, pnid, config.DefaultVCPort)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(updated).To(BeFalse())
+
+					Expect(ctx.Client.Get(ctx, cmKey, cm)).To(Succeed())
+					Expect(cm.Data).ToNot(HaveKey("VcPort"))
+				})
+
+				It("patches when the requested port is not the default port", func() {
+					updated, err := config.UpdateVcInConfigMap(ctx, ctx.Client, pnid, "8443")
+					Expect(err).ToNot(HaveOccurred())
+					Expect(updated).To(BeTrue())
+
+					providerConfig, err := config.GetProviderConfig(ctx, ctx.Client)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(providerConfig.VcPNID).To(Equal(pnid))
+					Expect(providerConfig.VcPort).To(Equal("8443"))
+				})
+			})
 		})
 	})
 

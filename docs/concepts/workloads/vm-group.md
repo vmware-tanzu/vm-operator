@@ -63,7 +63,7 @@ spec:
       kind: VirtualMachine
     - name: app-server-3
       kind: VirtualMachine
-    powerOnDelay: 30s  # Wait 30 seconds before starting this tier
+    powerOnDelay: 30s  # Wait 30 seconds after the database tier is powered on
 
   # Third: Start the web tier
   - members:
@@ -71,7 +71,7 @@ spec:
       kind: VirtualMachine
     - name: nginx-2
       kind: VirtualMachine
-    powerOnDelay: 20s  # Wait an additional 20 seconds (50s total) before starting this tier
+    powerOnDelay: 20s  # Wait 20 seconds after the application tier is powered on
 ```
 
 ## Joining VMs to a Group
@@ -125,13 +125,12 @@ bootOrder:
 - members:
   - name: infrastructure-group
     kind: VirtualMachineGroup  # Another group
-  powerOnDelay: 1m
 - members:
   - name: database-vm
     kind: VirtualMachine
   - name: cache-vm
     kind: VirtualMachine
-  powerOnDelay: 30s
+  powerOnDelay: 1m  # Wait 1 minute after infrastructure-group is powered on
 ```
 
 ## Power State Management
@@ -144,7 +143,7 @@ Setting `spec.powerState` on a group affects all members:
 spec:
   powerState: PoweredOn   # Powers on all members following boot order
   # or
-  powerState: PoweredOff  # Powers off all members immediately
+  powerState: PoweredOff  # Powers off all members following boot order in reverse
   # or
   powerState: Suspended   # Suspends all members immediately
 ```
@@ -153,7 +152,7 @@ spec:
 
 - Members automatically sync to the group's power state
 - New members added to a powered-on group will be powered on
-- Power state changes follow the defined boot order (for power on)
+- Power on operations process boot groups in order, one at a time: a boot group powers on only after the previous boot group is powered on, and its optional `powerOnDelay` counts from that time (see [Power-On Ordering](vm.md#power-on-ordering))
 - Power off operations process boot groups in reverse order, one at a time: a boot group powers off only after the previous boot group is powered off, and its optional `powerOffDelay` counts from that time (see [Power-Off Ordering](vm.md#power-off-ordering))
 
 ### Individual VM Power Control
@@ -181,12 +180,12 @@ spec:
   - members:
     - name: postgres-primary
       kind: VirtualMachine
-    powerOnDelay: 10s
   - members:
     - name: postgres-replica-1
       kind: VirtualMachine
     - name: postgres-replica-2
       kind: VirtualMachine
+    powerOnDelay: 10s
 ```
 
 ### Parent Group Example
@@ -203,14 +202,14 @@ spec:
   - members:
     - name: database-tier
       kind: VirtualMachineGroup  # Child group
-    powerOnDelay: 1m
   - members:
     - name: application-tier
       kind: VirtualMachineGroup
-    powerOnDelay: 30s
+    powerOnDelay: 1m
   - members:
     - name: web-tier
       kind: VirtualMachineGroup
+    powerOnDelay: 30s
 ```
 
 ## Affinity and Anti-Affinity

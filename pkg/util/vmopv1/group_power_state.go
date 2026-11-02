@@ -15,26 +15,34 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
-// FirstIncompletePowerOffBootOrder returns the index in group.Spec.BootOrder
-// of the first boot order group, in power-off order (last to first), that has
-// not completed power-off. It returns -1 if every boot order group has
-// completed power-off.
+// FirstIncompleteBootOrder returns the index in group.Spec.BootOrder of the
+// first boot order group that has not reached the group's power state. Boot
+// order groups are walked in power-on order (first to last) when the group's
+// power state is PoweredOn, and in power-off order (last to first) when it is
+// PoweredOff. It returns -1 if every boot order group has reached the group's
+// power state.
 //
 // Completion is evaluated from the observed state of the members, see
-// IsGroupMemberPoweredOff.
-func FirstIncompletePowerOffBootOrder(
+// IsGroupMemberInPowerState.
+func FirstIncompleteBootOrder(
 	ctx context.Context,
 	c ctrlclient.Reader,
 	group *vmopv1.VirtualMachineGroup) (int, error) {
 
-	for i := len(group.Spec.BootOrder) - 1; i >= 0; i-- {
+	n := len(group.Spec.BootOrder)
+	for j := range n {
+		i := j
+		if group.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff {
+			i = n - 1 - j
+		}
 		for _, member := range group.Spec.BootOrder[i].Members {
-			ok, _, err := IsGroupMemberPoweredOff(
+			ok, _, err := IsGroupMemberInPowerState(
 				ctx,
 				c,
 				group.Namespace,
 				group.Name,
 				member,
+				group.Spec.PowerState,
 				group.Spec.PowerOffMode)
 			if err != nil {
 				return -1, err
@@ -48,41 +56,45 @@ func FirstIncompletePowerOffBootOrder(
 	return -1, nil
 }
 
-// IsGroupMemberPoweredOff reports whether a member of the named group has
-// completed power-off. When the member has not completed power-off, the
-// returned string describes why.
+// IsGroupMemberInPowerState reports whether a member of the named group has
+// reached the given power state, which is PoweredOn or PoweredOff. When the
+// member has not reached the power state, the returned string describes why.
 //
-// A VirtualMachine member has completed power-off when its observed power
-// state is PoweredOff, or Suspended when powerOffMode is Soft, as a Soft
-// power-off does not act on a suspended VM. A VirtualMachineGroup member has
-// completed power-off when all of its members, at any depth, have completed
-// power-off. A member that does not exist, or that does not belong to the
-// group, has not completed power-off.
+// A VirtualMachine member has reached PoweredOn when its observed power state
+// is PoweredOn. It has reached PoweredOff when its observed power state is
+// PoweredOff, or Suspended when powerOffMode is Soft, as a Soft power-off
+// does not act on a suspended VM. A VirtualMachineGroup member has reached
+// the power state when all of its members, at any depth, have reached it. A
+// member that does not exist, or that does not belong to the group, has not
+// reached the power state.
 //
 // An error is returned if a member cannot be retrieved for a reason other
 // than not found, or if a loop is detected among nested groups.
-func IsGroupMemberPoweredOff(
+func IsGroupMemberInPowerState(
 	ctx context.Context,
 	c ctrlclient.Reader,
 	namespace, groupName string,
 	member vmopv1.GroupMember,
+	powerState vmopv1.VirtualMachinePowerState,
 	powerOffMode vmopv1.VirtualMachinePowerOpMode) (bool, string, error) {
 
-	return isGroupMemberPoweredOff(
+	return isGroupMemberInPowerState(
 		ctx,
 		c,
 		namespace,
 		groupName,
 		member,
+		powerState,
 		powerOffMode,
 		sets.New(groupName))
 }
 
-func isGroupMemberPoweredOff(
+func isGroupMemberInPowerState(
 	ctx context.Context,
 	c ctrlclient.Reader,
 	namespace, groupName string,
 	member vmopv1.GroupMember,
+	powerState vmopv1.VirtualMachinePowerState,
 	powerOffMode vmopv1.VirtualMachinePowerOpMode,
 	visitedGroups sets.Set[string]) (bool, string, error) {
 
@@ -127,14 +139,8 @@ func isGroupMemberPoweredOff(
 
 	switch o := obj.(type) {
 	case *vmopv1.VirtualMachine:
-		switch o.Status.PowerState {
-		case vmopv1.VirtualMachinePowerStateOff:
+		if isVMInPowerState(o.Status.PowerState, powerState, powerOffMode) {
 			return true, "", nil
-		case vmopv1.VirtualMachinePowerStateSuspended:
-			if powerOffMode == vmopv1.VirtualMachinePowerOpModeSoft {
-				return true, "", nil
-			}
-		case vmopv1.VirtualMachinePowerStateOn:
 		}
 		return false, fmt.Sprintf(
 			"member %q has power state %q",
@@ -147,12 +153,13 @@ func isGroupMemberPoweredOff(
 		defer visitedGroups.Delete(o.Name)
 		for _, bootOrder := range o.Spec.BootOrder {
 			for _, childMember := range bootOrder.Members {
-				ok, reason, err := isGroupMemberPoweredOff(
+				ok, reason, err := isGroupMemberInPowerState(
 					ctx,
 					c,
 					namespace,
 					o.Name,
 					childMember,
+					powerState,
 					powerOffMode,
 					visitedGroups)
 				if err != nil || !ok {
@@ -164,4 +171,18 @@ func isGroupMemberPoweredOff(
 	}
 
 	return false, "", nil
+}
+
+// isVMInPowerState reports whether a VM with the given observed power state
+// has reached the given desired power state.
+func isVMInPowerState(
+	observed, desired vmopv1.VirtualMachinePowerState,
+	powerOffMode vmopv1.VirtualMachinePowerOpMode) bool {
+
+	if observed == desired {
+		return true
+	}
+	return desired == vmopv1.VirtualMachinePowerStateOff &&
+		observed == vmopv1.VirtualMachinePowerStateSuspended &&
+		powerOffMode == vmopv1.VirtualMachinePowerOpModeSoft
 }

@@ -397,12 +397,140 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		})
 	})
 
+	Context("Boot order power-on delay", func() {
+		It("Should power on each boot order group after the previous one is on, with its delay counted from then", func() {
+			const (
+				vm1PowerOnDelay = 45 * time.Second
+				vm2PowerOnDelay = 30 * time.Second
+				vm3PowerOnDelay = 1 * time.Minute
+			)
+
+			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+
+			By("Creating a VirtualMachineGroup with 3 boot order groups and power on delays")
+
+			vmGroupParameters := manifestbuilders.VirtualMachineGroupYaml{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmgRootName,
+				BootOrder: []manifestbuilders.BootOrder{
+					{
+						// The first boot order group powers on first. It has
+						// no previous boot order group to wait for, so its
+						// PowerOnDelay has no effect.
+						Members:      []vmopv1.GroupMember{{Kind: vmKind, Name: vm1Name}},
+						PowerOnDelay: vm1PowerOnDelay.String(),
+					},
+					{
+						Members:      []vmopv1.GroupMember{{Kind: vmKind, Name: vm2Name}},
+						PowerOnDelay: vm2PowerOnDelay.String(),
+					},
+					{
+						Members:      []vmopv1.GroupMember{{Kind: vmKind, Name: vm3Name}},
+						PowerOnDelay: vm3PowerOnDelay.String(),
+					},
+				},
+			}
+			vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA5(vmGroupParameters)
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			rootGroup = vmgRoot
+			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
+
+			By("Creating powered off VMs with spec.groupName pointing to the VirtualMachineGroup")
+
+			for _, vmName := range vmMemberNames {
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      vmName,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						GroupName:    vmgRootName,
+						ImageName:    linuxVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOff,
+					},
+				}
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", vm.Name)
+			}
+
+			By("Waiting for all VMs to be created in vCenter and linked to the group")
+
+			groupLinkedTrueCondition := metav1.Condition{
+				Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+				Status: metav1.ConditionTrue,
+			}
+			for _, vmName := range vmMemberNames {
+				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+				vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, groupLinkedTrueCondition)
+			}
+
+			By("Setting VirtualMachineGroup spec.powerState to PoweredOn")
+
+			powerOnStartTime := time.Now()
+			patchVMGroup(ctx, svClusterClient, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}, &vmopv1a5.VirtualMachineGroup{}, func(g *vmopv1a5.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1a5.VirtualMachinePowerStateOn
+			}, "failed to update VirtualMachineGroup power state")
+
+			By("Waiting for all VMs to be powered on")
+
+			for _, vmName := range vmMemberNames {
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+			}
+
+			By("Verifying each boot order group powers on after the previous one, with its delay counted from then", func() {
+				vcClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+				defer vcenter.LogoutVimClient(vcClient)
+
+				propCollector := property.DefaultCollector(vcClient)
+
+				bootTimes := make([]time.Time, len(vmMemberNames))
+				for i, vmName := range vmMemberNames {
+					moRef := types.ManagedObjectReference{
+						Type:  "VirtualMachine",
+						Value: vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName),
+					}
+					var vmMO mo.VirtualMachine
+					Expect(propCollector.RetrieveOne(ctx, moRef, []string{"runtime.powerState", "runtime.bootTime"}, &vmMO)).To(Succeed())
+					Expect(vmMO.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
+					Expect(vmMO.Runtime.BootTime).ToNot(BeNil(), "VM %q has no boot time", vmName)
+					bootTimes[i] = *vmMO.Runtime.BootTime
+				}
+
+				vm1Delay := bootTimes[0].Sub(powerOnStartTime)
+				vm2Gap := bootTimes[1].Sub(bootTimes[0])
+				vm3Gap := bootTimes[2].Sub(bootTimes[1])
+				By(fmt.Sprintf("Power-on timing: vm1 after request: %v, vm2 after vm1: %v, vm3 after vm2: %v",
+					vm1Delay, vm2Gap, vm3Gap))
+
+				// The next boot order group is released only after the
+				// previous one is observed powered on, which is after its
+				// vCenter boot time, so each gap is at least the nominal
+				// delay. The small allowance covers clock skew between
+				// vCenter and the ESXi host that sets runtime.bootTime. The
+				// upper bound adds a buffer to absorb the time to observe
+				// the power on, controller reconcile latency, and the power
+				// on task itself.
+				const (
+					skew   = 2 * time.Second
+					buffer = 30 * time.Second
+				)
+
+				Expect(vm1Delay).To(BeNumerically("<", vm1PowerOnDelay), "vm1 (first boot order group) should power on without waiting for its PowerOnDelay")
+				Expect(vm2Gap).To(BeNumerically(">=", vm2PowerOnDelay-skew), "vm2 should not power on before its PowerOnDelay elapses after vm1 is on")
+				Expect(vm2Gap).To(BeNumerically("<=", vm2PowerOnDelay+buffer), "vm2 should power on within its PowerOnDelay plus buffer after vm1 is on")
+				Expect(vm3Gap).To(BeNumerically(">=", vm3PowerOnDelay-skew), "vm3 should not power on before its PowerOnDelay elapses after vm2 is on")
+				Expect(vm3Gap).To(BeNumerically("<=", vm3PowerOnDelay+buffer), "vm3 should power on within its PowerOnDelay plus buffer after vm2 is on")
+			})
+		})
+	})
+
 	Context("Boot order power-off delay", func() {
 		BeforeEach(func() {
 			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
 		})
 
-		It("Should power off each boot order group after the previous one is off, with its delay counted from then", Label("experimental"), func() {
+		It("Should power off each boot order group after the previous one is off, with its delay counted from then", func() {
 			const (
 				vm1PowerOffDelay = 1 * time.Minute
 				vm2PowerOffDelay = 30 * time.Second
@@ -572,7 +700,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			groupKey = ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}
 		})
 
-		It("Should power off again a released member that a user powers on, and hold the next boot order group", Label("experimental"), func() {
+		It("Should power off again a released member that a user powers on, and hold the next boot order group", func() {
 			// vm2's delay keeps it on for long enough to power on vm3 again
 			// while the request is still pending.
 			const vm2PowerOffDelay = 2 * time.Minute
@@ -712,7 +840,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				linkVMsToGroup(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName, vmMemberNames)
 			})
 
-			It("Should hold the next boot order group in Soft mode until the guest is powered off", Label("experimental"), func() {
+			It("Should hold the next boot order group in Soft mode until the guest is powered off", func() {
 				By("Setting VirtualMachineGroup spec.powerState to PoweredOff with Soft power off mode")
 
 				patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
@@ -753,7 +881,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				})
 			})
 
-			It("Should power off hard in TrySoft mode after the soft timeout, and only then release the next boot order group", Label("experimental"), func() {
+			It("Should power off hard in TrySoft mode after the soft timeout, and only then release the next boot order group", func() {
 				By("Setting VirtualMachineGroup spec.powerState to PoweredOff with TrySoft power off mode")
 
 				powerOffStartTime = time.Now()

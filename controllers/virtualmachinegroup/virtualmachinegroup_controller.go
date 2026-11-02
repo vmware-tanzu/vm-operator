@@ -214,8 +214,8 @@ func (r *Reconciler) ReconcileNormal(
 		return reterr
 	}
 
-	// A requeue from the members, while a power-off waits for the time set
-	// by the parent group, does not stop the placement.
+	// A requeue from the members, while a power-on or power-off waits for the
+	// time set by the parent group, does not stop the placement.
 	var requeueErr error
 	if err := r.reconcileMembers(ctx); err != nil {
 		if !pkgerr.IsRequeueError(err) {
@@ -274,31 +274,32 @@ func (r *Reconciler) reconcileMembers(
 		existingStatuses[key] = ms
 	}
 
-	updatePowerState, lastUpdateAnnoTime, err := shouldUpdatePowerState(ctx)
+	updatePowerState, _, err := shouldUpdatePowerState(ctx)
 	if err != nil {
 		return err
 	}
 
-	applyPowerStateTime, err := getApplyPowerStateTime(
-		ctx, updatePowerState, lastUpdateAnnoTime)
-	if err != nil {
-		return err
-	}
-
-	// Power-off releases one boot order group at a time, from the last to the
-	// first, once the previous boot order group has powered off.
-	powerOff := updatePowerState &&
-		ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff
+	// Power-on and power-off release one boot order group at a time, once the
+	// previous boot order group has reached the group's power state. Power-on
+	// walks the boot order groups from the first to the last, and power-off
+	// from the last to the first.
+	ordered := updatePowerState &&
+		(ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn ||
+			ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff)
 
 	var (
-		release    powerOffRelease
+		release    bootOrderRelease
 		releaseErr error
 	)
-	if powerOff {
-		release, releaseErr = getPowerOffRelease(ctx, r.Client, applyPowerStateTime)
+	if ordered {
+		var parentApplyTime time.Time
+		parentApplyTime, releaseErr = getParentApplyPowerStateTime(ctx)
+		if releaseErr == nil {
+			release, releaseErr = getBootOrderRelease(ctx, r.Client, parentApplyTime)
+		}
 		if releaseErr != nil {
 			// Still reconcile the members, without releasing any of them.
-			release = powerOffRelease{index: len(ctx.VMGroup.Spec.BootOrder)}
+			release = bootOrderRelease{hold: true}
 		}
 	}
 
@@ -308,8 +309,7 @@ func (r *Reconciler) reconcileMembers(
 	)
 
 	// Determine the order of boot order group iteration based on the desired
-	// power state. Power-on iterates forward using PowerOnDelay; power-off
-	// iterates in reverse.
+	// power state. Power-on iterates forward; power-off iterates in reverse.
 	bootOrderIndices := make([]int, len(ctx.VMGroup.Spec.BootOrder))
 	for i := range bootOrderIndices {
 		bootOrderIndices[i] = i
@@ -323,14 +323,11 @@ func (r *Reconciler) reconcileMembers(
 
 		var op memberPowerOp
 		switch {
-		case powerOff:
+		case ordered:
 			op = release.memberPowerOp(i)
 		case updatePowerState:
-			if ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn &&
-				bootOrder.PowerOnDelay != nil {
-				applyPowerStateTime = applyPowerStateTime.Add(bootOrder.PowerOnDelay.Duration)
-			}
-			op = memberPowerOp{action: memberPowerSync, applyTime: applyPowerStateTime}
+			// No boot order applies when suspending.
+			op = memberPowerOp{action: memberPowerSync}
 		}
 
 		for _, member := range bootOrder.Members {
@@ -361,11 +358,12 @@ func (r *Reconciler) reconcileMembers(
 
 	// Only update the last updated power state time in status if no errors.
 	// This ensures the requeue continues to apply the group power state.
-	// A power-off also stays pending until every boot order group has
-	// powered off.
-	if updatePowerState && len(memberErrs) == 0 && (!powerOff || release.done()) {
-		if powerOff {
-			ctx.Logger.Info("All boot order groups are powered off")
+	// A power-on or power-off also stays pending until every boot order group
+	// has reached the group's power state.
+	if updatePowerState && len(memberErrs) == 0 && (!ordered || release.done()) {
+		if ordered {
+			ctx.Logger.Info("All boot order groups reached the group power state",
+				"powerState", ctx.VMGroup.Spec.PowerState)
 		}
 		ctx.VMGroup.Status.LastUpdatedPowerStateTime = &metav1.Time{
 			Time: time.Now().UTC(),
@@ -378,7 +376,7 @@ func (r *Reconciler) reconcileMembers(
 
 	// Requeue when the release is held for the time set by the parent group.
 	// Other errors take precedence as they are retried with a backoff.
-	if powerOff && release.holdFor > 0 &&
+	if ordered && release.holdFor > 0 &&
 		(err == nil || pkgerr.IsNoRequeueError(err)) {
 		return pkgerr.RequeueError{After: release.holdFor}
 	}
@@ -386,31 +384,27 @@ func (r *Reconciler) reconcileMembers(
 	return err
 }
 
-// getApplyPowerStateTime returns the group's apply power state change time
-// that may be set from its parent group for power-on or power-off delay. If
-// it is not set, this group's power state was being changed directly (not
-// inherited from a parent), and the last updated annotation timestamp is
-// returned as the base time for calculating members' delays.
-func getApplyPowerStateTime(
-	ctx *pkgctx.VirtualMachineGroupContext,
-	updatePowerState bool,
-	lastUpdateAnnoTime time.Time) (time.Time, error) {
+// getParentApplyPowerStateTime returns the group's apply power state time
+// that may be set by its parent group for a power-on or power-off delay. It
+// returns the zero time when it is not set, for example when this group's
+// power state was changed directly (not inherited from a parent).
+func getParentApplyPowerStateTime(
+	ctx *pkgctx.VirtualMachineGroupContext) (time.Time, error) {
 
-	if updatePowerState && (ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn ||
-		ctx.VMGroup.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff) {
-		if v := ctx.VMGroup.Annotations[constants.ApplyPowerStateTimeAnnotation]; v != "" {
-			t, err := time.Parse(time.RFC3339Nano, v)
-			if err != nil {
-				ctx.Logger.Error(err, "Failed to parse time from annotation",
-					"annotationKey", constants.ApplyPowerStateTimeAnnotation,
-					"annotationValue", v)
-				return time.Time{}, err
-			}
-			return t, nil
-		}
+	v := ctx.VMGroup.Annotations[constants.ApplyPowerStateTimeAnnotation]
+	if v == "" {
+		return time.Time{}, nil
 	}
 
-	return lastUpdateAnnoTime, nil
+	t, err := time.Parse(time.RFC3339Nano, v)
+	if err != nil {
+		ctx.Logger.Error(err, "Failed to parse time from annotation",
+			"annotationKey", constants.ApplyPowerStateTimeAnnotation,
+			"annotationValue", v)
+		return time.Time{}, err
+	}
+
+	return t, nil
 }
 
 // memberPowerAction describes what is done to a group member's power state.
@@ -423,13 +417,13 @@ const (
 	// memberPowerSync applies the group's power state to the member.
 	memberPowerSync
 
-	// memberPowerOff releases the member for a power-off. The apply power
-	// state time is only set when the member's power state changes, so that
-	// a later reconcile does not move it.
-	memberPowerOff
+	// memberPowerRelease releases the member for a power-on or power-off.
+	// The apply power state time is only set when the member's power state
+	// changes, so that a later reconcile does not move it.
+	memberPowerRelease
 
 	// memberPowerQueued leaves the member's power state unchanged while it
-	// waits for an earlier boot order group to power off.
+	// waits for an earlier boot order group to reach the group's power state.
 	memberPowerQueued
 )
 
@@ -437,16 +431,25 @@ const (
 type memberPowerOp struct {
 	action memberPowerAction
 
-	// applyTime is the apply power state time set on the member. When zero
-	// for a power-off, any existing apply power state time is removed.
+	// applyTime is the apply power state time set on a released member. When
+	// zero, any existing apply power state time is removed.
 	applyTime time.Time
 }
 
-// powerOffRelease describes the boot order group released by a power-off.
-type powerOffRelease struct {
+// bootOrderRelease describes the boot order group released by a power-on or
+// power-off.
+type bootOrderRelease struct {
 	// index is the index in Spec.BootOrder of the boot order group to
-	// release, or -1 when every boot order group has powered off.
+	// release, or -1 when every boot order group has reached the group's
+	// power state.
 	index int
+
+	// reverse is true when the boot order groups are walked from the last to
+	// the first, as for a power-off.
+	reverse bool
+
+	// hold is true when no boot order group is released.
+	hold bool
 
 	// holdFor is greater than zero when the group waits for the apply power
 	// state time set by its parent group. No boot order group is released.
@@ -456,42 +459,55 @@ type powerOffRelease struct {
 	applyTime time.Time
 }
 
-func (p powerOffRelease) done() bool {
-	return p.index < 0
+func (p bootOrderRelease) done() bool {
+	return !p.hold && p.index < 0
 }
 
 // memberPowerOp returns how to reconcile the members of the boot order group
 // at the given index in Spec.BootOrder.
-func (p powerOffRelease) memberPowerOp(i int) memberPowerOp {
+func (p bootOrderRelease) memberPowerOp(i int) memberPowerOp {
+	// queued is true when the boot order group comes after the released one
+	// in the walk order.
+	queued := i > p.index
+	if p.reverse {
+		queued = i < p.index
+	}
+
 	switch {
-	case p.holdFor > 0 || i < p.index:
+	case p.hold || (!p.done() && queued):
 		return memberPowerOp{action: memberPowerQueued}
 	case i == p.index:
-		return memberPowerOp{action: memberPowerOff, applyTime: p.applyTime}
+		return memberPowerOp{action: memberPowerRelease, applyTime: p.applyTime}
 	default:
-		// The boot order group already powered off.
-		return memberPowerOp{action: memberPowerOff}
+		// The boot order group already reached the group's power state.
+		return memberPowerOp{action: memberPowerRelease}
 	}
 }
 
-// getPowerOffRelease returns the boot order group to release for a power-off.
-// The first boot order group that has not powered off, in reverse order, is
-// released. It waits for its PowerOffDelay from the time it is released,
-// except for the last boot order group, which has no earlier group to wait
-// for. Nothing is released until the given apply power state time set by a
-// parent group has passed.
-func getPowerOffRelease(
+// getBootOrderRelease returns the boot order group to release for a power-on
+// or power-off. The first boot order group, in walk order, that has not
+// reached the group's power state is released. It waits for its PowerOnDelay
+// or PowerOffDelay from the time it is released, except for the first boot
+// order group in walk order, which has no earlier group to wait for. Nothing
+// is released until the given apply power state time set by a parent group
+// has passed.
+func getBootOrderRelease(
 	ctx *pkgctx.VirtualMachineGroupContext,
 	c client.Reader,
-	parentApplyTime time.Time) (powerOffRelease, error) {
+	parentApplyTime time.Time) (bootOrderRelease, error) {
 
-	idx, err := vmopv1util.FirstIncompletePowerOffBootOrder(ctx, c, ctx.VMGroup)
+	powerState := ctx.VMGroup.Spec.PowerState
+
+	idx, err := vmopv1util.FirstIncompleteBootOrder(ctx, c, ctx.VMGroup)
 	if err != nil {
-		return powerOffRelease{}, fmt.Errorf(
-			"failed to get boot order group to power off: %w", err)
+		return bootOrderRelease{}, fmt.Errorf(
+			"failed to get boot order group to %s: %w", powerState, err)
 	}
 
-	release := powerOffRelease{index: idx}
+	release := bootOrderRelease{
+		index:   idx,
+		reverse: powerState == vmopv1.VirtualMachinePowerStateOff,
+	}
 	if release.done() {
 		return release, nil
 	}
@@ -499,19 +515,32 @@ func getPowerOffRelease(
 	now := time.Now().UTC()
 
 	if parentApplyTime.After(now) {
+		release.hold = true
 		release.holdFor = parentApplyTime.Sub(now)
-		ctx.Logger.V(4).Info("Waiting for parent group to power off",
+		ctx.Logger.V(4).Info("Waiting for parent group",
+			"powerState", powerState,
 			"applyPowerStateTime", parentApplyTime)
 		return release, nil
 	}
 
-	bootOrders := ctx.VMGroup.Spec.BootOrder
-	if delay := bootOrders[idx].PowerOffDelay; idx != len(bootOrders)-1 &&
-		delay != nil && delay.Duration > 0 {
+	var (
+		bootOrder = ctx.VMGroup.Spec.BootOrder[idx]
+		delay     *metav1.Duration
+		first     bool
+	)
+	if release.reverse {
+		delay = bootOrder.PowerOffDelay
+		first = idx == len(ctx.VMGroup.Spec.BootOrder)-1
+	} else {
+		delay = bootOrder.PowerOnDelay
+		first = idx == 0
+	}
+	if !first && delay != nil && delay.Duration > 0 {
 		release.applyTime = now.Add(delay.Duration)
 	}
 
-	ctx.Logger.V(4).Info("Boot order group to power off",
+	ctx.Logger.V(4).Info("Boot order group to release",
+		"powerState", powerState,
 		"bootOrderIndex", idx,
 		"applyPowerStateTime", release.applyTime)
 
@@ -631,7 +660,8 @@ func (r *Reconciler) reconcileMember(
 		vmSpecMatchGroup := vm.Spec.PowerState == ctx.VMGroup.Spec.PowerState
 		switch {
 		case op.action == memberPowerQueued && !vmSpecMatchGroup:
-			// VM waits for an earlier boot order group to power off.
+			// VM waits for an earlier boot order group to reach the group's
+			// power state.
 			conditions.MarkFalse(
 				ms,
 				vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
@@ -658,7 +688,7 @@ func (r *Reconciler) reconcileMember(
 	}
 
 	if member.Kind == vmgKind {
-		if err := r.reconcileGroupMemberPowerOff(ctx, member, obj.(*vmopv1.VirtualMachineGroup), ms, op); err != nil {
+		if err := r.reconcileGroupMemberPowerState(ctx, member, obj.(*vmopv1.VirtualMachineGroup), ms, op); err != nil {
 			return err
 		}
 	}
@@ -666,11 +696,12 @@ func (r *Reconciler) reconcileMember(
 	switch op.action {
 	case memberPowerSync:
 		// Update power state specs for both member types (VMs and VM Groups).
-		updateMemberPowerState(*ctx.VMGroup, obj, op.applyTime)
-	case memberPowerOff:
-		if updateMemberPowerOff(*ctx.VMGroup, obj, op.applyTime) {
-			ctx.Logger.Info("Released group member to power off",
+		setMemberPowerSpec(*ctx.VMGroup, obj)
+	case memberPowerRelease:
+		if releaseMemberPowerState(*ctx.VMGroup, obj, op.applyTime) {
+			ctx.Logger.Info("Released group member",
 				"member", memberKindAndName,
+				"powerState", ctx.VMGroup.Spec.PowerState,
 				"applyPowerStateTime", op.applyTime)
 		}
 	case memberPowerNone, memberPowerQueued:
@@ -684,7 +715,7 @@ patchMember:
 			"OwnerRefPatchError",
 			err,
 		)
-		if op.action == memberPowerSync || op.action == memberPowerOff {
+		if op.action == memberPowerSync || op.action == memberPowerRelease {
 			conditions.MarkError(
 				ms,
 				vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
@@ -709,21 +740,21 @@ patchMember:
 	return nil
 }
 
-// reconcileGroupMemberPowerOff updates the PowerStateSynced condition of a
-// VirtualMachineGroup member during a power-off. The condition is only set
-// during a power-off, as a group has no observed power state. When a released
-// child group has not powered off and its last power state request is closed,
-// for example because one of its members was powered on afterwards, a new
-// request is started on the child group so that it powers off its members
-// again.
-func (r *Reconciler) reconcileGroupMemberPowerOff(
+// reconcileGroupMemberPowerState updates the PowerStateSynced condition of a
+// VirtualMachineGroup member during a power-on or power-off. The condition is
+// only set during a power-on or power-off, as a group has no observed power
+// state. When a released child group has not reached the group's power state
+// and its last power state request is closed, for example because one of its
+// members was powered on or off afterwards, a new request is started on the
+// child group so that it applies its power state to its members again.
+func (r *Reconciler) reconcileGroupMemberPowerState(
 	ctx *pkgctx.VirtualMachineGroupContext,
 	member vmopv1.GroupMember,
 	child *vmopv1.VirtualMachineGroup,
 	ms *vmopv1.VirtualMachineGroupMemberStatus,
 	op memberPowerOp) error {
 
-	if op.action != memberPowerOff && op.action != memberPowerQueued {
+	if op.action != memberPowerRelease && op.action != memberPowerQueued {
 		conditions.Delete(ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)
 		return nil
 	}
@@ -739,12 +770,13 @@ func (r *Reconciler) reconcileGroupMemberPowerOff(
 		return nil
 	}
 
-	ok, reason, err := vmopv1util.IsGroupMemberPoweredOff(
+	ok, reason, err := vmopv1util.IsGroupMemberInPowerState(
 		ctx,
 		r.Client,
 		ctx.VMGroup.Namespace,
 		ctx.VMGroup.Name,
 		member,
+		ctx.VMGroup.Spec.PowerState,
 		ctx.VMGroup.Spec.PowerOffMode)
 	if err != nil {
 		conditions.MarkError(
@@ -769,7 +801,7 @@ func (r *Reconciler) reconcileGroupMemberPowerOff(
 		reason,
 	)
 
-	if op.action == memberPowerOff &&
+	if op.action == memberPowerRelease &&
 		child.Spec.PowerState == ctx.VMGroup.Spec.PowerState &&
 		reopenPowerStateRequest(child) {
 		ctx.Logger.Info("Started a new power state request on child group",
@@ -1118,29 +1150,13 @@ func shouldUpdatePowerState(
 	return true, lastUpdateAnnotation, nil
 }
 
-// updateMemberPowerState updates all the required power state fields on a given
-// member object.
-func updateMemberPowerState(
-	group vmopv1.VirtualMachineGroup,
-	member client.Object,
-	applyPowerStateTime time.Time,
-) {
-
-	setMemberPowerSpec(group, member)
-
-	if group.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn ||
-		group.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff {
-		setApplyPowerStateTime(member, applyPowerStateTime)
-	}
-}
-
-// updateMemberPowerOff updates the power state fields on a member released by
-// a power-off. The apply power state time is only set when the member's
-// desired power state differs from the group's, so that a later reconcile
-// does not move it. When applyTime is zero, any existing apply power state
-// time is removed. It returns true if the member's desired power state was
-// changed.
-func updateMemberPowerOff(
+// releaseMemberPowerState updates the power state fields on a member released
+// by a power-on or power-off. The apply power state time is only set when the
+// member's desired power state differs from the group's, so that a later
+// reconcile does not move it. When applyTime is zero, any existing apply power
+// state time is removed. It returns true if the member's desired power state
+// was changed.
+func releaseMemberPowerState(
 	group vmopv1.VirtualMachineGroup,
 	member client.Object,
 	applyTime time.Time,

@@ -106,7 +106,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		clusterProxy := input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = clusterProxy.GetClient()
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.VMEvictionCapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMEvictionCapabilityName)
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
 			ctx,

@@ -160,9 +160,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err := vmservice.SetupClusterRoleBindings(vmsvcClusterProxy)
 	Expect(err).ToNot(HaveOccurred(), "failed to setup cluster role bindings")
 
-	By("Creating a new WCP namespace associated with the default storage class, VM class, and vmservice content library")
-
 	ctx := context.TODO()
+	By("Loading Supervisor capabilities for this suite")
+	config.SupervisorCapabilities, err = common.LoadSupervisorCapabilities(ctx, vmsvcClusterProxy)
+	Expect(err).NotTo(HaveOccurred(), "failed to load Supervisor capabilities")
+
+	By("Creating a new WCP namespace associated with the default storage class, VM class, and vmservice content library")
 
 	By("Creating the VM Service content library")
 	// Create the VM Service content library if it doesn't exist

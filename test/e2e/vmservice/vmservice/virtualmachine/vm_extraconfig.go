@@ -64,7 +64,7 @@ type VMExtraConfigSpecInput struct {
 // independently runnable via TEST_FOCUS or LABEL_FILTER.
 //
 // All blocks are skipped when the classless VM Supervisor capability
-// (vm_service_classless_vm) is not enabled on the cluster.
+// (supports_vm_service_classless_vm) is not enabled on the cluster.
 func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpecInput) {
 	const specName = "vm-extraconfig"
 

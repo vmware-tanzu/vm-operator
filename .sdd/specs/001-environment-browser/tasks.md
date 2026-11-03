@@ -27,7 +27,7 @@ Dependencies: none. All A-tasks may run in parallel `[P]`.
 
 ### Story S1 — Capability + feature gate (vmop-3738)
 
-- [x] T010 [S1.a] [PR #1649 / vmop-3747] Add `CapabilityKeyVMServiceClasslessVM = "vm_service_classless_vm"` constant — `pkg/config/capabilities/capabilities.go`
+- [x] T010 [S1.a] [PR #1649 / vmop-3747] Add `CapabilityKeyVMServiceClasslessVM = "supports_vm_service_classless_vm"` constant — `pkg/config/capabilities/capabilities.go`
 - [x] T011 [S1.a] [PR #1649 / vmop-3747 + PR #1667 / vmop-3748] Wire feature gate check — vim.vmware.com scheme registered in `pkg/manager/manager.go` only when capability enabled; `controllers/vim/controllers.go` stub added with kubebuilder RBAC markers
 - [ ] T012 [S1.a] [vmop-3746] Gate the future `ConfigTarget`-based VM admission check on `Features.VMServiceClasslessVM` — `webhooks/virtualmachine/validation/`. This check is not implemented on main; the existing discovery webhook registration in `webhooks/webhooks.go` is already gated. Complete with T114, not as part of policy removal.
 - [x] T013 [S1.a] [PR #1649 / vmop-3747] Unit tests for capability gate logic — `pkg/config/capabilities/capabilities_test.go`
@@ -132,7 +132,7 @@ T110–T113 (mode and ExtraConfig enforcement) are superseded by the Flex VM Cla
 
 - [x] T210 [vmop-4318] Remove Zone policy fan-out and its creation test — `controllers/infra/zone/zone_controller.go`, `controllers/infra/zone/zone_controller_test.go`, `test/builder/fake.go`.
 - [x] T211 [vmop-4318] Remove policy API, generated deepcopy methods, CRD manifest and install reference — `external/vim/api/v1alpha1/virtualmachine_config_policy_types.go`, `external/vim/api/v1alpha1/zz_generated.deepcopy.go`, `config/crd/external-crds/vim.vmware.com_virtualmachineconfigpolicies.yaml`, `config/default/kustomization.yaml`.
-- [x] T212 [vmop-4318] Remove policy RBAC and the CRD install case; retain browser-enabled/disabled installation coverage — `config/rbac/role.yaml`, `pkg/crd/crd.go`, `pkg/crd/crd_test.go`; the Go identifiers are consolidated into `VMServiceClasslessVM` with capability `vm_service_classless_vm` by vmop-4313.
+- [x] T212 [vmop-4318] Remove policy RBAC and the CRD install case; retain browser-enabled/disabled installation coverage — `config/rbac/role.yaml`, `pkg/crd/crd.go`, `pkg/crd/crd_test.go`; the Go identifiers are consolidated into `VMServiceClasslessVM` with capability `supports_vm_service_classless_vm` by vmop-4313.
 - [x] T213 [vmop-4318] Replace policy assertions with fresh-install CRD absence coverage and retain browser discovery tests — `test/e2e/vmservice/vmservice/environmentbrowser/environmentbrowser.go` (experimental until verified on hardware).
 - [x] T214 [vmop-4318] Reconcile spec, plan, tasks, research and API/workflow docs; defer governance to the separate Flex VM Classes spec — `.sdd/specs/001-environment-browser/`, `.sdd/INDEX.md`, `external/vim/api/README.md`, `external/vim/doc/controller-workflows.md`, `external/vim/doc/deploying-a-vm.md`, `config/crd/external-crds/README.md`.
 

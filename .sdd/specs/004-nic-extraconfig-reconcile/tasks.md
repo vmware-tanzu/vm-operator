@@ -7,7 +7,7 @@ This task list produces the E2E suite specified in `e2e.md`: coverage for per-NI
 
 ## Phase 1 — Setup
 
-- [x] T001 [P] Add `VMServiceClasslessVMCapabilityName = "vm_service_classless_vm"` to `test/e2e/vmservice/consts/consts.go` (skip if already added by a sibling PR for the `spec.advanced` VM-level ExtraConfig suite)
+- [x] T001 [P] Add `VMServiceClasslessVMCapabilityName = "supports_vm_service_classless_vm"` to `test/e2e/vmservice/consts/consts.go` (skip if already added by a sibling PR for the `spec.advanced` VM-level ExtraConfig suite)
 - [x] T002 [P] Add `default/wait-vm-nic-extra-config-synced` (`5m`/`10s`) interval to `test/e2e/vmservice/config/wcp.yaml`; power-state waits reuse the existing `default/wait-virtual-machine-powerstate` interval
 
 ## Phase 2 — Foundational

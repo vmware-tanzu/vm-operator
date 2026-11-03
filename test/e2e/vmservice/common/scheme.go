@@ -6,6 +6,7 @@ package common
 import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	storageV1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -45,6 +46,11 @@ func addSchemes(sc *runtime.Scheme) {
 	err := corev1.AddToScheme(sc)
 	if err != nil {
 		e2eframework.Failf("unable add core v1 to scheme: %v", err)
+	}
+
+	err = rbacv1.AddToScheme(sc)
+	if err != nil {
+		e2eframework.Failf("unable add RBAC v1 to scheme: %v", err)
 	}
 
 	err = appsv1.AddToScheme(sc)

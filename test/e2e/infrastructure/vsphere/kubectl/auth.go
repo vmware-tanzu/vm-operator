@@ -26,7 +26,7 @@ func AssertKubectlUserCan(ctx context.Context, kubeconfigPath string, args ...st
 		result, _ := framework.KubectlAuth(ctx, kubeconfigPath, kubectlArgs...)
 
 		return strings.TrimSpace(string(result)) == "yes"
-	}, 1*time.Minute, 5*time.Second).Should(BeTrue(), "User should eventually be able to", args)
+	}, 1*time.Minute, 5*time.Second).Should(BeTrue(), "User should eventually be able to %v", args)
 }
 
 // AssertKubectlUserCannot uses kubectl auth can-i to verify the absence of a user's privileges.
@@ -40,5 +40,5 @@ func AssertKubectlUserCannot(ctx context.Context, kubeconfigPath string, args ..
 		// Don't use an Expect() inside this function as that will prematurely fail the test.
 		//  The assertion is that this function should eventually return true.
 		return strings.TrimSpace(string(result)) == "no"
-	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "User should not be able to", args)
+	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "User should not be able to %v", args)
 }

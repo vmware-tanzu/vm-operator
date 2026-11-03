@@ -151,7 +151,7 @@ func CreateUserOrFail(user *User) {
 	Eventually(
 		// user.Create() returns an error if it failed to create the
 		// user, and is meant to be idempotent.
-		user.Create, 1*time.Minute, 5*time.Second).Should(Succeed(), "User should have eventually been created", user.Credentials.Username)
+		user.Create, 1*time.Minute, 5*time.Second).Should(Succeed(), "User %s should have eventually been created", user.Credentials.Username)
 }
 
 // DeleteUserOrFail is a convenience method that retries user deletion until it
@@ -160,7 +160,7 @@ func DeleteUserOrFail(user *User) {
 	Eventually(
 		// user.Delete() returns an error if it failed to delete the
 		// user, and is meant to be idempotent.
-		user.Delete, 1*time.Minute, 5*time.Second).Should(Succeed(), "User should have eventually been deleted", user.Credentials.Username)
+		user.Delete, 1*time.Minute, 5*time.Second).Should(Succeed(), "User %s should have eventually been deleted", user.Credentials.Username)
 }
 
 // TODO Similar abstractions for groups.

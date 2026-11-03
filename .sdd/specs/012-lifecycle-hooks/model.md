@@ -3,13 +3,13 @@
 - **Spec**: [`spec.md`](./spec.md)
 - **Research**: [`research.md`](./research.md)
 
-This feature is **consumer-only**: the `lifecycle.vcfa.vmware.com` CRDs are owned by the Lifecycle Operator. VM Operator vendors client types for them (mirroring `external/byok`), authors the `LifecycleStages` instance for `VirtualMachine`, creates each VM's `LifecycleState` when absent and finalizes it, and adds one `VirtualMachine` condition.
+This feature is **consumer-only**: the `lifecycle.vcfa.vmware.com` CRDs are owned by the Lifecycle Operator. VM Operator vendors client types for them (mirroring `external/byok`), publishes the `LifecycleStages` instance for `VirtualMachine` on startup, creates each VM's `LifecycleState` when absent and finalizes it, and adds one `VirtualMachine` condition.
 
 ## Vendored external types (`lifecycle.vcfa.vmware.com/v1alpha1`)
 
 ### `LifecycleStages` (cluster-scoped)
 
-One instance for the `VirtualMachine` CRD, `vmoperator-stages`. VM Operator authors it as `config/lifecycle/vmoperator-stages.yaml`; it ships with and is applied by the Lifecycle Operator's package, not by VM Operator.
+One instance for the `VirtualMachine` CRD, `vmoperator-stages`. VM Operator publishes it on every startup when `Features.LifecycleHooks` is set, after capabilities are resolved and before the manager starts. It creates the object if absent and otherwise overwrites `spec` with the four stages below, since VM Operator owns the whole instance. When the capability is disabled nothing is published, and an instance left by an earlier run is not deleted (it is inert without `LifecycleState`s).
 
 | Field | Value |
 |---|---|
@@ -124,7 +124,7 @@ VM Operator never branches on the stage: every reach of a checkpoint after a rel
 
 ## Capability gating
 
-`supports_vm_service_lifecycle_hooks` sets `pkgcfg.Features.LifecycleHooks`. It depends on a capability the Lifecycle Framework enables when its package is installed, which also installs the `lifecycle.vcfa.vmware.com` CRDs. So `Features.LifecycleHooks` set means the CRDs are present, and VM Operator never installs them. When disabled, every checkpoint is a no-op: no `LifecycleState` access, no watch, no pause (spec G6, SC-005). Exception: deleting a VM still removes VM Operator's finalizer from its `LifecycleState`, so disabling the capability never blocks VM or namespace deletion.
+`supports_vm_service_lifecycle_hooks` sets `pkgcfg.Features.LifecycleHooks`. It depends on a capability the Lifecycle Framework enables when its package is installed, which also installs the `lifecycle.vcfa.vmware.com` CRDs. So `Features.LifecycleHooks` set means the CRDs are present, and VM Operator never installs them. When disabled, every checkpoint is a no-op: no `LifecycleState` access, no watch, no pause, no `LifecycleStages` published (spec G6, G6a, SC-005). Exception: deleting a VM still removes VM Operator's finalizer from its `LifecycleState`, so disabling the capability never blocks VM or namespace deletion.
 
 ## Examples
 

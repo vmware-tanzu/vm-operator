@@ -126,6 +126,12 @@ const (
 	// the network providers available on the cluster.
 	CapabilityKeyWorkloadNetworkConfiguration = "supports_workload_network_configuration"
 
+	// CapabilityKeyLifecycleHooks is the name of the capability key defined in
+	// the Supervisor capabilities CRD for the VM Service's support for blocking
+	// lifecycle hooks. It gates every lifecycle stage checkpoint and the
+	// LifecycleState integration.
+	CapabilityKeyLifecycleHooks = "supports_vm_service_lifecycle_hooks"
+
 	// CapabilityKeyExtensionCompatConstraint is the name of the capability key
 	// defined in the Supervisor capabilities CRD for the vpxd Safety Rails
 	// extension compatibility constraint mechanism. It gates VM Operator
@@ -359,6 +365,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.CSIBackupAPI = capStatus.Activated
 		case CapabilityKeyBringYourOwnNetworkInterface:
 			fs.BringYourOwnNetworkInterface = capStatus.Activated
+		case CapabilityKeyLifecycleHooks:
+			fs.LifecycleHooks = capStatus.Activated
 		}
 	}
 	return fs

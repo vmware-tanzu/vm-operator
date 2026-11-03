@@ -226,6 +226,7 @@ type FeatureStates struct {
 	VMHardAffinityDuringExecution bool
 	CSIBackupAPI                  bool
 	BringYourOwnNetworkInterface  bool
+	LifecycleHooks                bool
 }
 
 type InstanceStorage struct {

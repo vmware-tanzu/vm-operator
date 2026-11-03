@@ -1,0 +1,83 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: lifecyclesubscribedstages.lifecycle.vcfa.vmware.com
+spec:
+  group: lifecycle.vcfa.vmware.com
+  names:
+    kind: LifecycleSubscribedStages
+    listKind: LifecycleSubscribedStagesList
+    plural: lifecyclesubscribedstages
+    shortNames:
+    - lss
+    singular: lifecyclesubscribedstages
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Target group from labels
+      jsonPath: .metadata.labels['lifecycle\.vcfa\.vmware\.com/target-group']
+      name: Group
+      type: string
+    - description: Target kind from labels
+      jsonPath: .metadata.labels['lifecycle\.vcfa\.vmware\.com/target-kind']
+      name: Kind
+      type: string
+    - description: Subscribed stages
+      jsonPath: .spec.stages
+      name: Stages
+      type: string
+    - description: Time since creation
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          LifecycleSubscribedStages is the Schema for the lifecyclesubscribedstages API.
+
+          It records, for one (namespace, target group, target kind), the stages that
+          at least one live LifecycleHook subscribes to. It is written only by the
+          lifecycle framework; absence means no stage is subscribed. Target identity is
+          carried by the target-group and target-kind labels.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: LifecycleSubscribedStagesSpec is the framework-computed set
+              of subscribed stages.
+            properties:
+              stages:
+                description: 'Stages is never empty: an empty set is represented by
+                  the object not existing.'
+                items:
+                  minLength: 1
+                  type: string
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: set
+            required:
+            - stages
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

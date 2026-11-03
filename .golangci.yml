@@ -195,6 +195,8 @@ linters:
           pkg: github.com/vmware-tanzu/vm-operator/external/appplatform/api/v1alpha1
         - alias: vspherepolv1
           pkg: github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1
+        - alias: lifecyclev1
+          pkg: github.com/vmware-tanzu/vm-operator/external/lifecycle/api/v1alpha1
         - alias: infrav1
           pkg: github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1
         - alias: vimv1

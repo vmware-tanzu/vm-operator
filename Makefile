@@ -426,6 +426,9 @@ generate-go: ## Generate golang sources
 		paths=github.com/vmware-tanzu/vm-operator/external/vsphere-policy/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
 	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/external/lifecycle/... \
+		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
+	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
 	$(CONTROLLER_GEN) \
@@ -503,6 +506,11 @@ generate-external-manifests: ## Generate manifests for the external types for te
 		output:none
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/external/vsphere-policy/... \
+		crd:crdVersions=v1 \
+		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
+		output:none
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/external/lifecycle/... \
 		crd:crdVersions=v1 \
 		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
 		output:none

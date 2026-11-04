@@ -8,17 +8,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/environmentbrowser"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/configoptions"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -120,6 +120,7 @@ type Reconciler struct {
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
+	queries    environmentbrowser.Cache[*vimtypes.VirtualMachineConfigOption]
 }
 
 // +kubebuilder:rbac:groups=vim.vmware.com,resources=virtualmachineconfigoptions,verbs=get;list;watch;create;update;patch;delete
@@ -133,9 +134,15 @@ func (r *Reconciler) Reconcile(
 	req ctrl.Request) (_ ctrl.Result, reterr error) {
 
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
+	if !pkgcfg.FromContext(ctx).Features.FlexVMClasses {
+		return ctrl.Result{}, nil
+	}
 
 	var obj vimv1.VirtualMachineConfigOptions
 	if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			r.queries.Delete(req.Name)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -156,7 +163,11 @@ func (r *Reconciler) Reconcile(
 	if !obj.DeletionTimestamp.IsZero() {
 		return r.ReconcileDelete(ctx, &obj)
 	}
-	return r.ReconcileNormal(ctx, &obj)
+	result, err := r.ReconcileNormal(ctx, &obj)
+	if err == nil && result.RequeueAfter == 0 {
+		result.RequeueAfter = environmentbrowser.RefreshInterval
+	}
+	return result, err
 }
 
 // ReconcileDelete handles deletion of a VirtualMachineConfigOptions object.
@@ -171,6 +182,7 @@ func (r *Reconciler) ReconcileDelete(
 	ctx context.Context,
 	obj *vimv1.VirtualMachineConfigOptions) (ctrl.Result, error) {
 
+	r.queries.Delete(obj.Name)
 	if err := r.garbageCollectGuestOptions(ctx, obj.Spec.HardwareVersion, sets.New[string]()); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -190,7 +202,7 @@ func (r *Reconciler) ReconcileNormal(
 		return ctrl.Result{}, nil
 	}
 
-	clusterMoID, err := r.findClusterMoID(ctx, obj)
+	clusterMoID, revision, err := r.findClusterMoID(ctx, obj)
 	if err != nil {
 		pkgcond.MarkError(obj, vimv1.ReadyConditionType, QueryFailedReason, err)
 		return ctrl.Result{}, err
@@ -203,13 +215,21 @@ func (r *Reconciler) ReconcileNormal(
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	configOption, err := r.VMProvider.QueryConfigOptionEx(ctx, clusterMoID, obj.Spec.HardwareVersion)
+	configOption, err := r.queries.Get(obj.Name, revision, func() (*vimtypes.VirtualMachineConfigOption, error) {
+		return r.VMProvider.QueryConfigOptionEx(ctx, clusterMoID, obj.Spec.HardwareVersion)
+	})
 	if err != nil {
 		pkgcond.MarkError(obj, vimv1.ReadyConditionType, QueryFailedReason, err)
 		return ctrl.Result{}, fmt.Errorf("failed to query config option ex: %w", err)
 	}
 
+	if obj.Annotations == nil {
+		obj.Annotations = map[string]string{}
+	}
+	obj.Annotations["vmoperator.vmware.com/environment-browser-cluster"] = clusterMoID
+
 	if configOption == nil {
+		obj.Status = vimv1.VirtualMachineConfigOptionsStatus{Conditions: obj.Status.Conditions}
 		// A nil, error-free result from QueryConfigOptionEx is vSphere's
 		// positive answer that this hardware version has no config option in
 		// this environment -- not a transient/unknown signal, which would
@@ -238,50 +258,34 @@ func (r *Reconciler) ReconcileNormal(
 	return ctrl.Result{}, nil
 }
 
-// findClusterMoID looks up a cluster managed object ID from the owner
-// references of the given VirtualMachineConfigOptions. It returns an empty
-// string (with no error) when no ConfigTarget owner is found.
-//
-// A hardware-version-keyed VirtualMachineConfigOptions may legitimately be
-// co-owned by more than one ConfigTarget (see
-// controllers/configtarget's reconcileConfigOptions), since multiple
-// clusters can report supporting the same hardware version. vSphere's own
-// EnvironmentBrowser.QueryConfigOptionEx does not aggregate across hosts in
-// this situation either: it resolves to exactly one host's real, internally
-// consistent ConfigOption, chosen deterministically as the host running the
-// lowest product version among those supporting the requested key. We have
-// no comparable per-cluster signal to replicate that "most conservative"
-// selection today (that would need something like each ConfigTarget's ESXi
-// version, which this design deliberately does not expose -- see the
-// retired HostSystem CRD). So, among co-owners, this picks the
-// lexicographically smallest cluster MoID: an arbitrary but stable and
-// reproducible tie-break, not a proxy for "most conservative".
-//
-// TODO(vmop-3964): Replace this tie-break with a real conservative-selection
-// signal (e.g. minimum ESXi build across co-owning ConfigTargets) and record
-// the selected cluster in VirtualMachineConfigOptions.Status for debugging.
-func (r *Reconciler) findClusterMoID(
-	ctx context.Context,
-	obj *vimv1.VirtualMachineConfigOptions) (string, error) {
+// findClusterMoID selects the owner with the oldest host product version and
+// build, with cluster ID as a stable tie-break. It keeps one real ConfigOption
+// rather than constructing an inconsistent cross-cluster mixture of fields.
+func (r *Reconciler) findClusterMoID(ctx context.Context, obj *vimv1.VirtualMachineConfigOptions) (string, string, error) {
+	var candidates []environmentbrowser.Cluster
 
-	clusterMoIDs := make([]string, 0, len(obj.OwnerReferences))
 	for _, ref := range obj.OwnerReferences {
-		if ref.Kind != ConfigTargetKind {
+		if ref.Kind != ConfigTargetKind || ref.APIVersion != vimv1.GroupVersion.String() {
 			continue
 		}
 		var ct vimv1.ConfigTarget
-		if err := r.Client.Get(ctx, client.ObjectKey{Name: ref.Name}, &ct); err != nil {
-			return "", fmt.Errorf("failed to get ConfigTarget %s: %w", ref.Name, err)
+		if err := r.Get(ctx, client.ObjectKey{Name: ref.Name}, &ct); err != nil {
+			return "", "", fmt.Errorf("failed to get ConfigTarget %s: %w", ref.Name, err)
 		}
-		clusterMoIDs = append(clusterMoIDs, ct.Spec.ID.ID)
+		if !ct.DeletionTimestamp.IsZero() || ct.UID != ref.UID {
+			continue
+		}
+		inventory, err := r.VMProvider.GetEnvironmentBrowserInventory(ctx, ct.Spec.ID.ID)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to read ConfigTarget %s inventory: %w", ref.Name, err)
+		}
+		candidates = append(candidates, environmentbrowser.Cluster{ID: ct.Spec.ID.ID, UID: string(ct.UID), Inventory: inventory})
 	}
-
-	if len(clusterMoIDs) == 0 {
-		return "", nil
+	id, revision, err := environmentbrowser.SelectCluster(candidates)
+	if revision != "" {
+		revision = string(obj.UID) + ":" + obj.Spec.HardwareVersion + ":" + revision
 	}
-
-	sort.Strings(clusterMoIDs)
-	return clusterMoIDs[0], nil
+	return id, revision, err
 }
 
 // applyStatus maps configOption fields onto obj.Status. It has no side
@@ -291,6 +295,7 @@ func applyStatus(
 	obj *vimv1.VirtualMachineConfigOptions,
 	configOption *vimtypes.VirtualMachineConfigOption) {
 
+	configoptions.PopulateStatus(obj, configOption)
 	obj.Status.Description = configOption.Description
 	obj.Status.GuestOSDefaultIndex = configOption.GuestOSDefaultIndex
 	obj.Status.SupportedMonitorTypes = configOption.SupportedMonitorType
@@ -511,38 +516,5 @@ func buildHardwareVersionStatus(
 	hardwareVersion string,
 	desc vimtypes.GuestOsDescriptor) vimv1.VirtualMachineGuestOptionsHardwareVersionStatus {
 
-	s := vimv1.VirtualMachineGuestOptionsHardwareVersionStatus{
-		HardwareVersion:             hardwareVersion,
-		SupportedMaxCPUs:            desc.SupportedMaxCPUs,
-		NumSupportedPhysicalSockets: desc.NumSupportedPhysicalSockets,
-		NumSupportedCoresPerSocket:  desc.NumSupportedCoresPerSocket,
-		RecommendedColorDepth:       desc.RecommendedColorDepth,
-		SupportedNumDisks:           desc.SupportedNumDisks,
-		RecommendedDiskController:   vimv1.VirtualControllerType(desc.RecommendedDiskController),
-		RecommendedSCSIController:   vimv1.VirtualControllerType(desc.RecommendedSCSIController),
-		RecommendedCdromController:  vimv1.VirtualControllerType(desc.RecommendedCdromController),
-		RecommendedEthernetCard:     vimv1.EthernetCardType(desc.RecommendedEthernetCard),
-		SupportsWakeOnLan:           desc.SupportsWakeOnLan,
-		SmcRequired:                 desc.SmcRequired,
-		SmcRecommended:              desc.SmcRecommended,
-		UsbRecommended:              desc.UsbRecommended,
-		SupportsVMI:                 desc.SupportsVMI,
-		SupportedForCreate:          desc.SupportedForCreate,
-	}
-	s.SupportLevel.FromVimType(desc.SupportLevel)
-
-	if desc.SupportedMaxMemMB > 0 {
-		q := resource.NewQuantity(int64(desc.SupportedMaxMemMB)*1024*1024, resource.BinarySI)
-		s.SupportedMaxMem = q
-	}
-	if desc.SupportedMinMemMB > 0 {
-		q := resource.NewQuantity(int64(desc.SupportedMinMemMB)*1024*1024, resource.BinarySI)
-		s.SupportedMinMem = q
-	}
-	if desc.RecommendedMemMB > 0 {
-		q := resource.NewQuantity(int64(desc.RecommendedMemMB)*1024*1024, resource.BinarySI)
-		s.RecommendedMem = q
-	}
-
-	return s
+	return configoptions.GuestStatus(hardwareVersion, desc)
 }

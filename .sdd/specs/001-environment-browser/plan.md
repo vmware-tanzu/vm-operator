@@ -387,3 +387,29 @@ No per-host CRD is created; the per-host data is owned entirely by `ConfigTarget
 | CRD schema break | `spec.id` immutability enforced at webhook, not only at API server level |
 
 **Disable path**: Set `CapabilityKeyFlexVMClasses` to `false` in the capabilities ConfigMap. Controllers stop reconciling. CRDs remain installed (safe to list); existing objects are preserved. Re-enabling resumes reconciliation from current state.
+
+## Completion implementation (vmop-4319)
+
+- `pkg/providers/vsphere/environment_browser_inventory.go` observes cluster configuration/membership and host config, hardware, capabilities and connection/maintenance state using PropertyCollector. The inventory hash includes the vCenter identity/version and inherited datacenter hardware-version policy. Host and managed-object lists are ordered before hashing. Runtime utilization and VM membership are excluded.
+- `pkg/providers.VirtualMachineProviderInterface.GetEnvironmentBrowserInventory` and its fake expose a revision and minimum host version/build. Query functions keep their existing contracts.
+- Both discovery reconcilers cache successful raw EnvironmentBrowser results in memory by inventory revision, replaying status/fan-out/GC on every reconcile. Cache misses/errors query again. Five-minute polling bounds inventory detection; no Ready condition controls execution. Deletion evicts cache entries. The options cache includes all owners and the requested hardware version so owner/selection changes invalidate it.
+- `pkg/util/vsphere/configoptions` maps hardware ranges, capabilities, storage restrictions, property relations and guest options with MB/KB-to-byte conversion and API enum normalization. No API types or CRD schemas change.
+- RBAC manifests already satisfy the repository-side contract. `config/rbac/rbac_test.go` prevents accidental tenant grants or aggregation; the existing capability-gated experimental E2E suite checks platform-admin reads and namespace-user 403s. Production Supervisor roles must also pass this E2E check; Kubernetes RBAC has no deny rule that can override an externally supplied wildcard grant.
+- Tests cover fake-provider call counts, error retries, child repair, deterministic software-version selection, simulator inventory observation and actual query execution. E2E remains experimental until validated on a capability-enabled Supervisor.
+
+### Flex field coverage (WIKI page 3118085467 §3.2)
+
+| Flex fields | Discovery data |
+|---|---|
+| CPU/memory size, NUMA topology/affinity, SMT | ConfigTarget CPU/memory/NUMA/thread limits; guest CPU/memory bounds; hardware cores-per-socket |
+| Hardware version | Highest valid create-supported descriptor; default descriptor tracked separately |
+| CPU/memory hot-add and CPU hot-remove | Guest support flags |
+| IOMMU, nested virtualization, performance counters | Guest `vvtdSupported`; config `nestedHVSupported` and `vpmcSupported` |
+| Memory reservation lock, boot retry, CBT | Config capability flags |
+| Firmware and secure boot | Guest firmware choices and secure-boot flag; config secure-boot capability |
+| vGPU and Dynamic DirectPath I/O | Existing ConfigTarget profile/device entries, preserving profileName and vendorID/deviceID/customLabel |
+| SMC, SEV, SEV-SNP, TDX | Existing ConfigTarget security flags and guest SMC requirement |
+| SGX and device groups | Guest SGX support; hardware EPC memory bounds and device-group types |
+| Tools, disk UUID, CPU masks, swap, guest auto-lock | Config capabilities and guest disk UUID support |
+| Persistent memory | Guest persistent-memory limits/support; ConfigTarget reservation; config failover support |
+| Allocation requests/limits, other ExtraConfig policies | No environment-browser capability check in the Flex schema; governance owns these constraints |

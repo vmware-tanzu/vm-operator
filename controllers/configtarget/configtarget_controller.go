@@ -32,6 +32,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/environmentbrowser"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/configtarget"
 )
 
@@ -110,6 +111,12 @@ type Reconciler struct {
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
+	queries    environmentbrowser.Cache[configTargetQuery]
+}
+
+type configTargetQuery struct {
+	target      *vimtypes.ConfigTarget
+	descriptors []vimtypes.VirtualMachineConfigOptionDescriptor
 }
 
 // +kubebuilder:rbac:groups=vim.vmware.com,resources=configtargets,verbs=get;list;watch;create;update;patch;delete
@@ -121,6 +128,9 @@ func (r *Reconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx = pkgcfg.JoinContext(ctx, r.Context)
+	if !pkgcfg.FromContext(ctx).Features.FlexVMClasses {
+		return ctrl.Result{}, nil
+	}
 
 	logger := pkglog.FromContextOrDefault(ctx)
 	logger = logger.WithName(req.Name)
@@ -129,6 +139,9 @@ func (r *Reconciler) Reconcile(
 	var obj vimv1.ConfigTarget
 
 	if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			r.queries.Delete(req.Name)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -148,10 +161,15 @@ func (r *Reconciler) Reconcile(
 	}()
 
 	if !obj.DeletionTimestamp.IsZero() {
+		r.queries.Delete(obj.Name)
 		return ctrl.Result{}, nil
 	}
 
-	return ctrl.Result{}, r.ReconcileNormal(ctx, &obj)
+	err = r.ReconcileNormal(ctx, &obj)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: environmentbrowser.RefreshInterval}, nil
 }
 
 // ReconcileNormal reconciles the cluster-scope path of a ConfigTarget:
@@ -163,9 +181,25 @@ func (r *Reconciler) ReconcileNormal(
 	obj *vimv1.ConfigTarget) error {
 	logger := pkglog.FromContextOrDefault(ctx)
 
-	clusterMoID := obj.Name
-
-	configTarget, configOptionDescriptors, err := r.VMProvider.GetVirtualMachineConfigTarget(ctx, clusterMoID)
+	clusterMoID := obj.Spec.ID.ID
+	inventory, err := r.VMProvider.GetEnvironmentBrowserInventory(ctx, clusterMoID)
+	if err != nil {
+		reason := QueryConfigTargetFailedReason
+		var notFound *vimtypes.ManagedObjectNotFound
+		if _, ok := fault.As(err, &notFound); ok {
+			reason = ClusterNotFoundReason
+		}
+		pkgcond.MarkError(obj, vimv1.ReadyConditionType, reason, err)
+		return fmt.Errorf("failed to read cluster inventory: %w", err)
+	}
+	result, err := r.queries.Get(obj.Name, inventory.Revision, func() (configTargetQuery, error) {
+		target, descriptors, err := r.VMProvider.GetVirtualMachineConfigTarget(ctx, clusterMoID)
+		if err == nil && target == nil {
+			err = fmt.Errorf("cluster %s returned no config target", clusterMoID)
+		}
+		return configTargetQuery{target: target, descriptors: descriptors}, err
+	})
+	configTarget, configOptionDescriptors := result.target, result.descriptors
 	if err != nil {
 		reason := QueryConfigTargetFailedReason
 
@@ -313,7 +347,7 @@ func (r *Reconciler) removeOwnerRefAndDeleteIfOrphaned(
 	// If obj is the sole owner reference, the object can be deleted outright
 	// without first mutating its owner references.
 	if len(vmco.OwnerReferences) == 1 && vmco.OwnerReferences[0].UID == obj.GetUID() {
-		if err := r.Delete(ctx, vmco); err != nil && !apierrors.IsNotFound(err) {
+		if err := r.Delete(ctx, vmco, client.Preconditions{ResourceVersion: &vmco.ResourceVersion}); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete orphaned VirtualMachineConfigOptions %q: %w", vmco.Name, err)
 		}
 

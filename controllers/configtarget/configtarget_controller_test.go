@@ -30,9 +30,11 @@ import (
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/environmentbrowser"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -58,6 +60,7 @@ func unitTests() {
 
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContextWithDefaultConfig()
+		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.FlexVMClasses = true })
 		provider = providerfake.NewVMProvider()
 
 		withObjs = nil
@@ -131,11 +134,61 @@ func unitTests() {
 			withObjs = append(withObjs, obj)
 		})
 
+		It("does not query discovery when the capability is disabled", func() {
+			pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.FlexVMClasses = false })
+			provider.GetEnvironmentBrowserInventoryFn = func(context.Context, string) (providers.EnvironmentBrowserInventory, error) {
+				Fail("disabled discovery must not read inventory")
+				return providers.EnvironmentBrowserInventory{}, nil
+			}
+			result, err := reconciler.Reconcile(ctx, objReq)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(ctrl.Result{}))
+		})
+
+		It("reuses discovery on resync, repairs children, and queries again after inventory changes", func() {
+			revision := "hosts-1"
+			calls := 0
+			provider.GetEnvironmentBrowserInventoryFn = func(context.Context, string) (providers.EnvironmentBrowserInventory, error) {
+				return providers.EnvironmentBrowserInventory{Revision: revision}, nil
+			}
+			provider.GetVirtualMachineConfigTargetFn = func(context.Context, string) (*vimtypes.ConfigTarget, []vimtypes.VirtualMachineConfigOptionDescriptor, error) {
+				calls++
+				return configTargetResult, descriptorsResult, queryErr
+			}
+			_, err := reconciler.Reconcile(ctx, objReq)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = reconciler.Reconcile(ctx, objReq)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(calls).To(Equal(1))
+			Expect(client.Delete(ctx, &vimv1.VirtualMachineConfigOptions{ObjectMeta: metav1.ObjectMeta{Name: "vmx-20"}})).To(Succeed())
+			_, err = reconciler.Reconcile(ctx, objReq)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client.Get(ctx, ctrlclient.ObjectKey{Name: "vmx-20"}, &vimv1.VirtualMachineConfigOptions{})).To(Succeed())
+			Expect(calls).To(Equal(1))
+			revision = "hosts-2"
+			descriptorsResult = []vimtypes.VirtualMachineConfigOptionDescriptor{{Key: "vmx-23", CreateSupported: true, DefaultConfigOption: true}}
+			_, err = reconciler.Reconcile(ctx, objReq)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(calls).To(Equal(2))
+			var got vimv1.ConfigTarget
+			Expect(client.Get(ctx, objReq.NamespacedName, &got)).To(Succeed())
+			Expect(got.Status.MaxHardwareVersion).To(Equal("vmx-23"))
+			Expect(got.Status.DefaultHardwareVersion).To(Equal("vmx-23"))
+			revision = "hosts-3"
+			queryErr = errors.New("temporary failure")
+			_, err = reconciler.Reconcile(ctx, objReq)
+			Expect(err).To(HaveOccurred())
+			queryErr = nil
+			_, err = reconciler.Reconcile(ctx, objReq)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(calls).To(Equal(4))
+		})
+
 		When("the vSphere queries succeed", func() {
 			It("populates status, sets Ready=True, and fans out VirtualMachineConfigOptions", func() {
 				result, err := reconciler.Reconcile(ctx, objReq)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).To(Equal(ctrl.Result{}))
+				Expect(result.RequeueAfter).To(Equal(environmentbrowser.RefreshInterval))
 
 				var got vimv1.ConfigTarget
 				Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(obj), &got)).To(Succeed())
@@ -667,6 +720,7 @@ func vcsimTests() {
 
 	BeforeEach(func() {
 		vcsimCtx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		pkgcfg.SetContext(vcsimCtx, func(c *pkgcfg.Config) { c.Features.FlexVMClasses = true })
 
 		provider := vsphere.NewVSphereVMProviderFromClient(vcsimCtx, vcsimCtx.Client, vcsimCtx.Recorder)
 
@@ -745,6 +799,35 @@ func vcsimTests() {
 			// of ConfigOptionDescriptor keys that cannot be shrunk without
 			// restarting the simulator, so this behavior is only covered by
 			// the fake-provider-backed unit test above.
+		})
+
+		It("detects host software and membership changes without EnvironmentBrowser discovery", func() {
+			provider := reconciler.VMProvider
+			first, err := provider.GetEnvironmentBrowserInventory(vcsimCtx, ccr.Reference().Value)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(first.Revision).NotTo(BeEmpty())
+			second, err := provider.GetEnvironmentBrowserInventory(vcsimCtx, ccr.Reference().Value)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(second).To(Equal(first))
+			hosts, err := ccr.Hosts(vcsimCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(hosts).To(HaveLen(2))
+			simCtx := vcsimCtx.SimulatorContext()
+			host := simCtx.Map.Get(hosts[0].Reference()).(*simulator.HostSystem)
+			product := host.Config.Product
+			product.Version, product.Build = "6.0.0", "1"
+			simCtx.Map.Update(simCtx, host, []vimtypes.PropertyChange{{Name: "config.product", Val: product}})
+			changed, err := provider.GetEnvironmentBrowserInventory(vcsimCtx, ccr.Reference().Value)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(changed.Revision).NotTo(Equal(first.Revision))
+			Expect(changed.MinHostVersion).To(Equal("6.0.0"))
+			Expect(changed.MinHostBuild).To(Equal(uint64(1)))
+			cluster := simCtx.Map.Get(ccr.Reference())
+			simCtx.Map.Update(simCtx, cluster, []vimtypes.PropertyChange{{Name: "host", Val: []vimtypes.ManagedObjectReference{hosts[1].Reference()}}})
+			removed, err := provider.GetEnvironmentBrowserInventory(vcsimCtx, ccr.Reference().Value)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(removed.Revision).NotTo(Equal(changed.Revision))
+			Expect(removed.MinHostVersion).NotTo(Equal("6.0.0"))
 		})
 
 		It("maps device inventory from a QueryConfigTarget result fed through the real EnvironmentBrowser", func() {

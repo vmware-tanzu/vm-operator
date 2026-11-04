@@ -138,5 +138,13 @@ T110–T113 (mode and ExtraConfig enforcement) are superseded by the Flex VM Cla
 
 ## Environment-browser access (vmop-4319)
 
-- [ ] T220 [US7] [vmop-4319] Restrict discovery API permissions to platform administrators and required service accounts; audit role aggregation and Supervisor authorization.
-- [ ] T221 [US7] [vmop-4319] Add authorization E2E coverage for administrator access and tenant/namespace-admin rejection across get/list/watch for all three discovery APIs.
+- [x] T220 [US7] [vmop-4319] Restrict discovery API permissions to platform administrators and required service accounts; audit role aggregation and Supervisor authorization.
+- [x] T221 [US7] [vmop-4319] Add authorization E2E coverage for administrator access and tenant/namespace-admin rejection across get/list/watch for all three discovery APIs.
+
+## Flex discovery completion (vmop-4319; PR #2067 T115–T117)
+
+- [x] T222 [vmop-4319] Preserve descriptor-derived maximum hardware version, populate the default version, and correct the obsolete per-host-default specification — `pkg/util/vsphere/configtarget/status.go`, `spec.md`.
+- [x] T223 [vmop-4319] Observe inventory without EnvironmentBrowser RPCs and cache successful discovery; test unchanged resync, changed inventory, retry and child repair — `pkg/providers/vsphere/environment_browser_inventory.go`, `pkg/providers/vm_provider_interface.go`, `pkg/providers/fake/fake_vm_provider.go`, `pkg/util/environmentbrowser/cache.go`, both discovery controllers and their tests.
+- [x] T224 [vmop-4319] Select shared options by minimum host product version/build; expose selection for diagnosis — `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go`, `vmconfigoptions_controller_test.go`.
+- [x] T225 [vmop-4319] Populate all capability inputs required by the Flex full-schema table — `pkg/util/vsphere/configoptions/status.go`, `status_test.go`, `controllers/virtualmachineconfigoptions/vmconfigoptions_controller.go`.
+- [ ] T226 [vmop-4319] Run capability-enabled Supervisor E2E authorization/discovery tests; remove experimental only after hardware validation — `test/e2e/vmservice/vmservice/environmentbrowser/environmentbrowser.go`.

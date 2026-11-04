@@ -30,6 +30,13 @@ func PopulateStatus(
 	ct *vimtypes.ConfigTarget,
 	descriptors []vimtypes.VirtualMachineConfigOptionDescriptor) {
 	obj.Status.MaxHardwareVersion = computeMaxHardwareVersion(descriptors)
+	obj.Status.DefaultHardwareVersion = ""
+	for _, d := range descriptors {
+		if d.DefaultConfigOption {
+			obj.Status.DefaultHardwareVersion = d.Key
+			break
+		}
+	}
 
 	if ct == nil {
 		return

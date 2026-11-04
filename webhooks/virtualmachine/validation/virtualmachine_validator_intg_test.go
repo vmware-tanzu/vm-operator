@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
@@ -92,6 +93,23 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 
 	ctx.vm = builder.DummyVirtualMachine()
 	ctx.vm.Namespace = ctx.Namespace
+
+	// The storage class is required on create, and it must resolve to a
+	// storage policy that is associated with the VM's namespace via a
+	// resource quota. The storage class is cluster-scoped, so it is removed
+	// explicitly once the spec completes.
+	sc := builder.DummyStorageClass()
+	sc.Name = dummyDefaultStorageClassName
+	quota := builder.DummyResourceQuota(
+		ctx.Namespace,
+		sc.Name+".storageclass.storage.k8s.io/persistentvolumeclaims")
+	Expect(ctrlclient.IgnoreAlreadyExists(
+		ctx.Client.Create(ctx, sc))).To(Succeed())
+	DeferCleanup(func() {
+		Expect(ctx.Client.Delete(ctx, sc)).To(Succeed())
+	})
+	Expect(ctx.Client.Create(ctx, quota)).To(Succeed())
+	ctx.vm.Spec.StorageClass = sc.Name
 
 	// add controller bus number to all volumes to simulate what the mutation
 	// webhook would do. We use bus 1 because bus 0 is rejected for CREATE

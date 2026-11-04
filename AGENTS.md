@@ -7,7 +7,7 @@ All coding standards, architectural rules, process requirements, and feature spe
 **[`.sdd/INDEX.md`](.sdd/INDEX.md)** — directory index of all memory rules and per-feature specs, with one-line descriptions and direct links.
 
 Before reviewing a PR:
-1. Read the memory rules listed in the index (they apply to every change).
+1. Read the universal memory rules, plus the task-specific ones the index's "When to read" column calls for.
 2. Check whether the changed files correspond to an in-progress spec. If so, read that spec's `spec.md` and `plan.md` — the spec is the acceptance criteria for the review.
 
 ---
@@ -39,7 +39,7 @@ The `.sdd/memory/` files define what is correct. Use this section only to calibr
 
 ### Do not flag
 
-- `.cursor/rules/` contents — intentional thin proxies to `.sdd/memory/`, not meant to be expanded
+- `.cursor/rules/`, `.claude/rules/`, and `CLAUDE.md` (root and nested) contents — intentional thin proxies to `.sdd/memory/`, not meant to be expanded
 - Markdown files with long lines — no hard wrapping is intentional per the constitution (code fences excepted)
 - The 11-step VM reconcile order itself — do not suggest reordering
 - Single-letter receiver names (`r`, `v`, `w`) — intentional per architectural standards

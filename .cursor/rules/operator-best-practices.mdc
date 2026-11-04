@@ -1,6 +1,6 @@
 ---
 description: Kubernetes controller patterns, reconciler structure, finalizers, watches, error semantics, and controller-runtime usage for VM Operator
-globs: controllers/**/*.go,pkg/providers/**/*.go,pkg/errors/**/*.go,pkg/util/kube/cource/**/*.go,services/**/*.go
+globs: controllers/**/*.go,pkg/providers/**/*.go,pkg/vmconfig/**/*.go,pkg/errors/**/*.go,pkg/util/kube/cource/**/*.go,services/**/*.go
 alwaysApply: false
 ---
 

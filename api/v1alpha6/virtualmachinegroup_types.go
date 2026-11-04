@@ -21,6 +21,10 @@ const (
 	// VirtualMachineGroupMemberConditionPlacementReady indicates that the
 	// member has a placement decision ready.
 	VirtualMachineGroupMemberConditionPlacementReady = "PlacementReady"
+
+	// VirtualMachineGroupMemberPendingPlacementReason indicates that the member
+	// is awaiting placement, including when a placement attempt has failed.
+	VirtualMachineGroupMemberPendingPlacementReason = "PendingPlacement"
 )
 
 // GroupMember describes a member of a VirtualMachineGroup.

@@ -1,3 +1,7 @@
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
 package fault
 
 import (
@@ -15,6 +19,39 @@ func TestFault(t *testing.T) {
 }
 
 var _ = Describe("LocalizedMessagesFromFault", func() {
+
+	It("deduplicates normalized details across top-level and nested faults in first-seen order", func() {
+		result := LocalizedMessagesFromFault(vimtypes.LocalizedMethodFault{
+			LocalizedMessage: "No compatible host: ",
+			Fault: &vimtypes.NoCompatibleHost{
+				VimFault: vimtypes.VimFault{MethodFault: vimtypes.MethodFault{FaultMessage: []vimtypes.LocalizableMessage{
+					{Message: "No compatible host"},
+					{Message: "Cannot use zone A: \n"},
+					{Message: ": \n\t"},
+				}}},
+				Error: []vimtypes.LocalizedMethodFault{{
+					LocalizedMessage: "Cannot use zone A",
+					Fault: &vimtypes.NoCompatibleHost{
+						VimFault: vimtypes.VimFault{MethodFault: vimtypes.MethodFault{FaultMessage: []vimtypes.LocalizableMessage{
+							{Message: "No compatible host"},
+							{Message: "Distinct nested detail"},
+						}}},
+						Error: []vimtypes.LocalizedMethodFault{{LocalizedMessage: "Distinct nested detail: "}},
+					},
+				}},
+			},
+		})
+		Expect(result).To(Equal([]string{"No compatible host", "Cannot use zone A", "Distinct nested detail"}))
+	})
+
+	It("includes FaultMessage details without a localized message", func() {
+		result := LocalizedMessagesFromFault(vimtypes.LocalizedMethodFault{
+			Fault: &vimtypes.GenericDrsFault{VimFault: vimtypes.VimFault{MethodFault: vimtypes.MethodFault{
+				FaultMessage: []vimtypes.LocalizableMessage{{Message: "Cannot use zone A"}}},
+			}},
+		})
+		Expect(result).To(Equal([]string{"Cannot use zone A"}))
+	})
 
 	Context("when LocalizedMethodFault has no localized message and fault is nil", func() {
 		It("should return empty slice", func() {
@@ -145,6 +182,30 @@ var _ = Describe("LocalizedMessagesFromFault", func() {
 })
 
 var _ = Describe("LocalizedMessagesFromFaults", func() {
+
+	It("deduplicates messages across separate faults while preserving distinct details", func() {
+		result := LocalizedMessagesFromFaults([]vimtypes.LocalizedMethodFault{
+			{LocalizedMessage: "Repeated detail: "},
+			{LocalizedMessage: "Second detail"},
+			{Fault: &vimtypes.GenericDrsFault{VimFault: vimtypes.VimFault{MethodFault: vimtypes.MethodFault{
+				FaultMessage: []vimtypes.LocalizableMessage{
+					{Message: "Repeated detail"},
+					{Message: "Third detail"},
+				}},
+			}}},
+		})
+		Expect(result).To(Equal([]string{"Repeated detail", "Second detail", "Third detail"}))
+	})
+
+	It("returns nil when all messages are empty after trimming", func() {
+		result := LocalizedMessagesFromFaults([]vimtypes.LocalizedMethodFault{{
+			LocalizedMessage: ": \n",
+			Fault: &vimtypes.GenericDrsFault{VimFault: vimtypes.VimFault{MethodFault: vimtypes.MethodFault{
+				FaultMessage: []vimtypes.LocalizableMessage{{Message: "\t: "}}},
+			}},
+		}})
+		Expect(result).To(BeNil())
+	})
 	Describe("Basic batch processing", func() {
 		Context("when faults is empty or nil", func() {
 			It("should return empty slice for empty slice", func() {

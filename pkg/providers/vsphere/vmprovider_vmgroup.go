@@ -27,10 +27,10 @@ import (
 )
 
 type vmGroupPlacementArgs struct {
-	// vmToZoneMappings holds each VM's ConfigSpec and its
+	// vmPlacementInputs holds each VM's ConfigSpec and its
 	// topology.kubernetes.io/zone label. The zone is empty if the VM has no
 	// zone label.
-	vmToZoneMappings      []placement.VMZonePlacementMapping
+	vmPlacementInputs     []placement.VMPlacementInput
 	childResourcePoolName string
 }
 
@@ -39,6 +39,9 @@ const (
 )
 
 var (
+	// ErrVMNotLinkedToGroup indicates that the VM is not linked to its group.
+	ErrVMNotLinkedToGroup = errors.New("VM is not linked to its group")
+
 	// ErrVMGroupPlacementConfigSpec is the error returned when not all VMs in the group
 	// placement were able to get their placement ConfigSpec, so group placement could not
 	// be done.
@@ -62,13 +65,13 @@ func (vs *vSphereVMProvider) PlaceVirtualMachineGroup(
 		return err
 	}
 
-	if len(placementArgs.vmToZoneMappings) == 0 {
+	if len(placementArgs.vmPlacementInputs) == 0 {
 		return nil
 	}
 
 	results, err := vs.vmGroupDoPlacement(ctx, vcClient, group.Namespace, placementArgs)
 	if err != nil {
-		setVMGroupPendingPlacementErr(groupPlacements, err)
+		setVMGroupPlacementErr(groupPlacements, err)
 		return err
 	}
 
@@ -133,15 +136,15 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 			pkgcond.MarkFalse(
 				memberStatus,
 				vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
-				"PendingPlacement",
+				vmopv1.VirtualMachineGroupMemberPendingPlacementReason,
 				"")
 
-			vmZonePlacementMapping := placement.VMZonePlacementMapping{
+			vmPlacementInput := placement.VMPlacementInput{
 				ConfigSpec: *configSpec,
 				ZoneName:   vm.Labels[corev1.LabelTopologyZone],
 			}
-			placementArgs.vmToZoneMappings = append(placementArgs.vmToZoneMappings,
-				vmZonePlacementMapping)
+			placementArgs.vmPlacementInputs = append(placementArgs.vmPlacementInputs,
+				vmPlacementInput)
 		}
 	}
 
@@ -152,19 +155,46 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 	return placementArgs, nil
 }
 
-// setVMGroupPendingPlacementErr records the group placement error as the
-// message of every member's pending PlacementReady condition.
-func setVMGroupPendingPlacementErr(
+// setVMGroupPlacementErr records the group placement error on every
+// participating member's PlacementReady condition. Members remain pending
+// placement while subsequent reconciles retry the operation.
+func setVMGroupPlacementErr(
 	groupPlacements []providers.VMGroupPlacement,
 	err error) {
 
+	placementFaults, _ := errors.AsType[*placement.PlaceVMsXClusterErrors](err)
+	var hasMemberFault bool
+	if placementFaults != nil {
+		// Only use the blocked-member message if a participating member can
+		// report the fault. Otherwise, preserve the full error on every member.
+		for _, grpPlacement := range groupPlacements {
+			for _, vm := range grpPlacement.VMMembers {
+				if placementFaults.HasFaultForVM(vm.Name) {
+					hasMemberFault = true
+					break
+				}
+			}
+			if hasMemberFault {
+				break
+			}
+		}
+	}
+
 	for _, grpPlacement := range groupPlacements {
 		for _, vm := range grpPlacement.VMMembers {
-			pkgcond.MarkFalse(
+			memberErr := err
+			if hasMemberFault {
+				if vmErr := placementFaults.ErrorForVM(vm.Name); vmErr != nil {
+					memberErr = vmErr
+				} else {
+					memberErr = errors.New("group placement failed because another member could not be placed")
+				}
+			}
+			pkgcond.MarkError(
 				getOrAddVMMemberStatus(grpPlacement.VMGroup, vm),
 				vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
-				"PendingPlacement",
-				"%v", err)
+				vmopv1.VirtualMachineGroupMemberPendingPlacementReason,
+				memberErr)
 		}
 	}
 }
@@ -268,7 +298,7 @@ func (vs *vSphereVMProvider) vmGroupDoPlacement(
 		vcClient.Finder(),
 		namespace,
 		placementArgs.childResourcePoolName,
-		placementArgs.vmToZoneMappings,
+		placementArgs.vmPlacementInputs,
 	)
 }
 

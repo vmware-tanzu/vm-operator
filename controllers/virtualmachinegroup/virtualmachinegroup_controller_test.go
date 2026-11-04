@@ -6,13 +6,16 @@ package virtualmachinegroup_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,12 +24,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinegroup"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -39,6 +44,112 @@ const (
 	virtualMachineKind      = "VirtualMachine"
 	virtualMachineGroupKind = "VirtualMachineGroup"
 )
+
+var _ = Describe("Child placement status patches", Label(testlabels.Controller, testlabels.API), func() {
+	DescribeTable("should skip unchanged status while preserving placement errors",
+		func(updateStatus, alreadyPlaced bool) {
+			rootGroup := &vmopv1.VirtualMachineGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "root-group", Namespace: "test-ns", Finalizers: []string{finalizer},
+				},
+				Spec: vmopv1.VirtualMachineGroupSpec{
+					BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{{
+						Members: []vmopv1.GroupMember{{Name: "child-group", Kind: virtualMachineGroupKind}},
+					}},
+				},
+			}
+			vm := builder.DummyBasicVirtualMachine("child-vm", rootGroup.Namespace)
+			vm.UID = types.UID("child-vm-uid")
+			vm.Spec.GroupName = "child-group"
+			if alreadyPlaced {
+				vm.Status.UniqueID = "existing-vm"
+			}
+			childGroup := &vmopv1.VirtualMachineGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: "child-group", Namespace: rootGroup.Namespace},
+				Spec: vmopv1.VirtualMachineGroupSpec{
+					GroupName: rootGroup.Name,
+					BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{{
+						Members: []vmopv1.GroupMember{{Name: vm.Name, Kind: virtualMachineKind}},
+					}},
+				},
+				Status: vmopv1.VirtualMachineGroupStatus{
+					Members: []vmopv1.VirtualMachineGroupMemberStatus{{
+						Name: vm.Name, Kind: virtualMachineKind, UID: vm.UID,
+					}},
+				},
+			}
+			conditions.MarkTrue(&childGroup.Status.Members[0], vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+			conditions.MarkFalse(&childGroup.Status.Members[0],
+				vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+				vmopv1.VirtualMachineGroupMemberPendingPlacementReason, "previous placement failure")
+
+			var childStatusPatches, placementCalls int
+			ctx := suite.NewUnitTestContextForControllerWithFuncs(interceptor.Funcs{
+				SubResourcePatch: func(
+					ctx context.Context, c client.Client, subResource string, obj client.Object,
+					patch client.Patch, opts ...client.SubResourcePatchOption) error {
+
+					if subResource == "status" && obj.GetName() == childGroup.Name {
+						childStatusPatches++
+					}
+					return c.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+				},
+			}, rootGroup, childGroup, vm)
+			DeferCleanup(ctx.AfterEach)
+			placementErr := errors.New("group placement failed")
+			vmProvider := providerfake.NewVMProvider()
+			vmProvider.PlaceVirtualMachineGroupFn = func(
+				_ context.Context, _ *vmopv1.VirtualMachineGroup,
+				placements []providers.VMGroupPlacement) error {
+
+				placementCalls++
+				if updateStatus {
+					for _, placement := range placements {
+						for i := range placement.VMGroup.Status.Members {
+							conditions.MarkError(&placement.VMGroup.Status.Members[i],
+								vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+								vmopv1.VirtualMachineGroupMemberPendingPlacementReason, placementErr)
+						}
+					}
+				}
+				return placementErr
+			}
+			reconciler := virtualmachinegroup.NewReconciler(
+				ctx, ctx.Client, ctx.Client, ctx.Logger, ctx.Recorder, vmProvider)
+
+			By("reconciling twice to verify placement and child status writes")
+			for range 2 {
+				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(rootGroup)})
+				if alreadyPlaced {
+					Expect(err).ToNot(HaveOccurred())
+					continue
+				}
+				Expect(err).To(MatchError(ContainSubstring(placementErr.Error())))
+				Expect(errors.Is(err, placementErr)).To(BeTrue())
+			}
+			if alreadyPlaced {
+				Expect(placementCalls).To(BeZero())
+			} else {
+				Expect(placementCalls).To(Equal(2))
+			}
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(childGroup), childGroup)).To(Succeed())
+			condition := conditions.Get(&childGroup.Status.Members[0], vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+			Expect(condition).ToNot(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("PendingPlacement"))
+			if updateStatus {
+				Expect(childStatusPatches).To(Equal(1))
+				Expect(condition.Message).To(Equal(placementErr.Error()))
+			} else {
+				Expect(childStatusPatches).To(BeZero())
+				Expect(condition.Message).To(Equal("previous placement failure"))
+			}
+		},
+		Entry("provider fails without changing member status", false, false),
+		Entry("provider updates member status only on the first attempt", true, false),
+		Entry("already placed members skip provider and child status patches", false, true),
+	)
+})
 
 var _ = Describe(
 	"Reconcile",
@@ -221,6 +332,27 @@ var _ = Describe(
 		})
 
 		AfterEach(func() {
+			By("deleting groups and waiting for their finalizers to be removed")
+			// Namespace deletion does not garbage collect resources in envtest.
+			// Remove groups before resetting the provider so placement retries
+			// cannot reach the next test's callback.
+			Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1.VirtualMachineGroup{},
+				client.InNamespace(ctx.Namespace))).To(Succeed())
+			Eventually(func(g Gomega) {
+				var groups vmopv1.VirtualMachineGroupList
+				g.Expect(ctx.Client.List(ctx, &groups, client.InNamespace(ctx.Namespace))).To(Succeed())
+				g.Expect(groups.Items).To(BeEmpty())
+			}, "30s", "100ms").Should(Succeed())
+
+			By("deleting member VMs")
+			Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1.VirtualMachine{},
+				client.InNamespace(ctx.Namespace))).To(Succeed())
+			Eventually(func(g Gomega) {
+				var vms vmopv1.VirtualMachineList
+				g.Expect(ctx.Client.List(ctx, &vms, client.InNamespace(ctx.Namespace))).To(Succeed())
+				g.Expect(vms.Items).To(BeEmpty())
+			}, "30s", "100ms").Should(Succeed())
+
 			ctx.AfterEach()
 			ctx = nil
 			intgFakeVMProvider.Reset()
@@ -537,6 +669,17 @@ var _ = Describe(
 					}, "30s", "100ms").Should(Succeed())
 				}
 
+				verifyChildPlacementNotPersisted = func() {
+					GinkgoHelper()
+					Consistently(func(g Gomega) {
+						group := &vmopv1.VirtualMachineGroup{}
+						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, group)).To(Succeed())
+						g.Expect(group.Status.Members).To(HaveLen(1))
+						g.Expect(conditions.Get(&group.Status.Members[0],
+							vmopv1.VirtualMachineGroupMemberConditionPlacementReady)).To(BeNil())
+					}, "1s", "100ms").Should(Succeed())
+				}
+
 				verifyGroupPlacementReadyConditionWithZone = func(
 					groupKey, vmKey types.NamespacedName,
 					zone string) {
@@ -608,7 +751,6 @@ var _ = Describe(
 					setVMUniqueID(vm1Key, "vm-unique-id-1", "zone1")
 					setVMUniqueID(vm2Key, "vm-unique-id-2", "zone2")
 					setVMUniqueID(vm3Key, "vm-unique-id-3", "zone3")
-
 					By("verifying VM has uniqueID before adding to group")
 					Eventually(func(g Gomega) {
 						for _, vmKey := range []types.NamespacedName{vm1Key, vm2Key, vm3Key} {
@@ -621,10 +763,9 @@ var _ = Describe(
 
 				It("should skip placing VM by group and mark PlacementReady true with AlreadyPlaced reason", func() {
 					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "AlreadyPlaced")
-					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "AlreadyPlaced")
+					verifyChildPlacementNotPersisted()
 					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm1Key, "zone1")
 					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm3Key, "zone3")
-					verifyGroupPlacementReadyConditionWithZone(vmGroup2Key, vm2Key, "zone2")
 					Expect(groupPlacementCallCount.Load()).To(BeZero(), "VM with uniqueID should not be placed by group")
 				})
 			})
@@ -701,11 +842,10 @@ var _ = Describe(
 
 					By("verifying PlacementReady is now true with AlreadyPlaced reason")
 					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "AlreadyPlaced")
-					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "AlreadyPlaced")
+					verifyChildPlacementNotPersisted()
 
 					By("verifying zone is preserved in PlacementReady condition message")
 					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm1Key, "zone-a")
-					verifyGroupPlacementReadyConditionWithZone(vmGroup2Key, vm2Key, "zone-b")
 					verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm3Key, "zone-c")
 				})
 			})
@@ -715,6 +855,53 @@ var _ = Describe(
 					verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "")
 					verifyGroupPlacementReadyCondition(vmGroup2Key, 1, "")
 					Expect(groupPlacementCallCount.Load()).To(BeEquivalentTo(1), "VM should be placed by group")
+				})
+			})
+
+			When("group placement fails", func() {
+				BeforeEach(func() {
+					intgFakeVMProvider.Lock()
+					intgFakeVMProvider.PlaceVirtualMachineGroupFn = func(
+						_ context.Context,
+						_ *vmopv1.VirtualMachineGroup,
+						groupPlacements []providers.VMGroupPlacement) error {
+
+						placementErr := errors.New("group placement failed")
+						for _, placement := range groupPlacements {
+							for i := range placement.VMGroup.Status.Members {
+								ms := &placement.VMGroup.Status.Members[i]
+								if ms.Kind == virtualMachineKind {
+									conditions.MarkError(ms,
+										vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+										vmopv1.VirtualMachineGroupMemberPendingPlacementReason, placementErr)
+								}
+							}
+						}
+						return placementErr
+					}
+					intgFakeVMProvider.Unlock()
+				})
+
+				It("should persist placement errors on root and child group VM members", func() {
+					Eventually(func(g Gomega) {
+						for groupKey, memberCount := range map[types.NamespacedName]int{
+							vmGroup1Key: 3,
+							vmGroup2Key: 1,
+						} {
+							group := &vmopv1.VirtualMachineGroup{}
+							g.Expect(ctx.Client.Get(ctx, groupKey, group)).To(Succeed())
+							g.Expect(group.Status.Members).To(HaveLen(memberCount))
+							for _, ms := range group.Status.Members {
+								if ms.Kind == virtualMachineKind {
+									c := conditions.Get(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+									g.Expect(c).ToNot(BeNil())
+									g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+									g.Expect(c.Reason).To(Equal("PendingPlacement"))
+									g.Expect(c.Message).To(Equal("group placement failed"))
+								}
+							}
+						}
+					}, "30s", "100ms").Should(Succeed())
 				})
 			})
 
@@ -763,6 +950,18 @@ var _ = Describe(
 								}
 							}
 						}, "3s").Should(Succeed())
+
+						By("recording the VKS zone contract after ordinary VM placement")
+						setVMUniqueID(vm1Key, "vm-unique-id-1", "zone-a")
+						setVMUniqueID(vm2Key, "vm-unique-id-2", "zone-b")
+						setVMUniqueID(vm3Key, "vm-unique-id-3", "zone-c")
+						reconcileVMG(vmGroup1Key)
+						reconcileVMG(vmGroup2Key)
+						verifyGroupPlacementReadyCondition(vmGroup1Key, 3, "AlreadyPlaced")
+						verifyChildPlacementNotPersisted()
+						verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm1Key, "zone-a")
+						verifyGroupPlacementReadyConditionWithZone(vmGroup1Key, vm3Key, "zone-c")
+						Expect(groupPlacementCallCount.Load()).To(BeZero())
 					})
 				})
 

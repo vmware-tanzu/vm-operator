@@ -1098,6 +1098,52 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			})
 		})
 
+		DescribeTableSubtree("zonal rules for pinned VMs",
+			func(hardAffinity bool) {
+				BeforeEach(func() {
+					vmCtx.VM.Labels = map[string]string{corev1.LabelTopologyZone: "zone-a"}
+					vmCtx.VM.Spec.Affinity = &vmopv1.AffinitySpec{
+						VMAffinity: &vmopv1.VMAffinitySpec{
+							RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+								TopologyKey:   corev1.LabelTopologyZone,
+								LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "db"}},
+							}},
+						},
+					}
+					pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+						config.Features.VMAffinityDuringExecution = true
+						config.Features.VMHardAffinityDuringExecution = hardAffinity
+					})
+				})
+
+				It("should gate zonal placement rules on hard affinity", func() {
+					if hardAffinity {
+						Expect(configSpec.VmPlacementPolicies).To(ConsistOf(&vimtypes.VmVmAffinity{
+							PolicyStrictness: string(vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution),
+							PolicyTopology:   string(vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyVSphereZone),
+							AffinedVmsTag: vimtypes.TagId{NameId: &vimtypes.TagIdNameId{
+								Tag: "app:db", Category: vmCtx.VM.Namespace,
+							}},
+						}))
+					} else {
+						Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
+					}
+				})
+
+				When("the VM is a VKS node", func() {
+					BeforeEach(func() {
+						vmCtx.VM.Labels[kubeutil.CAPWClusterRoleLabelKey] = "worker"
+					})
+
+					It("should omit zonal placement rules", func() {
+						Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
+					})
+				})
+			},
+			Entry("hard affinity disabled", false),
+			Entry("hard affinity enabled", true),
+		)
+
 		When("VM spec has affinity policies set", func() {
 			Context("required affinity policy with zone topology key", func() {
 				BeforeEach(func() {

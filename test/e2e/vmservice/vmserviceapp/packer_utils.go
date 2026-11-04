@@ -113,6 +113,7 @@ func VerifyTCPForwarding(gatewayIP, gatewayUsername, gatewayPassword string) err
 	if err != nil {
 		return err
 	}
+	defer func() { _ = gatewayCmdRunner.Close() }()
 
 	checkDisabledCmd := fmt.Sprintf(configCheckCmd, tcpForwardDisabled)
 

@@ -84,6 +84,11 @@ var _ = Describe("RedactSensitiveOutput", func() {
 			"Cluster: domain-c9:21d4eaa0-4c40-4aab-9a64-f45afa4b59ef\nIP: 10.144.29.123\nPWD: ***\n",
 		),
 
+		Entry("kubeconfig data blobs",
+			"clusters:\n- cluster:\n    certificate-authority-data: LS0tAAA=\n    server: https://1.2.3.4:6443\nusers:\n- name: a\n  user:\n    client-key-data: LS0tBBB=\n",
+			"clusters:\n- cluster:\n    certificate-authority-data: ***\n    server: https://1.2.3.4:6443\nusers:\n- name: a\n  user:\n    client-key-data: ***\n",
+		),
+
 		Entry("is case-insensitive on the key name",
 			"password: SuperSecret1\n",
 			"password: ***\n",

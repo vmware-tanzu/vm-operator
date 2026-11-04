@@ -31,6 +31,12 @@ var sensitiveOutputLinePattern = regexp.MustCompile(`(?im)^([ \t]*(?:pwd|passwor
 // the value can be redacted before command output is logged.
 var sensitiveJSONFieldPattern = regexp.MustCompile(`(?i)("[\w-]*(?:password|secret|pwd|passwd)[\w-]*"[ \t]*:[ \t]*)"(?:[^"\\]|\\.)*"`)
 
+// kubeconfigDataPattern matches the base64 blobs in kubeconfig files
+// (certificate-authority-data, client-certificate-data, client-key-data,
+// token) so that dumping e.g. /etc/kubernetes/admin.conf does not leak
+// credentials or flood the test output.
+var kubeconfigDataPattern = regexp.MustCompile(`(?im)^([ \t]*(?:[\w-]+-data|token)[ \t]*:[ \t]*)\S+[ \t]*$`)
+
 // RedactSensitiveFlags returns a copy of cmd with the values of any
 // password- or secret-like flags replaced with '***'. It is safe to call
 // on any CLI command string before printing or logging it.
@@ -40,10 +46,12 @@ func RedactSensitiveFlags(cmd string) string {
 }
 
 // RedactSensitiveOutput returns a copy of output with the values of any
-// "pwd:"/"password:"/"passwd:" style lines, and of any password- or
+// "pwd:"/"password:"/"passwd:" style lines, kubeconfig "*-data:"/"token:"
+// lines, and of any password- or
 // secret-like JSON string fields, replaced with '***'. It is safe to call on
 // any command output before printing or logging it.
 func RedactSensitiveOutput(output string) string {
 	output = sensitiveOutputLinePattern.ReplaceAllString(output, "${1}***")
+	output = kubeconfigDataPattern.ReplaceAllString(output, "${1}***")
 	return sensitiveJSONFieldPattern.ReplaceAllString(output, `${1}"***"`)
 }

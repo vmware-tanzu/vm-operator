@@ -115,6 +115,7 @@ func GetControlPlaneVMConnectionDetails(ctx context.Context, path string, apiSer
 	if err != nil {
 		return ControlPlaneVMConnectionDetails{}, fmt.Errorf("error getting ssh runner: %w", err)
 	}
+	defer func() { _ = vcSSHCommandRunner.Close() }()
 
 	supervisors, err := getSupervisorPasswords(vcSSHCommandRunner)
 	if err != nil {

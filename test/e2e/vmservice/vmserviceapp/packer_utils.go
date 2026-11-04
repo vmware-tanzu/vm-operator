@@ -37,6 +37,8 @@ const (
 type PackerBuildCmdOpts struct {
 	TemplateFilePath  string
 	TemplateVariables map[string]string
+	// Timeout bounds the whole packer build. Zero means no timeout beyond ctx.
+	Timeout time.Duration
 }
 
 // RunPackerBuildCmd runs a 'packer build' command with the given options.
@@ -50,7 +52,14 @@ func RunPackerBuildCmd(ctx context.Context, opts PackerBuildCmdOpts) ([]byte, er
 		return nil, errors.New("PACKER_PLUGIN_DIR_PATH is required for running packer build command")
 	}
 
-	cmdArgs := []string{"build"}
+	if opts.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+		defer cancel()
+	}
+
+	// Timestamp each output line so a slow step can be identified from the output.
+	cmdArgs := []string{"build", "-timestamp-ui"}
 
 	// Add all the template variables to the packer build command.
 	for key, val := range opts.TemplateVariables {
@@ -59,13 +68,21 @@ func RunPackerBuildCmd(ctx context.Context, opts PackerBuildCmdOpts) ([]byte, er
 
 	// Add the template file path to the end of packer build command.
 	cmdArgs = append(cmdArgs, opts.TemplateFilePath)
-	cmd := exec.CommandContext(context.Background(), "packer", cmdArgs...)
+	cmd := exec.CommandContext(ctx, "packer", cmdArgs...)
+
+	// On timeout, interrupt packer so it runs its cleanup steps, and kill it if it doesn't exit in time.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = 2 * time.Minute
 
 	// Set the command directory to ensure packer-plugin-vsphere binary is accessible.
 	cmd.Dir = pluginDirPath
 	e2eframework.Logf("Running command: %s (in %s)", redact.RedactSensitiveFlags(cmd.String()), cmd.Dir)
 
-	return cmd.Output()
+	out, err := cmd.Output()
+	if err != nil && ctx.Err() != nil {
+		return out, fmt.Errorf("packer build did not finish (timeout %s): %w: %w", opts.Timeout, ctx.Err(), err)
+	}
+	return out, err
 }
 
 // GetTemplatePathInPackerPluginDir returns the path to the given Packer HCL

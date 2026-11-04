@@ -222,6 +222,24 @@ if !apiequality.Semantic.DeepEqual(base.Spec, obj.Spec) ||
   types already are — `test/builder/fake.go` `KnownObjectTypes`) so the fake
   client enforces the spec/status split and catches a missing status write.
 
+### Same pattern through `pkg/patch.Helper`: `WithStatusOptimisticLock`
+
+When multiple controllers read-modify-write the same status list through `patch.Helper`, opt in at **every writer's** patch call:
+
+```go
+if err := patchHelper.Patch(ctx, obj, patch.WithStatusOptimisticLock{}); err != nil {
+    return err
+}
+```
+
+The `virtualmachine`, `volumebatch`, and legacy `volume` controllers all use this option because they independently update `VirtualMachine.Status.Volumes`. The main VM controller's deferred patch also covers unmanaged-disk registration cleanup and snapshot restore's status reset. Readiness probing only changes conditions, which have their own merge and optimistic-lock retry logic; ReplicaSet labeling only changes metadata. Neither needs this status option.
+
+The helper patches locked status before its other writes can advance the original resourceVersion, and skips an empty status patch. A conflict must trigger a fresh read and reconciliation; retrying the same computed list against a newer resourceVersion can still discard another writer's changes.
+
+For direct child-object writes, use `client.MergeFromWithOptimisticLock` at the write itself, as shown above. For helper-based status writes, use `patch.WithStatusOptimisticLock{}`. New writers of a shared status list must opt in too.
+
+Do **not** enable this option for every status patch: the resourceVersion precondition covers the whole object, so concurrent annotation, spec, or unrelated status writes can also cause conflicts. A deferred patch conflict returns as a reconcile error with rate-limited backoff. The option locks all non-condition status changes in that call, rather than only the shared list.
+
 ## VM Update Reconcile Order
 
 The `updateVirtualMachine` method in the vSphere provider follows a strict, intentional ordering. Each step depends on the state established by prior steps. Do NOT reorder these without understanding the dependencies:

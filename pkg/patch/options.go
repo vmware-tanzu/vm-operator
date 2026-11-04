@@ -21,6 +21,10 @@ type Option interface {
 
 // HelperOptions contains options for patch options.
 type HelperOptions struct {
+	// StatusOptimisticLock includes the original resourceVersion in the status
+	// patch so concurrent writes cause a conflict instead of a lost update.
+	StatusOptimisticLock bool
+
 	// IncludeStatusObservedGeneration sets the status.observedGeneration field
 	// on the incoming object to match metadata.generation, only if there is a change.
 	IncludeStatusObservedGeneration bool
@@ -61,4 +65,15 @@ type WithOwnedConditions struct {
 // ApplyToHelper applies this configuration to the given HelperOptions.
 func (w WithOwnedConditions) ApplyToHelper(in *HelperOptions) {
 	in.OwnedConditions = w.Conditions
+}
+
+// WithStatusOptimisticLock rejects status patches based on a stale resourceVersion.
+// Use it at every writer of a shared status list. Conflicts require a fresh
+// read and reconcile; they must not be retried with the same computed list.
+// The precondition covers the whole object, including spec and metadata writes.
+type WithStatusOptimisticLock struct{}
+
+// ApplyToHelper applies this configuration to the given HelperOptions.
+func (w WithStatusOptimisticLock) ApplyToHelper(in *HelperOptions) {
+	in.StatusOptimisticLock = true
 }

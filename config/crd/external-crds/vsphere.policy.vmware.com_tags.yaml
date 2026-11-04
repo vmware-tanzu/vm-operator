@@ -15,6 +15,12 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.name
+      name: Tag
+      type: string
+    - jsonPath: .spec.kind
+      name: Kind
+      type: string
     - jsonPath: .spec.key
       name: Key
       type: string
@@ -49,33 +55,105 @@ spec:
           metadata:
             type: object
           spec:
-            description: TagSpec defines the desired state of Tag.
+            description: TagSpec defines the immutable identity and membership of
+              Tag.
             properties:
               key:
-                description: Key is the label key this tag represents.
+                description: Key is the source label key. It is absent for self tags.
+                type: string
+              kind:
+                description: Kind describes the vc tag's role.
+                enum:
+                - Original
+                - AffinityTarget
+                - GroupedAntiAffinityTarget
+                - GroupedAntiAffinitySelf
+                type: string
+              membership:
+                description: Membership determines which VMs carry this tag, independently
+                  of ownership.
+                enum:
+                - SourceLabel
+                - PolicyRequesters
+                type: string
+              name:
+                description: Name is the exact backend tag name. The namespace supplies
+                  its category.
                 minLength: 1
                 type: string
-                x-kubernetes-validations:
-                - message: key is immutable
-                  rule: self == oldSelf
+              policy:
+                description: Policy contains policy spec that created this Tag.
+                properties:
+                  strictness:
+                    description: Strictness specifies placement and execution enforcement.
+                    enum:
+                    - PreferredDuringPlacementPreferredDuringExecution
+                    - RequiredDuringPlacementPreferredDuringExecution
+                    - RequiredDuringPlacementRequiredDuringExecution
+                    type: string
+                  targets:
+                    description: Targets are sorted by key:value and contain no duplicate
+                      pairs.
+                    items:
+                      description: TagLabelPair is a resolved policy target label.
+                      properties:
+                        key:
+                          description: Key is the Kubernetes label key.
+                          minLength: 1
+                          type: string
+                        value:
+                          description: Value is the Kubernetes label value, which
+                            may be empty.
+                          type: string
+                      required:
+                      - key
+                      - value
+                      type: object
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  topology:
+                    description: Topology specifies the policy's scope.
+                    enum:
+                    - Host
+                    - VSphereZone
+                    type: string
+                  type:
+                    description: Type is the backend affinity policy type.
+                    enum:
+                    - VmVmAffinity
+                    - VmToVmGroupsAntiAffinity
+                    type: string
+                required:
+                - strictness
+                - targets
+                - topology
+                - type
+                type: object
               type:
                 default: System
-                description: Type describes the origin/category of this Tag.
+                description: Type describes the origin/category of this Tag. Tags
+                  created by VMOperator are System tags.
                 enum:
                 - System
                 type: string
               value:
                 description: |-
-                  Value is the label value this tag represents. An empty value is a
-                  legal Kubernetes label value, so this field has no MinLength.
+                  Value is the source label value. Omission means an empty label value.
+                  It is absent for self tags.
                 type: string
-                x-kubernetes-validations:
-                - message: value is immutable
-                  rule: self == oldSelf
             required:
-            - key
-            - value
+            - kind
+            - membership
+            - name
             type: object
+            x-kubernetes-validations:
+            - message: tag identity is immutable
+              rule: self == oldSelf
+            - message: source label is required for original/affinity tags and forbidden
+                for self tags
+              rule: 'self.kind == ''GroupedAntiAffinitySelf'' ? (!has(self.key) &&
+                !has(self.value)) : has(self.key)'
           status:
             description: TagStatus defines the observed state of Tag.
             properties:

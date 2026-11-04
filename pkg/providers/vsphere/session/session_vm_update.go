@@ -51,6 +51,7 @@ import (
 	vmconfnetworkextraconfig "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/networkextraconfig"
 	vmconfpolicy "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/policy"
 	vmconfvirtualcontroller "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/virtualcontroller"
+	vmconfvmtags "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/vmtags"
 	vmconfunmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 )
 
@@ -1494,8 +1495,10 @@ func reconcileNetworkExtraConfig(
 		configSpec)
 }
 
+// reconcileAffinity reconciles the VM's affinity policies and tags.
 func reconcileAffinity(
 	ctx context.Context,
+	k8sClient ctrlclient.Client,
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine,
 	configSpec *vimtypes.VirtualMachineConfigSpec) error {
@@ -1504,7 +1507,21 @@ func reconcileAffinity(
 		return nil
 	}
 
-	return virtualmachine.UpdateConfigSpecAffinity(ctx, vm, moVM.Config, configSpec)
+	var labelTags *virtualmachine.LabelDerivedTags
+	if pkgcfg.FromContext(ctx).Features.TaggingAPI {
+		pkglog.FromContextOrDefault(ctx).V(4).Info("Reconciling VM Tag resources")
+		ownedTags, err := vmconfvmtags.ReconcileTagCRs(ctx, k8sClient, vm)
+		if err != nil {
+			return err
+		}
+		labelTags = &virtualmachine.LabelDerivedTags{
+			Client:    k8sClient,
+			OwnedTags: ownedTags,
+		}
+	}
+
+	return virtualmachine.UpdateConfigSpecAffinity(
+		ctx, vm, moVM.Config, configSpec, labelTags)
 }
 
 func doReconfigure(
@@ -1627,7 +1644,7 @@ func doReconfigure(
 	}
 
 	if features.VMHardAffinityDuringExecution {
-		if err := reconcileAffinity(ctx, vm, moVM, &configSpec); err != nil {
+		if err := reconcileAffinity(ctx, k8sClient, vm, moVM, &configSpec); err != nil {
 			return err
 		}
 	}

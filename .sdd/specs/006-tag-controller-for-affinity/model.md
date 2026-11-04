@@ -37,17 +37,18 @@ metadata:
   namespace: my-namespace-1
   name: tag-41dd6b09ef06426a     # "tag-" + XXHash64Hex("my-namespace-1:app:nginx")
   labels:
-    app: nginx                    # mirror of spec.key/spec.value for selector queries
+    app: nginx                    # mirror of spec.key/spec.value for selector queries (SourceLabel membership only)
   ownerReferences:                # owning VMs: reference the label from spec.affinity (carriage not required)
     - apiVersion: vmoperator.vmware.com/v1alpha6
       kind: VirtualMachine
       name: vm-a
       uid: 8a7f2c31-0e14-4a37-9c66-1b1f0d3a55e2
-      controller: false
-      blockOwnerDeletion: false
 spec:
-  key: app                        # the label KEY the tag represents
-  value: nginx                    # the label VALUE the tag represents
+  name: app:nginx                 # the exact, prefix-free backend tag name
+  kind: Original                  # the vc tag's role
+  membership: SourceLabel         # VMs carrying the source label carry the tag
+  key: app                        # the source label KEY
+  value: nginx                    # the source label VALUE
 status:
   id: ""                          # reserved for the resolved vCenter tag UUID; NOT populated by this feature
   observedGeneration: 1
@@ -64,13 +65,39 @@ status:
 
 ### `TagSpec`
 
+`TagSpec` is the complete, immutable identity of one concrete backend tag, plus the rule that decides which VMs carry it. The whole of `spec` is immutable after create (a type-level CEL transition rule, `self == oldSelf`). A second CEL rule requires `key` for every kind except `GroupedAntiAffinitySelf` and forbids `key` and `value` for it.
+
 | Field | JSON | Type | Marker | Description |
 |-------|------|------|--------|-------------|
-| `Key` | `key` | `string` | `+required`, `MinLength=1` | The label **key** the tag represents (e.g. `app`). Immutable after create. Mirrored into `metadata.labels` as a key. |
-| `Value` | `value` | `string` | `+required` | The label **value** the tag represents (e.g. `nginx`). Immutable after create. Mirrored into `metadata.labels[spec.key]`. An empty value is legal (see "Empty label value" below), so **no** `MinLength`. |
+| `Name` | `name` | `string` | `+required`, `MinLength=1` | The exact backend tag name, **without** the `vmoperator:` prefix. The namespace supplies the vCenter tag category. |
+| `Kind` | `kind` | `TagKind` | `+required`, `Enum=Original;AffinityTarget;GroupedAntiAffinityTarget;GroupedAntiAffinitySelf` | The role of the vc tag (see "Tag kinds"). |
+| `Membership` | `membership` | `TagMembership` | `+required`, `Enum=SourceLabel;PolicyRequesters` | Which VMs carry the tag, independently of ownership. `SourceLabel` selects VMs carrying the source label. `PolicyRequesters` selects VMs currently requesting the policy. |
+| `Key` | `key,omitempty` | `string` | `+optional` | The source label key. Absent for `GroupedAntiAffinitySelf`. |
+| `Value` | `value,omitempty` | `string` | `+optional` | The source label value. Omission means the empty label value (see "Empty label value"). Absent for `GroupedAntiAffinitySelf`. |
+| `Policy` | `policy,omitempty` | `*TagPolicyIdentity` | `+optional` | The canonical policy inputs of a derived tag. Absent for `Original`, required for every other kind. |
 | `Type` | `type,omitempty` | `TagType` | `+optional`, `Enum=System`, `default=System` | Describes the origin/category of this Tag. Currently a single-valued enum (`System`, the default); not consumed by any controller, webhook, or provider code in this feature — reserved for forward-compatibility. |
 
-`spec.key` and `spec.value` together are the resource's identity: they determine the resource name (see "Name derivation"), so a change to either would make the name wrong. Both are enforced immutable by CEL transition rules (`self == oldSelf`) on the CRD.
+`TagPolicyIdentity` holds the inputs of a derived tag's policy hash:
+
+| Field | JSON | Type | Marker | Description |
+|-------|------|------|--------|-------------|
+| `Type` | `type` | `string` | `+required`, `Enum=VmVmAffinity;VmToVmGroupsAntiAffinity` | The backend affinity policy type. |
+| `Strictness` | `strictness` | `string` | `+required`, `Enum=PreferredDuringPlacementPreferredDuringExecution;RequiredDuringPlacementPreferredDuringExecution;RequiredDuringPlacementRequiredDuringExecution` | Placement and execution enforcement. |
+| `Topology` | `topology` | `string` | `+required`, `Enum=Host;VSphereZone` | The policy's scope. |
+| `Targets` | `targets` | `[]TagLabelPair` | `+required`, `MinItems=1`, `+listType=atomic` | The target label pairs, sorted by `key:value` with no duplicates. Each `TagLabelPair` has a required `key` (`MinLength=1`) and a required `value` that may be empty. |
+
+#### Tag kinds
+
+| Kind | Membership | `key`/`value` | `policy` | `spec.name` |
+|------|------------|---------------|----------|-------------|
+| `Original` | `SourceLabel` | the source label | absent | `<key>:<value>` |
+| `AffinityTarget` | `SourceLabel` | the affinity policy's single target label | required, type `VmVmAffinity` | the policy's hashed tag name |
+| `GroupedAntiAffinityTarget` | `SourceLabel` | one target label of the policy | required, type `VmToVmGroupsAntiAffinity` | the policy's hashed self-tag name, then `-<key>:<value>` |
+| `GroupedAntiAffinitySelf` | `PolicyRequesters` | absent | required, type `VmToVmGroupsAntiAffinity` | the policy's hashed tag name |
+
+The prefix-free names are produced by the helpers in `pkg/providers/vsphere/virtualmachine/affinity_tags.go`. The `vmoperator:` prefix exists only at the vCenter boundary: `spec.name`, `spec.key`, `spec.value` and the resource name are all prefix-free.
+
+`spec` is the identity: it determines the resource name (see "Name derivation"), so a change to any of it would make the name wrong.
 
 ### `TagStatus`
 
@@ -84,10 +111,10 @@ status:
 
 | Field | Written by | Description |
 |-------|-----------|-------------|
-| `metadata.name` | VM reconcile path, on create | `"tag-" + XXHash64Hex("<metadata.namespace>:<spec.key>:<spec.value>")`. See "Name derivation". |
+| `metadata.name` | VM reconcile path, on create | `"tag-" + XXHash64Hex("<metadata.namespace>:<spec.name>")`. See "Name derivation". |
 | `metadata.namespace` | VM reconcile path, on create | The VM's namespace. Doubles as the vCenter Tag Category. |
-| `metadata.labels[<spec.key>]` | VM reconcile path, on create | Mirror of `spec.value`, so an admin can run `kubectl get tags -l app=nginx`. This mirror is **not** what makes the controllers' queries efficient — see "Query surface" below. |
-| `metadata.ownerReferences` | VM reconcile path — each VM writes **only its own entry** | One non-controller reference per owning VM (`controller: false`, `blockOwnerDeletion: false`). An owner is a VM whose own `spec.affinity` references the pair — carriage is not required. A VM that merely carries the label without referencing it is tagged in vCenter but is **not** an owner. Because `spec.affinity` is immutable, ownership — once established on a VM's first reconcile — lasts for that VM's lifetime. Ownership is not the same predicate as tag carriage; see the note below. |
+| `metadata.labels[<spec.key>]` | VM reconcile path, on create; corrected by the `Tag` controller | Present only when `spec.membership` is `SourceLabel`. Mirror of `spec.value`, so an admin can run `kubectl get tags -l app=nginx`. This mirror is **not** what makes the controllers' queries efficient — see "Query surface" below. |
+| `metadata.ownerReferences` | VM reconcile path — each VM writes **only its own entry** | One non-controller reference per owning VM (`controller: false`, `blockOwnerDeletion: false`). An owner is a VM whose own `spec.affinity` references the pair — carriage is not required. A VM that merely carries the label without referencing it is tagged in vCenter but is **not** an owner. Ownership is added when `spec.affinity` starts referencing the pair and removed when it stops, independently of labels. Ownership is not the same predicate as tag carriage; see the note below. |
 
 `Tag` carries **no finalizer** (D10). Deletion at zero owners is a plain, atomic `Delete` — see invariant 5 below.
 
@@ -96,6 +123,8 @@ status:
 Per D9 in [`research.md`](./research.md), no owner column:
 
 ```go
+// +kubebuilder:printcolumn:name="Tag",type="string",JSONPath=".spec.name"
+// +kubebuilder:printcolumn:name="Kind",type="string",JSONPath=".spec.kind"
 // +kubebuilder:printcolumn:name="Key",type="string",JSONPath=".spec.key"
 // +kubebuilder:printcolumn:name="Value",type="string",JSONPath=".spec.value"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
@@ -119,17 +148,19 @@ Matching `TagPolicy`'s marker set, plus the printer columns above.
 ## Name derivation
 
 ```
-name = "tag-" + XXHash64Hex(metadata.namespace + ":" + spec.key + ":" + spec.value)
+name = "tag-" + XXHash64Hex(metadata.namespace + ":" + spec.name)
 ```
 
-- `XXHash64Hex` (`pkg/util/hash.go`) formats the full 64-bit `xxhash.Sum64` digest as 16 hex characters, so the name is always 20 characters, always DNS-subdomain-safe, and independent of the shape of the namespace, key, and value.
-- The hashed string uses `":"` as the separator — including the namespace prefix, which doubles as the vCenter Tag Category — so one canonical string identifies the pair everywhere.
-- The derivation is a pure function of the namespace/key/value triple, so any VM in the namespace that needs the `Tag` computes the same name and either finds the existing resource or creates it. No lookup-by-selector is needed on the write path; the label mirror exists for read-side and diagnostic queries.
-- **Collision handling**: 16 hex characters is 64 bits. Within one namespace's `Tag` set, collision is not a practical concern, and a collision would be self-consistent rather than silently wrong only if the pair matched — so on create-or-adopt the reconciler MUST verify that an existing resource with the derived name has the expected `spec.key` and `spec.value`, and MUST fail the reconcile with a wrapped error if it does not, rather than adopting a mismatched resource.
+- `XXHash64Hex` (`pkg/util/hash.go`) formats the full 64-bit `xxhash.Sum64` digest as 16 hex characters, so the name is always 20 characters, always DNS-subdomain-safe, and independent of the shape of the namespace and the backend tag name.
+- The hashed string uses `":"` as the separator — including the namespace prefix, which doubles as the vCenter Tag Category — so one canonical string identifies the backend tag everywhere. `ConcreteTagResourceName` in `pkg/providers/vsphere/virtualmachine/affinity_tags.go` is the single implementation.
+- For an `Original` tag, `spec.name` is `<key>:<value>`, so the name is a pure function of the namespace and the label pair.
+- `kind`, `membership` and `policy` deliberately do not contribute to the name. Two different interpretations of one backend tag name therefore meet at one resource, where the identity check rejects adoption.
+- The derivation is a pure function of the namespace and backend tag name, so any VM in the namespace that needs the `Tag` computes the same name and either finds the existing resource or creates it. No lookup-by-selector is needed on the write path; the label mirror exists for read-side and diagnostic queries.
+- **Collision handling**: 16 hex characters is 64 bits. Within one namespace's `Tag` set, collision is not a practical concern. On create-or-adopt the reconciler MUST verify that an existing resource with the derived name has the expected complete identity (`ValidateTagIdentity` and an exact `spec` match), and MUST fail the reconcile with a wrapped error if it does not, rather than adopting a mismatched resource.
 
 ### Empty label value
 
-`app=""` is a legal Kubernetes label. It yields `XXHash64Hex("my-namespace-1:app:")`, a `Tag` distinct from every non-empty value for the same key, and a `metadata.labels["app"] = ""` mirror — all legal. Hence no `MinLength` on `spec.value`.
+`app=""` is a legal Kubernetes label. It yields an `Original` tag with `spec.name: "app:"`, resource name `tag-` + `XXHash64Hex("my-namespace-1:app:")`, no `spec.value` in the serialized object, and a `metadata.labels["app"] = ""` mirror — all legal. The tag is distinct from every non-empty value for the same key. Hence `spec.value` is optional and has no `MinLength`.
 
 ---
 
@@ -137,13 +168,13 @@ name = "tag-" + XXHash64Hex(metadata.namespace + ":" + spec.key + ":" + spec.val
 
 | | |
 |---|---|
-| **Tag name** | `"vmoperator:<spec.key>:<spec.value>"` — generated by the shared affinity tag-name helper |
+| **Tag name** | `"vmoperator:<spec.name>"` — the shared affinity tag-name helper adds the prefix to the prefix-free `spec.name` |
 | **Tag category** | `<metadata.namespace>` |
 | **Emitted as** | `vimtypes.TagSpec{ArrayUpdateSpec{Operation: add\|remove}, Id: TagId{NameId: &TagIdNameId{Tag: name, Category: category}}}` |
 | **Created by** | `vpxd`, when named in the VM's reconfigure request; or assumed pre-existing (spec NG1) |
 | **Applied set recorded in** | the VM's ExtraConfig, key `vmservice.placementpolicies.tags` — **not** on the `Tag` resource (D12) |
 
-The Compute Policy side and VM attachments use the same generated tag name. When VMHardAffinityDuringExecution is enabled, the `vmoperator:` prefix changes backend names without changing the Tag resource-name hash. The disabled path retains legacy bare `key:value` names. For reverse lookup of an original tag, remove the shared prefix before splitting the remaining `key:value` pair on its colon.
+The Compute Policy side and VM attachments use the same generated tag name. The `vmoperator:` prefix is a vCenter-boundary concern only; it never appears in a `Tag` resource and does not affect the resource-name hash. For reverse lookup of an original tag, remove the shared prefix before splitting the remaining `key:value` pair on its colon.
 
 Which of these tags a given VM currently carries is recorded on the **VM**, in its own ExtraConfig key, and nowhere on the `Tag` resource. That is deliberate and consistent with "Ownership vs. tag carriage" below: the `Tag` never enumerates the VMs that carry it. The record exists because the attached-tag list vCenter returns is a list of tag URNs that cannot be matched against name+category tags, so it is the only way to know which of this feature's tags were previously applied — the same reason and the same workflow mechanism B uses with `vmservice.policy.tags`. See `research.md` "The attached-tag list is UUIDs and is not on `moVM`" and `plan.md` "`ReconcileTagSpecs` — steps 4-5".
 
@@ -153,18 +184,19 @@ Which of these tags a given VM currently carries is recorded on the **VM**, in i
 
 The resource is designed so that "does a `Tag` for this label exist?" and "give me the `Tag`s for this label" are both answerable without scanning the namespace. Three mechanisms, in order of preference:
 
-1. **The derived name is the primary key.** `metadata.name` is a pure function of `spec.key` + `spec.value` (see "Name derivation"), so an exact-pair existence check is a `Get` — an O(1) point read against the cache, no list and no selector. This is the check the VM reconcile path runs once per owned pair, and it is by far the most frequent query in the feature.
+1. **The derived name is the primary key.** `metadata.name` is a pure function of the namespace and `spec.name` (see "Name derivation"), so an exact-tag existence check is a `Get` — an O(1) point read against the cache, no list and no selector. This is the check the VM reconcile path runs once per owned pair, and it is by far the most frequent query in the feature.
 
-   One caveat applies to every read here, including this one: the client is the manager's **cached** client, so a `Tag` created earlier in the same reconcile is not guaranteed to be readable later in that reconcile. The VM path therefore carries the objects it created forward in memory rather than re-reading them; see `plan.md` "`ReconcileTagSpecs` — steps 4-5".
+   One caveat applies to every read here, including this one: the client is the manager's **cached** client, so a `Tag` created earlier in the same reconcile is not guaranteed to be readable later in that reconcile. The VM path therefore carries the objects it created forward in memory rather than re-reading them: `ReconcileTagCRs` returns the Tags it owns, and `ListLabelDerivedTags` merges them with what the cache returns.
 2. **Field indexes**, registered by the `VirtualMachine` controller's `AddToManager` — every consumer is on that controller's reconcile path — against the shared manager cache and therefore available to every client built from it:
 
    | Index name | Indexed value | Answers |
    |------------|---------------|---------|
    | `metadata.ownerReferences.uid` | one entry per owner UID | which `Tag`s does this VM own |
+   | `spec.sourceLabel` | one `"<key>:<value>"` entry for each `SourceLabel` Tag with a key | which label-derived `Tag`s match this VM's labels |
 
-   There is deliberately no index for the exact key/value pair. Validation V5 pins `metadata.name` to `TagResourceName(spec.key, spec.value)` on create, and the CEL immutability rules make both fields immutable on update, so a pair is always resolvable by the keyed `Get` in (1) — the name can never drift from the pair it encodes.
+   An exact tag is still resolvable by the keyed `Get` in (1): validation V5 pins `metadata.name` to `ConcreteTagResourceName(namespace, spec.name)` on create, and the CEL immutability rule makes `spec` immutable on update, so the name can never drift from the identity it encodes. The `spec.sourceLabel` index exists because one source label backs several `Tag`s (the original tag and every derived target tag for that pair), so the carriage lookup in `ListLabelDerivedTags` lists by source pair instead of computing every possible name.
 
-   The reverse direction — "which VMs carry this `Tag`'s label?", which the `Tag` controller asks on every create, ownership change, and delete — is indexed on the **VM** side rather than recorded on the `Tag`: a multi-valued field index `metadata.labels.keyValue` on `vmopv1.VirtualMachine`. See `plan.md` "Field indexes and query patterns". Nothing about the tagged-VM set is persisted on the `Tag` itself, which is what keeps the resource free of a second source of truth that could drift from the VMs' actual labels.
+   The reverse direction — "which VMs carry this `Tag`'s label?", which the VM controller's `Tag` watch mapper asks on every `Tag` create and delete (D16) — is indexed on the **VM** side rather than recorded on the `Tag`: a multi-valued field index `metadata.labels.keyValue` on `vmopv1.VirtualMachine`. See `plan.md` "Field indexes and query patterns". Nothing about the tagged-VM set is persisted on the `Tag` itself, which is what keeps the resource free of a second source of truth that could drift from the VMs' actual labels.
 
 3. **The `metadata.labels` mirror** for human and `kubectl` use (`kubectl get tags -l app=nginx`, `-l app`). It is deliberately **not** used by the controllers: controller-runtime's cache maintains field indexes only, so `client.MatchingLabels` is an in-memory filter applied after the cache has returned every object in the namespace. The mirror is a convenience surface, not an index.
 
@@ -183,12 +215,12 @@ Neither predicate is a subset or superset of the other in general: a VM can own 
 
 ## Lifecycle invariants
 
-1. **Creation**: created by the VM reconcile path, always with at least one owner reference (the VM whose reconcile created it) and always with its label mirror set.
+1. **Creation**: created by the VM reconcile path, always with at least one owner reference (the VM whose reconcile created it). A `SourceLabel` Tag is created with its label mirror set; a `GroupedAntiAffinitySelf` Tag has no source label and no mirror.
 2. **Ownership add**: a VM adds **only its own** owner-reference entry, for every pair its own `spec.affinity` references — carriage is not required.
-3. **Ownership remove**: a VM removes **only its own** entry when it is being deleted (before its finalizer is released). Because `spec.affinity` is immutable, this is the only trigger: a live VM's set of referenced pairs cannot shrink, so its ownership cannot be lost by relabeling.
+3. **Ownership remove**: a live VM removes **only its own** entry when its `spec.affinity` no longer references the `Tag`. Relabeling never removes ownership. A deleted VM removes nothing itself: the garbage collector prunes its entry, or deletes a `Tag` it solely owned, once the VM object is actually removed. That happens only after vCenter deleted the VM, so its policies never outlive the `Tag`s they target (`plan.md`, D18).
 4. **Concurrent ownership writes**: every ownership write is a patch built with `client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})`, skipped entirely when `apiequality.Semantic.DeepEqual` reports no change to `ownerReferences`. A conflict is returned and retried by the next reconcile. A plain merge patch is **not** acceptable: `ownerReferences` is a list field and a merge patch would replace it wholesale, silently dropping a concurrent writer's entry.
-5. **Deletion at zero owners**: the `Tag` controller `Delete`s the `Tag` when it observes an empty `ownerReferences` list, preconditioned on the `ResourceVersion` it read. `Tag` carries no finalizer (D10), so this delete is atomic — there is no persisted `deletionTimestamp` state to observe, only the resulting delete event (invariant 6). The precondition is what keeps this safe: if a VM concurrently added an owner reference after this reconcile's `Get`, the `Delete` fails with a conflict instead of destroying the newly-owned object, and the next reconcile re-reads the fresh state and skips deletion. Ordinary owner-reference garbage collection is a backstop that covers only the "all owner VMs deleted" case — it does **not** delete an object whose owner list was emptied while those owners still exist. See [`research.md`](./research.md) "Owner-reference garbage collection", and V6's allow-list above for what that backstop needs from admission.
-6. **Deletion fan-out**: every VM in the namespace carrying `spec.key=spec.value` is enqueued by the VM controller's `Tag` watch — via the `metadata.labels.keyValue` index, not a namespace scan — so label-only VMs drop the vCenter tag (spec G5). The single delete event is sufficient: a woken VM's desired-set computation no longer finds a matching `Tag` (`Get` returns `NotFound`), so it emits `TagSpec{remove}`. The `Tag` controller itself enqueues nothing on any path (D16, D19).
+5. **Deletion at zero owners**: the `Tag` controller `Delete`s the `Tag` when it observes an empty `ownerReferences` list, preconditioned on the `ResourceVersion` it read. `Tag` carries no finalizer (D10), so this delete is atomic — there is no persisted `deletionTimestamp` state to observe, only the resulting delete event (invariant 6). The precondition is what keeps this safe: if a VM concurrently added an owner reference after this reconcile's `Get`, the `Delete` fails with a conflict instead of destroying the newly-owned object, and the next reconcile re-reads the fresh state and skips deletion. Ordinary owner-reference garbage collection covers only the "all owner VMs deleted" case — it does **not** delete an object whose owner list was emptied while those owners still exist, which is why the `Tag` controller deletes explicitly. See [`research.md`](./research.md) "Owner-reference garbage collection", and V6's garbage-collector admission above for what garbage collection needs from admission.
+6. **Deletion fan-out**: every VM in the namespace carrying the source label `spec.key=spec.value` is enqueued by the VM controller's `Tag` watch — via the `metadata.labels.keyValue` index, not a namespace scan — so label-only VMs drop the vCenter tag (spec G5). The single delete event is sufficient: a woken VM's desired-set computation no longer finds a matching `Tag` in the `spec.sourceLabel` index, so it emits `TagSpec{remove}`. The `Tag` controller itself enqueues nothing on any path (D16, D19).
 7. **Re-create after deletion**: while a `Tag` with the derived name does not exist — because it was just deleted, or has not yet been created — a VM that needs it creates a fresh one rather than silently skipping tagging; the create is retried until it succeeds (spec G12).
 8. **Status ownership**: only the `Tag` controller writes `status`, via the status subresource, with the same optimistic-lock-and-skip-if-unchanged discipline.
 9. **No vCenter work**: nothing in the `Tag`'s lifecycle calls vCenter. `status.id` stays empty (spec NG1).
@@ -210,34 +242,33 @@ There is no condition for a label-mirror failure. Mirror correction writes `meta
 
 ## Admission rules (validating webhook)
 
-Located at `webhooks/vspherepolicy/tag/validation/tag_validator.go` (D8). Verbs: `CREATE`, `UPDATE`, `DELETE`.
+Located at `webhooks/vspherepolicy/tag/validation/tag_validator.go` (D8). Verbs: `CREATE`, `UPDATE`. The webhook is not registered for `DELETE`, so deletion is governed by RBAC alone (D15).
+
+The identity rules (V1, V2, V5) are implemented once, by `ValidateTagIdentity` in `pkg/providers/vsphere/virtualmachine/affinity_tags.go`, which the webhook and the VM path's adopt-existing check share.
 
 | # | Rule | Operation | Error |
 |---|------|-----------|-------|
-| V1 | `spec.key` MUST be non-empty and a valid Kubernetes label key | CREATE, UPDATE | `field.Invalid(spec.key, …)` |
-| V2 | `spec.value` MUST be a valid Kubernetes label value (empty permitted) | CREATE, UPDATE | `field.Invalid(spec.value, …)` |
-| V5 | `metadata.name` MUST equal the derived name for `spec.key`/`spec.value` | CREATE | `field.Invalid(metadata.name, …)` |
-| V6 | Only privileged accounts, or the system service accounts allow-listed below, may create, update, or delete a `Tag` | CREATE, UPDATE, DELETE | `field.Forbidden(…, "only privileged users may …")` |
+| V1 | For `Original`, `AffinityTarget` and `GroupedAntiAffinityTarget` tags, `spec.membership` MUST be `SourceLabel` and `spec.key`/`spec.value` MUST be a valid, non-reserved Kubernetes label key and value (empty value permitted). For `GroupedAntiAffinitySelf` tags, `spec.membership` MUST be `PolicyRequesters` and `spec.key`/`spec.value` MUST be absent. | CREATE, UPDATE | `field.Invalid(spec, …)` |
+| V2 | `spec.policy` MUST be absent for `Original` tags and present for every other kind, with a `type` that matches the kind, canonical (sorted, unique) `targets`, and a source label that agrees with those targets. `spec.name` MUST equal the name derived from the kind and the policy inputs (for `Original`, `<key>:<value>`). | CREATE, UPDATE | `field.Invalid(spec, …)` |
+| V3/V4 | `spec` MUST NOT change after create. Enforced by a type-level CEL transition rule on the CRD; the webhook does not repeat the check. | UPDATE | CEL: "tag identity is immutable" |
+| V5 | `metadata.name` MUST equal `ConcreteTagResourceName(metadata.namespace, spec.name)` | CREATE, UPDATE | `field.Invalid(spec, …)` |
+| V6 | Only privileged accounts may create or update a `Tag`; on UPDATE the Kubernetes garbage collector (`generic-garbage-collector`) is also admitted | CREATE, UPDATE | `field.Forbidden(metadata, "only privileged users may …")` |
 
 V6 uses the existing `pkgctx.WebhookRequestContext.IsPrivilegedAccount` mechanism, which is what admits the VM Operator service account and CSP admins while rejecting DevOps users (spec G9, US4 scenarios 3-4).
 
-#### V6's system-account allow-list
+#### V6's garbage-collector admission
 
-`IsPrivilegedAccount` (`pkg/builder/auth.go:42`) matches the VM Operator service account, `system:masters`, `kubernetes-admin`, and `PRIVILEGED_USERS`. Two Kubernetes control-plane clients match none of them and **must** be allow-listed, checked before the privileged test:
+`IsPrivilegedAccount` (`pkg/builder/auth.go:42`) matches the VM Operator service account, `system:masters`, `kubernetes-admin`, and `PRIVILEGED_USERS`. The Kubernetes garbage collector matches none of them, so the webhook admits it explicitly, and only on UPDATE:
 
 ```go
-var allowedSystemAccountsForTag = map[string]struct{}{
-    "system:serviceaccount:kube-system:generic-garbage-collector": {},
-    "system:serviceaccount:kube-system:namespace-controller":      {},
-}
+const garbageCollectorUsername = "system:serviceaccount:kube-system:generic-garbage-collector"
 ```
 
-- `generic-garbage-collector` needs **UPDATE** to prune a dangling owner reference left by a deleted VM, and **DELETE** for the all-owners-deleted backstop. Blocking the UPDATE is the more damaging of the two: a stale owner reference makes the `Tag` look owned forever, so the `Tag` controller's delete-at-zero-owners never fires either, leaving an orphaned `Tag` and a permanently stale vCenter tag on every label-only VM.
-- `namespace-controller` needs **DELETE** to tear down namespaced resources. Denying it leaves the namespace in `Terminating` indefinitely.
+`generic-garbage-collector` needs **UPDATE** to prune a dangling owner reference left by a deleted VM when other owners remain. Blocking it is damaging: a stale owner reference makes the `Tag` look owned forever, so neither the `Tag` controller's delete-at-zero-owners nor garbage collection ever removes it, leaving an orphaned `Tag` and a permanently stale vCenter tag on every label-only VM.
 
-This mirrors `webhooks/persistentvolumeclaim/validation/persistentvolumeclaim_validator.go:36-43`, the only other webhook in this repository that intercepts DELETE, which keeps an equivalent allow-list containing both of these accounts.
+The garbage collector's DELETE of a solely-owned `Tag`, and the `namespace-controller`'s DELETE during namespace teardown, need no admission allowance because the webhook does not intercept DELETE.
 
-The allow-list does not weaken spec G9 or US4 scenarios 3-4: a DevOps user is still rejected on CREATE, UPDATE and DELETE, and cannot impersonate a `kube-system` service account.
+Because DELETE is not intercepted, a DevOps user is kept from deleting a `Tag` by RBAC alone: no role in `config/` grants namespace users any access to `Tag`. A DevOps user is still rejected on CREATE and UPDATE by V6, and cannot impersonate a `kube-system` service account.
 
 Note on V3/V4: the fan-out predicate depends on them. Because `spec` cannot change and the mapper's `List` key is derived from `spec` alone, no UPDATE can change the answer — `Tag` carries no finalizer (D10), so deletion is a plain, atomic `Delete` rather than a `deletionTimestamp` transition, and the predicate accordingly admits only create and delete, filtering out the `Tag` controller's own status/label-mirror writes and the VM path's owner-reference patches (`plan.md` "Fan-out — the VM controller's `Tag` watch"). If V3/V4 were ever relaxed, that predicate must be revisited in the same change.
 
@@ -337,7 +368,7 @@ Resulting `Tag` (`ns-1/tag-<hash-of-tier:db>`): one owner reference to `vm-a`, e
 
 ### US3 — label participation dropped
 
-`spec.affinity` is immutable (spec NG8), so what changes here is `metadata.labels`. Ownership follows the affinity reference alone, so dropping a label never drops ownership — only the VM's own tag carriage reacts.
+What changes here is `metadata.labels`, not `spec.affinity`. Ownership follows the affinity reference alone, so dropping a label never drops ownership — only the VM's own tag carriage reacts.
 
 **Case 1 — `vm-a` drops a label it still references.** `vm-a` drops label `app: nginx` while its `spec.affinity` still references it, and `vm-b` also references and (still) carries it:
 
@@ -347,6 +378,6 @@ Resulting `Tag` (`ns-1/tag-<hash-of-tier:db>`): one owner reference to `vm-a`, e
 
 **Case 2 — `vm-a` was the only VM ever referencing the pair, and later drops the label.** `vm-a` drops label `app: nginx`:
 
-- `vm-a`'s owner reference is **unaffected**, because its `spec.affinity` still references `app: nginx` and that cannot change.
+- `vm-a`'s owner reference is **unaffected**, because its `spec.affinity` still references `app: nginx`.
 - The `Tag` persists indefinitely, with `vm-a` as its sole owner, even though `vm-a` no longer carries the label.
-- The `Tag` is removed only if `vm-a` is later deleted — the `Tag` controller observes the resulting empty `ownerReferences` list and deletes the `Tag` outright (no finalizer, no terminating window) — never by a label change alone.
+- The `Tag` is removed only if `vm-a` stops referencing the pair in its `spec.affinity` (the `Tag` controller then deletes it at zero owners) or `vm-a` is deleted (once the `vm-a` object is removed, the garbage collector deletes the `Tag` it solely owned; no finalizer, no terminating window) — never by a label change alone.

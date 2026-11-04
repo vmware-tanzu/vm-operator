@@ -228,6 +228,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - lifecycle.vcfa.vmware.com
+  resources:
+  - lifecyclestages
+  verbs:
+  - create
+  - get
+  - patch
+- apiGroups:
   - netoperator.vmware.com
   resources:
   - networkinterfaces

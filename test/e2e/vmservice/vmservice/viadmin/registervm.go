@@ -186,25 +186,26 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vCenterHostname := vcenter.GetVCPNIDFromKubeconfig(context.TODO(), clusterProxy.GetKubeconfigPath())
 			Expect(vCenterHostname).NotTo(BeZero(), "Unable to determine VC PNID")
 
-			sshCommandRunner, _, _ := testutils.GetHelpersFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			sshCommandRunner, _ := testutils.GetHelpersFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			DeferCleanup(func() { _ = sshCommandRunner.Close() })
 			user = vcenter.NewUser(testUserWithoutPrivilege, password).WithAdminCreds(vCenterAdminCreds).WithSSHCommandRunner(sshCommandRunner)
 
 			var err error
 
 			err = user.Create()
 			Expect(err).ToNot(HaveOccurred())
+			// Registered after the SSH runner cleanup, so (LIFO) the user is
+			// deleted while the runner it depends on is still open.
+			DeferCleanup(func() { vcenter.DeleteUserOrFail(user) })
 
 			authTestWCPClient, err = wcp.NewWCPAPIClient(vCenterHostname, testUserWithoutPrivilegeWithDomain, password, testbed.RootUsername, testbed.RootPassword)
 			Expect(err).NotTo(HaveOccurred())
+			// Registered last so the client is closed before the user is deleted.
+			DeferCleanup(func() { _ = authTestWCPClient.Close() })
 			vimClient, err := vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
 			Expect(err).NotTo(HaveOccurred())
 			err = vcenter.AddToGroup(ctx, vimClient, testUserWithoutPrivilege, "ReadOnlyUsers")
 			Expect(err).NotTo(HaveOccurred())
-		})
-
-		AfterEach(func() {
-			// Delete the SSO user.
-			vcenter.DeleteUserOrFail(user)
 		})
 
 		It("A user without namespaces.Configure privilege should not be able to invoke RegisterVM API", Label("smoke"), func() {

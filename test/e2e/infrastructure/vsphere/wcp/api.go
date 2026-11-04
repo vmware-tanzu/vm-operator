@@ -27,6 +27,9 @@ package wcp
 //	This assumes the user already has access to the namespace.
 //	RemoveNamespacePermissions removes all privileges the principal has on a given namespace.
 type WorkloadManagementAPI interface {
+	// Close releases the resources, e.g. SSH connections, held by the client.
+	Close() error
+
 	// Supervisor Cluster CRUD
 	ListSupervisorSummary() (SupervisorSummaryList, error)
 

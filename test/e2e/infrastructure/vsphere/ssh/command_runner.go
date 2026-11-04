@@ -157,7 +157,7 @@ func (s *sshCommandRunnerImpl) RunCommand(cmd string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSH session on %s: %w", remote, err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	e2eframework.Logf("Running command via SSH on %s: %s", remote, redact.RedactSensitiveFlags(cmd))
 

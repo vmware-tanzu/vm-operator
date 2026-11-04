@@ -82,6 +82,7 @@ func GetControlPlaneVMConnectionDetails(ctx context.Context, path string, apiSer
 
 	// Correlate the kubeconfig cluster IP with the API server management endpoint, which is what wcpsvc uses internally.
 	dcliClient := wcp.NewClientUsingKubeconfig(ctx, path)
+	defer func() { _ = dcliClient.Close() }()
 
 	clusters, err := dcliClient.ListClusters()
 	if err != nil {

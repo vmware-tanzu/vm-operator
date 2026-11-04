@@ -817,7 +817,8 @@ func setupNonAdminUserForTests(
 	svClusterProxy framework.ClusterProxyInterface) (*vcenter.User, ctrlclient.Client) {
 
 	By("Creating non-admin user and assign it to SupervisorProviderAdministrators group")
-	sshCommandRunner, _, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, svClusterProxy.GetKubeconfigPath())
+	sshCommandRunner, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, svClusterProxy.GetKubeconfigPath())
+	DeferCleanup(func() { _ = sshCommandRunner.Close() })
 
 	username := "gce2e-test-user-" + capiutil.RandomString(4)
 	user, err := vcenter.CreateUserAndAssignToGrp(ctx, vimClient, sshCommandRunner, username, "Admin!23Admin", "SupervisorProviderAdministrators")

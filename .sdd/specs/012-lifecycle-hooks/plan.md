@@ -64,7 +64,7 @@ pkg/lifecycle/
                                      # MarkUnknown,
                                      # ReleaseLifecycleState,
                                      # ErrHooksBlocked,
-                                     # statusChangedPredicate
+                                     # StatusChangedPredicate
   stage_test.go
 
 config/crd/external-crds/            # make generate-external-manifests;
@@ -135,16 +135,17 @@ Envtest needs no extra wiring: `test/builder/test_suite.go` loads all of `config
 |---|---|---|---|---|---|
 | `nil` | — | — | — | no condition write | `true` |
 | found | absent | — | — | no condition write | `true` |
-| found | present | `false` | present | **previous hold still being cleared**: do not pause; condition `False`, waiting | `false` |
+| found | present | `false` | present | **previous hold still being cleared**: do not pause; condition `False`, waiting (or the hook-failed message while the entry is `HooksReady=True/HookFailed`) | `false` |
 | found | present | `false` | absent | pause: patch `(true, false)`; condition `False`, waiting | `false` |
 | found | present | `true` | absent, or `HooksReady` not `True` | condition `False`, waiting or hook-failed by `HooksReady`'s reason | `false` |
-| found | present | `true` | `HooksReady=True` | release: patch `(false, true)` (ResourceDelete: same write also removes `lifecycleStateFinalizer`); condition `True`, or `False` with a hook-failed message on `HookFailed` | `true` |
+| found | present | `true` | `HooksReady=True`, reason not `HookFailed` | release: patch `(false, true)` (ResourceDelete: same write also removes `lifecycleStateFinalizer`); condition `True` | `true` |
+| found | present | `true` | `HooksReady=True/HookFailed` | release: patch `(false, true)` so the Lifecycle Operator clears the entry; finalizer kept; condition `False`, `<Stage> hook failed, retrying`; the next reach re-pauses | `false` |
 
 - **Switches** follow the Lifecycle Operator's transition table: pause → `(true, false)`, release → `(false, true)`; admission rejects anything else.
 - **No stage branching in the decision**: pause, wait and release are the same for every stage. Reaching a checkpoint after a release is a new hold, including a retry of a failed create, delete or finalizer patch. The one stage-specific step is ResourceDelete's finalizer removal in the release write, for namespace-deletion protection.
 - **Abandon**: a paused stage whose action is no longer needed is released, `(false, true)`, without running the action and whatever `HooksReady` says (`AbandonStage`, §3). The Lifecycle Operator's contract allows this and requires it instead of leaving the stage paused.
 - **Waiting** (previous hold still being cleared, paused-not-ready) relies on the `LifecycleState` status watch; there is no timed requeue (model.md "Wakeups").
-- **ResourceDelete releases and removes the finalizer in one write**, because a separate release patch would conflict with the Lifecycle Operator's status-entry removal (model.md "Releasing at `ResourceDelete`").
+- **ResourceDelete releases and, when it proceeds, removes the finalizer in one write** (kept on `HookFailed`), because a separate release patch would conflict with the Lifecycle Operator's status-entry removal (model.md "Releasing at `ResourceDelete`").
 - VM Operator never adds or repairs `spec.stages[]` entries. Hooks registered later are the Lifecycle Operator's: it patches the stage into an existing `LifecycleState`, or creates the object.
 
 ### 2. Call sites
@@ -205,8 +206,8 @@ Envtest needs no extra wiring: `test/builder/test_suite.go` loads all of `config
 
 ### 4. Watch
 
-- `Watches(&lifecyclev1.LifecycleState{}, handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &vmopv1.VirtualMachine{}), builder.WithPredicates(statusChangedPredicate{}))`, gated on `Features.LifecycleHooks` — the same shape as the `PolicyEvaluation` watch.
-- `statusChangedPredicate`: `Create` → true only without `lifecycleStateFinalizer` (Lifecycle-Operator-created, for adoption); `Generic` → false; `Delete` → true; `Update` → true only when `status` differs (`apiequality.Semantic.DeepEqual`). This drops VM Operator's own creates and `spec` writes.
+- `Watches(&lifecyclev1.LifecycleState{}, handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &vmopv1.VirtualMachine{}), builder.WithPredicates(StatusChangedPredicate{}))`, gated on `Features.LifecycleHooks` — the same shape as the `PolicyEvaluation` watch.
+- `StatusChangedPredicate` (exported; the controller package uses it): `Create` → true only without `lifecycleStateFinalizer` (Lifecycle-Operator-created, for adoption); `Generic` → false; `Delete` → true; `Update` → true only when `status` differs (`apiequality.Semantic.DeepEqual`). This drops VM Operator's own creates and `spec` writes.
 - `LifecycleSubscribedStages` is never watched — one object covers every VM in the namespace. Its informer only backs the cached `Get`.
 
 ### 5. Webhooks
@@ -252,7 +253,7 @@ flowchart TD
     end
 
     RS -- "spec.stages#91;#93;<br/>workflowPaused" --> HOOKS
-    READY --> WATCH["Watches#40;LifecycleState#41;<br/>statusChangedPredicate<br/>+ EnqueueRequestForOwner"]
+    READY --> WATCH["Watches#40;LifecycleState#41;<br/>StatusChangedPredicate<br/>+ EnqueueRequestForOwner"]
     LATER --> WATCH
     WATCH -- "owning VM re-reconciles" --> GOC
 ```
@@ -264,6 +265,8 @@ Per `testing-standards.md`: one `_test.go` and one `_suite_test.go` per package,
 ### Unit (`testlabels.Controller`)
 
 `pkg/lifecycle/stage_test.go`, fake client with `lifecyclev1.AddToScheme`:
+
+The library is unit-testable on its own, with no cluster and no capability rollout: tests set `Features.LifecycleHooks` in the context (on for the decision table, off for the no-op paths) and use the fake client with interceptors for conflicts and call counts.
 
 - **`GetOrCreateLifecycleState`**:
   - No `LifecycleState` and no `LifecycleSubscribedStages` at `lss-1b52874a51e98527` → `nil`, nothing created.
@@ -277,16 +280,17 @@ Per `testing-standards.md`: one `_test.go` and one `_suite_test.go` per package,
   - Pause → `(true, false)`, also when starting from `(false, true)`, for every stage.
   - Previous hold still being cleared → no patch, no requeue.
   - Paused and `HooksReady` absent or `False/HooksPending` → blocked, waiting message; `False/HookFailed` → blocked, hook-failed message.
-  - Release → `(false, true)`, `state` carries the new `resourceVersion`; condition `True` on `AllHooksSucceeded`/`NoHooksRegistered`, `False` with the hook-failed message on `True/HookFailed`. Next reach of any stage re-pauses once the status entry is gone and waits while it is present.
+  - Release → `(false, true)`, `state` carries the new `resourceVersion`; condition `True` on `AllHooksSucceeded`/`NoHooksRegistered`, `False` with the hook-failed message and `Proceed=false` on `True/HookFailed`, finalizer kept. Next reach of any stage re-pauses once the status entry is gone and waits while it is present.
   - Create then pause in one pass with no intermediate read.
   - ResourceDelete release also removes the finalizer and releases any other paused stage in the same write, other finalizers kept; an object without the finalizer releases normally.
+  - ResourceDelete on `True/HookFailed` releases without removing the finalizer.
   - A stale-copy or concurrently-modified pause/release → `409` returned, not retried internally, no condition written.
   - `GetOrCreateLifecycleState` or a pause/release failing with an API error or binding mismatch → error returned, `LifecycleHookReady` `Unknown` with the stage reason and error message, including at the first stage reached.
 - **`ReleaseLifecycleState`**: removes only VM Operator's finalizer under the lock; absent or `nil` → no patch; a concurrent writer's finalizer → conflict, theirs kept. Capability off → one `APIReader` `Get` and the finalizer removed; `NotFound` or no-match → no-op.
 - **Capability off**: the four stage call sites make zero `LifecycleState`/`LifecycleSubscribedStages` calls (call-counting fake); a leftover `LifecycleHookReady` is left unchanged.
 - **`AbandonStage`**: paused, with `HooksReady` absent, `False` or `True` → `(false, true)`, condition `True`; not paused or `nil` → no patch.
 - **`PublishStages`** (`pkg/lifecycle/stages_test.go`, fake client): absent → created with exactly the four stages; drifted `spec` → restored; already correct → no write; capability off → zero API calls (call-counting fake).
-- **`statusChangedPredicate`**: `Create` with the finalizer, `Generic` and spec-only `Update` filtered; `Create` without it, status `Update` and `Delete` pass.
+- **`StatusChangedPredicate`**: `Create` with the finalizer, `Generic` and spec-only `Update` filtered; `Create` without it, status `Update` and `Delete` pass.
 
 `pkg/providers/vsphere/vmprovider_vm_test.go`:
 
@@ -317,7 +321,7 @@ New suite `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`, r
 
 - **Stage catalog** (SC-011): with the capability on, `vmoperator-stages` exists with the four stages after startup, and is restored after deletion plus a VM Operator restart; with it off, VM Operator creates no `LifecycleStages` object.
 - **Baseline**: Create; PowerStateChange in both directions, suspend, and restart; Delete then ResourceDelete, including with only one of them hooked; no hooks in the namespace → no `LifecycleHookReady`; capability disabled with hooks registered → no behavior change (SC-005).
-- **Hook failure**: a failed hook → the action runs and `LifecycleHookReady` is `False` with the hook-failed message.
+- **Hook failure**: a failed hook → the hold is released, the action does not run, `LifecycleHookReady` is `False` with the hook-failed message, and once the status entry is cleared the stage pauses again.
 - **Hook registered later**: a resolved Create hook, then a new Delete hook; deleting the VM blocks on Delete.
 - **Namespace deletion** (US3 scenario 5, SC-007): a Delete hook present at first reconcile; the namespace stays `Terminating` and the VM and `LifecycleState` remain, condition `False`, until the hook resolves; then both are deleted.
 - **Single-VM delete** with the same hook, for contrast.
@@ -340,6 +344,6 @@ New suite `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`, r
 | Depends on Lifecycle-Operator-owned `LifecycleSubscribedStages` | Zero-hook VMs must cost nothing (G5) | Watching `LifecycleHook` locally duplicates the Lifecycle Operator's matching logic (`research.md` Candidate 1) |
 | Get-or-create at every checkpoint | VM Operator and the Lifecycle Operator can each reach a VM first | A single create point misses VMs whose first reconcile passed before a hook existed |
 | Optimistic-lock patches on `spec.stages[]` and `metadata.finalizers` | Both lists have two writers | A plain merge patch replaces the list and silently drops the other writer's entry |
-| `statusChangedPredicate` on the watch | Only `status` changes and Lifecycle-Operator creates (adoption) carry information VM Operator lacks | No predicate re-reconciles the VM on its own creates and `spec` writes |
+| `StatusChangedPredicate` on the watch | Only `status` changes and Lifecycle-Operator creates (adoption) carry information VM Operator lacks | No predicate re-reconciles the VM on its own creates and `spec` writes |
 | VM Operator publishes its own cluster-scoped `LifecycleStages` | The Lifecycle Operator needs the stage catalog before any VM is reconciled, and VM Operator owns the stage names | Shipping YAML in the Lifecycle Operator's package splits ownership of the stage list from the code that implements the stages |
 | Gate decided at each call site | PowerStateChange is only known inside `if setPowerState` or once a restart is due; ResourceDelete must wait for Delete | An upfront pass would duplicate that logic or pause stages that are not being reached |

@@ -205,6 +205,8 @@ func getAPIServerAdminConf(ctx context.Context, svKubeConfig string) (string, er
 		return "", err
 	}
 
+	defer func() { _ = apiServerSSHCommandRunner.Close() }()
+
 	conf, err := apiServerSSHCommandRunner.RunCommand("cat /etc/kubernetes/admin.conf")
 	if err != nil {
 		return "", err

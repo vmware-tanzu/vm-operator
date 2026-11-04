@@ -737,6 +737,7 @@ func VerifyLoginAndRunCmdsInVDSSetup(config *config.E2EConfig, vmIP string, cmds
 	gatewayCmdRunner, err := e2essh.NewSSHCommandRunner(gatewayVMIP, consts.SshPort, testbed.GatewayUsername, []ssh.AuthMethod{ssh.Password(testbed.GatewayPassword)})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(gatewayCmdRunner).NotTo(BeNil())
+	defer func() { _ = gatewayCmdRunner.Close() }()
 
 	findTCPForwardingEntity := fmt.Sprintf("line=$(sed -n '/%s/=' %s | tail -1)", consts.AllowTCPForwardingKey, consts.SshdConfig)
 	enableTCPForwarding := fmt.Sprintf("sed -i \"${line}s/no/yes/\" %s", consts.SshdConfig)
@@ -759,6 +760,8 @@ func VerifyLoginAndRunCmdsInVDSSetup(config *config.E2EConfig, vmIP string, cmds
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(cmdRunner).ToNot(BeNil())
 	}, config.GetIntervals("default", "login-retry-timeout")...).Should(Succeed(), "ssh login to VM did not succeed in time.")
+
+	defer func() { _ = cmdRunner.Close() }()
 
 	cmdOutput, err := cmdRunner.RunCommand("ip addr")
 	Expect(err).NotTo(HaveOccurred())
@@ -1728,6 +1731,8 @@ func EnsureVGPUConfiguration(config ESXConfig) error {
 				hostConfigured = false
 			}
 		}
+
+		_ = cmdRunner.Close()
 
 		// Mark host as configured if all commands succeeded
 		if hostConfigured {

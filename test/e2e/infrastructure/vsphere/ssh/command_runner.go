@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/redact"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 )
 
 const (
@@ -25,21 +28,24 @@ const (
 	sshRetryInterval = 5 * time.Second
 )
 
-// SSHCommandRunner knows how to run SSH commands on an arbitrary host.
-//
-//	Useful if users want to directly run commands, eg. on the VC or a GC node.
-//
-// RunCommand runs the given command on the host the helper is configured with, returning its STDOUT.
+// SSHCommandRunner knows how to run SSH commands on an arbitrary host. This is
+// useful to directly run commands, e.g. on the VC or a supervisor control
+// plane VM. Callers should Close the runner when done with it.
 type SSHCommandRunner interface {
-	// Run a command and return its STDOUT.
+	// RunCommand runs the command on the host and returns its combined
+	// STDOUT and STDERR.
 	RunCommand(cmd string) ([]byte, error)
-	RunCommandWindows(cmd string) ([]byte, error)
+	// Close closes all connections held by the runner.
 	Close() error
 }
 
-// sshCommandRunnerImpl implements the SSHCommandRunner interface, using the Golang ssh library.
+// sshCommandRunnerImpl implements the SSHCommandRunner interface, using the
+// Golang ssh library.
 type sshCommandRunnerImpl struct {
 	client *ssh.Client
+	// gatewayClient is the jump box connection, if any, that client is
+	// tunneled through.
+	gatewayClient *ssh.Client
 }
 
 type Gateway struct {
@@ -49,7 +55,8 @@ type Gateway struct {
 	AuthMethods []ssh.AuthMethod
 }
 
-// NewSSHCommandRunner returns a helper configured based on the HTTP_PROXY set in the env.
+// NewSSHCommandRunnerFromHTTPProxy returns a helper configured based on the
+// HTTP_PROXY set in the env.
 func NewSSHCommandRunnerFromHTTPProxy() (SSHCommandRunner, error) {
 	gateway, err := GetGateway()
 	if err != nil {
@@ -59,30 +66,43 @@ func NewSSHCommandRunnerFromHTTPProxy() (SSHCommandRunner, error) {
 	return NewSSHCommandRunner(gateway.Hostname, gateway.Port, gateway.Username, gateway.AuthMethods)
 }
 
+// newClientConfig returns the client config for the user and auth methods.
+// Host keys are not verified since the test environments are ephemeral.
+func newClientConfig(user string, authMethods []ssh.AuthMethod) *ssh.ClientConfig {
+	return &ssh.ClientConfig{
+		User:            user,
+		Auth:            authMethods,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+}
+
+// newSSHDialerWithRetries dials the host, retrying every interval until the
+// timeout. The error from the last dial is returned on timeout.
 func newSSHDialerWithRetries(hostname string, port int, config *ssh.ClientConfig, interval time.Duration, timeout time.Duration) (*ssh.Client, error) {
-	var newClient *ssh.Client
+	var (
+		newClient *ssh.Client
+		lastErr   error
+	)
 
-	err := wait.PollUntilContextTimeout(context.Background(), interval, timeout, true, func(ctx context.Context) (bool, error) {
-		var err error
-		if newClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), config); err != nil {
-			return false, err
-		}
+	addr := net.JoinHostPort(hostname, strconv.Itoa(port))
 
-		return true, nil
+	pollErr := wait.PollUntilContextTimeout(context.Background(), interval, timeout, true, func(context.Context) (bool, error) {
+		newClient, lastErr = ssh.Dial("tcp", addr, config)
+		return lastErr == nil, nil
 	})
+	if lastErr != nil {
+		return nil, fmt.Errorf("failed to dial SSH host %s: %w", addr, lastErr)
+	}
+	if pollErr != nil {
+		return nil, fmt.Errorf("failed to dial SSH host %s: %w", addr, pollErr)
+	}
 
-	return newClient, err
+	return newClient, nil
 }
 
 // NewSSHCommandRunner returns a helper configured with the given host, for the given username and auth methods.
 func NewSSHCommandRunner(hostname string, port int, user string, authMethods []ssh.AuthMethod) (SSHCommandRunner, error) {
-	config := &ssh.ClientConfig{
-		User:            user,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	newClient, err := newSSHDialerWithRetries(hostname, port, config, sshRetryInterval, sshRetryDuration)
+	newClient, err := newSSHDialerWithRetries(hostname, port, newClientConfig(user, authMethods), sshRetryInterval, sshRetryDuration)
 	if err != nil {
 		return nil, err
 	}
@@ -92,98 +112,77 @@ func NewSSHCommandRunner(hostname string, port int, user string, authMethods []s
 	}, nil
 }
 
-// NewSSHCommandRunnerWithinGateway uses the gateway as a jump box to create and turn a helper configured with the given host, for the given username and auth methods,.
+// NewSSHCommandRunnerWithinGateway uses the gateway as a jump box to create and return a helper configured with the given host, for the given username and auth methods.
 func NewSSHCommandRunnerWithinGateway(hostname string, port int, user string, authMethods []ssh.AuthMethod, gw Gateway) (SSHCommandRunner, error) {
-	gwConfig := &ssh.ClientConfig{
-		User:            gw.Username,
-		Auth:            gw.AuthMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	gatewayClient, err := newSSHDialerWithRetries(gw.Hostname, gw.Port, gwConfig, sshRetryInterval, sshRetryDuration)
+	gatewayClient, err := newSSHDialerWithRetries(gw.Hostname, gw.Port, newClientConfig(gw.Username, gw.AuthMethods), sshRetryInterval, sshRetryDuration)
 	if err != nil {
 		return nil, err
 	}
 
-	targetHost := fmt.Sprintf("%s:%d", hostname, port)
+	targetHost := net.JoinHostPort(hostname, strconv.Itoa(port))
 
 	conn, err := gatewayClient.Dial("tcp", targetHost)
 	if err != nil {
-		return nil, err
+		_ = gatewayClient.Close()
+		return nil, fmt.Errorf("failed to dial %s through gateway %s: %w", targetHost, gw.Hostname, err)
 	}
 
-	config := &ssh.ClientConfig{
-		User:            user,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	ncc, chans, reqs, err := ssh.NewClientConn(conn, targetHost, config)
+	ncc, chans, reqs, err := ssh.NewClientConn(conn, targetHost, newClientConfig(user, authMethods))
 	if err != nil {
-		return nil, err
+		_ = conn.Close()
+		_ = gatewayClient.Close()
+		return nil, fmt.Errorf("failed to create SSH connection to %s through gateway %s: %w", targetHost, gw.Hostname, err)
 	}
-
-	newClient := ssh.NewClient(ncc, chans, reqs)
 
 	return &sshCommandRunnerImpl{
-		client: newClient,
+		client:        ssh.NewClient(ncc, chans, reqs),
+		gatewayClient: gatewayClient,
 	}, nil
 }
 
 func (s *sshCommandRunnerImpl) RunCommand(cmd string) ([]byte, error) {
-	e2eframework.Logf("Running command via SSH; remote: %s, command: %s", s.client.RemoteAddr(), redact.RedactSensitiveFlags(cmd))
-
 	if s.client == nil {
 		return nil, fmt.Errorf("s.client is nil")
 	}
 
-	session, err := s.client.NewSession()
-	if err != nil {
-		return nil, err
-	}
 	// Ignore python warnings if the env var is not specified in the command.
-	// This avoid parsing errors when the command output contains warnings.
+	// This avoids parsing errors when the command output contains warnings.
 	if !strings.Contains(cmd, "PYTHONWARNINGS") {
 		cmd = fmt.Sprintf("PYTHONWARNINGS=ignore %s", cmd)
 	}
 
-	combinedOutput, err := session.CombinedOutput(cmd)
-
-	e2eframework.Logf("Ran command via SSH; remote: %s, command: %s, output: %s, error: %v", s.client.RemoteAddr(), redact.RedactSensitiveFlags(cmd), redact.RedactSensitiveOutput(string(combinedOutput)), err)
-
-	return combinedOutput, err
-}
-
-func (s *sshCommandRunnerImpl) RunCommandWindows(cmd string) ([]byte, error) {
-	e2eframework.Logf("Running command via SSH; remote: %s, command: %s", s.client.RemoteAddr(), redact.RedactSensitiveFlags(cmd))
-
-	if s.client == nil {
-		return nil, fmt.Errorf("s.client is nil")
-	}
+	remote := s.client.RemoteAddr()
 
 	session, err := s.client.NewSession()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create SSH session on %s: %w", remote, err)
 	}
+	defer session.Close()
 
-	combinedOutput, err := session.CombinedOutput(cmd)
+	e2eframework.Logf("Running command via SSH on %s: %s", remote, redact.RedactSensitiveFlags(cmd))
 
-	e2eframework.Logf("Ran command via SSH; remote: %s, command: %s, output: %s, error: %v", s.client.RemoteAddr(), redact.RedactSensitiveFlags(cmd), redact.RedactSensitiveOutput(string(combinedOutput)), err)
+	out, err := session.CombinedOutput(cmd)
 
-	return combinedOutput, err
+	e2eframework.Logf("Ran command via SSH on %s, output: %s, error: %v", remote, redact.RedactSensitiveOutput(string(out)), err)
+
+	return out, err
 }
 
 func (s *sshCommandRunnerImpl) Close() error {
-	err := s.client.Close()
-	if err != nil {
-		return err
+	var errs []error
+
+	if s.client != nil {
+		errs = append(errs, s.client.Close())
+	}
+	if s.gatewayClient != nil {
+		errs = append(errs, s.gatewayClient.Close())
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func GetGateway() (*Gateway, error) {
-	httpProxy := os.Getenv("HTTP_PROXY" /*consts.HttpProxyEnv*/)
+	httpProxy := os.Getenv(consts.HTTPProxyEnv)
 	if httpProxy == "" {
 		return nil, errors.New("HTTP_PROXY environment variable should be set")
 	}
@@ -197,7 +196,7 @@ func GetGateway() (*Gateway, error) {
 	gw := &Gateway{
 		Hostname:    gatewayIP,
 		Username:    testbed.GatewayUsername,
-		Port:        22, // consts.DefaultSSHPort,
+		Port:        consts.SshPort,
 		AuthMethods: []ssh.AuthMethod{ssh.Password(testbed.GatewayPassword)},
 	}
 

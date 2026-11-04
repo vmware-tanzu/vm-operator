@@ -6215,6 +6215,167 @@ func unitTestsValidateUpdate() {
 
 	affinityValidationCases(doTest)
 
+	// setupVACUpdate enables the VAC features and gives the VM and its old
+	// copy the same StorageClass, which is immutable.
+	setupVACUpdate := func(ctx *unitValidatingWebhookContext) {
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.PodVMOnStretchedSupervisor = true
+			config.Features.StoragePolicyMutability = true
+		})
+		ctx.oldVM.Spec.StorageClass = builder.DummyStorageClassName
+		ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
+	}
+
+	const (
+		vacA = "vac-a"
+		vacB = "vac-b"
+	)
+
+	// setupVACChange creates VACs A and B, each with its own policy ID, and
+	// changes the VM from A to B.
+	setupVACChange := func(ctx *unitValidatingWebhookContext) {
+		for _, name := range []string{vacA, vacB} {
+			volumeAttributesClass := builder.DummyVolumeAttributesClassWithID("id-from-" + name)
+			volumeAttributesClass.Name = name
+			Expect(ctx.Client.Create(ctx, volumeAttributesClass)).To(Succeed())
+		}
+
+		ctx.oldVM.Spec.VolumeAttributesClassName = vacA
+		ctx.vm.Spec.VolumeAttributesClassName = vacB
+	}
+
+	DescribeTable(
+		"spec.volumeAttributesClassName update",
+		doTest,
+
+		Entry("should deny setting a VAC that does not exist",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+				},
+				validate: doValidateWithMsg(
+					`spec.volumeAttributesClassName: Invalid value: "dummy-vac": volumeattributesclasses.storage.k8s.io "dummy-vac" not found`),
+			},
+		),
+		Entry("should deny setting a VAC whose policy is not associated with the namespace",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+
+					volumeAttributesClass := builder.DummyVolumeAttributesClassWithID("id-from-vac")
+					Expect(ctx.Client.Create(ctx, volumeAttributesClass)).To(Succeed())
+					ctx.vm.Spec.VolumeAttributesClassName = volumeAttributesClass.Name
+				},
+				validate: doValidateWithMsg(
+					`spec.volumeAttributesClassName: Invalid value: "dummy-vac": Storage policy is not associated with the namespace dummy-vm-namespace-for-webhook-validation by object dummy-vac`),
+			},
+		),
+		Entry("should allow setting a VAC whose policy is associated with the namespace",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+
+					volumeAttributesClass := builder.DummyVolumeAttributesClassWithID("id-from-vac")
+					Expect(ctx.Client.Create(ctx, volumeAttributesClass)).To(Succeed())
+					ctx.vm.Spec.VolumeAttributesClassName = volumeAttributesClass.Name
+
+					storagePolicyQuota := builder.DummyStoragePolicyQuota(
+						volumeAttributesClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "id-from-vac")
+					Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("should not re-validate a VAC that did not change",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+					ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("should allow changing a VAC to one whose policy is associated with the namespace",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					setupVACChange(ctx)
+
+					// Only the new VAC's policy is associated with the
+					// namespace, proving the old VAC is not what is checked.
+					storagePolicyQuota := builder.DummyStoragePolicyQuota(
+						vacB+"-storagepolicyquota", ctx.vm.Namespace, "id-from-vac-b")
+					Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("should deny changing a VAC to one whose policy is not associated with the namespace",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					setupVACChange(ctx)
+
+					// Only the old VAC's policy is associated with the
+					// namespace, proving the new VAC is what is checked.
+					storagePolicyQuota := builder.DummyStoragePolicyQuota(
+						vacA+"-storagepolicyquota", ctx.vm.Namespace, "id-from-vac-a")
+					Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+				},
+				validate: doValidateWithMsg(
+					`spec.volumeAttributesClassName: Invalid value: "vac-b": Storage policy is not associated with the namespace dummy-vm-namespace-for-webhook-validation by object vac-b`),
+			},
+		),
+		Entry("should deny changing a VAC to one that does not exist",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					setupVACChange(ctx)
+					Expect(ctx.Client.Delete(ctx, &storagev1.VolumeAttributesClass{
+						ObjectMeta: metav1.ObjectMeta{Name: vacB},
+					})).To(Succeed())
+				},
+				validate: doValidateWithMsg(
+					`spec.volumeAttributesClassName: Invalid value: "vac-b": volumeattributesclasses.storage.k8s.io "vac-b" not found`),
+			},
+		),
+		Entry("should deny setting a VAC when the StoragePolicyMutability feature is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.StoragePolicyMutability = false
+					})
+
+					volumeAttributesClass := builder.DummyVolumeAttributesClassWithID("id-from-vac")
+					Expect(ctx.Client.Create(ctx, volumeAttributesClass)).To(Succeed())
+					ctx.vm.Spec.VolumeAttributesClassName = volumeAttributesClass.Name
+
+					storagePolicyQuota := builder.DummyStoragePolicyQuota(
+						volumeAttributesClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "id-from-vac")
+					Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+				},
+				validate: doValidateWithMsg(
+					`spec.volumeAttributesClassName: Invalid value: "dummy-vac": VolumeAttributesClass "dummy-vac" object is specified but capability is not enabled`),
+			},
+		),
+		Entry("should deny changing a VAC when the StoragePolicyMutability feature is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					setupVACChange(ctx)
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.StoragePolicyMutability = false
+					})
+				},
+				validate: doValidateWithMsg(
+					`spec.volumeAttributesClassName: Invalid value: "vac-b": VolumeAttributesClass "vac-b" object is specified but capability is not enabled`),
+			},
+		),
+	)
+
 	DescribeTable(
 		"spec.class and spec.className update",
 		doTest,

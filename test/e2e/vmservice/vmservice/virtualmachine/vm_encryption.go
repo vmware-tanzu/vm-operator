@@ -990,7 +990,7 @@ func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client 
 		}
 
 		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
-	}, time.Minute*2, time.Second*5).Should(Succeed(), fmt.Sprintf("%s condition not %s", expectedCondition.Type, expectedCondition.Status))
+	}, time.Minute*2, time.Second*5).Should(Succeed(), "%s condition not %s", expectedCondition.Type, expectedCondition.Status)
 
 	By("Checking VirtualMachine.Status.Crypto")
 

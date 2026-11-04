@@ -4,7 +4,6 @@ package utils
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	. "github.com/onsi/gomega"
@@ -117,7 +116,7 @@ func getSupervisorCapabilityFromCR(ctx context.Context, client ctrlclient.Client
 func getWcpClusterCapabilitiesCM(ctx context.Context, client ctrlclient.Client) *corev1.ConfigMap {
 	cm := &corev1.ConfigMap{}
 	err := client.Get(ctx, ctrlclient.ObjectKey{Namespace: capabilityConfigMapNs, Name: capabilityConfigMapName}, cm)
-	Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("error getting ConfigMap(%s/%s): %v", capabilityConfigMapNs, capabilitiesCRName, err))
+	Expect(err).NotTo(HaveOccurred(), "error getting ConfigMap(%s/%s)", capabilityConfigMapNs, capabilitiesCRName)
 
 	return cm
 }
@@ -125,7 +124,7 @@ func getWcpClusterCapabilitiesCM(ctx context.Context, client ctrlclient.Client) 
 func getSupervisorCapabilitiesCR(ctx context.Context, client ctrlclient.Client) *capv1.Capabilities {
 	cr := &capv1.Capabilities{}
 	err := client.Get(ctx, ctrlclient.ObjectKey{Name: capabilitiesCRName}, cr)
-	Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("error getting Capabilities %s: %v", capabilitiesCRName, err))
+	Expect(err).NotTo(HaveOccurred(), "error getting Capabilities %s", capabilitiesCRName)
 
 	return cr
 }

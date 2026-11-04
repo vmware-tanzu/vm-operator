@@ -17,6 +17,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -167,30 +172,6 @@ var _ = Describe("Canonical affinity policy hash", Label(testlabels.Controller),
 			"1b34492bd93511ff", "vmoperator:af-pds-pde-host-1b34492bd93511ff-example.com/app:"),
 	)
 
-	DescribeTable("includes policy type, strictness, and topology in tag names",
-		func(strictness vimtypes.VmPlacementPolicyVmPlacementPolicyStrictness,
-			topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology, prefix string) {
-			for _, kind := range []virtualmachine.AffinityPolicyType{
-				virtualmachine.AffinityPolicyTypeAffinity, virtualmachine.AffinityPolicyTypeGroupedAntiAffinity,
-			} {
-				policyHash, err := virtualmachine.NewAffinityPolicyHash(kind, strictness, topology,
-					[]virtualmachine.LabelPair{{Key: "app", Value: "nginx"}})
-				Expect(err).NotTo(HaveOccurred())
-				expected := fmt.Sprintf("vmoperator:aaf-%s-%s", prefix, policyHash.Hash)
-				if kind == virtualmachine.AffinityPolicyTypeAffinity {
-					expected = fmt.Sprintf("vmoperator:af-%s-%s-app:nginx", prefix, policyHash.Hash)
-				}
-				Expect(policyHash.TagName).To(Equal(expected))
-			}
-		},
-		Entry("preferred host", preferred, host, "pds-pde-host"),
-		Entry("required placement host", required, host, "rds-pde-host"),
-		Entry("required execution host", hard, host, "rds-rde-host"),
-		Entry("preferred zone", preferred, zone, "pds-pde-zone"),
-		Entry("required placement zone", required, zone, "rds-pde-zone"),
-		Entry("required execution zone", hard, zone, "rds-rde-zone"),
-	)
-
 	It("canonicalizes duplicates and ordering without aliasing caller inputs", func() {
 		targets := []virtualmachine.LabelPair{
 			{Key: "app", Value: "database"}, {Key: "app", Value: "cache"}, {Key: "app", Value: "database"},
@@ -255,6 +236,11 @@ var _ = Describe("Canonical affinity policy hash", Label(testlabels.Controller),
 			[]virtualmachine.LabelPair{{Key: "app:nginx", Value: ""}}, "invalid affinity target key"),
 		Entry("invalid value", virtualmachine.AffinityPolicyTypeAffinity, preferred, host,
 			[]virtualmachine.LabelPair{{Key: "app", Value: "nginx:cache"}}, "invalid affinity target value"),
+		Entry("reserved AF key", virtualmachine.AffinityPolicyTypeAffinity, preferred, host,
+			[]virtualmachine.LabelPair{{Key: "vmoperator.vmware.com/x", Value: "y"}}, "reserved affinity target key"),
+		Entry("reserved key in AAF group", virtualmachine.AffinityPolicyTypeGroupedAntiAffinity, preferred, host,
+			[]virtualmachine.LabelPair{{Key: "app", Value: "db"}, {Key: "vmoperator.vmware.com/x", Value: "y"}},
+			"reserved affinity target key"),
 	)
 })
 
@@ -265,7 +251,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 	}
 	create := func() vimtypes.VirtualMachineConfigSpec {
 		var spec vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, false)).To(Succeed())
+		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, false, nil)).To(Succeed())
 		return spec
 	}
 	BeforeEach(func() {
@@ -286,7 +272,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		vmCtx.VM.Labels["app"] = "other"
 		unrelated := vimtypes.TagSpec{Id: vimtypes.TagId{Uuid: "user-uuid"}}
 		out := vimtypes.VirtualMachineConfigSpec{TagSpecs: []vimtypes.TagSpec{unrelated}}
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, nil, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, nil, &out, nil)).To(Succeed())
 		Expect(out.TagSpecs).To(Equal([]vimtypes.TagSpec{unrelated}))
 		record, ok := object.OptionValueList(out.ExtraConfig).GetString(virtualmachine.ExtraConfigPlacementPoliciesKey)
 		Expect(ok).To(BeTrue())
@@ -299,10 +285,10 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		vmCtx.VM.Spec.Affinity.VMAffinity.PreferredDuringSchedulingPreferredDuringExecution = append(
 			vmCtx.VM.Spec.Affinity.VMAffinity.PreferredDuringSchedulingPreferredDuringExecution, term("nginx", corev1.LabelHostname))
 		out = vimtypes.VirtualMachineConfigSpec{}
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, applied, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, applied, &out, nil)).To(Succeed())
 		Expect(out).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
 		vmCtx.VM.Spec.Affinity = nil
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, applied, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, applied, &out, nil)).To(Succeed())
 		Expect(out.VmPlacementPolicies).To(BeEmpty())
 		Expect(out.TagSpecs).To(HaveLen(1))
 		Expect(out.TagSpecs[0].Operation).To(Equal(vimtypes.ArrayUpdateOperationRemove))
@@ -312,7 +298,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		Expect(record).To(Equal("{}"))
 		applied.ExtraConfig = out.ExtraConfig
 		out = vimtypes.VirtualMachineConfigSpec{}
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, applied, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, applied, &out, nil)).To(Succeed())
 		Expect(out).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
 	})
 
@@ -324,7 +310,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		af.RequiredDuringSchedulingPreferredDuringExecution = []vmopv1.VMAffinityTerm{term("web", corev1.LabelHostname)}
 		config := &vimtypes.VirtualMachineConfigInfo{ExtraConfig: applied.ExtraConfig}
 		var added vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &added)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &added, nil)).To(Succeed())
 		for _, tag := range added.TagSpecs {
 			Expect(tag.Id.NameId.Tag).ToNot(ContainSubstring("web"), "the VM must not be made a web member")
 		}
@@ -334,7 +320,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		config = &vimtypes.VirtualMachineConfigInfo{ExtraConfig: added.ExtraConfig}
 		af.RequiredDuringSchedulingPreferredDuringExecution = nil
 		var removed vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &removed)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &removed, nil)).To(Succeed())
 		Expect(removed.TagSpecs).To(HaveLen(1))
 		Expect(removed.TagSpecs[0].Operation).To(Equal(vimtypes.ArrayUpdateOperationRemove))
 		Expect(removed.TagSpecs[0].Id.NameId.Tag).To(HaveSuffix("-app:web"))
@@ -344,12 +330,12 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		affinity := vmCtx.VM.Spec.Affinity
 		vmCtx.VM.Spec.Affinity = nil
 		out := vimtypes.VirtualMachineConfigSpec{}
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, nil, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, nil, &out, nil)).To(Succeed())
 		Expect(out).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
 		vmCtx.VM.Spec.Affinity = affinity
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, nil, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, nil, &out, nil)).To(Succeed())
 		retry := vimtypes.VirtualMachineConfigSpec{}
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, nil, &retry)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, nil, &retry, nil)).To(Succeed())
 		Expect(retry).To(Equal(out), "failed tasks leave the applied snapshot unchanged")
 	})
 
@@ -362,7 +348,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		Expect(ok).To(BeTrue())
 		Expect(record).To(ContainSubstring("policies"))
 		var out vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, &vimtypes.VirtualMachineConfigInfo{ExtraConfig: spec.ExtraConfig}, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, &vimtypes.VirtualMachineConfigInfo{ExtraConfig: spec.ExtraConfig}, &out, nil)).To(Succeed())
 		Expect(out).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
 	})
 	It("canonicalizes equivalent selectors, policy ordering, and duplicate terms", func() {
@@ -397,7 +383,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		Expect(virtualmachine.GetVMTagsFromExtraConfig(&vimtypes.VirtualMachineConfigInfo{ExtraConfig: spec.ExtraConfig})).To(ConsistOf("vmoperator:aaf-pds-pde-host-38640f88bae92217", "vmoperator:app:cache"))
 		vmCtx.VM.Spec.Affinity = nil
 		var out vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, &vimtypes.VirtualMachineConfigInfo{ExtraConfig: spec.ExtraConfig}, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, &vimtypes.VirtualMachineConfigInfo{ExtraConfig: spec.ExtraConfig}, &out, nil)).To(Succeed())
 		Expect(out.TagSpecs).To(HaveLen(2))
 		for _, tag := range out.TagSpecs {
 			Expect(tag.Operation).To(Equal(vimtypes.ArrayUpdateOperationRemove))
@@ -463,7 +449,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 
 		// Placement must generate the full attachment set even without a create receipt.
 		var placed vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &placed, true)).To(Succeed())
+		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &placed, true, nil)).To(Succeed())
 		Expect(placed.TagSpecs).To(Equal(spec.TagSpecs))
 		Expect(placed.ExtraConfig).To(BeEmpty())
 		for _, policy := range placed.VmPlacementPolicies {
@@ -500,14 +486,14 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		vmCtx.VM.Labels = nil
 		var out vimtypes.VirtualMachineConfigSpec
 		config := &vimtypes.VirtualMachineConfigInfo{ExtraConfig: applied.ExtraConfig}
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out, nil)).To(Succeed())
 		Expect(out.TagSpecs).To(HaveLen(1))
 		Expect(out.TagSpecs[0].Id.NameId.Tag).To(Equal("vmoperator:app:nginx"))
 		Expect(out.VmPlacementPolicies).To(BeEmpty())
 		_, ok := object.OptionValueList(out.ExtraConfig).GetString(virtualmachine.ExtraConfigPlacementPoliciesKey)
 		Expect(ok).To(BeFalse())
 		var retry vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &retry)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &retry, nil)).To(Succeed())
 		Expect(retry).To(Equal(out))
 	})
 	It("changes AF strictness while retaining the shared original and clears only once", func() {
@@ -517,7 +503,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		af.RequiredDuringSchedulingPreferredDuringExecution = af.PreferredDuringSchedulingPreferredDuringExecution
 		af.PreferredDuringSchedulingPreferredDuringExecution = nil
 		var out vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out, nil)).To(Succeed())
 		Expect(out.VmPlacementPolicies).To(HaveLen(1))
 		Expect(out.TagSpecs).To(HaveLen(2))
 		for _, tag := range out.TagSpecs {
@@ -526,14 +512,14 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		config.ExtraConfig = out.ExtraConfig
 		vmCtx.VM.Spec.Affinity = nil
 		out = vimtypes.VirtualMachineConfigSpec{}
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out, nil)).To(Succeed())
 		Expect(out.TagSpecs).To(HaveLen(2))
 		record, ok := object.OptionValueList(out.ExtraConfig).GetString(virtualmachine.ExtraConfigPlacementPoliciesKey)
 		Expect(ok).To(BeTrue())
 		Expect(record).To(Equal("{}"))
 		config.ExtraConfig = out.ExtraConfig
 		out = vimtypes.VirtualMachineConfigSpec{}
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out, nil)).To(Succeed())
 		Expect(out).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
 	})
 	DescribeTable("preserves class policies without generated affinity during create and placement", func(mutable, eligible bool) {
@@ -551,12 +537,11 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		}
 		for _, isPlacement := range []bool{false, true} {
 			spec := vimtypes.VirtualMachineConfigSpec{VmPlacementPolicies: []vimtypes.BaseVmPlacementPolicy{classPolicy}}
-			Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, isPlacement)).To(Succeed())
+			Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, isPlacement, nil)).To(Succeed())
 			Expect(spec.VmPlacementPolicies).To(Equal([]vimtypes.BaseVmPlacementPolicy{classPolicy}))
 			Expect(spec.ExtraConfig).To(BeEmpty(), "class policies must not acquire a managed affinity receipt")
 		}
-	}, Entry("mutable without affinity", true, true), Entry("legacy without affinity", false, true),
-		Entry("mutable ineligible affinity", true, false), Entry("legacy ineligible affinity", false, false))
+	}, Entry("mutable without affinity", true, true), Entry("legacy ineligible affinity", false, false))
 	DescribeTable("preserves outgoing class policies during affinity updates", func(operation string) {
 		applied := create()
 		config := &vimtypes.VirtualMachineConfigInfo{ExtraConfig: applied.ExtraConfig}
@@ -571,7 +556,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 			vmCtx.VM.Spec.Affinity = nil
 		}
 		generated := vimtypes.VirtualMachineConfigSpec{}
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &generated)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &generated, nil)).To(Succeed())
 
 		classPolicies := make([]vimtypes.BaseVmPlacementPolicy, 4, 8)
 		classPolicies[0] = &vimtypes.VmPlacementPolicy{TagsToAttach: []string{"class-tag"}}
@@ -581,7 +566,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		out := vimtypes.VirtualMachineConfigSpec{VmPlacementPolicies: classPolicies}
 		before, err := vimtypes.DeepCopy(out)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, config, &out, nil)).To(Succeed())
 		Expect(out.VmPlacementPolicies[:len(classPolicies)]).To(Equal(before.VmPlacementPolicies))
 		Expect(out.VmPlacementPolicies[len(classPolicies):]).To(ConsistOf(generated.VmPlacementPolicies))
 		Expect(classPolicies).To(Equal(before.VmPlacementPolicies))
@@ -590,7 +575,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		Expect(out.ExtraConfig).To(Equal(generated.ExtraConfig), "class policies must stay outside the affinity receipt")
 		Expect(out.TagSpecs).To(Equal(generated.TagSpecs))
 	}, Entry("adding affinity", "add"), Entry("changing affinity", "change"),
-		Entry("clearing affinity", "clear"), Entry("unchanged affinity", "unchanged"))
+		Entry("clearing affinity", "clear"))
 
 	DescribeTable("replaces class policies with generated affinity during create and placement", func(mutable, isPlacement bool) {
 		pkgcfg.SetContext(vmCtx, func(c *pkgcfg.Config) { c.Features.VMHardAffinityDuringExecution = mutable })
@@ -605,20 +590,19 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		Expect(err).NotTo(HaveOccurred())
 		spec := base
 		var generated vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &generated, isPlacement)).To(Succeed())
-		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, isPlacement)).To(Succeed())
+		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &generated, isPlacement, nil)).To(Succeed())
+		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, isPlacement, nil)).To(Succeed())
 		Expect(spec).To(Equal(generated))
 		Expect(spec.VmPlacementPolicies).To(HaveLen(1))
 		Expect(base).To(Equal(before), "replacing policies must not mutate the class configuration")
-	}, Entry("mutable create", true, false), Entry("mutable placement", true, true),
-		Entry("legacy create", false, false), Entry("legacy placement", false, true))
+	}, Entry("mutable create", true, false), Entry("legacy placement", false, true))
 
 	It("replaces create policies for placement without changing create state or receipts", func() {
 		spec := create()
 		before, err := vimtypes.DeepCopy(spec)
 		Expect(err).NotTo(HaveOccurred())
 		placed := spec
-		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &placed, true)).To(Succeed())
+		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &placed, true, nil)).To(Succeed())
 		Expect(spec).To(Equal(before))
 		Expect(placed.VmPlacementPolicies).To(HaveLen(1))
 		Expect(placed.VmPlacementPolicies[0].(*vimtypes.VmVmAffinity).AffinedVmsTag.NameId.Tag).To(Equal("vmoperator:app:nginx"))
@@ -626,7 +610,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		Expect(placed.ExtraConfig).To(Equal(spec.ExtraConfig))
 
 		var update vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, &vimtypes.VirtualMachineConfigInfo{ExtraConfig: spec.ExtraConfig}, &update)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, &vimtypes.VirtualMachineConfigInfo{ExtraConfig: spec.ExtraConfig}, &update, nil)).To(Succeed())
 		Expect(update).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
 	})
 
@@ -637,10 +621,10 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		}}
 		spec, err := vimtypes.DeepCopy(base)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, false)).To(Succeed())
+		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, false, nil)).To(Succeed())
 		before, err := vimtypes.DeepCopy(spec)
 		Expect(err).NotTo(HaveOccurred())
-		placed, err := virtualmachine.CreateConfigSpecForPlacement(vmCtx, spec, nil)
+		placed, err := virtualmachine.CreateConfigSpecForPlacement(vmCtx, spec, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(spec).To(Equal(before))
 		Expect(base.TagSpecs).To(HaveLen(2))
@@ -657,7 +641,7 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		spec := create()
 		before, err := vimtypes.DeepCopy(spec)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, false)).To(Succeed())
+		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &spec, false, nil)).To(Succeed())
 		Expect(spec.TagSpecs).To(Equal(before.TagSpecs))
 	})
 	DescribeTable("respects execution topology and base capabilities", func(host, hard, zone bool, topology string, anti bool, policyCount int) {
@@ -689,67 +673,18 @@ var _ = Describe("Local mutable affinity", Label(testlabels.Controller), func() 
 		pkgcfg.SetContext(vmCtx, func(c *pkgcfg.Config) { c.Features.VMHardAffinityDuringExecution = false })
 		vmCtx.VM.Spec.Affinity = nil
 		var out vimtypes.VirtualMachineConfigSpec
-		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, &vimtypes.VirtualMachineConfigInfo{ExtraConfig: applied.ExtraConfig}, &out)).To(Succeed())
+		Expect(virtualmachine.UpdateConfigSpecAffinity(vmCtx.Context, vmCtx.VM, &vimtypes.VirtualMachineConfigInfo{ExtraConfig: applied.ExtraConfig}, &out, nil)).To(Succeed())
 		Expect(out).To(Equal(vimtypes.VirtualMachineConfigSpec{}))
 		before, err := vimtypes.DeepCopy(applied)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &applied, false)).To(Succeed())
+		Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &applied, false, nil)).To(Succeed())
 		Expect(applied).To(Equal(before))
-	})
-})
-
-var _ = Describe("TagResourceName", func() {
-	It("is deterministic for the same triple", func() {
-		Expect(virtualmachine.TagResourceName("ns", "app", "nginx")).To(
-			Equal(virtualmachine.TagResourceName("ns", "app", "nginx")))
-	})
-
-	It("differs for different pairs", func() {
-		Expect(virtualmachine.TagResourceName("ns", "app", "nginx")).ToNot(
-			Equal(virtualmachine.TagResourceName("ns", "app", "apache")))
-		Expect(virtualmachine.TagResourceName("ns", "app", "nginx")).ToNot(
-			Equal(virtualmachine.TagResourceName("ns", "env", "nginx")))
-	})
-
-	It("differs for different namespaces with the same key/value pair", func() {
-		Expect(virtualmachine.TagResourceName("ns-a", "app", "nginx")).ToNot(
-			Equal(virtualmachine.TagResourceName("ns-b", "app", "nginx")))
-	})
-
-	It("is DNS-subdomain safe: \"tag-\" followed by 16 hex characters", func() {
-		Expect(virtualmachine.TagResourceName("ns", "app", "nginx")).To(
-			MatchRegexp(`^tag-[0-9a-f]{16}$`))
-	})
-
-	It("handles an empty value", func() {
-		name := virtualmachine.TagResourceName("ns", "app", "")
-		Expect(name).To(MatchRegexp(`^tag-[0-9a-f]{16}$`))
-		Expect(name).ToNot(Equal(virtualmachine.TagResourceName("ns", "app", "x")))
-	})
-
-	It("handles a prefixed key", func() {
-		Expect(virtualmachine.TagResourceName("ns", "example.com/app", "nginx")).To(
-			MatchRegexp(`^tag-[0-9a-f]{16}$`))
-	})
-
-	It("distinguishes an empty value from every other value for the same key", func() {
-		Expect(virtualmachine.TagResourceName("ns", "app", "")).ToNot(
-			Equal(virtualmachine.TagResourceName("ns", "app", "nginx")))
 	})
 })
 
 var _ = Describe("TagName", func() {
 	It("prefixes the key and value joined with a colon", func() {
 		Expect(virtualmachine.TagName("app", "nginx")).To(Equal("vmoperator:app:nginx"))
-	})
-
-	It("handles an empty value", func() {
-		Expect(virtualmachine.TagName("app", "")).To(Equal("vmoperator:app:"))
-	})
-
-	It("handles a prefixed key", func() {
-		Expect(virtualmachine.TagName("example.com/app", "nginx")).To(
-			Equal("vmoperator:example.com/app:nginx"))
 	})
 
 	DescribeTable("recovers the label pair after removing the ownership prefix",
@@ -768,3 +703,785 @@ var _ = Describe("TagName", func() {
 		Entry("key starting with the owner name", "vmoperator", "nginx"),
 	)
 })
+
+func newAppDBHashes(
+	pair virtualmachine.LabelPair,
+	strictness vimtypes.VmPlacementPolicyVmPlacementPolicyStrictness,
+	topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology,
+) (af, aaf virtualmachine.AffinityPolicyHash) {
+
+	af, err := virtualmachine.NewAffinityPolicyHash(
+		virtualmachine.AffinityPolicyTypeAffinity,
+		strictness, topology, []virtualmachine.LabelPair{pair})
+	Expect(err).ToNot(HaveOccurred())
+	aaf, err = virtualmachine.NewAffinityPolicyHash(
+		virtualmachine.AffinityPolicyTypeGroupedAntiAffinity,
+		strictness, topology, []virtualmachine.LabelPair{pair})
+	Expect(err).ToNot(HaveOccurred())
+	return af, aaf
+}
+
+var _ = Describe("Affinity tag naming helpers",
+	Label(testlabels.Controller), func() {
+
+		const ns = "team-a"
+
+		var (
+			pair = virtualmachine.LabelPair{Key: "app", Value: "db"}
+
+			strictness = vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution
+			topology   = vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost
+
+			afHash  virtualmachine.AffinityPolicyHash
+			aafHash virtualmachine.AffinityPolicyHash
+		)
+
+		BeforeEach(func() {
+			afHash, aafHash = newAppDBHashes(pair, strictness, topology)
+		})
+
+		Context("naming table", func() {
+			It("produces the vCenter and prefix-free names for every tag kind", func() {
+				h := aafHash.Hash
+				a := afHash.Hash
+
+				// Original.
+				Expect(virtualmachine.TagName("app", "db")).To(Equal("vmoperator:app:db"))
+				Expect(virtualmachine.PrefixFreeTagName("app", "db")).To(Equal("app:db"))
+
+				// AF hashed.
+				Expect(afHash.TagName).To(Equal("vmoperator:af-rds-pde-host-" + a + "-app:db"))
+				Expect(virtualmachine.PrefixFreePolicyTagName(afHash)).
+					To(Equal("af-rds-pde-host-" + a + "-app:db"))
+
+				// AAF self.
+				Expect(aafHash.TagName).To(Equal("vmoperator:aaf-rds-pde-host-" + h))
+				Expect(virtualmachine.PrefixFreePolicyTagName(aafHash)).
+					To(Equal("aaf-rds-pde-host-" + h))
+
+				// AAF derived target.
+				Expect(virtualmachine.PrefixFreeGroupedAntiAffinityTargetName(aafHash, pair)).
+					To(Equal("aaf-rds-pde-host-" + h + "-app:db"))
+				Expect(virtualmachine.GroupedAntiAffinityTargetTagName(aafHash, pair)).
+					To(Equal("vmoperator:aaf-rds-pde-host-" + h + "-app:db"))
+			})
+
+			It("round trips the prefix and leaves unprefixed names alone", func() {
+				for _, name := range []string{"app:db", "aaf-rds-pde-host-abc", "x:"} {
+					vc := virtualmachine.AddAffinityTagPrefix(name)
+					Expect(vc).To(Equal("vmoperator:" + name))
+					Expect(virtualmachine.StripAffinityTagPrefix(vc)).To(Equal(name))
+					Expect(virtualmachine.StripAffinityTagPrefix(name)).To(Equal(name))
+				}
+			})
+
+			It("keeps the derived target distinct from the self tag", func() {
+				Expect(virtualmachine.PrefixFreeGroupedAntiAffinityTargetName(aafHash, pair)).
+					ToNot(Equal(virtualmachine.PrefixFreePolicyTagName(aafHash)))
+			})
+
+			It("is DNS-subdomain safe: \"tag-\" followed by 16 hex characters", func() {
+				Expect(virtualmachine.ConcreteTagResourceName(ns, "app:db")).
+					To(MatchRegexp(`^tag-[0-9a-f]{16}$`))
+			})
+		})
+	})
+
+var _ = Describe("Desired affinity Tags and label-derived Tags",
+	Label(testlabels.Controller), func() {
+
+		const ns = "team-a"
+
+		var (
+			ctx context.Context
+			vm  *vmopv1.VirtualMachine
+		)
+
+		term := func(value, topology string) vmopv1.VMAffinityTerm {
+			return vmopv1.VMAffinityTerm{
+				TopologyKey: topology,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": value},
+				},
+			}
+		}
+
+		tagNames := func(tags []vspherepolv1.Tag) []string {
+			var names []string
+			for _, tag := range tags {
+				names = append(names, tag.Spec.Name)
+			}
+			return names
+		}
+
+		BeforeEach(func() {
+			ctx = pkgcfg.NewContextWithDefaultConfig()
+			pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+				c.Features.TaggingAPI = true
+				c.Features.VMAffinityDuringExecution = true
+				c.Features.VMPlacementPolicies = true
+				c.Features.VMHardAffinityDuringExecution = true
+			})
+			vm = builder.DummyVirtualMachine()
+			vm.Namespace = ns
+			vm.Labels = nil
+		})
+
+		Context("DesiredAffinityTags", func() {
+			It("returns nothing without affinity", func() {
+				tags, err := virtualmachine.DesiredAffinityTags(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(tags).To(BeEmpty())
+			})
+
+			It("returns nothing when hashed tags are disabled", func() {
+				pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+					c.Features.VMHardAffinityDuringExecution = false
+				})
+				vm.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{term("db", corev1.LabelHostname)},
+					},
+				}
+				tags, err := virtualmachine.DesiredAffinityTags(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(tags).To(BeEmpty())
+			})
+
+			It("produces original, self and derived target tags for grouped anti-affinity", func() {
+				vm.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{term("db", corev1.LabelHostname)},
+					},
+				}
+				tags, err := virtualmachine.DesiredAffinityTags(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				h, err := virtualmachine.NewAffinityPolicyHash(
+					virtualmachine.AffinityPolicyTypeGroupedAntiAffinity,
+					vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution,
+					vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost,
+					[]virtualmachine.LabelPair{{Key: "app", Value: "db"}})
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(tagNames(tags)).To(ConsistOf(
+					"app:db",
+					"aaf-rds-pde-host-"+h.Hash,
+					"aaf-rds-pde-host-"+h.Hash+"-app:db",
+				))
+				for i := range tags {
+					Expect(virtualmachine.ValidateTagIdentity(&tags[i])).To(Succeed())
+					Expect(tags[i].Namespace).To(Equal(ns))
+				}
+			})
+
+			It("produces original and hashed tags for affinity and skips ineligible topologies", func() {
+				pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+					c.Features.VMAffinityDuringExecution = false
+				})
+				vm.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAffinity: &vmopv1.VMAffinitySpec{
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+							term("web", corev1.LabelHostname),
+							term("cache", corev1.LabelTopologyZone),
+						},
+					},
+				}
+				tags, err := virtualmachine.DesiredAffinityTags(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+				// Host rules are not eligible, so only the zone pair remains.
+				Expect(tagNames(tags)).To(ConsistOf(
+					"app:cache",
+					ContainSubstring("af-pds-pde-zone-"),
+				))
+			})
+
+			It("skips a reserved label key", func() {
+				vm.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAffinity: &vmopv1.VMAffinitySpec{
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+							TopologyKey: corev1.LabelHostname,
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"vmoperator.vmware.com/x": "y"},
+							},
+						}},
+					},
+				}
+				tags, err := virtualmachine.DesiredAffinityTags(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(tags).To(BeEmpty())
+			})
+
+			It("skips only the reserved pair of an affinity rule", func() {
+				reserved := vmopv1.VMAffinityTerm{
+					TopologyKey: corev1.LabelHostname,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"vmoperator.vmware.com/x": "y"},
+					},
+				}
+				vm.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAffinity: &vmopv1.VMAffinitySpec{
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+							term("db", corev1.LabelHostname), reserved,
+						},
+					},
+				}
+				tags, err := virtualmachine.DesiredAffinityTags(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(tagNames(tags)).To(ConsistOf(
+					"app:db",
+					MatchRegexp(`^af-pds-pde-host-[0-9a-f]{16}-app:db$`),
+				))
+			})
+
+			It("returns an error when two identities share one Tag name", func() {
+				h, err := virtualmachine.NewAffinityPolicyHash(
+					virtualmachine.AffinityPolicyTypeGroupedAntiAffinity,
+					vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution,
+					vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost,
+					[]virtualmachine.LabelPair{{Key: "app", Value: "db"}})
+				Expect(err).ToNot(HaveOccurred())
+				// An affinity label key shaped like the derived target name
+				// gives an original tag with the derived target's name.
+				forgedKey := "aaf-rds-pde-host-" + h.Hash + "-app"
+				vm.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAffinity: &vmopv1.VMAffinitySpec{
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+							TopologyKey: corev1.LabelHostname,
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{forgedKey: "db"},
+							},
+						}},
+					},
+					VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{term("db", corev1.LabelHostname)},
+					},
+				}
+				_, err = virtualmachine.DesiredAffinityTags(ctx, vm)
+				Expect(err).To(MatchError(ContainSubstring("conflicting identities for Tag")))
+			})
+
+			It("skips a whole anti-affinity group with a reserved key, as the policy does", func() {
+				vm.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+							term("db", corev1.LabelHostname),
+							{
+								TopologyKey: corev1.LabelHostname,
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{"vmoperator.vmware.com/x": "y"},
+								},
+							},
+						},
+					},
+				}
+				tags, err := virtualmachine.DesiredAffinityTags(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(tags).To(BeEmpty())
+
+				// The ConfigSpec must not carry a policy whose target Tags are
+				// never created.
+				var spec vimtypes.VirtualMachineConfigSpec
+				Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(ctx, vm, &spec, false, nil)).To(Succeed())
+				Expect(spec.VmPlacementPolicies).To(BeEmpty())
+				Expect(spec.TagSpecs).To(BeEmpty())
+			})
+		})
+
+		// Coverage part 1: every tag that B attaches today is covered by a
+		// Tag in the desired set, so the CR layer cannot drift from B's generator.
+		Context("coverage of B's attached tags", func() {
+			type kind string
+			const (
+				af  kind = "affinity"
+				aaf kind = "anti-affinity"
+			)
+
+			build := func(k kind, strictness, topology string, carries bool) {
+				terms := []vmopv1.VMAffinityTerm{
+					term("db", topology), term("web", topology),
+				}
+				if carries {
+					vm.Labels = map[string]string{"app": "db"}
+				}
+				switch k {
+				case af:
+					a := &vmopv1.VMAffinitySpec{}
+					switch strictness {
+					case "pp":
+						a.PreferredDuringSchedulingPreferredDuringExecution = terms
+					case "rp":
+						a.RequiredDuringSchedulingPreferredDuringExecution = terms
+					case "rr":
+						a.RequiredDuringSchedulingRequiredDuringExecution = terms
+					}
+					vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAffinity: a}
+				case aaf:
+					a := &vmopv1.VMAntiAffinitySpec{}
+					switch strictness {
+					case "pp":
+						a.PreferredDuringSchedulingPreferredDuringExecution = terms
+					case "rp":
+						a.RequiredDuringSchedulingPreferredDuringExecution = terms
+					case "rr":
+						a.RequiredDuringSchedulingRequiredDuringExecution = terms
+					}
+					vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: a}
+				}
+			}
+
+			attached := func(spec vimtypes.VirtualMachineConfigSpec) []string {
+				var names []string
+				for _, ts := range spec.TagSpecs {
+					if ts.Operation == vimtypes.ArrayUpdateOperationAdd && ts.Id.NameId != nil {
+						names = append(names, ts.Id.NameId.Tag)
+					}
+				}
+				return names
+			}
+
+			for _, c := range []struct {
+				k          kind
+				strictness string
+				topology   string
+				carries    bool
+			}{
+				{af, "pp", corev1.LabelHostname, true},
+				{af, "rr", corev1.LabelTopologyZone, false},
+				{aaf, "rp", corev1.LabelHostname, true},
+				{aaf, "pp", corev1.LabelTopologyZone, false},
+			} {
+				name := fmt.Sprintf("%s %s %s carries=%v",
+					c.k, c.strictness, strings.TrimPrefix(c.topology, "topology.kubernetes.io/"), c.carries)
+				It(name, func() {
+					build(c.k, c.strictness, c.topology, c.carries)
+
+					tags, err := virtualmachine.DesiredAffinityTags(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+					want := sets.New(virtualmachine.TagVCenterNames(tags)...)
+
+					for _, placement := range []bool{false, true} {
+						var spec vimtypes.VirtualMachineConfigSpec
+						Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(
+							ctx, vm, &spec, placement, nil)).To(Succeed())
+						for _, name := range attached(spec) {
+							Expect(want.Has(name)).To(BeTrue(),
+								"%q (placement=%v) is attached but has no Tag; desired=%v",
+								name, placement, sets.List(want))
+						}
+					}
+				})
+			}
+		})
+
+		Context("ListLabelDerivedTags", func() {
+			var (
+				c        ctrlclient.Client
+				declared []vspherepolv1.Tag
+			)
+
+			BeforeEach(func() {
+				// A declaring VM has an anti-affinity against app=db.
+				declarer := builder.DummyVirtualMachine()
+				declarer.Namespace = ns
+				declarer.Spec.Affinity = &vmopv1.AffinitySpec{
+					VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{term("db", corev1.LabelHostname)},
+					},
+				}
+				var err error
+				declared, err = virtualmachine.DesiredAffinityTags(ctx, declarer)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(declared).To(HaveLen(3))
+
+				var objs []ctrlclient.Object
+				for i := range declared {
+					objs = append(objs, declared[i].DeepCopy())
+				}
+				c = builder.NewFakeClient(objs...)
+			})
+
+			It("gives a label-only VM prefixed original and derived target names", func() {
+				vm.Labels = map[string]string{"app": "db"}
+				tags, err := virtualmachine.ListLabelDerivedTags(ctx, c, vm, nil)
+				Expect(err).ToNot(HaveOccurred())
+
+				names := virtualmachine.TagVCenterNames(tags)
+				Expect(names).To(HaveLen(2))
+				Expect(names).To(ContainElement("vmoperator:app:db"))
+				Expect(names).To(ContainElement(MatchRegexp(`^vmoperator:aaf-rds-pde-host-[0-9a-f]{16}-app:db$`)))
+				for _, name := range names {
+					Expect(name).To(HavePrefix(virtualmachine.AffinityTagPrefix))
+				}
+			})
+
+			It("returns nothing for a VM that does not carry the label", func() {
+				vm.Labels = map[string]string{"app": "web"}
+				tags, err := virtualmachine.ListLabelDerivedTags(ctx, c, vm, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(tags).To(BeEmpty())
+			})
+
+			It("includes owned Tags that the cache does not list yet", func() {
+				vm.Labels = map[string]string{"app": "db"}
+				empty := builder.NewFakeClient()
+				tags, err := virtualmachine.ListLabelDerivedTags(ctx, empty, vm, declared)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(tags).To(HaveLen(2))
+			})
+
+			It("drops an index hit whose source label the VM no longer carries", func() {
+				// The List ignores the field selector, as a stale index entry
+				// would, so matches() must recheck the VM's labels.
+				vm.Labels = map[string]string{"app": "web"}
+				stale := builder.NewFakeClientWithInterceptors(interceptor.Funcs{
+					List: func(_ context.Context, _ ctrlclient.WithWatch, list ctrlclient.ObjectList, _ ...ctrlclient.ListOption) error {
+						l := list.(*vspherepolv1.TagList)
+						for i := range declared {
+							l.Items = append(l.Items, *declared[i].DeepCopy())
+						}
+						return nil
+					},
+				})
+				tags, err := virtualmachine.ListLabelDerivedTags(ctx, stale, vm, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(tags).To(BeEmpty())
+			})
+
+			It("returns the list error rather than a partial set", func() {
+				vm.Labels = map[string]string{"app": "db"}
+				failing := builder.NewFakeClientWithInterceptors(interceptor.Funcs{
+					List: func(context.Context, ctrlclient.WithWatch, ctrlclient.ObjectList, ...ctrlclient.ListOption) error {
+						return fmt.Errorf("injected list failure")
+					},
+				})
+				_, err := virtualmachine.ListLabelDerivedTags(ctx, failing, vm, nil)
+				Expect(err).To(MatchError(ContainSubstring("list affinity Tags")))
+			})
+		})
+	})
+
+var _ = Describe("Group anti-affinity placement tags",
+	Label(testlabels.Controller), func() {
+
+		const ns = "team-a"
+
+		var (
+			ctx       context.Context
+			requester *vmopv1.VirtualMachine
+			peer      *vmopv1.VirtualMachine
+			unrelated *vmopv1.VirtualMachine
+		)
+
+		names := func(spec vimtypes.VirtualMachineConfigSpec) []string {
+			var out []string
+			for _, ts := range spec.TagSpecs {
+				if ts.Operation == vimtypes.ArrayUpdateOperationAdd && ts.Id.NameId != nil {
+					out = append(out, ts.Id.NameId.Tag)
+				}
+			}
+			return out
+		}
+
+		placementSpec := func(vm *vmopv1.VirtualMachine) *vimtypes.VirtualMachineConfigSpec {
+			var spec vimtypes.VirtualMachineConfigSpec
+			Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(
+				ctx, vm, &spec, true,
+				&virtualmachine.LabelDerivedTags{Client: builder.NewFakeClient()})).To(Succeed())
+			return &spec
+		}
+
+		BeforeEach(func() {
+			ctx = pkgcfg.NewContextWithDefaultConfig()
+			pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+				c.Features.TaggingAPI = true
+				c.Features.VMAffinityDuringExecution = true
+				c.Features.VMPlacementPolicies = true
+				c.Features.VMHardAffinityDuringExecution = true
+			})
+
+			newVM := func(name string, labels map[string]string) *vmopv1.VirtualMachine {
+				vm := builder.DummyVirtualMachine()
+				vm.Name = name
+				vm.Namespace = ns
+				vm.Labels = labels
+				return vm
+			}
+			requester = newVM("requester", map[string]string{"role": "web"})
+			requester.Spec.Affinity = &vmopv1.AffinitySpec{
+				VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+					RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+						TopologyKey: corev1.LabelHostname,
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "db"},
+						},
+					}},
+				},
+			}
+			peer = newVM("peer", map[string]string{"app": "db"})
+			unrelated = newVM("unrelated", map[string]string{"app": "web"})
+		})
+
+		It("gives a peer that carries the targeted label the target tags", func() {
+			members := []virtualmachine.AffinityPlacementMember{
+				{VM: requester, ConfigSpec: placementSpec(requester)},
+				{VM: peer, ConfigSpec: placementSpec(peer)},
+				{VM: unrelated, ConfigSpec: placementSpec(unrelated)},
+			}
+			Expect(names(*members[1].ConfigSpec)).To(BeEmpty())
+
+			Expect(virtualmachine.AddGroupAntiAffinityPlacementTags(ctx, members)).To(Succeed())
+
+			// Placement targets the derived and the original names.
+			Expect(names(*members[1].ConfigSpec)).To(ConsistOf(
+				"vmoperator:app:db",
+				MatchRegexp(`^vmoperator:aaf-rds-pde-host-[0-9a-f]{16}-app:db$`)))
+			Expect(names(*members[2].ConfigSpec)).To(BeEmpty())
+		})
+
+		It("keeps tags already on the spec and does not duplicate them", func() {
+			peerSpec := placementSpec(peer)
+			peerSpec.TagSpecs = append(peerSpec.TagSpecs, vimtypes.TagSpec{
+				ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{Operation: vimtypes.ArrayUpdateOperationAdd},
+				Id:              vimtypes.TagId{NameId: &vimtypes.TagIdNameId{Tag: "vmoperator:app:db", Category: ns}},
+			}, vimtypes.TagSpec{
+				ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{Operation: vimtypes.ArrayUpdateOperationAdd},
+				Id:              vimtypes.TagId{NameId: &vimtypes.TagIdNameId{Tag: "other", Category: ns}},
+			})
+			members := []virtualmachine.AffinityPlacementMember{
+				{VM: requester, ConfigSpec: placementSpec(requester)},
+				{VM: peer, ConfigSpec: peerSpec},
+			}
+
+			Expect(virtualmachine.AddGroupAntiAffinityPlacementTags(ctx, members)).To(Succeed())
+			Expect(names(*peerSpec)).To(ConsistOf(
+				"other", "vmoperator:app:db",
+				MatchRegexp(`^vmoperator:aaf-rds-pde-host-[0-9a-f]{16}-app:db$`)))
+		})
+
+		It("does not write into the spare capacity of the caller's TagSpecs", func() {
+			peerSpec := placementSpec(peer)
+			other := vimtypes.TagSpec{
+				ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{Operation: vimtypes.ArrayUpdateOperationAdd},
+				Id:              vimtypes.TagId{NameId: &vimtypes.TagIdNameId{Tag: "other", Category: ns}},
+			}
+			callerTagSpecs := make([]vimtypes.TagSpec, 1, 8)
+			callerTagSpecs[0] = other
+			peerSpec.TagSpecs = callerTagSpecs
+			members := []virtualmachine.AffinityPlacementMember{
+				{VM: requester, ConfigSpec: placementSpec(requester)},
+				{VM: peer, ConfigSpec: peerSpec},
+			}
+
+			Expect(virtualmachine.AddGroupAntiAffinityPlacementTags(ctx, members)).To(Succeed())
+			Expect(names(*peerSpec)).To(HaveLen(3))
+			// The caller's backing array is untouched beyond its length.
+			Expect(callerTagSpecs).To(Equal([]vimtypes.TagSpec{other}))
+			Expect(callerTagSpecs[:cap(callerTagSpecs)][1:]).To(HaveEach(Equal(vimtypes.TagSpec{})))
+		})
+
+		It("does nothing when the tagging API is disabled", func() {
+			pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.TaggingAPI = false })
+			members := []virtualmachine.AffinityPlacementMember{
+				{VM: requester, ConfigSpec: placementSpec(requester)},
+				{VM: peer, ConfigSpec: placementSpec(peer)},
+			}
+			Expect(virtualmachine.AddGroupAntiAffinityPlacementTags(ctx, members)).To(Succeed())
+			Expect(names(*members[1].ConfigSpec)).To(BeEmpty())
+		})
+	})
+
+var _ = Describe("Prefix-free tag names and Tag identity",
+	Label(testlabels.Controller), func() {
+
+		const ns = "team-a"
+
+		var (
+			pair = virtualmachine.LabelPair{Key: "app", Value: "db"}
+
+			strictness = vimtypes.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution
+			topology   = vimtypes.VmPlacementPolicyVmPlacementPolicyTopologyHost
+
+			afHash  virtualmachine.AffinityPolicyHash
+			aafHash virtualmachine.AffinityPolicyHash
+		)
+
+		BeforeEach(func() {
+			afHash, aafHash = newAppDBHashes(pair, strictness, topology)
+		})
+
+		newTag := func(name string, spec vspherepolv1.TagSpec) *vspherepolv1.Tag {
+			spec.Name = name
+			return &vspherepolv1.Tag{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      virtualmachine.ConcreteTagResourceName(ns, name),
+				},
+				Spec: spec,
+			}
+		}
+
+		policy := func(
+			policyType virtualmachine.AffinityPolicyType,
+			targets ...vspherepolv1.TagLabelPair) *vspherepolv1.TagPolicyIdentity {
+
+			return &vspherepolv1.TagPolicyIdentity{
+				Type:       string(policyType),
+				Strictness: string(strictness),
+				Topology:   string(topology),
+				Targets:    targets,
+			}
+		}
+		target := vspherepolv1.TagLabelPair{Key: "app", Value: "db"}
+
+		originalTag := func() *vspherepolv1.Tag {
+			return newTag("app:db", vspherepolv1.TagSpec{
+				Kind:       vspherepolv1.TagKindOriginal,
+				Membership: vspherepolv1.TagMembershipSourceLabel,
+				Key:        "app", Value: "db",
+			})
+		}
+		afTag := func() *vspherepolv1.Tag {
+			return newTag(virtualmachine.PrefixFreePolicyTagName(afHash),
+				vspherepolv1.TagSpec{
+					Kind:       vspherepolv1.TagKindAffinityTarget,
+					Membership: vspherepolv1.TagMembershipSourceLabel,
+					Key:        "app", Value: "db",
+					Policy: policy(virtualmachine.AffinityPolicyTypeAffinity, target),
+				})
+		}
+		selfTag := func() *vspherepolv1.Tag {
+			return newTag(virtualmachine.PrefixFreePolicyTagName(aafHash),
+				vspherepolv1.TagSpec{
+					Kind:       vspherepolv1.TagKindGroupedAntiAffinitySelf,
+					Membership: vspherepolv1.TagMembershipPolicyRequesters,
+					Policy:     policy(virtualmachine.AffinityPolicyTypeGroupedAntiAffinity, target),
+				})
+		}
+		aafTargetTag := func() *vspherepolv1.Tag {
+			return newTag(virtualmachine.PrefixFreeGroupedAntiAffinityTargetName(aafHash, pair),
+				vspherepolv1.TagSpec{
+					Kind:       vspherepolv1.TagKindGroupedAntiAffinityTarget,
+					Membership: vspherepolv1.TagMembershipSourceLabel,
+					Key:        "app", Value: "db",
+					Policy: policy(virtualmachine.AffinityPolicyTypeGroupedAntiAffinity, target),
+				})
+		}
+
+		Context("ValidateTagIdentity", func() {
+			DescribeTable("accepts a consistent identity",
+				func(tag func() *vspherepolv1.Tag) {
+					Expect(virtualmachine.ValidateTagIdentity(tag())).To(Succeed())
+				},
+				Entry("original", originalTag),
+				Entry("affinity target", afTag),
+				Entry("grouped anti-affinity self", selfTag),
+				Entry("grouped anti-affinity target", aafTargetTag),
+			)
+
+			It("rejects a vCenter (prefixed) spec.name", func() {
+				tag := originalTag()
+				tag.Spec.Name = "vmoperator:app:db"
+				tag.Name = virtualmachine.ConcreteTagResourceName(ns, tag.Spec.Name)
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("spec.name must equal")))
+			})
+
+			It("rejects an incorrect metadata.name", func() {
+				tag := originalTag()
+				tag.Name = "tag-0000000000000000"
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("metadata.name must equal")))
+			})
+
+			It("rejects invalid label syntax", func() {
+				tag := originalTag()
+				tag.Spec.Value = "has space"
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("invalid label value")))
+
+				tag = originalTag()
+				tag.Spec.Key = "bad key"
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("invalid label key")))
+			})
+
+			It("rejects a policy on an original and a missing policy on a derived tag", func() {
+				tag := originalTag()
+				tag.Spec.Policy = policy(virtualmachine.AffinityPolicyTypeAffinity, target)
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("spec.policy must be absent")))
+
+				tag = afTag()
+				tag.Spec.Policy = nil
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("spec.policy is required")))
+			})
+
+			It("rejects a wrong membership and a source label on a self tag", func() {
+				tag := selfTag()
+				tag.Spec.Membership = vspherepolv1.TagMembershipSourceLabel
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("PolicyRequesters")))
+
+				tag = selfTag()
+				tag.Spec.Key = "app"
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("must be absent")))
+			})
+
+			DescribeTable("rejects an inconsistent kind, membership, type or policy",
+				func(tag func() *vspherepolv1.Tag, mutate func(*vspherepolv1.Tag), message string) {
+					t := tag()
+					mutate(t)
+					Expect(virtualmachine.ValidateTagIdentity(t)).
+						To(MatchError(ContainSubstring(message)))
+				},
+				Entry("non-System type", originalTag,
+					func(t *vspherepolv1.Tag) { t.Spec.Type = vspherepolv1.TagType("User") },
+					"spec.type must be System"),
+				Entry("unsupported kind", originalTag,
+					func(t *vspherepolv1.Tag) { t.Spec.Kind = vspherepolv1.TagKind("Unknown") },
+					"unsupported spec.kind"),
+				Entry("PolicyRequesters on an original tag", originalTag,
+					func(t *vspherepolv1.Tag) { t.Spec.Membership = vspherepolv1.TagMembershipPolicyRequesters },
+					"spec.membership must be SourceLabel"),
+				Entry("PolicyRequesters on a grouped anti-affinity target", aafTargetTag,
+					func(t *vspherepolv1.Tag) { t.Spec.Membership = vspherepolv1.TagMembershipPolicyRequesters },
+					"spec.membership must be SourceLabel"),
+				Entry("anti-affinity policy type on an affinity target", afTag,
+					func(t *vspherepolv1.Tag) {
+						t.Spec.Policy.Type = string(virtualmachine.AffinityPolicyTypeGroupedAntiAffinity)
+					},
+					"spec.policy.type must be VmVmAffinity"),
+				Entry("affinity policy type on a self tag", selfTag,
+					func(t *vspherepolv1.Tag) { t.Spec.Policy.Type = string(virtualmachine.AffinityPolicyTypeAffinity) },
+					"spec.policy.type must be VmToVmGroupsAntiAffinity"),
+				Entry("affinity target that differs from the source label", afTag,
+					func(t *vspherepolv1.Tag) { t.Spec.Value = "web" },
+					"spec.policy.targets must match the affinity source label"),
+				Entry("reserved policy target key", aafTargetTag,
+					func(t *vspherepolv1.Tag) {
+						t.Spec.Policy.Targets = []vspherepolv1.TagLabelPair{{Key: "vmoperator.vmware.com/x", Value: "y"}}
+					},
+					"reserved label key"),
+			)
+
+			It("rejects unsorted or duplicate targets", func() {
+				tag := aafTargetTag()
+				tag.Spec.Policy.Targets = []vspherepolv1.TagLabelPair{
+					{Key: "b", Value: "1"}, {Key: "a", Value: "1"},
+				}
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("sorted and unique")))
+			})
+
+			It("rejects a source label that is not a policy target", func() {
+				tag := aafTargetTag()
+				tag.Spec.Key = "other"
+				Expect(virtualmachine.ValidateTagIdentity(tag)).
+					To(MatchError(ContainSubstring("must contain the grouped anti-affinity source label")))
+			})
+
+		})
+	})

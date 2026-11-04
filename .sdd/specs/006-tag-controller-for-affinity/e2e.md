@@ -32,7 +32,7 @@ Verifying the vCenter-side tag is what actually proves the behavior; asserting o
 
 | Scenario | Verifies |
 |----------|----------|
-| creates a VM whose affinity references its own label and observes the Tag CR and the vCenter tag | US1.1 — `Tag` exists in the namespace with the derived name, `spec.key`/`spec.value`, the label mirror, and one owner reference to the VM; vCenter tag `<key>:<value>` in category `<namespace>` is attached |
+| creates a VM whose affinity references its own label and observes the Tag CR and the vCenter tag | US1.1 — `Tag` exists in the namespace with the derived name, `spec.name`/`kind`/`membership`, the source label `spec.key`/`spec.value`, the label mirror, and one owner reference to the VM; vCenter tag `<key>:<value>` in category `<namespace>` is attached |
 | adds a second VM with the same label and affinity and observes two owners on one Tag CR | US1.2 — exactly one `Tag` resource, two owner references, both VMs tagged in vCenter |
 | creates a VM with two labels but affinity referencing only one | US1.3 — a `Tag` exists for the referenced label only; the unreferenced label produces no `Tag` and no vCenter tag (spec G3) |
 | creates a VM whose affinity (a `VmToVmGroupsAntiAffinity`-style term) references a label the VM does not itself carry | US1.4 — a `Tag` is created with the VM as sole owner even though it does not carry the pair; the VM itself is **not** given the vCenter tag; a second VM created afterward carrying that label **is** tagged once the `Tag` exists (US2 mechanics) |
@@ -50,13 +50,21 @@ Verifying the vCenter-side tag is what actually proves the behavior; asserting o
 
 ### US3 — label participation changes and tag carriage converges
 
-`spec.affinity` is immutable (spec NG8), so these scenarios change a running VM's **labels**. Ownership follows the affinity reference alone, so dropping a label never drops ownership — the VM's `spec.affinity` still references the pair and cannot change — only that VM's own vCenter tag carriage reacts.
+These scenarios change a running VM's **labels**, not its `spec.affinity`. Ownership follows the affinity reference alone, so dropping a label never drops ownership — the VM's `spec.affinity` still references the pair — only that VM's own vCenter tag carriage reacts.
 
 | Scenario | Verifies |
 |----------|----------|
 | drops the label on the sole owner and observes the Tag CR survive while only the vCenter tag is removed | US3.2, SC-005 — the VM's vCenter tag is removed, but its owner reference is **unaffected** and the `Tag` is **not** deleted (its `spec.affinity` still references the pair), with no power cycle or re-create |
 | swaps a referenced label for another referenced label in one update and observes the vCenter tag follow | US3.4 and US3.5 — the VM references two pairs and carries one; after the swap it carries the gained pair's vCenter tag and not the dropped one, it still owns **both** `Tag`s, and a peer VM that carries the dropped pair keeps its own tag. The label-gain direction is what neither scenario above covers |
 | drops the label on one of two owners and observes both owners and the label-only VM keep their Tag-CR standing | US3.1 and US3.3 — the relabeled VM's owner reference is **unaffected** and both owners remain; the relabeled VM loses its vCenter tag because it no longer carries the label, the surviving owner keeps its own vCenter tag, and a third label-only VM **keeps** its tag. Assert the surviving owner and the label-only VM with `Consistently`, so a regression that untags either fails rather than racing to a pass |
+
+### US3.6 — affinity changes on a live VM
+
+Covered by the existing `updates affinity and tags` table in `test/e2e/vmservice/vmservice/virtualmachine/vm_group.go`, which runs at each power state with `HardAffinityDuringExecutionLabel`. It is not duplicated in the `Tag` suite.
+
+| Scenario | Verifies |
+|----------|----------|
+| changes host affinity and the referenced label on a running, powered-off and resized VM, including while an administrator has paused the VM, and replaces an anti-affinity target | US3.6 — the backend policy and the attached vCenter tags converge to the new affinity, the update also converges while an administrator has paused the VM, because affinity reconciles for paused VMs like vSphere policies, and it is kept after unpause. The test asserts vCenter state (policy receipts and attached tags), not the `Tag` resource's owner references, so asserting that the VM's owner reference is removed from a `Tag` it no longer references is an extension of that test rather than a new scenario |
 
 ### Edge cases from `spec.md`
 

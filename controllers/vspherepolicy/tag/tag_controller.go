@@ -94,6 +94,12 @@ func (r *Reconciler) Reconcile(
 		return ctrl.Result{}, ctrlclient.IgnoreNotFound(err)
 	}
 
+	if !obj.DeletionTimestamp.IsZero() {
+		// This controller owns no finalizer. Leave terminating Tags untouched
+		// while garbage collection or another finalizer owner completes deletion.
+		return ctrl.Result{}, nil
+	}
+
 	patchHelper, err := patch.NewHelper(&obj, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf(
@@ -135,16 +141,19 @@ func (r *Reconciler) ReconcileNormal(
 		return ctrl.Result{}, nil
 	}
 
-	if mirror, ok := obj.Labels[obj.Spec.Key]; !ok || mirror != obj.Spec.Value {
-		if obj.Labels == nil {
-			obj.Labels = make(map[string]string, 1)
+	if obj.Spec.Membership == vspherepolv1.TagMembershipSourceLabel {
+		if mirror, ok := obj.Labels[obj.Spec.Key]; !ok || mirror != obj.Spec.Value {
+			if obj.Labels == nil {
+				obj.Labels = make(map[string]string, 1)
+			}
+			// Overwrite any stale label value for this key with the value from spec.
+			obj.Labels[obj.Spec.Key] = obj.Spec.Value
 		}
-		obj.Labels[obj.Spec.Key] = obj.Spec.Value
 	}
 
 	obj.Status.ObservedGeneration = obj.Generation
 
-	// The Tag has an owner and its label mirror matches its spec.
+	// The Tag has an owner and any source-label mirror matches its spec.
 	conditions.MarkTrue(obj, vspherepolv1.ReadyConditionType)
 
 	return ctrl.Result{}, nil

@@ -9,7 +9,7 @@
 
 ## Summary
 
-Introduce a namespace-scoped `Tag` resource in the `vsphere.policy.vmware.com/v1alpha1` API that records which label key/value pairs currently participate in affinity in a namespace and which VMs own that participation. A new `vmconfig` reconciler on the VM path — invoked from **two** call sites in `doReconfigure` that straddle the vSphere policy reconciler — creates those resources, maintains its own VM's owner reference, and emits the vCenter `TagSpec` add/remove diff for **every** participating label the VM carries — including labels the VM does not itself reference. A new `Tag` controller owns `Tag` status, its label mirror, and its delete-at-zero-owners decision. Fan-out to the VMs a `Tag` change affects is a **watch**: the VM controller gains a feature-gated `Watches(&Tag{}, …)` whose mapper resolves a `Tag` to the VMs carrying its label through a field index. All of it is gated on a new `TaggingAPI` feature flag, itself gated behind the `PlacementPoliciesForVMServiceVmsV3` Supervisor capability (spec G13). `spec.affinity` stays immutable (spec NG8); what changes on a live VM is its labels.
+Introduce a namespace-scoped `Tag` resource in the `vsphere.policy.vmware.com/v1alpha1` API that records which label key/value pairs currently participate in affinity in a namespace and which VMs own that participation. A new `vmconfig` reconciler on the VM path — invoked from **two** call sites in `doReconfigure` that straddle the vSphere policy reconciler — creates those resources, maintains its own VM's owner reference, and emits the vCenter `TagSpec` add/remove diff for **every** participating label the VM carries — including labels the VM does not itself reference. A new `Tag` controller owns `Tag` status, its label mirror, and its delete-at-zero-owners decision. Fan-out to the VMs a `Tag` change affects is a **watch**: the VM controller gains a feature-gated `Watches(&Tag{}, …)` whose mapper resolves a `Tag` to the VMs carrying its label through a field index. All of it is gated on a new `TaggingAPI` feature flag, itself gated behind the `PlacementPoliciesForVMServiceVmsV3` Supervisor capability (spec G13). A live VM's `spec.affinity` and its labels can both change: affinity changes add or remove its own ownership, and label changes move only its tag carriage (spec NG8).
 
 ## Technical context
 
@@ -29,8 +29,8 @@ Introduce a namespace-scoped `Tag` resource in the `vsphere.policy.vmware.com/v1
 | New CRD markers: `+kubebuilder:object:root=true`, `+groupName:`, deepcopy via `make generate-go` | OK | `Tag`/`TagList` carry the root marker; `+groupName=vsphere.policy.vmware.com` already exists in the module's `doc.go`; deepcopy regenerated in the module. |
 | CRD manifests checked in, regenerated with `make generate-manifests` | OK | External types use `make generate-external-manifests`, which already covers `external/vsphere-policy/...`; output `config/crd/external-crds/vsphere.policy.vmware.com_tags.yaml` is checked in. |
 | `+optional`/`+required` on every field, `omitempty` on optional | OK | See the marker column in `model.md` "Schema". |
-| Resource names DNS-subdomain safe | OK | Name is `"tag-" + XXHash64Hex(...)` — always 20 safe characters (`model.md` "Name derivation"). |
-| Controllers are thin; business logic in `pkg/` | OK | `controllers/vspherepolicy/tag/` holds the reconcile loop, finalizer, patch helper, and index registration only; the VM controller's change is a `Watches` line whose mapper and predicate live in `pkg/util/kube/vmtags.go`; the label/affinity/tag-set computation lives in `pkg/providers/vsphere/virtualmachine/vmtags.go`, `pkg/util/kube/vmtags.go`, and `pkg/vmconfig/vmtags/`. |
+| Resource names DNS-subdomain safe | OK | Name is `"tag-" + XXHash64Hex(...)` of the namespace and `spec.name` — always 20 safe characters (`model.md` "Name derivation"). |
+| Controllers are thin; business logic in `pkg/` | OK | `controllers/vspherepolicy/tag/` holds the reconcile loop, finalizer, patch helper, and index registration only; the VM controller's change is a `Watches` line whose mapper and predicate live in `pkg/util/kube/vmtags.go`; the label/affinity/tag-set computation lives in `pkg/providers/vsphere/virtualmachine/affinity_tags.go`, `pkg/util/kube/vmtags.go`, and `pkg/vmconfig/vmtags/`. |
 | Mapper functions use a field indexer with `client.MatchingFields`, not an unfiltered `List` | OK | The `Tag`→VM mapper is served by the `metadata.labels.keyValue` index; see "Field indexes and query patterns". |
 | No controller calls vSphere directly | OK | Neither the `Tag` controller nor the `Tag` watch touches vCenter. The only vCenter interaction is the `TagSpec` emission, which happens inside the provider's `vmconfig` reconciler chain and is applied by the existing reconfigure call. |
 | Controllers track `status.observedGeneration` and set `Ready` | OK | `Tag` controller writes both (`model.md` "Status conditions"). |
@@ -38,7 +38,7 @@ Introduce a namespace-scoped `Tag` resource in the `vsphere.policy.vmware.com/v1
 | Controllers for other API groups not directly in `controllers/` | OK | `controllers/vspherepolicy/tag/`, registered from `controllers/vspherepolicy/controllers.go`. |
 | Webhooks for other API groups not directly in `webhooks/` | OK | `webhooks/vspherepolicy/tag/validation/`. (Note: `webhooks/configtarget/` is a pre-existing divergence for `vim.vmware.com`; this feature follows the rule, not that precedent.) |
 | Webhook validation logic in an unexported validator type, shared with unit tests | OK | `type validator struct` in the validation package, per the repository pattern. |
-| CEL preferred for simple structural rules; Go for complex/cross-field | OK | Immutability of `spec.key`/`spec.value` is an unconditional transition rule, so CEL (`self == oldSelf`) enforces it; the privileged-account rule cannot be expressed in CEL, so a Go validator handles it together with label syntax and name derivation (D8). |
+| CEL preferred for simple structural rules; Go for complex/cross-field | OK | Immutability of `spec` is an unconditional transition rule, so CEL (`self == oldSelf`) enforces it; the privileged-account rule cannot be expressed in CEL, so a Go validator handles it together with identity validation and name derivation (D8). |
 | RBAC documented with kubebuilder markers | OK | See `model.md` "RBAC". |
 | One test file per package (`<package>_test.go`), one suite bootstrap | OK | Every new package gets exactly `<x>_test.go` + `<x>_suite_test.go`; no `_unit_test.go`/`_intg_test.go` split. |
 | Labels from `pkg/constants/testlabels` on top-level `Describe` | OK | See "Test strategy". |
@@ -64,8 +64,8 @@ pkg/util/kube/
   vmtags_test.go
 
 pkg/providers/vsphere/virtualmachine/
-  vmtags.go                                # shared helpers + the ExtraConfig key, beside affinity.go
-  vmtags_test.go
+  affinity_tags.go                              # shared helpers + the ExtraConfig key, beside affinity.go
+  affinity_tags_test.go
 
 pkg/vmconfig/vmtags/
   vmtags_reconciler.go                     # vmconfig.Reconciler: Tag CRs + TagSpec diff
@@ -99,7 +99,7 @@ pkg/config/config.go                                            # + Features.Tag
 pkg/config/default.go                                           # flag default true (dev branch)
 pkg/providers/vsphere/virtualmachine/affinity.go                # export the shared label extraction; keep the flag-off path
 pkg/providers/vsphere/virtualmachine/configspec.go              # gate mechanism A off in both functions when the flag is on
-pkg/providers/vsphere/vmprovider_vm.go                          # AppendExistingTagSpecs at the placement/create call sites; ownership release in both delete methods
+pkg/providers/vsphere/vmprovider_vm.go                          # labelDerivedTags at the placement/create call sites; delete leaves ownership to the GC (D18)
 pkg/providers/vsphere/vmprovider_vmgroup.go                     # AppendExistingTagSpecs at the group placement call site
 pkg/providers/vsphere/session/session_vm_update.go              # the two doReconfigure call sites that actually dispatch the reconciler
 pkg/providers/vsphere/virtualmachine/cleanup.go                 # removeTagAssociations also drops this feature's recorded tags
@@ -165,13 +165,14 @@ No envtest wiring is needed either way: `test/builder/test_suite.go` loads the w
 
 ## Controller / webhook impact
 
-### 1. Shared helpers — `pkg/providers/vsphere/virtualmachine/vmtags.go`
+> **Historical design.** The function names and call sites in this section (`AffinityLabelPairs`, `AppendExistingTagSpecs`, `ReconcileTagSpecs`, `reconcileVMTagSpecs`, `AffinityRuleConstraints`, `CalculateAffinityConstraints`, `extractAffinityLabelsFromVM`, a registered `vmconfig` reconciler, and two `doReconfigure` call sites) describe the original key/value design and were not implemented as written. The implemented shape is: `DesiredAffinityTags` computes the VM's Tag identities; `reconcileAffinity` in `session_vm_update.go` calls `vmtags.ReconcileTagCRs` and then `UpdateConfigSpecAffinity` with a `LabelDerivedTags` built from the owned Tags; `ReconcileVMTagsDuringVMUpdate` writes the `TagSpec` diff; and create and placement use `vSphereVMProvider.labelDerivedTags`. The ownership, index, and release statements below have been corrected to match the code.
+
+### 1. Shared helpers — `pkg/providers/vsphere/virtualmachine/affinity_tags.go`
 
 A new file **next to the existing `affinity.go`, in the same package**, so the helpers sit with the logic they generalize and nothing has to move:
 
 - `AffinityLabelPairs(vmCtx, constraints) []LabelPair` — the label key/value pairs the VM's own `spec.affinity` references. This is today's `extractAffinityLabelsFromVM` logic, returning structured pairs instead of `"key:value"` strings, so the caller can build both a `Tag` spec and a vCenter tag name from one source of truth. `affinity.go`'s existing function is refactored to call this, so the flag-off path and the flag-on path cannot diverge in what "referenced by affinity" means.
-- `TagResourceName(namespace, key, value string) string` — `"tag-" + pkgutil.XXHash64Hex(namespace + ":" + key + ":" + value)`.
-- `VCenterTagName(key, value string) string` — `key + ":" + value`.
+- `ConcreteTagResourceName(namespace, name string) string` — `"tag-" + pkgutil.XXHash64Hex(namespace + ":" + name)`, where `name` is the prefix-free backend tag name. It lives in `affinity_tags.go` with the other prefix-free name helpers (`PrefixFreeTagName(key, value)` — `key + ":" + value` — and the policy-tag names) and `ValidateTagIdentity`.
 - `ExtraConfigVMTagsKey` — the ExtraConfig key the tag record uses (see step 5 and "Platform-resource cleanup"; the placement is deliberate, see the import-direction note below).
 
 `AffinityRuleConstraints` and `CalculateAffinityConstraints` **stay exactly where they are** in `affinity.go` / `configspec.go` — nothing is moved, aliased, or re-signatured, so all 31 existing references, including the 18 in `configspec_test.go`, are untouched. That matters beyond churn: spec SC-006 leans on the pre-existing suites passing *unchanged* as the flag-off regression baseline. The new reconciler calls `CalculateAffinityConstraints(vmCtx, false)` so eligibility of host- vs zone-topology terms is decided by exactly the same rules as today (spec "Edge cases", VKS/zone-label case).
@@ -239,16 +240,16 @@ Two flag checks on the same feature is deliberate: the dependency between the ha
 #### `ReconcileTagCRs` — steps 1-3
 
 1. **Compute owned pairs** — `AffinityLabelPairs(vm, constraints)`, unfiltered by carriage. These are the pairs this VM **owns**: a VM owns a pair by referencing it from its own `spec.affinity`, whether or not it carries it (spec "Ownership vs. tag carriage") — this is what lets a VM own a `Tag` for a `VmToVmGroupsAntiAffinity` target group's label it does not carry itself. This set drives steps 2 and 3 only — **not** step 5's tag diff, which applies its own carriage check (see step 4).
-2. **Ensure `Tag` resources exist** for every owned pair: `Get` by derived name; if `NotFound`, `Create` with spec, label mirror, and this VM's owner reference. If that `Create` returns `AlreadyExists` — another VM in the namespace created the same pair's `Tag` between this reconcile's `Get` and its `Create`, or the `Get` read a cache that had not yet observed it — re-`Get` and fall through to the adopt path rather than failing (spec G12). If found with a mismatched `spec.key`/`spec.value`, fail with a wrapped error (`model.md` "Collision handling"). There is no terminating-`Tag` case to handle: `Tag` carries no finalizer (D10), so a `Get` returns either the resource or `NotFound`. The remaining hazard is a stale cached `Get` returning a `Tag` already deleted on the server; the ownership patch in step 3 then fails with `NotFound` under its optimistic lock, which propagates and is retried by the next reconcile rather than silently tagging against a resource that no longer exists.
-3. **Reconcile own ownership** — add this VM's owner reference to each owned pair's `Tag` (already in hand from step 2) if absent; then `List` the `Tag`s this VM currently owns via the `metadata.ownerReferences.uid` index and remove its entry from any that is no longer an owned pair, or from all of them if the VM is being deleted. Both directions are index-driven — neither iterates the namespace's `Tag`s. Writes follow the ownership discipline below.
+2. **Ensure `Tag` resources exist** for every owned pair: `Get` by derived name; if `NotFound`, `Create` with spec, label mirror, and this VM's owner reference. If that `Create` returns `AlreadyExists` — another VM in the namespace created the same pair's `Tag` between this reconcile's `Get` and its `Create`, or the `Get` read a cache that had not yet observed it — re-`Get` and fall through to the adopt path rather than failing (spec G12). If found with a mismatched identity (`spec` differs from the expected spec), fail with a wrapped error (`model.md` "Collision handling"). There is no terminating-`Tag` case to handle: `Tag` carries no finalizer (D10), so a `Get` returns either the resource or `NotFound`. The remaining hazard is a stale cached `Get` returning a `Tag` already deleted on the server; the ownership patch in step 3 then fails with `NotFound` under its optimistic lock, which propagates and is retried by the next reconcile rather than silently tagging against a resource that no longer exists.
+3. **Reconcile own ownership** — add this VM's owner reference to each owned pair's `Tag` (already in hand from step 2) if absent; then `List` the `Tag`s this VM currently owns via the `metadata.ownerReferences.uid` index and remove its entry from any that is no longer an owned pair. A VM that is being deleted removes nothing: the garbage collector prunes its entry after the VM object is removed (see "Releasing ownership when the VM is deleted" and D18). Both directions are index-driven — neither iterates the namespace's `Tag`s. Writes follow the ownership discipline below.
 
-`ReconcileTagCRs` **returns the owned `Tag` objects it ensured in step 2**, and `ReconcileTagSpecs` takes them as a parameter. That handoff is required for correctness, not convenience — see step 4.
+`ReconcileTagCRs` **returns the owned `Tag` objects from step 2**, and `ReconcileTagSpecs` takes them as a parameter. That handoff is required for correctness, not convenience — see step 4.
 
 #### `ReconcileTagSpecs` — steps 4-5
 
 4. **Compute the desired vCenter tag set** — the union of two sources:
 
-   - For each label on the VM, `Get` the `Tag` by `TagResourceName(key, value)` and keep it if it exists (see "Field indexes and query patterns" below). Equivalently: the `Tag`s in the namespace whose `spec.key`/`spec.value` matches one of **this VM's own labels**. Existence is the whole test — a `Tag` carries no finalizer, so there is no terminating state to exclude.
+   - For each label on the VM, `Get` the `Tag` by `ConcreteTagResourceName(namespace, PrefixFreeTagName(key, value))` and keep it if it exists (see "Field indexes and query patterns" below). Equivalently: the original `Tag`s in the namespace whose source label (`spec.key`/`spec.value`) matches one of **this VM's own labels**. Existence is the whole test — a `Tag` carries no finalizer, so there is no terminating state to exclude.
    - The owned `Tag`s handed over by `ReconcileTagCRs`.
 
    **The union is required, not an optimization.** Step 2's `Create` goes to the API server, but this `List` reads the informer cache — the provider's client is `mgr.GetClient()` (`pkg/manager/init/init_providers.go`), and `pkg/manager/manager.go` disables caching only for `ConfigMap`, `Secret` and `Deployment` — so the cache will not have observed that create within the same reconcile. Without the union, a VM that establishes a relationship would not carry its own tag until some later reconcile: spec G1 / US1.1 would converge only via the `Tag` watch's fan-out, which is a silent, timing-dependent second pass rather than the specified behavior. Cross-VM participation (label-only VMs, `Tag`s owned by others) legitimately reads through the cache and legitimately relies on the fan-out; only the self-referential case needs the union.
@@ -258,7 +259,7 @@ Two flag checks on the same feature is deliberate: the dependency between the ha
 5. **Emit the diff against this feature's own ExtraConfig record** (D12). The attached-tag list the update flow fetches is a list of tag **URNs** and is not on `moVM` (it is in the context, via `pkgctx.GetVMTags`), so it cannot be matched against name+category tags at all — see `research.md`. This feature therefore mirrors mechanism B's workflow with its own key:
 
    ```go
-   // pkg/providers/vsphere/virtualmachine/vmtags.go
+   // pkg/providers/vsphere/virtualmachine/affinity_tags.go
    //
    // ExtraConfigVMTagsKey is the ExtraConfig key that contains the
    // "<key>:<value>" affinity tags this feature has applied, so it can later
@@ -281,27 +282,15 @@ Two flag checks on the same feature is deliberate: the dependency between the ha
 
 #### Releasing ownership when the VM is deleted
 
-Ownership must be released before the VM's finalizer is removed, and the `doReconfigure` call sites cannot do it — they are on the update path only, and neither provider delete method dispatches `vmconfig` reconcilers.
+A deleted VM's ownership is released by Kubernetes garbage collection, not by VM Operator. Neither provider delete method (`CleanupVirtualMachine`, `DeleteVirtualMachine`) touches `Tag` owner references.
 
-The VM controller's `ReconcileDelete` (`virtualmachine_controller.go:511`) has exactly two terminal branches, chosen by the `SkipDeletePlatformResource` annotation, and **both** must release ownership or they leave a `Tag` with an owner reference to a VM that no longer exists:
+Each owner reference names the VM's UID. The VM controller removes the VM's finalizer only after the provider method succeeds: vCenter destroyed the VM, the skip-delete path cleaned it, or vCenter has no VM. Only then is the VM object removed, and only then does the garbage collector act. It prunes the VM's reference from a `Tag` that other VMs still own, and deletes a `Tag` the VM owned alone. Owner-reference deletion events reach the `Tag` watch as usual, so peers detach the derived tags afterwards.
 
-- `CleanupVirtualMachine` (`vmprovider_vm.go:326`) — the skip-delete path; the vCenter VM survives, the Kubernetes object does not.
-- `DeleteVirtualMachine` (`vmprovider_vm.go:369`) — the normal path; the vCenter VM is destroyed.
+This ordering is the reason to leave the release to the garbage collector rather than release explicitly in the provider methods (see `research.md` D18). Those methods often return before the VM is gone: the VM is disconnected, paused by an admin, has a running task, or the destroy task fails. An early release would let the `Tag` controller delete a sole-owned `Tag`, and peers would drop the derived target tags while the VM's policy was still live in vCenter. A grouped anti-affinity policy would then target tags that no VM carried, so it would silently have no effect.
 
-The release therefore goes in **both** provider methods, called near the top of each. The controller is left untouched. These two methods have no other callers (`pkg/providers/fake` aside), so the provider is the tightest place that covers both branches.
+The garbage collector needs two things from admission, and V6 provides both. It patches `Tag`s to prune owner references, and V6 admits `generic-garbage-collector` on UPDATE. It also deletes `Tag`s, and the webhook does not intercept DELETE. Garbage collection is event-driven, so the delay after the VM object is removed is short.
 
-The release logic itself is a single exported function on `pkg/vmconfig/vmtags` — `ReleaseOwnership(ctx, k8sClient, vm)`, the same "`List` by the `metadata.ownerReferences.uid` index, remove my entry from each" branch step 3 uses — so both call sites share one implementation and **every** owner-reference write in the feature stays in one package (D2's single-writer rule). That is cycle-safe: the delete methods live in `pkg/providers/vsphere`, which already imports eight `pkg/vmconfig/*` packages, while `pkg/vmconfig/vmtags` imports only the *child* package `pkg/providers/vsphere/virtualmachine`, which does not import its parent. Note this is a different package from the one D13's rule constrains — that rule forbids `pkg/providers/vsphere/virtualmachine` from importing `pkg/vmconfig/vmtags`, and is why `cleanup.go` reads the ExtraConfig key locally.
-
-Two placement constraints:
-
-- **Before the vCenter work, not after.** `DeleteVirtualMachine` returns early in four places before it does anything — `providers.ErrReconcileInProgress`, a `getVcClient` failure, a `getVM` failure, and `vcVM == nil` ("VM does not exist", `return nil`). That last one is the dangerous one: a VM that never made it to vCenter returns `nil`, the controller removes the finalizer, and the `Tag` keeps a dangling owner reference. Release after the `currentlyReconciling` guard (which returns an error, so the finalizer stays and the next attempt retries) but before the client and inventory lookups.
-- **Errors must propagate.** Both methods' errors block finalizer removal in the controller, which is what makes the release effectively transactional with the VM's disappearance.
-
-There is an existing `TODO` on the skip-delete branch — *"we should also remove any tags added to the VM for affinity / anti-affinity or policy evaluations"* — which the `cleanup.go` work in "Platform-resource cleanup" resolves for the vCenter side; this section resolves the Kubernetes side of the same gap.
-
-The third branch, `skipDelete` from `PauseAnnotation` or a `CheckAnnotationDelete/` key, returns before either method and keeps the finalizer. Ownership is correctly *not* released there: the VM object still exists and may resume, so it is still a legitimate owner.
-
-Ordinary garbage collection remains the backstop if a release is somehow missed — but only given V6's allow-list, without which GC cannot prune the dangling reference at all (`model.md` "V6's system-account allow-list"). Explicit release is what makes the `Tag`'s deletion prompt rather than dependent on a GC pass.
+Paths that bypass the finalizer ordering are accepted as they are. A VM deleted with `--cascade=orphan` or `--cascade=foreground` has its references pruned when deletion starts, not when the VM is removed. Both are explicit user choices and are not used by VM Operator or its partners.
 
 ### 3. Ownership write discipline
 
@@ -329,7 +318,7 @@ Standard reconcile loop per `operator-best-practices.md`: `pkgcfg.JoinContext`, 
 `ReconcileNormal`:
 
 1. Correct the label mirror if `metadata.labels[spec.key] != spec.value`.
-2. If `len(ownerReferences) == 0`, `Delete` the `Tag`, preconditioned on the `ResourceVersion` just read, and return. The `Tag` carries no finalizer, so this delete is atomic — there is no persisted `deletionTimestamp` state, only a create/delete pair of watch events. Because ownership is driven solely by each VM's immutable `spec.affinity`, the only way the owner list reaches zero is every owning VM being deleted — `ReleaseOwnership` empties it during that VM's own deletion, before its finalizer is released, which is exactly the case ordinary garbage collection does not cover (`research.md`), and it is what satisfies spec US1 scenario 6. The precondition matters: without it, a concurrent VM reconcile that just added an owner reference (read after this reconcile's own `Get`, written before this `Delete` lands) would be silently destroyed along with the object; with it, the `Delete` fails with a conflict instead, and the next reconcile re-reads the fresh, now-owned state and skips deletion.
+2. If `len(ownerReferences) == 0`, `Delete` the `Tag`, preconditioned on the `ResourceVersion` just read, and return. The `Tag` carries no finalizer, so this delete is atomic — there is no persisted `deletionTimestamp` state, only a create/delete pair of watch events. Because ownership is driven solely by each VM's `spec.affinity`, the owner list reaches zero when every owning VM prunes its reference because its affinity no longer needs the `Tag`, which is the case ordinary garbage collection does not cover (`research.md`). When every owning VM is deleted instead, the garbage collector itself deletes the `Tag` (US1 scenario 6). The precondition matters: without it, a concurrent VM reconcile that just added an owner reference (read after this reconcile's own `Get`, written before this `Delete` lands) would be silently destroyed along with the object; with it, the `Delete` fails with a conflict instead, and the next reconcile re-reads the fresh, now-owned state and skips deletion.
 3. Otherwise set `status.observedGeneration` and `Ready` per `model.md`.
 
 There is no `ReconcileDelete` and no finalizer (see D10). A `Tag` with no owners is deleted outright in one step; the plain `Delete` event is what the watch fans out on, and nothing survives afterward to react to.
@@ -389,9 +378,10 @@ Following the repository's convention for indexes (`pkg/util/kube/pvc.go`'s `VMS
 | Index name | On | Indexed value | Serves |
 |------------|----|---------------|--------|
 | `metadata.ownerReferences.uid` | `vspherepolv1.Tag` | one entry per owner-reference UID | "which `Tag`s does this VM currently own?" |
+| `spec.sourceLabel` | `vspherepolv1.Tag` | one `"<key>:<value>"` entry for each `SourceLabel` Tag with a key; none for self Tags | "which label-derived `Tag`s match this VM's labels?" — `ListLabelDerivedTags` |
 | `metadata.labels.keyValue` | `vmopv1.VirtualMachine` | one `"<key>:<value>"` entry per label, after `kubeutil.RemoveVMOperatorLabels` | "give me every VM carrying this `Tag`'s label" — the `Tag` watch's mapper |
 
-**Registered exactly once**, from `AddToManager` on the **`VirtualMachine` controller** under the same `TaggingAPI` gate as the `Tag` watch, against the shared manager cache — every client built from that cache then benefits. Registration lives with the consumers rather than with the reconciler for the indexed type: both indexes are read on the VM controller's reconcile path (`metadata.labels.keyValue` by the `Tag` watch's mapper, `metadata.ownerReferences.uid` by `pruneStaleOwnership` / `ReleaseOwnership`), and the `Tag` controller queries neither. That also keeps a manager wiring only the VM controller — a per-controller envtest suite, say — from starting with an index its own watch requires missing. Registering the same object/field pair twice returns an error from the field indexer, so it must **not** also be called from the `Tag` controller's `AddToManager`.
+**Registered exactly once**, from `AddToManager` on the **`VirtualMachine` controller** under the same `TaggingAPI` gate as the `Tag` watch, against the shared manager cache — every client built from that cache then benefits. Registration lives with the consumers rather than with the reconciler for the indexed type: all three indexes are read on the VM controller's reconcile path (`metadata.labels.keyValue` by the `Tag` watch's mapper, `metadata.ownerReferences.uid` by `pruneStaleOwnership`, `spec.sourceLabel` by `ListLabelDerivedTags`), and the `Tag` controller queries none of them. That also keeps a manager wiring only the VM controller — a per-controller envtest suite, say — from starting with an index its own watch requires missing. Registering the same object/field pair twice returns an error from the field indexer, so it must **not** also be called from the `Tag` controller's `AddToManager`.
 
 The VM-side index is a multi-valued extractor, which is the same shape as the existing `VMSpecVolumesPVCsIndexerFunc` (one entry per referenced PVC), so it is idiomatic rather than novel here. Two details matter:
 
@@ -404,9 +394,9 @@ Query patterns, in the order of how often they run:
 
 | Question | How it is answered | Cost |
 |----------|--------------------|------|
-| Does a `Tag` for this exact key/value exist? | `Get` by `TagResourceName(key, value)` — the name is a pure function of the pair, so no search is needed at all | O(1) point read from the cache |
+| Does a `Tag` for this exact key/value exist? | `Get` by `ConcreteTagResourceName(namespace, PrefixFreeTagName(key, value))` — the name is a pure function of the pair, so no search is needed at all | O(1) point read from the cache |
 | Which `Tag`s does this VM own? | `List` with `client.MatchingFields{"metadata.ownerReferences.uid": string(vm.UID)}` | indexed |
-| Which `Tag`s match any of this VM's labels? (step 4 of the VM path) | one `Get` by `TagResourceName(key, value)` per label on the VM — **not** a list of the whole namespace — **unioned** with the `Tag`s `ReconcileTagCRs` just ensured, which the cache cannot yet return in this pass | O(1) point read per label |
+| Which `Tag`s match any of this VM's labels? (`ListLabelDerivedTags`) | one `List` with `client.MatchingFields{"spec.sourceLabel": key + ":" + value}` per label on the VM — **not** a list of the whole namespace — **unioned** with the `Tag`s `ReconcileTagCRs` just returned as owned, which the cache cannot yet return in this pass. Each hit is rechecked against the VM's current labels, and a list error fails the call rather than returning a partial set | indexed, one per label |
 | Which VMs carry this `Tag`'s label? (the `Tag` watch's mapper, spec US2) | `List` with `client.InNamespace(tag.Namespace)` + `client.MatchingFields{"metadata.labels.keyValue": tag.Spec.Key + ":" + tag.Spec.Value}` | indexed, returns matches only |
 
 Every repeated query is indexed or a point read; none scans the namespace. In particular the mapper's `List` returns *only* the VMs that carry the label, so its cost scales with the size of the affinity relationship rather than with the number of VMs in the namespace — which is the property spec US2 needs, since that query runs on every `Tag` create and delete.
@@ -417,7 +407,7 @@ Note the interaction with the derived name (`model.md` "Name derivation"): becau
 
 ### 6. Webhook — `webhooks/vspherepolicy/tag/validation`
 
-An unexported `validator` implementing the repository's `builder.Validator` shape, with `+kubebuilder:webhook` markers for `CREATE`, `UPDATE`, and `DELETE` on `tags.vsphere.policy.vmware.com`. Rules V1-V6 are specified in `model.md` "Admission rules", including V6's mandatory allow-list for `generic-garbage-collector` and `namespace-controller` — without it, owner-reference pruning and namespace teardown are both denied (`model.md` "V6's system-account allow-list"). Registered via a new `webhooks/vspherepolicy/webhooks.go` called from `webhooks/webhooks.go` behind the flag, mirroring how `virtualmachinegroup` and `virtualmachinesnapshot` are gated there.
+An unexported `validator` implementing the repository's `builder.Validator` shape, with `+kubebuilder:webhook` markers for `CREATE` and `UPDATE` on `tags.vsphere.policy.vmware.com`; DELETE is deliberately not registered, so the garbage collector and the namespace controller can delete a `Tag` without an admission allowance. Rules V1-V6 are specified in `model.md` "Admission rules", including V6's admission of `generic-garbage-collector` on UPDATE — without it, owner-reference pruning is denied (`model.md` "V6's garbage-collector admission"). Identity validation is shared with the VM path through `virtualmachine.ValidateTagIdentity`. Registered via a new `webhooks/vspherepolicy/webhooks.go` called from `webhooks/webhooks.go` behind the flag, mirroring how `virtualmachinegroup` and `virtualmachinesnapshot` are gated there.
 
 ### 7. Every emission point is gated: flag off = today, flag on = the `Tag`-driven path
 
@@ -444,7 +434,7 @@ Update and resize get nothing at this layer because `updateArgs.ConfigSpec` / `r
 
 #### `AppendExistingTagSpecs` — the read-only emission
 
-Neither `CreateConfigSpec` nor `CreateConfigSpecForPlacement` has a `ctrlclient.Client` — both are pure functions — so the lookup lives in a helper called by the provider methods, which hold `vs.k8sClient`. It goes in `pkg/providers/vsphere/virtualmachine/vmtags.go` beside the other shared helpers (D13):
+Neither `CreateConfigSpec` nor `CreateConfigSpecForPlacement` has a `ctrlclient.Client` — both are pure functions — so the lookup lives in a helper called by the provider methods, which hold `vs.k8sClient`. It goes in `pkg/providers/vsphere/virtualmachine/affinity_tags.go` beside the other shared helpers (D13):
 
 ```go
 func AppendExistingTagSpecs(
@@ -468,13 +458,15 @@ Ownership is therefore always established by `ReconcileTagCRs` on the first upda
 
 `CleanupVMServiceState` in `pkg/providers/vsphere/virtualmachine/cleanup.go` sanitizes a vCenter VM when its `VirtualMachine` resource is deleted with the skip-delete-platform-resource annotation, and its `removeTagAssociations` currently drops only mechanism B's tags, read from `policy.ExtraConfigPolicyTagsKey` and emitted as `TagSpec{Uuid: …, Operation: remove}` behind `Features.VSpherePolicies`.
 
-Because this feature records its applied tags the same way (D12), cleanup must do the same for its own key, behind `Features.TaggingAPI`: read `vmtags.ExtraConfigVMTagsKey`, and emit one `TagSpec{Operation: remove, Id.NameId{Tag: s, Category: vm.Namespace}}` per recorded entry. Without this, a VM detached from VM Operator keeps this feature's affinity tags in vCenter and stays subject to Compute Policies it is no longer managed by.
+Because this feature records its applied tags the same way (D12), cleanup must do the same for its own key, behind `Features.TaggingAPI`: read `virtualmachine.ExtraConfigVMTagsKey`, and emit one `TagSpec{Operation: remove, Id.NameId{Tag: s, Category: vm.Namespace}}` per recorded entry. Without this, a VM detached from VM Operator keeps this feature's affinity tags in vCenter and stays subject to Compute Policies it is no longer managed by.
 
 The ExtraConfig key itself needs no cleanup handling: `removeVMOperatorExtraConfig` in the same file already blanks every key with a `vmservice.` prefix, and it reads from `moVM.Config` rather than from the outgoing `configSpec`, so it does not race the read above. This is a second reason to name the key `vmservice.placementpolicies.tags` rather than inventing a new prefix.
 
 This is separate from ordinary VM deletion, where the platform resource is destroyed and the tags go with it; it matters only on the skip-delete path.
 
 ## Reconcile flow
+
+> **Historical design.** This flowchart shows the original two-call-site design. See the note at the top of "Controller / webhook impact" for the implemented shape.
 
 ```mermaid
 flowchart TD
@@ -492,7 +484,7 @@ flowchart TD
     end
 
     subgraph VMPath2["doReconfigure #3 — vmtags.ReconcileTagSpecs"]
-        D[Per-label point Get by<br/>TagResourceName#40;key,value#41;<br/>#40;NOT a namespace List#41;<br/>= Tags matching vm.Labels] --> D1[UNION with the owned Tags<br/>from #1 — cache has not yet<br/>observed this pass's creates<br/>= desired vCenter tag set]
+        D[Per-label point Get by<br/>ConcreteTagResourceName#40;ns, key:value#41;<br/>#40;NOT a namespace List#41;<br/>= Tags matching vm.Labels] --> D1[UNION with the owned Tags<br/>from #1 — cache has not yet<br/>observed this pass's creates<br/>= desired vCenter tag set]
         D1 --> E[Diff vs ExtraConfig record<br/>vmservice.placementpolicies.tags<br/>#40;NOT the attached URN list#41;]
         E --> F[configSpec.TagSpecs += add/remove<br/>NameId entries in this ns category only<br/>— mechanism B's UUID entries untouched<br/>+ rewrite the record iff it changed]
     end
@@ -527,7 +519,7 @@ Per `testing-standards.md`: one `_test.go` and one `_suite_test.go` per package,
 ### Unit (`testlabels.Controller`, `testlabels.API`, `testlabels.Webhook`, `testlabels.Utils`)
 
 - `pkg/util/kube/vmtags_test.go` — the two index extractors: multi-label VMs, reserved-label filtering, empty values, prefixed keys, a VM with no labels, a `Tag` with several owner references. Plus `TagToVirtualMachineMapper` (one request per label-carrying VM, none for same-key-different-value or other namespaces, no request and no panic for a `Tag` with no matching VM) and `TagFanOutPredicate` (create → true; delete → true; every update → **false**, including status-only, label-mirror-only and owner-reference-only writes; generic → false).
-- `pkg/providers/vsphere/virtualmachine/vmtags_test.go` — `AffinityLabelPairs` across `matchLabels`, `matchExpressions/In`, unsupported operators (ignored, not fatal), topology-key eligibility under each `AffinityRuleConstraints` combination, nil affinity; `TagResourceName`/`VCenterTagName` determinism, empty value, prefixed keys. A new file rather than additions to `affinity_test.go`, so the pre-existing suite stays the untouched flag-off baseline (spec SC-006).
+- `pkg/providers/vsphere/virtualmachine/affinity_tags_test.go` — `AffinityLabelPairs` across `matchLabels`, `matchExpressions/In`, unsupported operators (ignored, not fatal), topology-key eligibility under each `AffinityRuleConstraints` combination, nil affinity; `ConcreteTagResourceName`/`PrefixFreeTagName` determinism, empty value, prefixed keys. A new file rather than additions to `affinity_test.go`, so the pre-existing suite stays the untouched flag-off baseline (spec SC-006).
 - `pkg/vmconfig/vmtags/vmtags_reconciler_test.go` — with the fake client: `Tag` created with correct name/spec/label-mirror/owner; second VM appends an owner rather than replacing the list; owner removed when the VM drops the label; owner removed on VM delete; a `Create` that loses to `AlreadyExists` adopts the existing `Tag` and appends this VM's owner rather than failing the reconcile; mismatched-spec collision errors; label-only VM gets `TagSpec{add}` and **no** owner reference; extra attached tag in the namespace category yields `TagSpec{remove}`; tags in other categories and UUID-identified tags are left alone; no-op reconcile emits no `TagSpec` and no patch. Plus the union: a `Tag` that `ReconcileTagCRs` created in this pass is in `ReconcileTagSpecs`' desired set **even when the client's `Get` does not return it**, which the test forces so a regression to a `Get`-only desired set fails deterministically rather than depending on cache timing. Plus the ExtraConfig record (D12): the record is written on first apply; a reconcile whose desired set is unchanged appends neither a `TagSpec` nor an ExtraConfig entry; a pair dropped from the desired set yields `TagSpec{remove}` plus a rewritten record; a VM with no record yet emits adds only; and `pkgctx.GetVMTags` is never consulted.
 - `controllers/vspherepolicy/tag/tag_controller_test.go` — status/`observedGeneration`/`Ready`; label-mirror correction; delete-at-zero-owners; and that the controller enqueues **no** VMs itself on any path (the fan-out is the watch's job, and a second copy of it here would be a silent duplicate).
 - `webhooks/vspherepolicy/tag/validation/tag_validator_test.go` — V1-V6, each rule positive and negative, including the privileged-vs-DevOps account split and the derived-name check.
@@ -556,6 +548,6 @@ Mandatory (spec G1-G10 are all cluster-observable). Specified in [`e2e.md`](./e2
 | Deviation | Why needed | Simpler alternative rejected because |
 |-----------|------------|--------------------------------------|
 | Ownership writes use `client.MergeFromWithOptions(base, MergeFromWithOptimisticLock{})` instead of the repository-default `controllerutil.CreateOrPatch` | `ownerReferences` is a shared **list** field written by every participating VM in the namespace | `CreateOrPatch`'s merge patch replaces list fields wholesale with no `resourceVersion` precondition, so a concurrent VM's owner entry is silently dropped with no error to trigger a retry — the exact failure the constitution's fan-in rule calls out |
-| The `Tag` controller explicitly deletes a `Tag` at zero owners instead of relying on owner-reference garbage collection | Kubernetes GC deletes a dependent only when its owners are **deleted**, not when the owner list is emptied while the owners still exist | `ReleaseOwnership` proactively removes a VM's owner reference during VM deletion, **before** the VM's own finalizer is released — i.e. while the VM object still exists with a `deletionTimestamp`, not yet actually removed from etcd. That is exactly the "emptied while the owner still exists" case ordinary GC does not cover, so relying on GC alone would leave a `Tag` (and therefore every label-only VM's vCenter tag) in place until GC's own cascading delete eventually runs against the fully-removed VM object, if at all. GC is retained as the backstop for the case where an owner reference is stranded outside this explicit path |
+| The `Tag` controller explicitly deletes a `Tag` at zero owners instead of relying on owner-reference garbage collection | Kubernetes GC deletes a dependent only when its owners are **deleted**, not when the owner list is emptied while the owners still exist | A live VM prunes its owner reference when its affinity no longer needs the `Tag`. That is the "emptied while the owner still exists" case ordinary GC does not cover. GC alone handles VM deletion, where it runs after the VM object is removed |
 | Two label→tag mechanisms coexist for one release | Keeps the change set reversible by flag and preserves the existing suites as the flag-off regression baseline (spec SC-006) | Deleting the create-time path now would make the flag one-way and remove the only baseline proving flag-off behavior is unchanged; removal is a tracked follow-up (spec NG4) |
 | Tag emission is split across three code paths under the flag — `AppendExistingTagSpecs` at placement and create, `ReconcileTagSpecs` in `doReconfigure` for everything after | Placement runs before the vCenter VM exists, so the only extension point with a `ConfigSpec` *and* a Kubernetes client at that moment is the provider method itself; and `doReconfigure` cannot participate in a decision made before the VM exists | One emission point would mean either giving up tags at placement (initial host choice ignores affinity for VMs joining an established relationship) or creating `Tag` resources from the placement path, which strands resources when a placement is retried or fails and breaks the single-writer-per-owner-reference rule (D2, D17) |

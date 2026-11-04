@@ -1871,7 +1871,8 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 		vmCtx,
 		createArgs.ConfigSpec,
-		createArgs.Storage.StorageClassToPolicyID)
+		createArgs.Storage.StorageClassToPolicyID,
+		vs.labelDerivedTags(vmCtx))
 	if err != nil {
 		return err
 	}
@@ -1900,6 +1901,18 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	}
 
 	return processPlacementResult(vmCtx, vcClient, createArgs, *result)
+}
+
+// labelDerivedTags returns the LabelDerivedTags that enable namespace-wide
+// label-derived Tags when the tagging API is enabled, and nil otherwise. Create and
+// placement have no owned Tags; they use the Tags that already exist.
+func (vs *vSphereVMProvider) labelDerivedTags(
+	ctx context.Context) *virtualmachine.LabelDerivedTags {
+
+	if !pkgcfg.FromContext(ctx).Features.TaggingAPI {
+		return nil
+	}
+	return &virtualmachine.LabelDerivedTags{Client: vs.k8sClient}
 }
 
 // vmCreateDoPlacementByGroup places the VM from the group's placement result.
@@ -2756,7 +2769,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		return err
 	}
 
-	if err := virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &createArgs.ConfigSpec, false); err != nil {
+	if err := virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &createArgs.ConfigSpec, false, vs.labelDerivedTags(vmCtx)); err != nil {
 		return fmt.Errorf("build create affinity config: %w", err)
 	}
 	vmCtx.Logger.V(4).Info("Completed generating config spec for VM create", "ConfigSpec", createArgs.ConfigSpec)

@@ -13,14 +13,14 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/vspherepolicy/tag/validation"
 )
 
-// suite is used for unit testing this webhook.
+// suite is used for unit and integration testing this webhook.
 var suite = builder.NewTestSuiteForValidatingWebhook(
 	validation.AddToManager,
 	validation.NewValidator,
 	"default.validating.tag.v1alpha1.vsphere.policy.vmware.com")
 
 func TestWebhook(t *testing.T) {
-	suite.Register(t, "Tag validation webhook suite", nil, unitTests)
+	suite.Register(t, "Tag validation webhook suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

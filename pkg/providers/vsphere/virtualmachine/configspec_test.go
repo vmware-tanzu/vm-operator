@@ -542,7 +542,7 @@ var _ = Describe("CreateConfigSpec", func() {
 		JustBeforeEach(func() {
 			Expect(configSpec.VmPlacementPolicies).To(BeEmpty())
 			Expect(configSpec.TagSpecs).To(BeEmpty())
-			Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &configSpec, false)).To(Succeed())
+			Expect(virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &configSpec, false, nil)).To(Succeed())
 		})
 
 		When("VM spec has affinity policies set", func() {
@@ -916,7 +916,8 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		configSpec, err = virtualmachine.CreateConfigSpecForPlacement(
 			vmCtx,
 			baseConfigSpec,
-			storageClassesToIDs)
+			storageClassesToIDs,
+			nil)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(configSpec).ToNot(BeNil())
 	})
@@ -2658,7 +2659,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 					config.Features.VMAffinityDuringExecution = false
 				})
 
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 				Expect(constraints.ConfigureHostRules).To(BeFalse())
 				Expect(constraints.ConfigureZoneRules).To(BeFalse())
 			})
@@ -2671,7 +2672,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 					config.Features.VMAffinityDuringExecution = false
 				})
 
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 				Expect(constraints.ConfigureHostRules).To(BeFalse())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue())
 			})
@@ -2684,7 +2685,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 					config.Features.VMAffinityDuringExecution = true
 				})
 
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 				Expect(constraints.ConfigureHostRules).To(BeTrue())
 				Expect(constraints.ConfigureZoneRules).To(BeFalse())
 			})
@@ -2697,7 +2698,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 					config.Features.VMAffinityDuringExecution = true
 				})
 
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 				Expect(constraints.ConfigureHostRules).To(BeTrue())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue())
 			})
@@ -2719,7 +2720,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 					config.Features.VMAffinityDuringExecution = true
 				})
 
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS node VMs should disable host rules")
 				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "VKS node VMs without a zone label are not yet zone-constrained")
 			})
@@ -2730,7 +2731,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 					config.Features.VMAffinityDuringExecution = false
 				})
 
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 				Expect(constraints.ConfigureHostRules).To(BeFalse())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "VKS node VMs without a zone label are not yet zone-constrained")
 			})
@@ -2746,7 +2747,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 						config.Features.VMAffinityDuringExecution = true
 					})
 
-					constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+					constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 					Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS node VMs should disable host rules")
 					Expect(constraints.ConfigureZoneRules).To(BeFalse(), "zone-labeled VKS node VMs are already zone-constrained")
 				})
@@ -2757,7 +2758,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 						config.Features.VMAffinityDuringExecution = false
 					})
 
-					constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+					constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 					Expect(constraints.ConfigureHostRules).To(BeFalse())
 					Expect(constraints.ConfigureZoneRules).To(BeFalse(), "zone-labeled VKS node VMs are already zone-constrained")
 				})
@@ -2777,7 +2778,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 					config.Features.VMAffinityDuringExecution = true
 				})
 
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 				Expect(constraints.ConfigureHostRules).To(BeTrue(), "Regular VMs should allow host rules")
 				Expect(constraints.ConfigureZoneRules).To(BeTrue())
 			})
@@ -2794,7 +2795,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 
 		When("isPlacement is false (creation workflow)", func() {
 			It("should disable zone rules regardless of feature flags", func() {
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false, nil)
 				Expect(constraints.ConfigureHostRules).To(BeTrue(), "Host rules should still be enabled during creation")
 				Expect(constraints.ConfigureZoneRules).To(BeFalse(), "Zone rules should be disabled during VM creation")
 			})
@@ -2802,7 +2803,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 
 		When("isPlacement is true (placement workflow)", func() {
 			It("should allow zone rules when VMPlacementPolicies is enabled", func() {
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 				Expect(constraints.ConfigureHostRules).To(BeTrue())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "Zone rules should be enabled during placement")
 			})
@@ -2820,7 +2821,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 
 		DescribeTable("should enable required-during-execution terms, hashed tags, and tag prefix",
 			func(isPlacement bool) {
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, isPlacement)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, isPlacement, nil)
 				Expect(constraints.ConfigureRequiredDuringExecution).To(BeTrue())
 				Expect(constraints.ConfigureHashedTags).To(BeTrue())
 				Expect(constraints.ConfigureTagPrefix).To(BeTrue())
@@ -2833,27 +2834,27 @@ var _ = Describe("CalculateAffinityOpts", func() {
 			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
 				config.Features.VMHardAffinityDuringExecution = false
 			})
-			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 			Expect(constraints.ConfigureRequiredDuringExecution).To(BeFalse())
 			Expect(constraints.ConfigureHashedTags).To(BeFalse())
 			Expect(constraints.ConfigureTagPrefix).To(BeFalse())
 		})
 
 		It("should allow zone rules during creation", func() {
-			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false)
+			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false, nil)
 			Expect(constraints.ConfigureHostRules).To(BeTrue())
 			Expect(constraints.ConfigureZoneRules).To(BeTrue())
 		})
 
 		It("should allow zone rules during placement", func() {
-			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 			Expect(constraints.ConfigureHostRules).To(BeTrue())
 			Expect(constraints.ConfigureZoneRules).To(BeTrue())
 		})
 
 		It("should keep zone rules for a VM with a zone label", func() {
 			vm.Labels = map[string]string{corev1.LabelTopologyZone: "zone-a"}
-			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 			Expect(constraints.ConfigureHostRules).To(BeTrue())
 			Expect(constraints.ConfigureZoneRules).To(BeTrue())
 		})
@@ -2862,7 +2863,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
 				config.Features.VMPlacementPolicies = false
 			})
-			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false)
+			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false, nil)
 			Expect(constraints.ConfigureZoneRules).To(BeFalse())
 		})
 
@@ -2872,7 +2873,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 				if hasZoneLabel {
 					vm.Labels[corev1.LabelTopologyZone] = "zone-a"
 				}
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, isPlacement)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, isPlacement, nil)
 				Expect(constraints.ConfigureHostRules).To(BeTrue())
 				Expect(constraints.ConfigureZoneRules).To(BeTrue())
 			},
@@ -2890,7 +2891,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 				config.Features.VMPlacementPolicies = false
 				config.Features.VMAffinityDuringExecution = false
 			})
-			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+			constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 			Expect(constraints.ConfigureHostRules).To(BeFalse())
 			Expect(constraints.ConfigureZoneRules).To(BeFalse())
 		})
@@ -2909,7 +2910,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 			})
 
 			It("should disable both host and zone rules", func() {
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false, nil)
 				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
 				Expect(constraints.ConfigureZoneRules).To(BeFalse(), "Creation workflow should disable zone rules")
 			})
@@ -2927,7 +2928,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 			})
 
 			It("should disable host rules but allow zone rules when it has no zone label", func() {
-				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+				constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 				Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
 				Expect(constraints.ConfigureZoneRules).To(BeTrue(), "VKS nodes without a zone label are not yet zone-constrained")
 			})
@@ -2938,7 +2939,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 				})
 
 				It("should disable both host and zone rules", func() {
-					constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+					constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 					Expect(constraints.ConfigureHostRules).To(BeFalse(), "VKS nodes should disable host rules")
 					Expect(constraints.ConfigureZoneRules).To(BeFalse(), "zone-labeled VKS nodes are already zone-constrained")
 				})
@@ -2973,7 +2974,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 							config.Features.VMAffinityDuringExecution = tc.vmAffinity
 						})
 
-						constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+						constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 						Expect(constraints.ConfigureHostRules).To(Equal(tc.expectedHost),
 							"Host rules mismatch for case: %s", tc.description)
 						Expect(constraints.ConfigureZoneRules).To(Equal(tc.expectedZone),
@@ -3000,7 +3001,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 							config.Features.VMAffinityDuringExecution = tc.vmAffinity
 						})
 
-						constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false)
+						constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, false, nil)
 						Expect(constraints.ConfigureHostRules).To(Equal(tc.expectedHost),
 							"Host rules mismatch for case: %s", tc.description)
 						Expect(constraints.ConfigureZoneRules).To(BeFalse(),
@@ -3037,7 +3038,7 @@ var _ = Describe("CalculateAffinityOpts", func() {
 							config.Features.VMAffinityDuringExecution = tc.vmAffinity
 						})
 
-						constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true)
+						constraints := virtualmachine.CalculateAffinityOpts(vmCtx.Context, vmCtx.VM, true, nil)
 						Expect(constraints.ConfigureHostRules).To(Equal(tc.expectedHost),
 							"Host rules mismatch for case: %s", tc.description)
 						Expect(constraints.ConfigureZoneRules).To(Equal(tc.expectedZone),

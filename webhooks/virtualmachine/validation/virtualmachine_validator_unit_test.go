@@ -242,6 +242,7 @@ func unitTests() {
 		unitTestsValidateUpdate,
 	)
 	controllerTests()
+	nicUnitNumberTests()
 	Describe(
 		"Delete",
 		Label(

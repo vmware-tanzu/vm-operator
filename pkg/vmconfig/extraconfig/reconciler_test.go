@@ -47,7 +47,7 @@ func moVMWithEC(pairs ...string) mo.VirtualMachine {
 
 func telcoCtx() context.Context {
 	cfg := pkgcfg.Config{}
-	cfg.Features.TelcoVMServiceAPI = true
+	cfg.Features.VMServiceClasslessVM = true
 	ctx := pkgcfg.WithConfig(cfg)
 	return vmconfig.WithContext(ctx)
 }
@@ -89,7 +89,7 @@ var _ = Describe("Reconcile", func() {
 		Expect(func() { _ = vmconfextraconfig.Reconcile(ctx, nil, nil, vm, moVM, nil) }).To(Panic())
 	})
 
-	It("no-ops when TelcoVMServiceAPI is off", func() {
+	It("no-ops when VMServiceClasslessVM is off", func() {
 		offCtx := vmconfig.WithContext(pkgcfg.NewContextWithDefaultConfig())
 		vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{PreferHTEnabled: ptr.To(true)}
 		Expect(vmconfextraconfig.Reconcile(offCtx, nil, nil, vm, moVM, configSpec)).To(Succeed())
@@ -297,7 +297,7 @@ var _ = Describe("OnResult", func() {
 		Expect(func() { _ = r.OnResult(ctx, nil, moVM, nil) }).To(Panic())
 	})
 
-	It("no-ops when TelcoVMServiceAPI is off", func() {
+	It("no-ops when VMServiceClasslessVM is off", func() {
 		offCtx := vmconfig.WithContext(pkgcfg.NewContextWithDefaultConfig())
 		Expect(vmconfextraconfig.New().OnResult(offCtx, vm, moVM, nil)).To(Succeed())
 		Expect(findCond(vm)).To(BeNil())

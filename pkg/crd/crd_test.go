@@ -634,22 +634,22 @@ var _ = Describe("Install", func() {
 				Entry("groupName", "groupName"),
 			)
 
-			It("vmgroup api should not have powerOffDelay without TelcoVMServiceAPI", func() {
+			It("vmgroup api should not have powerOffDelay without VMServiceClasslessVM", func() {
 				assertVMGroupField(false, specFieldPath("bootOrder.[].powerOffDelay")...)
 			})
 		})
 
-		When("groups and TelcoVMServiceAPI are enabled", func() {
+		When("groups and VMServiceClasslessVM are enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 					config.Features.VMGroups = true
-					config.Features.TelcoVMServiceAPI = true
+					config.Features.VMServiceClasslessVM = true
 				})
 			})
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesVMGroups)...)
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesVMGroups, externalEnvironmentBrowser)...)
 			})
 
 			It("vmgroup api should have powerOffDelay", func() {
@@ -744,16 +744,16 @@ var _ = Describe("Install", func() {
 			)
 		})
 
-		When("VM extra config capability is enabled", func() {
+		When("classless VM capability is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.TelcoVMServiceAPI = true
+					config.Features.VMServiceClasslessVM = true
 				})
 			})
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, basesNonGated...)
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalEnvironmentBrowser)...)
 			})
 			DescribeTable("vm api should have spec fields",
 				func(field string) {
@@ -965,7 +965,7 @@ var _ = Describe("Install", func() {
 		When("the environment browser is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.FlexVMClasses = true
+					config.Features.VMServiceClasslessVM = true
 				})
 			})
 			It("should get the expected crds", func() {
@@ -987,8 +987,7 @@ var _ = Describe("Install", func() {
 					config.Features.ControlledRebalancingPolicy = true
 					config.Features.BringYourOwnEncryptionKey = true
 					config.Features.GuestCustomizationVCDParity = true
-					config.Features.TelcoVMServiceAPI = true
-					config.Features.FlexVMClasses = true
+					config.Features.VMServiceClasslessVM = true
 					config.Features.K8sWorkloadMgmtAPI = true
 					config.Features.TaggingAPI = true
 					config.Features.VMNetworkUnitNumbers = true
@@ -1036,7 +1035,7 @@ var _ = Describe("Install", func() {
 						VMEviction:                  true,
 						ControlledRebalancingPolicy: true,
 						BringYourOwnEncryptionKey:   true,
-						FlexVMClasses:               true,
+						VMServiceClasslessVM:        true,
 						K8sWorkloadMgmtAPI:          true,
 						TaggingAPI:                  true,
 						VMNetworkUnitNumbers:        true,
@@ -1729,7 +1728,7 @@ func featureStates(enabled bool) pkgcfg.FeatureStates {
 			f.SetBool(enabled)
 		}
 	}
-	fs.FlexVMClasses = true
+	fs.VMServiceClasslessVM = true
 	return fs
 }
 

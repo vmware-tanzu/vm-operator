@@ -176,7 +176,7 @@ func intgTestsValidateCreate() {
 			createArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachine/vm-1\", spec.bootOrder[1].members[1]: Duplicate value: \"VirtualMachine/vm-2\", spec.bootOrder[1].members[2]: Duplicate value: \"VirtualMachineGroup/vmgroup-1\""),
 		Entry("should not work with self referenced member or group name",
 			createArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
-		Entry("should not work with powerOffDelay set when TelcoVMServiceAPI is not enabled",
+		Entry("should not work with powerOffDelay set when VMServiceClasslessVM is not enabled",
 			createArgs{powerOffDelaySet: true}, false, powerOffDelayNotSupportedMsg),
 	)
 }
@@ -298,7 +298,7 @@ func intgTestsValidateUpdate() {
 		})
 	})
 
-	When("update is performed with powerOffDelay set when TelcoVMServiceAPI is not enabled", func() {
+	When("update is performed with powerOffDelay set when VMServiceClasslessVM is not enabled", func() {
 		BeforeEach(func() {
 			ctx.vmGroup.Spec.BootOrder[0].PowerOffDelay = &metav1.Duration{Duration: time.Minute}
 		})

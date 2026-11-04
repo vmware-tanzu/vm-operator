@@ -71,7 +71,7 @@ func (r reconciler) Reconcile(
 		panic("configSpec is nil")
 	}
 
-	if !pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if !pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		return nil
 	}
 	if moVM.Config == nil {
@@ -165,7 +165,7 @@ func (r reconciler) OnResult(
 		panic("vm is nil")
 	}
 
-	if !pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if !pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		return nil
 	}
 

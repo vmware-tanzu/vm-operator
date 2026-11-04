@@ -240,7 +240,7 @@ func ActivatedFeatureVersion(ctx context.Context) FeatureVersion {
 	if f.AllDisksArePVCs || f.VMSharedDisks {
 		v.Set(FeatureVersionAllDisksArePVCs)
 	}
-	if f.TelcoVMServiceAPI {
+	if f.VMServiceClasslessVM {
 		v.Set(FeatureVersionTelcoVMServiceAPI)
 	}
 	if f.VMNetworkUnitNumbers {

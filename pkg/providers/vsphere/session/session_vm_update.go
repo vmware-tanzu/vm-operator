@@ -133,7 +133,7 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	features := pkgcfg.FromContext(vmCtx).Features
-	if features.BringYourOwnEncryptionKey || features.TelcoVMServiceAPI {
+	if features.BringYourOwnEncryptionKey || features.VMServiceClasslessVM {
 		for _, r := range vmconfig.FromContext(vmCtx) {
 			if err := r.OnResult(
 				vmCtx,
@@ -433,7 +433,7 @@ func (s *Session) poweredOnReconfigure(
 	}
 
 	// Apply compute config changes while the VM is powered on.
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, true, configSpec)
 	}
 
@@ -485,7 +485,7 @@ func (s *Session) poweredOffReconfigure(
 	}
 
 	// Overlay vm spec compute fields onto the ConfigSpec.
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, false, configSpec)
 	}
 
@@ -701,7 +701,7 @@ func updateConfigSpec(
 		resize.CompareMemoryAllocation(*config, updateArgs.ConfigSpec, configSpec)
 		// For backward compatibility, sync the class CPU/memory values into vm.Spec so that
 		// OverwriteSpecComputeConfig does not override them with backfilled spec values.
-		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 			vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, updateArgs.ConfigSpec)
 		}
 	}
@@ -989,7 +989,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 			// For backward compatibility, sync class compute fields into spec
 			// before building the diff so that OverwriteSpecComputeConfig
 			// applies the class intent. Scope of sync matches the scope of the resize path.
-			if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+			if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 				vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, resizeArgs.ConfigSpec)
 			}
 			configSpec, err = resize.CreateResizeCPUMemoryConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
@@ -1001,7 +1001,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 
 	// Overlay vm spec compute fields after the class-based resize diff so that
 	// spec values take precedence.
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *moVM.Config, false, &configSpec)
 	}
 
@@ -1563,7 +1563,7 @@ func doReconfigure(
 		return err
 	}
 
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		if err := reconcileAdvancedExtraConfig(
 			ctx,
 			k8sClient,

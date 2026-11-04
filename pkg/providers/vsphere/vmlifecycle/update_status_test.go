@@ -5923,7 +5923,7 @@ var _ = Describe("Hardware status", func() {
 					}
 				})
 
-				When("TelcoVMServiceAPI is disabled", func() {
+				When("VMServiceClasslessVM is disabled", func() {
 					It("should populate only Total and Reservation; leave all Telco fields nil", func() {
 						err := vmlifecycle.ReconcileStatus(vmCtx, ctx.Client, vcVM, data)
 						Expect(err).ToNot(HaveOccurred())
@@ -5951,10 +5951,10 @@ var _ = Describe("Hardware status", func() {
 					})
 				})
 
-				When("TelcoVMServiceAPI is enabled", func() {
+				When("VMServiceClasslessVM is enabled", func() {
 					BeforeEach(func() {
 						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-							config.Features.TelcoVMServiceAPI = true
+							config.Features.VMServiceClasslessVM = true
 						})
 					})
 
@@ -5989,10 +5989,10 @@ var _ = Describe("Hardware status", func() {
 				})
 			})
 
-			When("CPU limit is -1 (unlimited) and TelcoVMServiceAPI is enabled", func() {
+			When("CPU limit is -1 (unlimited) and VMServiceClasslessVM is enabled", func() {
 				BeforeEach(func() {
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					vmCtx.MoVM.Config.CpuAllocation = &vimtypes.ResourceAllocationInfo{
 						Limit: ptr.To(int64(-1)),
@@ -6006,10 +6006,10 @@ var _ = Describe("Hardware status", func() {
 				})
 			})
 
-			When("memory limit is -1 (unlimited) and TelcoVMServiceAPI is enabled", func() {
+			When("memory limit is -1 (unlimited) and VMServiceClasslessVM is enabled", func() {
 				BeforeEach(func() {
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					vmCtx.MoVM.Config.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
 						Limit: ptr.To(int64(-1)),
@@ -6035,14 +6035,14 @@ var _ = Describe("Hardware status", func() {
 					},
 				}
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.TelcoVMServiceAPI = true
+					config.Features.VMServiceClasslessVM = true
 				})
 			})
 
-			When("TelcoVMServiceAPI is disabled", func() {
+			When("VMServiceClasslessVM is disabled", func() {
 				BeforeEach(func() {
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = false
+						config.Features.VMServiceClasslessVM = false
 					})
 					vmCtx.VM.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
 						ReservationLockedToMax: ptr.To(true),
@@ -6344,14 +6344,14 @@ var _ = Describe("ExtraConfig status", func() {
 	BeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.Features.TelcoVMServiceAPI = true
+			config.Features.VMServiceClasslessVM = true
 		})
 
 		vm = builder.DummyVirtualMachine()
 		vm.Name = "extraconfig-status-test"
 		// Most tests below exercise the spec-vs-observed comparison, which
 		// only runs once this VM has been through the one-time
-		// TelcoVMServiceAPI schema-upgrade backfill. The "has not yet been
+		// VMServiceClasslessVM schema-upgrade backfill. The "has not yet been
 		// backfilled" case is covered separately.
 		vm.SetAnnotation(
 			pkgconst.UpgradedToFeatureVersionAnnotationKey,
@@ -6383,10 +6383,10 @@ var _ = Describe("ExtraConfig status", func() {
 		ctx = nil
 	})
 
-	When("TelcoVMServiceAPI is disabled", func() {
+	When("VMServiceClasslessVM is disabled", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = false
+				config.Features.VMServiceClasslessVM = false
 			})
 			vmCtx.MoVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
 				&vimtypes.OptionValue{Key: "numa.vcpu.preferHT", Value: "TRUE"},
@@ -6399,7 +6399,7 @@ var _ = Describe("ExtraConfig status", func() {
 		})
 	})
 
-	When("this VM has not yet been through the TelcoVMServiceAPI schema-upgrade backfill", func() {
+	When("this VM has not yet been through the VMServiceClasslessVM schema-upgrade backfill", func() {
 		BeforeEach(func() {
 			// No UpgradedToFeatureVersionAnnotationKey annotation at all,
 			// simulating a VM whose class set a value directly on vSphere
@@ -6739,7 +6739,7 @@ var _ = Describe("NetworkExtraConfig status", func() {
 	BeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-			config.Features.TelcoVMServiceAPI = true
+			config.Features.VMServiceClasslessVM = true
 		})
 
 		vm = builder.DummyVirtualMachine()
@@ -6771,10 +6771,10 @@ var _ = Describe("NetworkExtraConfig status", func() {
 		ctx = nil
 	})
 
-	When("TelcoVMServiceAPI is disabled", func() {
+	When("VMServiceClasslessVM is disabled", func() {
 		BeforeEach(func() {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = false
+				config.Features.VMServiceClasslessVM = false
 			})
 			vm.Spec.Network.Interfaces[0].AdvancedProperties = []vmopv1common.KeyValuePair{
 				{Key: "foo", Value: "bar"},

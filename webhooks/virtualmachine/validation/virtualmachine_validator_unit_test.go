@@ -8785,12 +8785,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow spec.advanced vmx field change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow spec.advanced vmx field change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8807,12 +8807,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow spec.advanced slice vmx field change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow spec.advanced slice vmx field change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8829,12 +8829,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("allow spec.advanced.extraConfig change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("allow spec.advanced.extraConfig change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8850,12 +8850,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow interfaces[i].type change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow interfaces[i].type change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8880,12 +8880,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow interfaces[i].vmxnet3 change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow interfaces[i].vmxnet3 change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8916,12 +8916,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow interfaces[i].vnumaNodeID change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow interfaces[i].vnumaNodeID change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8946,12 +8946,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow any interface field change (including non-backfilled fields) when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow any interface field change (including non-backfilled fields) when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -11406,7 +11406,7 @@ func commonCreateAndUpdateValidations(
 		)
 	})
 
-	Context("TelcoVMServiceAPI extraConfig validation", func() {
+	Context("VMServiceClasslessVM extraConfig validation", func() {
 		var (
 			ctx *unitValidatingWebhookContext
 		)
@@ -11419,9 +11419,9 @@ func commonCreateAndUpdateValidations(
 		BeforeEach(func() {
 			ctx = newUnitTestContextForValidatingWebhook(true)
 
-			// Enable TelcoVMServiceAPI feature for all tests in this context.
+			// Enable VMServiceClasslessVM feature for all tests in this context.
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = true
+				config.Features.VMServiceClasslessVM = true
 			})
 
 			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
@@ -11748,10 +11748,10 @@ func commonCreateAndUpdateValidations(
 
 	})
 
-	// The TelcoVMServiceAPI extraConfig validation context above always uses an
+	// The VMServiceClasslessVM extraConfig validation context above always uses an
 	// update context (oldVM != nil) even when called from unitTestsValidateCreate.
 	// This Context exercises the same validation on the create path (oldVM == nil).
-	Context("TelcoVMServiceAPI extraConfig validation - create path", func() {
+	Context("VMServiceClasslessVM extraConfig validation - create path", func() {
 		var ctx *unitValidatingWebhookContext
 
 		doTest := func(args testParams) {
@@ -11762,7 +11762,7 @@ func commonCreateAndUpdateValidations(
 			ctx = newUnitTestContextForValidatingWebhook(false) // create context: oldVM is nil
 
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = true
+				config.Features.VMServiceClasslessVM = true
 			})
 
 			bypassUpgradeCheck(&ctx.Context, ctx.vm)

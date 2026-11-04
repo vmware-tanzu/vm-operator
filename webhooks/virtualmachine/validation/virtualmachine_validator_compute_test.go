@@ -35,7 +35,7 @@ var _ = Describe(
 		BeforeEach(func() {
 			ctx = newUnitTestContextForValidatingWebhook(true)
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = true
+				config.Features.VMServiceClasslessVM = true
 			})
 			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
 		})
@@ -48,43 +48,43 @@ var _ = Describe(
 		// Capability gate
 		// ------------------------------------------------------------------ //
 
-		Context("capability gate — TelcoVMServiceAPI required", func() {
-			DescribeTable("fields require the TelcoVMServiceAPI supervisor capability",
+		Context("capability gate — VMServiceClasslessVM required", func() {
+			DescribeTable("fields require the VMServiceClasslessVM supervisor capability",
 				doTest,
 				Entry("spec.resources non-nil without capability → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
 							pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
-								c.Features.TelcoVMServiceAPI = false
+								c.Features.VMServiceClasslessVM = false
 							})
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources: Forbidden: the VM Compute Config (via TelcoVMServiceAPI) feature is not enabled"),
+						validate:      doValidateWithMsg("spec.resources: Forbidden: the VM Compute Config (via VMServiceClasslessVM) feature is not enabled"),
 					},
 				),
 				Entry("spec.cpuAdvanced non-nil without capability → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
 							pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
-								c.Features.TelcoVMServiceAPI = false
+								c.Features.VMServiceClasslessVM = false
 							})
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced: Forbidden: the VM Compute Config (via TelcoVMServiceAPI) feature is not enabled"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced: Forbidden: the VM Compute Config (via VMServiceClasslessVM) feature is not enabled"),
 					},
 				),
 				Entry("spec.memoryAdvanced non-nil without capability → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
 							pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
-								c.Features.TelcoVMServiceAPI = false
+								c.Features.VMServiceClasslessVM = false
 							})
 							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.memoryAdvanced: Forbidden: the VM Compute Config (via TelcoVMServiceAPI) feature is not enabled"),
+						validate:      doValidateWithMsg("spec.memoryAdvanced: Forbidden: the VM Compute Config (via VMServiceClasslessVM) feature is not enabled"),
 					},
 				),
 			)

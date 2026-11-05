@@ -123,6 +123,25 @@ func DeferCleanupVirtualMachine(
 	DeferCleanupWithDumpOnFailure(cleanup, dumps...)
 }
 
+// DescribeResources returns a DumpFunc that logs the output of a single
+// `kubectl describe` covering all the named resources of one type in ns.
+// It does nothing when no names are given, since kubectl would otherwise
+// describe every resource of that type in the namespace.
+func DescribeResources(kubeconfigPath, resource, ns string, names ...string) DumpFunc {
+	return func(ctx context.Context) {
+		if len(names) == 0 {
+			return
+		}
+		stdout, stderr, err := framework.KubectlDescribeWithNamespacedNames(ctx, kubeconfigPath, resource, ns, names...)
+		if len(stdout) > 0 {
+			e2eframework.Logf("kubectl describe %s -n %s %v:\n%s", resource, ns, names, stdout)
+		}
+		if err != nil {
+			e2eframework.Logf("kubectl describe %s -n %s %v failed: %v: %s", resource, ns, names, err, stderr)
+		}
+	}
+}
+
 // describeResource logs the output of `kubectl describe` for the given
 // resource. It never fails the spec: a resource that does not exist, or an
 // error running kubectl, is logged and otherwise ignored.

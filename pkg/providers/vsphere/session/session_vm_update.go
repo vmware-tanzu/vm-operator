@@ -98,6 +98,11 @@ func (s *Session) UpdateVirtualMachine(
 		vmCtx.Context = pkgctx.WithFinder(vmCtx.Context, s.Client.Finder())
 	}
 
+	// The VM exists, so the request that set the marker annotations, a
+	// create or a RegisterVM update, has been admitted, and they are no
+	// longer needed.
+	removeCreateMarkerAnnotations(vmCtx)
+
 	switch {
 	case powerState == vimtypes.VirtualMachinePowerStateSuspended:
 		vmCtx.Logger.Info("Reconciling config for suspended vm")
@@ -152,6 +157,27 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	return updateErr
+}
+
+// createMarkerAnnotations are the annotations that mark the create of a VM
+// by a restore, a failover or an import, and the RegisterVM update of a VM
+// by a restore or a failover.
+var createMarkerAnnotations = []string{
+	vmopv1.RestoredVMAnnotation,
+	vmopv1.FailedOverVMAnnotation,
+	vmopv1.ImportedVMAnnotation,
+}
+
+// removeCreateMarkerAnnotations deletes the createMarkerAnnotations from the
+// VM, which the webhooks need only on the request that sets them.
+func removeCreateMarkerAnnotations(vmCtx pkgctx.VirtualMachineContext) {
+	for _, k := range createMarkerAnnotations {
+		if v, ok := vmCtx.VM.Annotations[k]; ok {
+			vmCtx.Logger.Info("Removing create marker annotation",
+				"annotation", k, "value", v)
+			delete(vmCtx.VM.Annotations, k)
+		}
+	}
 }
 
 func reconcilePausedVM(

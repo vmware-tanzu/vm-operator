@@ -301,6 +301,15 @@ func getDesiredVMResourceYAMLForBackup(
 func trimBackupFields(obj client.Object) {
 	if annotations := obj.GetAnnotations(); len(annotations) > 0 {
 		delete(annotations, corev1.LastAppliedConfigAnnotation)
+
+		// Remove the annotations that mark the create of a VM by a restore,
+		// a failover or an import, or its RegisterVM update. They apply only
+		// to the request that sets them, and VM Operator removes them from
+		// the VM once that request is admitted.
+		delete(annotations, vmopv1.RestoredVMAnnotation)
+		delete(annotations, vmopv1.FailedOverVMAnnotation)
+		delete(annotations, vmopv1.ImportedVMAnnotation)
+
 		obj.SetAnnotations(annotations)
 	}
 

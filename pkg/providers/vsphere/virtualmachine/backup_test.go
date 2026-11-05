@@ -143,6 +143,64 @@ func backupTests() {
 					})
 				})
 
+				When("VM has the annotations that mark its create by a restore, a failover or an import", func() {
+					createMarkers := []string{
+						vmopv1.RestoredVMAnnotation,
+						vmopv1.FailedOverVMAnnotation,
+						vmopv1.ImportedVMAnnotation,
+					}
+
+					JustBeforeEach(func() {
+						vmCtx.VM.Annotations[vmopv1.RestoredVMAnnotation] = ""
+						vmCtx.VM.Annotations[vmopv1.FailedOverVMAnnotation] = ""
+						vmCtx.VM.Annotations[vmopv1.ImportedVMAnnotation] = "true"
+						vmCtx.VM.Annotations["foo"] = "bar"
+					})
+
+					It("Should backup the VM resource YAML without those annotations", func() {
+						backupOpts := virtualmachine.BackupVirtualMachineOptions{
+							VMCtx: vmCtx,
+							VcVM:  vcVM,
+						}
+
+						if IncrementalRestore {
+							backupOpts.BackupVersion = vT1
+						}
+
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(MatchError(virtualmachine.ErrBackingUp))
+
+						// The backup leaves the annotations on the VM itself.
+						for _, k := range createMarkers {
+							Expect(vmCtx.VM.Annotations).To(HaveKey(k))
+						}
+
+						expectedVM := vmCtx.VM.DeepCopy()
+						for _, k := range createMarkers {
+							delete(expectedVM.Annotations, k)
+						}
+						Expect(expectedVM.Annotations).To(HaveKeyWithValue("foo", "bar"))
+						expectedVMYAML := getExpectedBackupObjectYAML(expectedVM)
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
+
+						By("Removing the annotations from the VM does not trigger a new backup")
+						for _, k := range createMarkers {
+							delete(vmCtx.VM.Annotations, k)
+						}
+						Expect(vcVM.Properties(vmCtx, vcVM.Reference(), vsphere.VMUpdatePropertiesSelector, &vmCtx.MoVM)).To(Succeed())
+						backupOpts.VMCtx = vmCtx
+						if IncrementalRestore {
+							backupOpts.BackupVersion = vT2
+						}
+						Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+						verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.VMResourceYAMLExtraConfigKey, expectedVMYAML, true)
+
+						if IncrementalRestore {
+							verifyBackupDataInExtraConfig(ctx, vcVM, backupapi.BackupVersionExtraConfigKey, vT1, false)
+							Expect(vmCtx.VM.Annotations[vmopv1.VirtualMachineBackupVersionAnnotation]).To(Equal(vT1))
+						}
+					})
+				})
+
 				When("VM resource exists in ExtraConfig and gets a spec change", func() {
 
 					JustBeforeEach(func() {

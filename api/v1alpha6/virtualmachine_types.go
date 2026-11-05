@@ -426,12 +426,23 @@ const (
 	// VADP based data protection vendor. The presence of this annotation is
 	// used to bypass some validation checks that are otherwise
 	// applicable to all VirtualMachine create/update requests.
+	//
+	// This annotation is set on the create of the VirtualMachine, and the
+	// RegisterVM API also sets it on the update with which it restores an
+	// existing VirtualMachine. VM Operator's webhooks read it on that request.
+	// VM Operator removes it from the VirtualMachine once that request has
+	// been admitted, and never includes it in a backup of the VirtualMachine.
 	RestoredVMAnnotation = GroupName + "/restored-vm"
 
 	// ImportedVMAnnotation on a VirtualMachine represents that a traditional virtual
 	// machine has been imported into Supervisor using the ImportVM API. The presence of this
 	// annotation is used to bypass some validation checks that are otherwise applicable
 	// to all VirtualMachine create/update requests.
+	//
+	// This annotation is set on the create of the VirtualMachine, where VM
+	// Operator's webhooks read it. VM Operator removes it from the
+	// VirtualMachine once the create has been admitted, and never includes it
+	// in a backup of the VirtualMachine.
 	ImportedVMAnnotation = GroupName + "/imported-vm"
 
 	// FailedOverVMAnnotation on a VirtualMachine resource represents that a virtual
@@ -439,6 +450,12 @@ const (
 	// disaster recovery workflow.  The presence of this annotation is used to bypass
 	// some validation checks that are otherwise applicable to all VirtualMachine
 	// create/update requests.
+	//
+	// This annotation is set on the create of the VirtualMachine, and the
+	// RegisterVM API also sets it on the update with which it fails over an
+	// existing VirtualMachine. VM Operator's webhooks read it on that request.
+	// VM Operator removes it from the VirtualMachine once that request has
+	// been admitted, and never includes it in a backup of the VirtualMachine.
 	FailedOverVMAnnotation = GroupName + "/failed-over-vm"
 )
 

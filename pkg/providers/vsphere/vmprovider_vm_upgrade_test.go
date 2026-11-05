@@ -9,6 +9,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -111,5 +112,52 @@ func vmUpgradeTests() {
 		// Update the VM again and expect no error.
 		Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(
 			Succeed())
+	})
+
+	// IDE controllers are not defaulted when a VM is created, since not all
+	// platforms support them, e.g. ARM. Instead, they are backfilled from the
+	// vSphere VM by the schema upgrade.
+	It("should backfill the IDE controllers from the vSphere VM", func() {
+		ideBusNumbers := func() []int32 {
+			var busNumbers []int32
+			if vm.Spec.Hardware != nil {
+				for _, c := range vm.Spec.Hardware.IDEControllers {
+					busNumbers = append(busNumbers, c.BusNumber)
+				}
+			}
+			return busNumbers
+		}
+
+		// The VM was created without IDE controllers in its spec, and the
+		// initial create backfilled the vSphere VM's default IDE controllers.
+		Expect(ideBusNumbers()).To(ConsistOf(int32(0), int32(1)))
+
+		// Reset the spec to what the mutating webhook produces on create.
+		vm.Spec.Hardware.IDEControllers = nil
+
+		Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(
+			MatchError(vsphere.ErrUpgradeSchema))
+		Expect(ideBusNumbers()).To(BeEmpty())
+
+		Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(
+			MatchError(vsphere.ErrUpgradeObject))
+		Expect(ideBusNumbers()).To(ConsistOf(int32(0), int32(1)))
+
+		Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(
+			MatchError(vsphere.ErrBackup))
+		Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(
+			Succeed())
+
+		// The vSphere VM still has exactly its default IDE controllers.
+		vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+		Expect(vcVM).ToNot(BeNil())
+		devices, err := vcVM.Device(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		var vcBusNumbers []int32
+		for _, d := range devices.SelectByType((*vimtypes.VirtualIDEController)(nil)) {
+			vcBusNumbers = append(vcBusNumbers,
+				d.(*vimtypes.VirtualIDEController).BusNumber)
+		}
+		Expect(vcBusNumbers).To(ConsistOf(int32(0), int32(1)))
 	})
 }

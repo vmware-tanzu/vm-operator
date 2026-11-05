@@ -118,9 +118,12 @@ func createHardwareVMWithPVCs(
 	// Register this before the VM cleanup so the VM is deleted first.
 	deferCleanupPVCs(clusterProxy, claims...)
 	// Register diagnostics before either create so partial fixture failures
-	// retain the same VM, batch attachment, and namespace PVC dumps.
+	// still dump the VM, its batch attachment, and its claims. The claims are
+	// dumped here rather than in deferCleanupPVCs so each is dumped once.
 	vmoperator.DeferCleanupVirtualMachine(config, client, clusterProxy.GetKubeconfigPath(),
-		params.Namespace, params.Name, false, hardwareVMDumps(clusterProxy, params.Namespace, params.Name)...)
+		params.Namespace, params.Name, false,
+		append(hardwareVMDumps(clusterProxy, params.Namespace, params.Name),
+			pvcDumps(clusterProxy, claims...)...)...)
 
 	if precreatePVCs {
 		By("Pre-creating the PVCs so admission can resolve them when the VM is created")
@@ -139,54 +142,51 @@ func createHardwareVMWithPVCs(
 }
 
 // deferCleanupPVCs registers a DeferCleanup node that deletes the claims.
-// Failure diagnostics also cover PVC creation failures before VM cleanup
-// is registered. VM cleanup is registered later, so it still runs first.
+// Diagnostics for the claims are not registered here; the VM that owns them
+// dumps them via pvcDumps. The VM cleanup is registered later, so it runs first.
 func deferCleanupPVCs(
 	clusterProxy framework.ClusterProxyInterface,
 	claims ...*corev1.PersistentVolumeClaim) {
 
 	client := clusterProxy.GetClient()
-	dumps := make([]vmoperator.DumpFunc, 0, len(claims))
-	for _, claim := range claims {
-		dumps = append(dumps, hardwareResourceYAML(clusterProxy.GetKubeconfigPath(), "pvc", claim.Namespace, claim.Name))
-	}
-	vmoperator.DeferCleanupWithDumpOnFailure(func(ctx context.Context) {
+	DeferCleanup(func(ctx context.Context) {
 		for _, claim := range claims {
 			_ = client.Delete(ctx, claim)
 		}
-	}, dumps...)
+	})
 }
 
-// hardwareResourceYAML logs the complete resource, including fields that
-// kubectl describe may omit. An empty name logs every resource in the namespace.
-func hardwareResourceYAML(kubeconfigPath, resource, ns, name string) vmoperator.DumpFunc {
-	return func(ctx context.Context) {
-		args := []string{"-n", ns, "-oyaml"}
-		if name != "" {
-			args = append([]string{name}, args...)
-		}
-		stdout, err := framework.KubectlGet(ctx, kubeconfigPath, append([]string{resource}, args...)...)
-		if err != nil {
-			e2eframework.Logf("Failed to get %s %s/%s: %v", resource, ns, name, err)
-			return
-		}
-		e2eframework.Logf("%s %s/%s:\n%s", resource, ns, name, stdout)
-	}
-}
-
-// hardwareVMDumps retains the full VM, batch attachment, and namespace PVC YAML
-// previously logged by AfterEach, including backfilled disk claims. Descriptions
-// additionally include events. Run these before deleting the VM.
+// hardwareVMDumps returns the diagnostics for a VM with hardware attachments
+// that DeferCleanupVirtualMachine does not already cover. The VM describe is
+// registered by DeferCleanupVirtualMachine, so only the batch attachment is
+// added here. Pass the result as extraDumps so each dump runs once, on
+// failure, before the VM is deleted.
 func hardwareVMDumps(
 	clusterProxy framework.ClusterProxyInterface,
 	ns, vmName string) []vmoperator.DumpFunc {
 
-	kubeconfigPath := clusterProxy.GetKubeconfigPath()
 	return []vmoperator.DumpFunc{
-		hardwareResourceYAML(kubeconfigPath, "virtualmachine", ns, vmName),
-		hardwareResourceYAML(kubeconfigPath, "batchattach", ns, vmName),
-		vmoperator.DescribeResource(kubeconfigPath, "batchattach", ns, vmName),
-		hardwareResourceYAML(kubeconfigPath, "pvc", ns, ""),
+		vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "batchattach", ns, vmName),
+	}
+}
+
+// pvcDumps returns a single dump that describes all the claims in one kubectl
+// call. Register these with the single VM that owns the claims, not with every
+// VM that mounts them, so each claim is dumped once. The claims must share a
+// namespace.
+func pvcDumps(
+	clusterProxy framework.ClusterProxyInterface,
+	claims ...*corev1.PersistentVolumeClaim) []vmoperator.DumpFunc {
+
+	if len(claims) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(claims))
+	for _, claim := range claims {
+		names = append(names, claim.Name)
+	}
+	return []vmoperator.DumpFunc{
+		vmoperator.DescribeResources(clusterProxy.GetKubeconfigPath(), "pvc", claims[0].Namespace, names...),
 	}
 }
 
@@ -1519,37 +1519,6 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 
 		Describe("Multiple VMs sharing MultiWriter PVCs", func() {
 			numberOfVMs := 3
-
-			AfterEach(func() {
-				// This hook runs before deferred cleanup. Capture all shared-disk
-				// VMs before deleting any of them, preserving the deletion order below.
-				if CurrentSpecReport().Failed() {
-					for i := range numberOfVMs {
-						name := fmt.Sprintf("%s-%d", vmName, i)
-						vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "vm", vmSvcNamespace, name)(ctx)
-						for _, dump := range hardwareVMDumps(clusterProxy, vmSvcNamespace, name) {
-							dump(ctx)
-						}
-					}
-				}
-				// We delete the VMs one after the other instead of relying on
-				// deleting the entire yaml because the PVCs are shared between the VMs
-				// and we need to ensure that VMs are deleted before PVCs.
-				for i := range numberOfVMs {
-					vmName := fmt.Sprintf("%s-%d", vmName, i)
-
-					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmSvcNamespace, vmName)
-					if err != nil {
-						e2eframework.Logf("failed to get VirtualMachine %s: %v", vmName, err)
-						continue
-					}
-
-					err = svClusterClient.Delete(ctx, vm)
-					if err != nil {
-						e2eframework.Logf("failed to delete VirtualMachine %s: %v", vmName, err)
-					}
-				}
-			})
 
 			It("VMs should power on successfully", func() {
 				vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -3493,6 +3462,9 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 				claim, err := manifestbuilders.PersistentVolumeClaim(wffcPVC)
 				Expect(err).ToNot(HaveOccurred(), "failed to build WFFC PVC")
 				deferCleanupPVCs(clusterProxy, claim)
+				// Dump the PVC even if the VM is never created, since the
+				// Consistently below may fail before the VM exists.
+				vmoperator.DeferCleanupWithDumpOnFailure(nil, pvcDumps(clusterProxy, claim)...)
 				Expect(svClusterClient.Create(ctx, claim)).To(Succeed(),
 					"failed to pre-create WFFC PVC %q", wffcPVC.ClaimName)
 

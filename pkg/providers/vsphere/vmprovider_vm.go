@@ -2588,7 +2588,9 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		return err
 	}
 
-	isEnc, err := kubeutil.IsEncryptedStorageProfile(vmCtx, vs.k8sClient, storageProfileID)
+	// The profile ID was read from the VM's StorageClass or VolumeAttributesClass
+	// above, so there is no need to list them again to confirm it exists.
+	isEnc, err := kubeutil.IsEncryptedStoragePolicy(vmCtx, vs.k8sClient, storageProfileID)
 	if err != nil {
 		return err
 	}

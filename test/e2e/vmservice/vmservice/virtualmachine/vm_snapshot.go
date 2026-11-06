@@ -11,12 +11,20 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/vim25"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
@@ -131,6 +139,128 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 			}
 		}, dumps...)
 	})
+
+	DescribeTable("snapshot disk registration lifecycle", Label("experimental"), func(mode vmopv1.VirtualMachinePromoteDisksMode) {
+		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.AllDisksArePVCapabilityName)
+		imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &vmSvcE2EConfig.Config,
+			svClusterClient, vmSvcNamespace, vmservice.GetDefaultImageDisplayName(vmSvcClusterResources))
+		vm, err := manifestbuilders.VirtualMachineA6(manifestbuilders.VirtualMachineYaml{
+			Namespace: vmSvcNamespace, Name: vmName, ImageName: imageName,
+			VMClassName: vmSvcClusterResources.VMClassName, StorageClassName: vmSvcClusterResources.StorageClassName,
+			PowerState:  string(vmopv1.VirtualMachinePowerStateOff),
+			Annotations: map[string]string{pkgconst.FastDeployAnnotationKey: pkgconst.FastDeployModeLinked},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
+		if mode != vmopv1.VirtualMachinePromoteDisksModeDisabled {
+			// Online promotion cannot start while powered off. This lets the
+			// test queue a snapshot before either promotion or registration.
+			vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeOnline
+		}
+		Expect(vmSvcClusterProxy.CreateWithArgs(ctx, manifestbuilders.ToYAML(vm))).To(Succeed())
+		vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
+		Eventually(func(g Gomega) {
+			g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKeyFromObject(vm), vm)).To(Succeed())
+			g.Expect(vm.Spec.Volumes).ToNot(BeEmpty())
+			g.Expect(meta.IsStatusConditionTrue(vm.Status.Conditions, consts.VMUnmanagedVolumesRegisteredCondition)).To(
+				Equal(mode == vmopv1.VirtualMachinePromoteDisksModeDisabled))
+		}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed())
+
+		By("Verifying the VM really has a linked-clone disk before taking snapshots")
+		vCenterHostname := vcenter.GetVCPNIDFromKubeconfigFile(ctx, vmSvcClusterProxy.GetKubeconfigPath())
+		vcClient, err := vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(vcenter.LogoutVimClient, vcClient)
+		var moVM mo.VirtualMachine
+		Expect(property.DefaultCollector(vcClient).RetrieveOne(ctx,
+			vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: vm.Status.UniqueID},
+			[]string{"config.hardware.device", "snapshot"}, &moVM)).To(Succeed())
+		Expect(moVM.Snapshot).To(BeNil())
+		Expect(moVM.Config).ToNot(BeNil())
+		var linkedClone bool
+		for _, device := range moVM.Config.Hardware.Device {
+			if disk, ok := device.(*vimtypes.VirtualDisk); ok && disk.VDiskId == nil {
+				switch backing := disk.Backing.(type) {
+				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+					linkedClone = linkedClone || backing.Parent != nil
+				case *vimtypes.VirtualDiskSeSparseBackingInfo:
+					linkedClone = linkedClone || backing.Parent != nil
+				}
+			}
+		}
+		Expect(linkedClone).To(BeTrue(), "This regression requires FastDeploy linked clones; a full clone would not exercise it")
+
+		if mode != vmopv1.VirtualMachinePromoteDisksModeDisabled {
+			By("Requesting a snapshot before promotion and registration can complete")
+			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+				Namespace: vmSvcNamespace, Name: vmSnapshot1Name, VMName: vmName,
+			})
+			Consistently(func(g Gomega) {
+				var snapshot vmopv1.VirtualMachineSnapshot
+				g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: vmSnapshot1Name}, &snapshot)).To(Succeed())
+				g.Expect(snapshot.Status.UniqueID).To(BeEmpty())
+				g.Expect(meta.IsStatusConditionTrue(snapshot.Status.Conditions, vmopv1.VirtualMachineSnapshotCreatedCondition)).To(BeFalse())
+			}, "10s", "1s").Should(Succeed())
+
+			By("Allowing promotion while the snapshot request remains queued")
+			Eventually(func(g Gomega) {
+				g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKeyFromObject(vm), vm)).To(Succeed())
+				base := vm.DeepCopy()
+				vm.Spec.PromoteDisksMode = mode
+				if mode == vmopv1.VirtualMachinePromoteDisksModeOnline {
+					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				}
+				g.Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
+			}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed())
+
+			By("Waiting for the queued snapshot and checking registration prerequisites")
+			Eventually(func(g Gomega) {
+				var snapshot vmopv1.VirtualMachineSnapshot
+				g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: vmSnapshot1Name}, &snapshot)).To(Succeed())
+				if meta.IsStatusConditionTrue(snapshot.Status.Conditions, vmopv1.VirtualMachineSnapshotCreatedCondition) {
+					// Fail immediately if a created snapshot is observed before
+					// registration; Eventually must not retry away this failure.
+					assertSnapshotDisksRegistered(ctx, NewWithT(GinkgoT()), svClusterClient, vm)
+				}
+				g.Expect(meta.IsStatusConditionTrue(snapshot.Status.Conditions, vmopv1.VirtualMachineSnapshotReadyCondition)).To(BeTrue())
+			}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-snapshot-condition")...).Should(Succeed())
+		}
+
+		for _, name := range []string{vmSnapshot1Name, vmSnapshot2Name} {
+			if name != vmSnapshot1Name || mode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
+				By("Creating " + name + " without registering the snapshot delta")
+				vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace, Name: name, VMName: vmName,
+				})
+			}
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig, svClusterClient,
+				vmSvcNamespace, name, vmopv1.VirtualMachinePowerStateOff, false,
+				[]vmopv1.VirtualMachineSnapshotReference{})
+			Consistently(func(g Gomega) {
+				if mode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
+					assertSnapshotDisksUnregistered(ctx, g, svClusterClient, vm)
+				} else {
+					assertSnapshotDisksRegistered(ctx, g, svClusterClient, vm)
+				}
+			}, "10s", "1s").Should(Succeed())
+		}
+		for _, name := range []string{vmSnapshot2Name, vmSnapshot1Name} {
+			By("Deleting " + name + " without leaving a pending disk registration")
+			vmoperator.EnsureVMSnapshotDeleted(ctx, svClusterClient, vmSvcE2EConfig,
+				manifestbuilders.VirtualMachineSnapshotYaml{Namespace: vmSvcNamespace, Name: name})
+			Consistently(func(g Gomega) {
+				if mode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
+					assertSnapshotDisksUnregistered(ctx, g, svClusterClient, vm)
+				} else {
+					assertSnapshotDisksRegistered(ctx, g, svClusterClient, vm)
+				}
+			}, "10s", "1s").Should(Succeed())
+		}
+	},
+		Entry("disabled promotion", vmopv1.VirtualMachinePromoteDisksModeDisabled),
+		Entry("online promotion", vmopv1.VirtualMachinePromoteDisksModeOnline),
+		Entry("offline promotion", vmopv1.VirtualMachinePromoteDisksModeOffline),
+	)
 
 	When("VM doesn't have PVC", func() {
 		BeforeEach(func() {
@@ -652,5 +782,68 @@ func createSnapshotVM(
 	Expect(client.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s/%s", ns, vmName)
 	for _, claim := range claims {
 		Expect(client.Create(ctx, claim)).To(Succeed(), "failed to create PVC %s/%s", claim.Namespace, claim.Name)
+	}
+}
+
+// assertSnapshotDisksUnregistered verifies that snapshot reconciliation has not
+// turned an intentionally unpromoted disk into a claim or a CNS registration.
+func assertSnapshotDisksUnregistered(
+	ctx context.Context,
+	g Gomega,
+	client ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) {
+
+	g.Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(vm), vm)).To(Succeed())
+	g.Expect(meta.IsStatusConditionTrue(vm.Status.Conditions, consts.VMUnmanagedVolumesRegisteredCondition)).To(BeTrue())
+	for _, volume := range vm.Spec.Volumes {
+		g.Expect(volume.PersistentVolumeClaim).To(BeNil())
+	}
+	var pvcs corev1.PersistentVolumeClaimList
+	g.Expect(client.List(ctx, &pvcs, ctrlclient.InNamespace(vm.Namespace))).To(Succeed())
+	for _, pvc := range pvcs.Items {
+		for _, owner := range pvc.OwnerReferences {
+			g.Expect(owner.UID).ToNot(Equal(vm.UID), "unexpected PVC %s", pvc.Name)
+		}
+	}
+	var crvs cnsv1alpha1.CnsRegisterVolumeList
+	g.Expect(client.List(ctx, &crvs, ctrlclient.InNamespace(vm.Namespace))).To(Succeed())
+	for _, crv := range crvs.Items {
+		for _, owner := range crv.OwnerReferences {
+			g.Expect(owner.UID).ToNot(Equal(vm.UID), "unexpected CnsRegisterVolume %s", crv.Name)
+		}
+	}
+}
+
+// assertSnapshotDisksRegistered checks the prerequisites for taking a snapshot
+// after promotion and ensures that snapshot deletion does not break the claims.
+func assertSnapshotDisksRegistered(
+	ctx context.Context,
+	g Gomega,
+	client ctrlclient.Client,
+	vm *vmopv1.VirtualMachine) {
+
+	g.Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(vm), vm)).To(Succeed())
+	g.Expect(meta.IsStatusConditionTrue(vm.Status.Conditions, string(vmopv1.VirtualMachineDiskPromotionSynced))).To(BeTrue())
+	g.Expect(meta.IsStatusConditionTrue(vm.Status.Conditions, consts.VMUnmanagedVolumesRegisteredCondition)).To(BeTrue())
+	g.Expect(vm.Spec.Volumes).ToNot(BeEmpty())
+	for _, volume := range vm.Spec.Volumes {
+		g.Expect(volume.PersistentVolumeClaim).ToNot(BeNil())
+		if volume.PersistentVolumeClaim == nil {
+			continue
+		}
+		var pvc corev1.PersistentVolumeClaim
+		g.Expect(client.Get(ctx, ctrlclient.ObjectKey{
+			Namespace: vm.Namespace, Name: volume.PersistentVolumeClaim.ClaimName,
+		}, &pvc)).To(Succeed())
+		g.Expect(pvc.Status.Phase).To(Equal(corev1.ClaimBound))
+	}
+	var crvs cnsv1alpha1.CnsRegisterVolumeList
+	g.Expect(client.List(ctx, &crvs, ctrlclient.InNamespace(vm.Namespace))).To(Succeed())
+	for _, crv := range crvs.Items {
+		for _, owner := range crv.OwnerReferences {
+			if owner.UID == vm.UID {
+				g.Expect(crv.Status.Registered).To(BeTrue(), "unfinished registration %s", crv.Name)
+			}
+		}
 	}
 }

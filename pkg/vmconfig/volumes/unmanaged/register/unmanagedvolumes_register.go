@@ -11,16 +11,17 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vmware/govmomi/pbm"
-	pbmtypes "github.com/vmware/govmomi/pbm/types"
-	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/mo"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/vmware/govmomi/pbm"
+	pbmtypes "github.com/vmware/govmomi/pbm/types"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
@@ -49,6 +50,16 @@ const (
 	// and is used to specify the `CnsBackingType` during volume attachment.
 	// The values correspond to the CnsVolumeBackingType enum.
 	DiskBackingAnnotation = "cns.vmware.com.protected/disk-backing"
+
+	// ReasonPendingDiskPromotion is the condition reason used when the VM
+	// has linked-clone disks that are expected to be promoted and then
+	// registered.
+	ReasonPendingDiskPromotion = "PendingDiskPromotion"
+
+	// ReasonPendingSnapshotConsolidation is the condition reason used when
+	// the VM has unmanaged disks whose current backing is a snapshot delta.
+	// These disks cannot be registered until the snapshot is removed.
+	ReasonPendingSnapshotConsolidation = "PendingSnapshotConsolidation"
 )
 
 // ErrPendingRegister is returned from Reconcile to indicate to exit the VM
@@ -135,6 +146,11 @@ func (r reconciler) Reconcile(
 		if t.State == vimtypes.TaskInfoStateRunning {
 			if t.DescriptionId == diskpromo.PromoteDisksTaskKey {
 				logger.V(4).Info("Cannot register unmanaged volumes during disk promotion")
+				pkgcond.MarkFalse(
+					vm,
+					Condition,
+					ReasonPendingDiskPromotion,
+					"")
 				return nil
 			}
 		}
@@ -147,8 +163,38 @@ func (r reconciler) Reconcile(
 
 	// Filter any linked clones / FCDs from registration.
 	info.Disks = pkgvol.FilterOutFCDs(info.Disks...)
+
+	// Linked clones are not registered, but if they are going to be promoted
+	// then they will need to be registered once promotion completes. Until
+	// then the condition must not report True, otherwise operations gated on
+	// it (e.g. snapshot creation) may run before the promoted disks are
+	// registered.
+	pendingPromotion := hasLinkedClonesPendingPromotion(ctx, vm, info.Disks)
+
 	info.Disks = pkgvol.FilterOutLinkedClones(info.Disks...)
 	info.Disks = pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)
+
+	// Any remaining disk with a parent backing is one whose current backing
+	// is a snapshot delta. Registering such a disk would point CNS at the
+	// delta file, which is removed when the snapshot is consolidated. Skip
+	// these disks until the snapshot is removed.
+	hasSnapshotDeltas, err := hasSnapshotDisksPendingRegistration(
+		ctx, k8sClient, vm, info)
+	if err != nil {
+		pkgcond.MarkError(vm, Condition, "ErrRegistration", err)
+		return err
+	}
+	info.Disks = slices.DeleteFunc(
+		info.Disks,
+		func(d pkgvol.VirtualDiskInfo) bool {
+			if d.HasParent {
+				logger.Info("Skipping registration of disk backed by snapshot delta",
+					"diskUUID", d.UUID,
+					"fileName", d.FileName)
+				return true
+			}
+			return false
+		})
 
 	// A disk registered with a CnsRegisterVolume gets a PV with the disk's
 	// current capacity, and a PVC that requests more than the PV is never
@@ -246,7 +292,22 @@ func (r reconciler) Reconcile(
 	// Clean up the VM status.
 	cleanupVolumeStatus(vm)
 
-	pkgcond.MarkTrue(vm, Condition)
+	switch {
+	case pendingPromotion:
+		pkgcond.MarkFalse(
+			vm,
+			Condition,
+			ReasonPendingDiskPromotion,
+			"")
+	case hasSnapshotDeltas:
+		pkgcond.MarkFalse(
+			vm,
+			Condition,
+			ReasonPendingSnapshotConsolidation,
+			"")
+	default:
+		pkgcond.MarkTrue(vm, Condition)
+	}
 	return nil
 }
 
@@ -277,6 +338,67 @@ func hasPendingDiskExtend(
 	}
 
 	return false
+}
+
+// hasSnapshotDisksPendingRegistration checks registration independently of the
+// live snapshot backing. A bound PVC remains registered, and an unclaimed disk
+// with promotion disabled must not start registration just because a snapshot
+// hides its linked-clone ancestry. Existing claims still need to become bound.
+func hasSnapshotDisksPendingRegistration(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	info pkgvol.VolumeInfo) (bool, error) {
+
+	var pending bool
+	for _, disk := range info.Disks {
+		if !disk.HasParent {
+			continue
+		}
+
+		volume := info.Volumes[disk.Target.String()]
+		if volume == nil || volume.PersistentVolumeClaim == nil ||
+			volume.PersistentVolumeClaim.ClaimName == "" {
+			pending = pending || (pkgcfg.FromContext(ctx).Features.FastDeploy &&
+				vm.Spec.PromoteDisksMode != vmopv1.VirtualMachinePromoteDisksModeDisabled)
+			continue
+		}
+
+		key := ctrlclient.ObjectKey{
+			Namespace: vm.Namespace,
+			Name:      volume.PersistentVolumeClaim.ClaimName,
+		}
+		var pvc corev1.PersistentVolumeClaim
+		if err := k8sClient.Get(ctx, key, &pvc); err != nil {
+			if apierrors.IsNotFound(err) {
+				pending = true
+				continue
+			}
+			return false, fmt.Errorf("failed to get pvc %s for snapshot disk: %w", key, err)
+		}
+		pending = pending || pvc.Status.Phase != corev1.ClaimBound
+	}
+	return pending, nil
+}
+
+// hasLinkedClonesPendingPromotion returns true if the VM has linked-clone
+// disks that the disk promotion reconciler is expected to promote.
+func hasLinkedClonesPendingPromotion(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	disks []pkgvol.VirtualDiskInfo) bool {
+
+	if !pkgcfg.FromContext(ctx).Features.FastDeploy {
+		return false
+	}
+	if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
+		return false
+	}
+	return slices.ContainsFunc(
+		disks,
+		func(d pkgvol.VirtualDiskInfo) bool {
+			return d.LinkedClone
+		})
 }
 
 func ensureUnmanagedDisksConfigsAreUpdated(

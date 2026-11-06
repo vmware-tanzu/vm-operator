@@ -43,6 +43,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 010 | [veeam-e2e-backup-restore](specs/010-veeam-e2e-backup-restore/) | Use Veeam for Backup/Restore E2E Tests | In Progress | vmop-4013 |
 | 011 | [snapshot-disk-list](specs/011-snapshot-disk-list/) | Expose Disk List in VirtualMachineSnapshot (CSI Backup API) | In Review | vmop-52730 |
 | 012 | [lifecycle-hooks](specs/012-lifecycle-hooks/) | Blocking Lifecycle Hooks for `VirtualMachine` | Draft | vmop-3377 |
+| 013 | [spq-webhook-watch](specs/013-spq-webhook-watch/) | Consolidate storage quota webhook CA propagation | Draft | vmop-4310 |
 
 ### Finding the right spec
 

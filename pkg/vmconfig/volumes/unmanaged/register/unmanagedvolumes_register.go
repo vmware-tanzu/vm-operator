@@ -49,6 +49,16 @@ const (
 	// and is used to specify the `CnsBackingType` during volume attachment.
 	// The values correspond to the CnsVolumeBackingType enum.
 	DiskBackingAnnotation = "cns.vmware.com.protected/disk-backing"
+
+	// ReasonPendingDiskPromotion is the condition reason used when the VM
+	// has linked-clone disks that are expected to be promoted and then
+	// registered.
+	ReasonPendingDiskPromotion = "PendingDiskPromotion"
+
+	// ReasonPendingSnapshotConsolidation is the condition reason used when
+	// the VM has unmanaged disks whose current backing is a snapshot delta.
+	// These disks cannot be registered until the snapshot is removed.
+	ReasonPendingSnapshotConsolidation = "PendingSnapshotConsolidation"
 )
 
 // ErrPendingRegister is returned from Reconcile to indicate to exit the VM
@@ -135,6 +145,11 @@ func (r reconciler) Reconcile(
 		if t.State == vimtypes.TaskInfoStateRunning {
 			if t.DescriptionId == diskpromo.PromoteDisksTaskKey {
 				logger.V(4).Info("Cannot register unmanaged volumes during disk promotion")
+				pkgcond.MarkFalse(
+					vm,
+					Condition,
+					ReasonPendingDiskPromotion,
+					"")
 				return nil
 			}
 		}
@@ -147,8 +162,40 @@ func (r reconciler) Reconcile(
 
 	// Filter any linked clones / FCDs from registration.
 	info.Disks = pkgvol.FilterOutFCDs(info.Disks...)
+
+	// Linked clones are not registered, but if they are going to be promoted
+	// then they will need to be registered once promotion completes. Until
+	// then the condition must not report True, otherwise operations gated on
+	// it (e.g. snapshot creation) may run before the promoted disks are
+	// registered.
+	// The same disks the disk promotion reconciler promotes are used here, so
+	// the condition cannot wait on a disk that will never be promoted.
+	pendingPromotion := hasDisksPendingPromotion(vm, moVM)
+
 	info.Disks = pkgvol.FilterOutLinkedClones(info.Disks...)
 	info.Disks = pkgvol.FilterOutEmptyUUIDOrFilename(info.Disks...)
+
+	// Any remaining disk with a parent backing is one whose current backing
+	// is a snapshot delta. Registering such a disk would point CNS at the
+	// delta file, which is removed when the snapshot is consolidated. Skip
+	// these disks until the snapshot is removed.
+	snapshotDeltaMsg, err := getSnapshotDiskPendingRegistration(
+		ctx, k8sClient, vm, info)
+	if err != nil {
+		pkgcond.MarkError(vm, Condition, "ErrRegistration", err)
+		return err
+	}
+	info.Disks = slices.DeleteFunc(
+		info.Disks,
+		func(d pkgvol.VirtualDiskInfo) bool {
+			if d.HasParent {
+				logger.Info("Skipping registration of disk backed by snapshot delta",
+					"diskUUID", d.UUID,
+					"fileName", d.FileName)
+				return true
+			}
+			return false
+		})
 
 	// A disk registered with a CnsRegisterVolume gets a PV with the disk's
 	// current capacity, and a PVC that requests more than the PV is never
@@ -246,7 +293,23 @@ func (r reconciler) Reconcile(
 	// Clean up the VM status.
 	cleanupVolumeStatus(vm)
 
-	pkgcond.MarkTrue(vm, Condition)
+	switch {
+	case pendingPromotion:
+		pkgcond.MarkFalse(
+			vm,
+			Condition,
+			ReasonPendingDiskPromotion,
+			"")
+	case snapshotDeltaMsg != "":
+		pkgcond.MarkFalse(
+			vm,
+			Condition,
+			ReasonPendingSnapshotConsolidation,
+			"%s",
+			snapshotDeltaMsg)
+	default:
+		pkgcond.MarkTrue(vm, Condition)
+	}
 	return nil
 }
 
@@ -277,6 +340,75 @@ func hasPendingDiskExtend(
 	}
 
 	return false
+}
+
+// getSnapshotDiskPendingRegistration checks registration independently of the
+// live snapshot backing. It returns a non-empty message describing the first
+// disk whose current backing is a snapshot delta and that is not yet
+// registered, i.e. whose claim does not exist or is not bound.
+//
+// A bound PVC remains registered. An unclaimed disk is pending unless
+// promotion is disabled, because a disk with promotion disabled may be a
+// linked clone whose ancestry is hidden by the snapshot, and linked clones are
+// never registered.
+func getSnapshotDiskPendingRegistration(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm *vmopv1.VirtualMachine,
+	info pkgvol.VolumeInfo) (string, error) {
+
+	const unblock = "delete the VM's snapshots to allow registration"
+
+	for _, disk := range info.Disks {
+		if !disk.HasParent {
+			continue
+		}
+
+		volume := info.Volumes[disk.Target.String()]
+		if volume == nil || volume.PersistentVolumeClaim == nil ||
+			volume.PersistentVolumeClaim.ClaimName == "" {
+			if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
+				continue
+			}
+			return fmt.Sprintf(
+				"disk %q is backed by a snapshot delta and has no claim; %s",
+				disk.FileName, unblock), nil
+		}
+
+		key := ctrlclient.ObjectKey{
+			Namespace: vm.Namespace,
+			Name:      volume.PersistentVolumeClaim.ClaimName,
+		}
+		var pvc corev1.PersistentVolumeClaim
+		if err := k8sClient.Get(ctx, key, &pvc); err != nil {
+			if apierrors.IsNotFound(err) {
+				return fmt.Sprintf(
+					"disk %q is backed by a snapshot delta and its claim %q "+
+						"does not exist; %s",
+					disk.FileName, key.Name, unblock), nil
+			}
+			return "", fmt.Errorf("failed to get pvc %s for snapshot disk: %w", key, err)
+		}
+		if pvc.Status.Phase != corev1.ClaimBound {
+			return fmt.Sprintf(
+				"disk %q is backed by a snapshot delta and its claim %q is "+
+					"not bound; %s",
+				disk.FileName, key.Name, unblock), nil
+		}
+	}
+	return "", nil
+}
+
+// hasDisksPendingPromotion returns true if the VM has disks that the disk
+// promotion reconciler is expected to promote.
+func hasDisksPendingPromotion(
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine) bool {
+
+	if vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled {
+		return false
+	}
+	return len(diskpromo.GetChildDisks(moVM)) > 0
 }
 
 func ensureUnmanagedDisksConfigsAreUpdated(

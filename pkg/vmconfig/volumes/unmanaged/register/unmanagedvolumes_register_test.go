@@ -7,6 +7,7 @@ package register_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -40,6 +41,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
 	unmanagedvolsfill "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/backfill"
 	unmanagedvolsreg "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/volumes/unmanaged/register"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -360,6 +362,300 @@ var _ = Describe("Reconcile", func() {
 					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 					Expect(cond.Reason).To(Equal("NoUnmanagedVolumesRegisterAnnotation"))
 				})
+			})
+		})
+
+		Context("disk promotion and snapshot deltas", func() {
+			const diskKey = int32(300)
+
+			var (
+				diskParent *vimtypes.VirtualDiskFlatVer2BackingInfo
+				inSnapshot bool
+			)
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.FastDeploy = true
+				})
+				vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeOnline
+				diskParent = &vimtypes.VirtualDiskFlatVer2BackingInfo{
+					VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+						FileName: "[LocalDS_0] vm1/parent.vmdk",
+					},
+				}
+				inSnapshot = false
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{{
+					Name:                "disk-uuid-delta",
+					ControllerType:      vmopv1.VirtualControllerTypeIDE,
+					ControllerBusNumber: ptr.To(int32(0)),
+					UnitNumber:          ptr.To(int32(0)),
+				}}
+			})
+
+			JustBeforeEach(func() {
+				moVM.Config = &vimtypes.VirtualMachineConfigInfo{
+					Hardware: vimtypes.VirtualHardware{
+						Device: []vimtypes.BaseVirtualDevice{
+							&vimtypes.VirtualIDEController{
+								VirtualController: vimtypes.VirtualController{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: 100,
+									},
+								},
+							},
+							&vimtypes.VirtualDisk{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key:           diskKey,
+									ControllerKey: 100,
+									UnitNumber:    ptr.To(int32(0)),
+									Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+										VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+											FileName: "[LocalDS_0] vm1/disk-000001.vmdk",
+										},
+										Uuid:   "disk-uuid-delta",
+										Parent: diskParent,
+									},
+								},
+								CapacityInBytes: 1024 * 1024 * 1024,
+							},
+						},
+					},
+				}
+				if inSnapshot {
+					moVM.LayoutEx = &vimtypes.VirtualMachineFileLayoutEx{
+						Snapshot: []vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+							{
+								Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{
+									{Key: diskKey},
+								},
+							},
+						},
+					}
+				}
+			})
+
+			assertNoRegistrationObjects := func() {
+				var pvcs corev1.PersistentVolumeClaimList
+				ExpectWithOffset(1, k8sClient.List(ctx, &pvcs, ctrlclient.InNamespace(vm.Namespace))).To(Succeed())
+				ExpectWithOffset(1, pvcs.Items).To(BeEmpty())
+				var crvs cnsv1alpha1.CnsRegisterVolumeList
+				ExpectWithOffset(1, k8sClient.List(ctx, &crvs, ctrlclient.InNamespace(vm.Namespace))).To(Succeed())
+				ExpectWithOffset(1, crvs.Items).To(BeEmpty())
+			}
+
+			When("a promote disks task is running", func() {
+				BeforeEach(func() {
+					pkgcond.MarkTrue(vm, unmanagedvolsreg.Condition)
+					ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+						{
+							State:         vimtypes.TaskInfoStateRunning,
+							DescriptionId: diskpromo.PromoteDisksTaskKey,
+						},
+					})
+				})
+				It("should mark the condition false instead of leaving it true", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+					cond := pkgcond.Get(vm, unmanagedvolsreg.Condition)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond.Reason).To(Equal(unmanagedvolsreg.ReasonPendingDiskPromotion))
+				})
+			})
+
+			When("the VM has a linked-clone disk that has not been promoted yet", func() {
+				It("should mark the condition false", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+					cond := pkgcond.Get(vm, unmanagedvolsreg.Condition)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond.Reason).To(Equal(unmanagedvolsreg.ReasonPendingDiskPromotion))
+					assertNoRegistrationObjects()
+				})
+
+				When("promoteDisksMode is Disabled", func() {
+					BeforeEach(func() {
+						vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
+					})
+					It("should mark the condition true", func() {
+						Expect(unmanagedvolsreg.Reconcile(
+							ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+						Expect(pkgcond.IsTrue(vm, unmanagedvolsreg.Condition)).To(BeTrue())
+					})
+				})
+
+				When("FastDeploy is disabled", func() {
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.FastDeploy = false
+						})
+					})
+					It("should still wait for promotion because disk promotion is not gated on FastDeploy", func() {
+						Expect(unmanagedvolsreg.Reconcile(
+							ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+						cond := pkgcond.Get(vm, unmanagedvolsreg.Condition)
+						Expect(cond).ToNot(BeNil())
+						Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+						Expect(cond.Reason).To(Equal(unmanagedvolsreg.ReasonPendingDiskPromotion))
+					})
+				})
+
+				When("the linked clone has a backing that disk promotion does not promote", func() {
+					JustBeforeEach(func() {
+						moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk).Backing = &vimtypes.VirtualDiskSparseVer2BackingInfo{
+							VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+								FileName: "[LocalDS_0] vm1/disk-000001.vmdk",
+							},
+							Uuid: "disk-uuid-delta",
+							Parent: &vimtypes.VirtualDiskSparseVer2BackingInfo{
+								VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+									FileName: "[LocalDS_0] vm1/parent.vmdk",
+								},
+							},
+						}
+					})
+					It("should not wait for a promotion that will never happen", func() {
+						Expect(unmanagedvolsreg.Reconcile(
+							ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+						Expect(pkgcond.IsTrue(vm, unmanagedvolsreg.Condition)).To(BeTrue())
+						assertNoRegistrationObjects()
+					})
+				})
+			})
+
+			When("the VM has an unmanaged disk backed by a snapshot delta", func() {
+				BeforeEach(func() {
+					inSnapshot = true
+				})
+				It("should not register the delta and should mark the condition false", func() {
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+					cond := pkgcond.Get(vm, unmanagedvolsreg.Condition)
+					Expect(cond).ToNot(BeNil())
+					Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+					Expect(cond.Reason).To(Equal(unmanagedvolsreg.ReasonPendingSnapshotConsolidation))
+					Expect(cond.Message).To(ContainSubstring("disk-000001.vmdk"))
+					Expect(cond.Message).To(ContainSubstring("delete the VM's snapshots"))
+					assertNoRegistrationObjects()
+				})
+
+				DescribeTable("unclaimed snapshot disks",
+					func(fastDeploy bool, mode vmopv1.VirtualMachinePromoteDisksMode, registered bool) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.FastDeploy = fastDeploy
+						})
+						vm.Spec.PromoteDisksMode = mode
+						Expect(unmanagedvolsreg.Reconcile(
+							ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+						Expect(pkgcond.IsTrue(vm, unmanagedvolsreg.Condition)).To(Equal(registered))
+						if !registered {
+							Expect(pkgcond.GetReason(vm, unmanagedvolsreg.Condition)).To(
+								Equal(unmanagedvolsreg.ReasonPendingSnapshotConsolidation))
+						}
+						assertNoRegistrationObjects()
+					},
+					Entry("promotion disabled", true, vmopv1.VirtualMachinePromoteDisksModeDisabled, true),
+					// A full clone with a snapshot taken before registration
+					// must not be reported as registered.
+					Entry("FastDeploy disabled", false, vmopv1.VirtualMachinePromoteDisksModeOnline, false),
+				)
+
+				DescribeTable("existing snapshot disk claims",
+					func(phase corev1.PersistentVolumeClaimPhase, exists, registered bool) {
+						// Disabling promotion must not hide an existing pending claim.
+						vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
+						vm.Spec.Volumes[0].PersistentVolumeClaim = &vmopv1.PersistentVolumeClaimVolumeSource{}
+						vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "existing-disk"
+						if exists {
+							Expect(k8sClient.Create(ctx, &corev1.PersistentVolumeClaim{
+								ObjectMeta: metav1.ObjectMeta{Name: "existing-disk", Namespace: vm.Namespace},
+								Status:     corev1.PersistentVolumeClaimStatus{Phase: phase},
+							})).To(Succeed())
+						}
+						pkgcond.MarkTrue(vm, unmanagedvolsreg.Condition)
+						Expect(unmanagedvolsreg.Reconcile(
+							ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+						Expect(pkgcond.IsTrue(vm, unmanagedvolsreg.Condition)).To(Equal(registered))
+						var crvs cnsv1alpha1.CnsRegisterVolumeList
+						Expect(k8sClient.List(ctx, &crvs)).To(Succeed())
+						Expect(crvs.Items).To(BeEmpty())
+					},
+					Entry("bound", corev1.ClaimBound, true, true),
+					Entry("pending", corev1.ClaimPending, true, false),
+					Entry("lost", corev1.ClaimLost, true, false),
+					Entry("missing", corev1.ClaimPending, false, false),
+				)
+
+				When("the claim cannot be read", func() {
+					BeforeEach(func() {
+						vm.Spec.Volumes[0].PersistentVolumeClaim = &vmopv1.PersistentVolumeClaimVolumeSource{}
+						vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = "existing-disk"
+						withFuncs.Get = func(context.Context, ctrlclient.WithWatch, ctrlclient.ObjectKey,
+							ctrlclient.Object, ...ctrlclient.GetOption) error {
+							return fmt.Errorf("claim read failed")
+						}
+					})
+					It("reports an error instead of reporting registration complete", func() {
+						Expect(unmanagedvolsreg.Reconcile(
+							ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(MatchError(ContainSubstring("claim read failed")))
+						Expect(pkgcond.IsFalse(vm, unmanagedvolsreg.Condition)).To(BeTrue())
+					})
+				})
+			})
+
+			It("keeps disabled linked clones unregistered across snapshot creation and deletion", func() {
+				vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeDisabled
+				for _, snapshotCount := range []int{0, 1, 2, 1, 0} {
+					moVM.LayoutEx.Snapshot = nil
+					for range snapshotCount {
+						moVM.LayoutEx.Snapshot = append(moVM.LayoutEx.Snapshot,
+							vimtypes.VirtualMachineFileLayoutExSnapshotLayout{
+								Disk: []vimtypes.VirtualMachineFileLayoutExDiskLayout{{Key: diskKey}},
+							})
+					}
+					Expect(unmanagedvolsreg.Reconcile(
+						ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+					Expect(pkgcond.IsTrue(vm, unmanagedvolsreg.Condition)).To(BeTrue())
+					Expect(vm.Spec.Volumes[0].PersistentVolumeClaim).To(BeNil())
+					assertNoRegistrationObjects()
+				}
+			})
+
+			It("waits for refreshed promotion backings and then for registration to complete", func() {
+				ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{{
+					State: vimtypes.TaskInfoStateSuccess, DescriptionId: diskpromo.PromoteDisksTaskKey,
+					CompleteTime: ptr.To(time.Now()),
+				}})
+				Expect(diskpromo.Reconcile(ctx, k8sClient, vimClient, vm, moVM, nil)).To(Succeed())
+				Expect(pkgcond.IsFalse(vm, vmopv1.VirtualMachineDiskPromotionSynced)).To(BeTrue())
+				Expect(unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+				Expect(pkgcond.IsFalse(vm, unmanagedvolsreg.Condition)).To(BeTrue())
+				assertNoRegistrationObjects()
+
+				backing := moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk).Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
+				backing.Parent = nil
+				backing.FileName = "[LocalDS_0] vm1/disk.vmdk"
+				Expect(diskpromo.Reconcile(ctx, k8sClient, vimClient, vm, moVM, nil)).To(Succeed())
+				Expect(pkgcond.IsTrue(vm, vmopv1.VirtualMachineDiskPromotionSynced)).To(BeTrue())
+				Expect(unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+				claimName := vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName
+				createBatchAttachWithPVCVolumeIDCacheMiss(ctx, k8sClient, vm, claimName)
+				Expect(unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(MatchError(unmanagedvolsreg.ErrPendingRegister))
+				Expect(pkgcond.IsFalse(vm, unmanagedvolsreg.Condition)).To(BeTrue())
+
+				var pvc corev1.PersistentVolumeClaim
+				key := ctrlclient.ObjectKey{Namespace: vm.Namespace, Name: claimName}
+				Expect(k8sClient.Get(ctx, key, &pvc)).To(Succeed())
+				pvc.Status.Phase = corev1.ClaimBound
+				Expect(k8sClient.Status().Update(ctx, &pvc)).To(Succeed())
+				var crv cnsv1alpha1.CnsRegisterVolume
+				Expect(k8sClient.Get(ctx, key, &crv)).To(Succeed())
+				Expect(crv.Spec.DiskURLPath).ToNot(ContainSubstring("000001"))
+				crv.Status.Registered = true
+				Expect(k8sClient.Status().Update(ctx, &crv)).To(Succeed())
+				Expect(unmanagedvolsreg.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)).To(Succeed())
+				Expect(pkgcond.IsTrue(vm, unmanagedvolsreg.Condition)).To(BeTrue())
 			})
 		})
 

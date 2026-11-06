@@ -3343,6 +3343,7 @@ func autoConvert_v1alpha4_VirtualMachineNetworkInterfaceSpec_To_v1alpha6_Virtual
 func autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha4_VirtualMachineNetworkInterfaceSpec(in *v1alpha6.VirtualMachineNetworkInterfaceSpec, out *VirtualMachineNetworkInterfaceSpec, s conversion.Scope) error {
 	out.Name = in.Name
 	out.Network = (*common.PartialObjectRef)(unsafe.Pointer(in.Network))
+	// WARNING: in.ExternalRef requires manual conversion: does not exist in peer-type
 	out.GuestDeviceName = in.GuestDeviceName
 	out.MACAddr = in.MACAddr
 	out.Addresses = *(*[]string)(unsafe.Pointer(&in.Addresses))

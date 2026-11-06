@@ -10322,6 +10322,36 @@ spec:
                                     Please note this field is mutually exclusive with IP6 addresses in the
                                     Addresses field and the Gateway6 field.
                                   type: boolean
+                                externalRef:
+                                  description: |-
+                                    ExternalRef identifies a pre-created network interface in the VM namespace.
+                                    VM Operator uses the resource without taking lifecycle ownership.
+                                    ExternalRef is mutually exclusive with Network and MACAddr.
+                                  properties:
+                                    apiVersion:
+                                      description: |-
+                                        APIVersion defines the versioned schema of this representation of an
+                                        object. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                                      type: string
+                                    kind:
+                                      description: |-
+                                        Kind is a string value representing the REST resource this object
+                                        represents.
+                                        Servers may infer this from the endpoint the client submits requests to.
+                                        Cannot be updated.
+                                        In CamelCase.
+                                        More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                                      type: string
+                                    name:
+                                      description: |-
+                                        Name refers to a unique resource in the current namespace.
+                                        More info: http://kubernetes.io/docs/user-guide/identifiers#names
+                                      type: string
+                                  required:
+                                  - apiVersion
+                                  - kind
+                                  - name
+                                  type: object
                                 gateway4:
                                   description: |-
                                     Gateway4 is the default, IP4 gateway for this interface.
@@ -10684,6 +10714,15 @@ spec:
                                 rule: (!has(oldSelf.ipamModes) && !has(self.ipamModes))
                                   || (has(oldSelf.ipamModes) && has(self.ipamModes)
                                   && self.ipamModes == oldSelf.ipamModes)
+                              - message: network and externalRef are mutually exclusive
+                                rule: '!has(self.externalRef) || !has(self.network)'
+                              - message: externalRef requires apiVersion, kind, and
+                                  name
+                                rule: '!has(self.externalRef) || (size(self.externalRef.apiVersion)
+                                  > 0 && size(self.externalRef.kind) > 0 && size(self.externalRef.name)
+                                  > 0)'
+                              - message: macAddr and externalRef are mutually exclusive
+                                rule: '!has(self.externalRef) || !has(self.macAddr)'
                             maxItems: 10
                             type: array
                             x-kubernetes-list-map-keys:

@@ -306,6 +306,13 @@ func WaitForVirtualMachineMOID(ctx context.Context, config *config.E2EConfig, sv
 	return moID
 }
 
+// WaitForVirtualMachineMoRef waits for the VirtualMachine to have a non-empty
+// status.uniqueID and returns it as a vSphere managed object reference.
+func WaitForVirtualMachineMoRef(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName string) vimtypes.ManagedObjectReference {
+	moID := WaitForVirtualMachineMOID(ctx, config, svClusterClient, ns, vmName)
+	return vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: moID}
+}
+
 // WaitForPVCAttachment waits for the named PVC-backed volume to be attached
 // to the VirtualMachine, as reported in status.volumes.
 func WaitForPVCAttachment(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmName, pvcName string) {

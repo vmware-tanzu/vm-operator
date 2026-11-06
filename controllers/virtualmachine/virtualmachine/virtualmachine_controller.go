@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -29,6 +30,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	lifecyclev1 "github.com/vmware-tanzu/vm-operator/external/lifecycle/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
@@ -38,6 +40,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	"github.com/vmware-tanzu/vm-operator/pkg/lifecycle"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
@@ -100,6 +103,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorder(controllerNameShort)),
+		mgr.GetAPIReader(),
 		ctx.VMProvider,
 		proberManager)
 
@@ -200,6 +204,17 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 				mgr.GetScheme(),
 				mgr.GetRESTMapper(),
 				&vmopv1.VirtualMachine{}),
+		)
+	}
+
+	if pkgcfg.FromContext(ctx).Features.LifecycleHooks {
+		builder = builder.Watches(
+			&lifecyclev1.LifecycleState{},
+			handler.EnqueueRequestForOwner(
+				mgr.GetScheme(),
+				mgr.GetRESTMapper(),
+				&vmopv1.VirtualMachine{}),
+			ctrlbuilder.WithPredicates(lifecycle.StatusChangedPredicate{}),
 		)
 	}
 
@@ -305,6 +320,7 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
+	apiReader client.Reader,
 	vmProvider providers.VirtualMachineProviderInterface,
 	prober prober.Manager) *Reconciler {
 
@@ -312,6 +328,7 @@ func NewReconciler(
 		Context:    ctx,
 		Client:     client,
 		Logger:     logger,
+		APIReader:  apiReader,
 		Recorder:   &vmRecorderWrapper{Recorder: recorder},
 		VMProvider: vmProvider,
 		Prober:     prober,
@@ -340,6 +357,7 @@ type Reconciler struct {
 	client.Client
 	Context    context.Context
 	Logger     logr.Logger
+	APIReader  client.Reader
 	Recorder   record.Recorder
 	VMProvider providers.VirtualMachineProviderInterface
 	Prober     prober.Manager
@@ -359,6 +377,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=resourcequotas;namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=encryption.vmware.com,resources=encryptionclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;patch
+// +kubebuilder:rbac:groups=lifecycle.vcfa.vmware.com,resources=lifecyclestates,verbs=get;list;watch;create;patch;delete
+// +kubebuilder:rbac:groups=lifecycle.vcfa.vmware.com,resources=lifecyclesubscribedstages,verbs=get;list;watch
 
 // Reconcile the object.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
@@ -594,6 +614,25 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 			return fmt.Errorf("failed to remove stale pvc owner refs: %w", err)
 		}
 
+		// Release the LifecycleState only after everything above has
+		// succeeded. It runs with the capability off as well so that an object
+		// created while it was on never strands the VM.
+		//
+		// TODO: The Delete and ResourceDelete gate PR evaluates those stages
+		// with this same state before releasing it. Until then it is only
+		// read here to be released.
+		state, err := lifecycle.GetOrCreateLifecycleState(ctx, r.Client, ctx.VM)
+		if err != nil {
+			return err
+		}
+		if err := lifecycle.ReleaseLifecycleState(
+			ctx, r.Client, r.APIReader, ctx.VM, state); err != nil {
+
+			return err
+		}
+		// Temporary: logged only to verify by hand that the release happens.
+		ctx.Logger.Info("Released LifecycleState")
+
 		controllerutil.RemoveFinalizer(ctx.VM, finalizerName)
 		controllerutil.RemoveFinalizer(ctx.VM, deprecatedFinalizerName)
 	}
@@ -628,6 +667,15 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 
 	ctx.Logger.Info("Reconciling VirtualMachine")
 
+	state, err := lifecycle.GetOrCreateLifecycleState(ctx, r.Client, ctx.VM)
+	if err != nil {
+		return err
+	}
+	// Temporary: logged only to verify by hand that the LifecycleState is read.
+	if state != nil {
+		ctx.Logger.Info("Read LifecycleState", "lifecycleState", state.Name)
+	}
+
 	defer func() {
 		l := ctx.Logger
 		if pkgerr.IsNoRequeueError(reterr) {
@@ -643,10 +691,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 		}
 	}
 
-	var (
-		err     error
-		chanErr <-chan error
-	)
+	var chanErr <-chan error
 
 	if pkgcfg.FromContext(ctx).AsyncSignalEnabled &&
 		pkgcfg.FromContext(ctx).AsyncCreateEnabled {

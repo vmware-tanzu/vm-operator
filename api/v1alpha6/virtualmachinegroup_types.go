@@ -80,15 +80,15 @@ type VirtualMachineGroupBootOrderGroup struct {
 	//
 	// When powering off, boot order groups are processed in reverse order
 	// (last group first). A boot order group is powered off only after all
-	// the members of the previous boot order group are powered off, and the
-	// delay is counted from that time. Delays are not cumulative across
-	// groups.
+	// the members of the group before it in the power-off sequence (the group
+	// with the next higher index) are powered off, and the delay is counted
+	// from that time. Delays are not cumulative across groups.
 	//
 	// The last boot order group is powered off first, without a delay, as
-	// there is no previous boot order group to wait for.
+	// there is no earlier group in the power-off sequence to wait for.
 	//
-	// If omitted, the members will be powered off as soon as the previous
-	// boot order group is powered off.
+	// If omitted, the members will be powered off as soon as the group before
+	// it in the power-off sequence is powered off.
 	PowerOffDelay *metav1.Duration `json:"powerOffDelay,omitempty"`
 }
 
@@ -116,8 +116,9 @@ type VirtualMachineGroupSpec struct {
 	//
 	// When powering off, the boot order groups are processed in reverse order
 	// (last group first). Each boot order group is powered off only after the
-	// previous boot order group is powered off, with an optional
-	// PowerOffDelay counted from that time.
+	// group before it in the power-off sequence (the group with the next
+	// higher index) is powered off, with an optional PowerOffDelay counted
+	// from that time.
 	BootOrder []VirtualMachineGroupBootOrderGroup `json:"bootOrder,omitempty"`
 
 	// +optional

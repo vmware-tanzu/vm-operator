@@ -30,6 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
+
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework/chaos"
 )
 
 const (
@@ -192,6 +194,7 @@ func (p *clusterProxy) GetRESTConfig() *rest.Config {
 	Expect(err).ToNot(HaveOccurred(), "Failed to get ClientConfig from %q", p.kubeconfigPath)
 
 	restConfig.UserAgent = "e2e"
+	restConfig.Wrap(chaos.WrapTransport)
 
 	return restConfig
 }

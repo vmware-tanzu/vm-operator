@@ -637,6 +637,8 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 		vm          *vmopv1.VirtualMachine
 
 		resp, expected validation.CapacityResponse
+
+		configFn func(*pkgcfg.Config)
 	)
 
 	When("HandleCreate is called", func() {
@@ -645,6 +647,7 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 
 			interceptors = interceptor.Funcs{}
 			withObjects = []ctrlclient.Object{}
+			configFn = nil
 
 			dummyConverter = &DummyConverter{
 				converter: runtime.DefaultUnstructuredConverter,
@@ -660,6 +663,9 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 			fakeClient := builder.NewFakeClientWithInterceptors(interceptors, withObjects...)
 			fakeManagerContext := fake.NewControllerManagerContext()
 			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
+			if configFn != nil {
+				pkgcfg.UpdateContext(fakeWebhookContext.Context, configFn)
+			}
 
 			vm.Name = dummyVMName
 			vm.Namespace = dummyNamespaceName
@@ -696,6 +702,80 @@ func testVMRequestedCapacityHandlerHandleCreate() {
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
 
 				Expect(resp.RequestedCapacities).To(BeNil())
+			})
+		})
+
+		When("storage class has no storage policy ID", func() {
+			BeforeEach(func() {
+				withObjects = append(withObjects, builder.DummyStorageClassWithoutPolicyID())
+			})
+
+			It("should write StatusInternalServerError code to the response object", func() {
+				Expect(resp.Allowed).To(BeFalse())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+
+				Expect(resp.RequestedCapacities).To(BeNil())
+			})
+		})
+
+		Context("vm has a volume attributes class", func() {
+			BeforeEach(func() {
+				vmi := builder.DummyVirtualMachineImage(builder.DummyVMIName)
+				vmi.Namespace = dummyNamespaceName
+				vmi.Status.Disks = []vmopv1.VirtualMachineImageDiskInfo{
+					{
+						Name:  disk0,
+						Limit: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					},
+				}
+				withObjects = append(withObjects, builder.DummyStorageClass(), vmi)
+
+				vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+				configFn = func(config *pkgcfg.Config) {
+					config.Features.StoragePolicyMutability = true
+				}
+			})
+
+			When("the volume attributes class exists", func() {
+				BeforeEach(func() {
+					withObjects = append(withObjects, builder.DummyVolumeAttributesClassWithID("id-from-vac"))
+				})
+
+				It("should write StatusOK and a RequestedCapacity for the volume attributes class to the response", func() {
+					Expect(resp.Allowed).To(BeTrue())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+					Expect(resp.RequestedCapacities).To(HaveLen(1))
+					Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(resource.NewQuantity(10*1024*1024*1024, resource.BinarySI).String()))
+					Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(builder.DummyStorageClassName))
+					Expect(resp.RequestedCapacities[0].VolumeAttributesClassName).To(Equal(builder.DummyVolumeAttributesClassName))
+					Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal("id-from-vac"))
+				})
+			})
+
+			When("the volume attributes class does not exist", func() {
+				It("should write StatusNotFound code to the response object", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+					Expect(resp.RequestedCapacities).To(BeNil())
+				})
+			})
+
+			When("the StoragePolicyMutability feature is disabled", func() {
+				BeforeEach(func() {
+					configFn = nil
+					withObjects = append(withObjects, builder.DummyVolumeAttributesClassWithID("id-from-vac"))
+				})
+
+				It("should write StatusInternalServerError code and a message that the capability is not enabled to the response object", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+					Expect(resp.Result.Message).To(ContainSubstring("capability is not enabled"))
+					Expect(resp.Result.Message).To(ContainSubstring(builder.DummyVolumeAttributesClassName))
+
+					Expect(resp.RequestedCapacities).To(BeNil())
+				})
 			})
 		})
 
@@ -1374,6 +1454,8 @@ func testVMRequestedCapacityHandlerHandleUpdate() {
 		vm, oldVM   *vmopv1.VirtualMachine
 
 		resp, expected validation.CapacityResponse
+
+		configFn func(*pkgcfg.Config)
 	)
 
 	When("HandleUpdate is called", func() {
@@ -1383,6 +1465,7 @@ func testVMRequestedCapacityHandlerHandleUpdate() {
 
 			interceptors = interceptor.Funcs{}
 			withObjects = []ctrlclient.Object{builder.DummyStorageClass()}
+			configFn = nil
 
 			dummyConverter = &DummyConverter{
 				converter: runtime.DefaultUnstructuredConverter,
@@ -1402,6 +1485,9 @@ func testVMRequestedCapacityHandlerHandleUpdate() {
 			fakeClient := builder.NewFakeClientWithInterceptors(interceptors, withObjects...)
 			fakeManagerContext := fake.NewControllerManagerContext()
 			fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
+			if configFn != nil {
+				pkgcfg.UpdateContext(fakeWebhookContext.Context, configFn)
+			}
 
 			obj, _ = builder.ToUnstructured(vm)
 			oldObj, _ = builder.ToUnstructured(oldVM)
@@ -1578,6 +1664,190 @@ func testVMRequestedCapacityHandlerHandleUpdate() {
 				Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
 
 				Expect(resp.RequestedCapacities).To(BeEmpty())
+			})
+		})
+
+		When("storage class has no storage policy ID", func() {
+			BeforeEach(func() {
+				oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				}
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
+				}
+				withObjects = []ctrlclient.Object{builder.DummyStorageClassWithoutPolicyID()}
+			})
+
+			It("should write StatusInternalServerError to the response", func() {
+				Expect(resp.Allowed).To(BeFalse())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+
+				Expect(resp.RequestedCapacities).To(BeEmpty())
+			})
+		})
+
+		Context("vm has an unchanged volume attributes class", func() {
+			BeforeEach(func() {
+				oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				}
+				vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
+				}
+				oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+				vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+				configFn = func(config *pkgcfg.Config) {
+					config.Features.StoragePolicyMutability = true
+				}
+			})
+
+			When("the volume attributes class exists", func() {
+				BeforeEach(func() {
+					withObjects = append(withObjects, builder.DummyVolumeAttributesClassWithID("id-from-vac"))
+				})
+
+				It("should write StatusOK and the increase as a RequestedCapacity for the volume attributes class to the response", func() {
+					Expect(resp.Allowed).To(BeTrue())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+					Expect(resp.RequestedCapacities).To(HaveLen(1))
+					Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(resource.NewQuantity(5*1024*1024*1024, resource.BinarySI).String()))
+					Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(builder.DummyStorageClassName))
+					Expect(resp.RequestedCapacities[0].VolumeAttributesClassName).To(Equal(builder.DummyVolumeAttributesClassName))
+					Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal("id-from-vac"))
+				})
+			})
+
+			When("the volume attributes class does not exist", func() {
+				It("should write StatusNotFound to the response", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+					Expect(resp.RequestedCapacities).To(BeEmpty())
+				})
+			})
+		})
+
+		Context("vm volume attributes class changes", func() {
+			BeforeEach(func() {
+				oldVM.Status.Storage = &vmopv1.VirtualMachineStorageStatus{
+					Total: resource.NewQuantity(20*1024*1024*1024, resource.BinarySI),
+				}
+				vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+				configFn = func(config *pkgcfg.Config) {
+					config.Features.StoragePolicyMutability = true
+				}
+				withObjects = append(withObjects, builder.DummyVolumeAttributesClassWithID("id-from-vac"))
+			})
+
+			It("should write StatusOK and the whole storage footprint as a RequestedCapacity for the new volume attributes class to the response", func() {
+				Expect(resp.Allowed).To(BeTrue())
+				Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+				Expect(resp.RequestedCapacities).To(HaveLen(1))
+				Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(resource.NewQuantity(20*1024*1024*1024, resource.BinarySI).String()))
+				Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(builder.DummyStorageClassName))
+				Expect(resp.RequestedCapacities[0].VolumeAttributesClassName).To(Equal(builder.DummyVolumeAttributesClassName))
+				Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal("id-from-vac"))
+			})
+
+			When("the boot disk also grows", func() {
+				BeforeEach(func() {
+					oldVM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						BootDiskCapacity: resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					}
+					vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+						BootDiskCapacity: resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
+					}
+				})
+
+				It("should write the storage footprint plus the growth as a single RequestedCapacity to the response", func() {
+					Expect(resp.Allowed).To(BeTrue())
+
+					Expect(resp.RequestedCapacities).To(HaveLen(1))
+					Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(resource.NewQuantity(25*1024*1024*1024, resource.BinarySI).String()))
+					Expect(resp.RequestedCapacities[0].VolumeAttributesClassName).To(Equal(builder.DummyVolumeAttributesClassName))
+				})
+			})
+
+			When("the vm has no storage footprint yet", func() {
+				BeforeEach(func() {
+					oldVM.Status.Storage = nil
+				})
+
+				It("should write StatusOK and an empty RequestedCapacity to the response", func() {
+					Expect(resp.Allowed).To(BeTrue())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+					Expect(resp.RequestedCapacities).To(BeNil())
+				})
+			})
+
+			When("the new volume attributes class does not exist", func() {
+				BeforeEach(func() {
+					vm.Spec.VolumeAttributesClassName = "does-not-exist"
+				})
+
+				It("should write StatusNotFound to the response", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusNotFound))
+
+					Expect(resp.RequestedCapacities).To(BeEmpty())
+				})
+			})
+
+			When("the volume attributes class is removed", func() {
+				BeforeEach(func() {
+					oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+					vm.Spec.VolumeAttributesClassName = ""
+				})
+
+				It("should write the whole storage footprint as a RequestedCapacity for the storage class to the response", func() {
+					Expect(resp.Allowed).To(BeTrue())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+					Expect(resp.RequestedCapacities).To(HaveLen(1))
+					Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(resource.NewQuantity(20*1024*1024*1024, resource.BinarySI).String()))
+					Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(builder.DummyStorageClassName))
+					Expect(resp.RequestedCapacities[0].VolumeAttributesClassName).To(BeEmpty())
+					Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal("id42"))
+				})
+			})
+
+			When("the volume attributes class changes to another one", func() {
+				BeforeEach(func() {
+					oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+					vm.Spec.VolumeAttributesClassName = "other-vac"
+
+					withObjects = append(withObjects, &v1.VolumeAttributesClass{
+						ObjectMeta: metav1.ObjectMeta{Name: "other-vac"},
+						Parameters: map[string]string{"storagePolicyID": "id-from-other-vac"},
+					})
+				})
+
+				It("should write the whole storage footprint as a RequestedCapacity for the new volume attributes class to the response", func() {
+					Expect(resp.Allowed).To(BeTrue())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusOK))
+
+					Expect(resp.RequestedCapacities).To(HaveLen(1))
+					Expect(resp.RequestedCapacities[0].Capacity.String()).To(Equal(resource.NewQuantity(20*1024*1024*1024, resource.BinarySI).String()))
+					Expect(resp.RequestedCapacities[0].StorageClassName).To(Equal(builder.DummyStorageClassName))
+					Expect(resp.RequestedCapacities[0].VolumeAttributesClassName).To(Equal("other-vac"))
+					Expect(resp.RequestedCapacities[0].StoragePolicyID).To(Equal("id-from-other-vac"))
+				})
+			})
+
+			When("the StoragePolicyMutability feature is disabled", func() {
+				BeforeEach(func() {
+					configFn = nil
+				})
+
+				It("should write StatusInternalServerError to the response", func() {
+					Expect(resp.Allowed).To(BeFalse())
+					Expect(int(resp.Result.Code)).To(Equal(http.StatusInternalServerError))
+
+					Expect(resp.RequestedCapacities).To(BeEmpty())
+				})
 			})
 		})
 

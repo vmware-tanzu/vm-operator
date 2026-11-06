@@ -338,6 +338,7 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	// Validations for allowed updates. Return validation responses here for conditional updates regardless
 	// of whether the update is allowed or not.
 	fieldErrs = append(fieldErrs, v.validateCrypto(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateStorageFieldsOnUpdate(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrapProviderImmutable(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateBootstrap(ctx, vm)...)
@@ -754,6 +755,20 @@ func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 	}
 
 	return allErrs
+}
+
+// validateStorageFieldsOnUpdate validates the storage fields when the
+// VolumeAttributesClass changes. Unlike spec.storageClass, which is immutable,
+// the VolumeAttributesClass can be set, changed, or cleared after create.
+func (v validator) validateStorageFieldsOnUpdate(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	if vm.Spec.VolumeAttributesClassName == oldVM.Spec.VolumeAttributesClassName {
+		return nil
+	}
+
+	return v.validateStorageFields(ctx, vm)
 }
 
 func (v validator) validateStorageFields(

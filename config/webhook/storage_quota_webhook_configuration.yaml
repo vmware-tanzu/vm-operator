@@ -16,12 +16,12 @@ webhooks:
       namespace: kube-system
       path: /validate-storage-quota
   failurePolicy: Fail
-  name: quota-create.validating.virtualmachine.v1alpha5.vmoperator.vmware.com
+  name: quota-create.validating.virtualmachine.v1alpha6.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha5
+    - v1alpha6
     operations:
     - CREATE
     resources:
@@ -39,23 +39,26 @@ webhooks:
       namespace: kube-system
       path: /validate-storage-quota
   failurePolicy: Fail
-  name: quota-update.validating.virtualmachine.v1alpha5.vmoperator.vmware.com
+  name: quota-update.validating.virtualmachine.v1alpha6.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha5
+    - v1alpha6
     operations:
     - UPDATE
     resources:
     - virtualmachines
   sideEffects: None
   matchConditions:
-  - expression: has(object.spec.advanced) && has(object.spec.advanced.bootDiskCapacity)
+  - expression: >-
+      (has(object.spec.advanced) && has(object.spec.advanced.bootDiskCapacity)
       && ((!has(oldObject.spec.advanced) || !has(oldObject.spec.advanced.bootDiskCapacity))
       || (has(oldObject.spec.advanced) && has(oldObject.spec.advanced.bootDiskCapacity)
-      && object.spec.advanced.bootDiskCapacity != oldObject.spec.advanced.bootDiskCapacity))
-    name: boot-disk-change
+      && object.spec.advanced.bootDiskCapacity != oldObject.spec.advanced.bootDiskCapacity)))
+      || ((has(object.spec.volumeAttributesClassName) ? object.spec.volumeAttributesClassName : '')
+      != (has(oldObject.spec.volumeAttributesClassName) ? oldObject.spec.volumeAttributesClassName : ''))
+    name: boot-disk-or-vac-change
 - admissionReviewVersions:
   - v1
   - v1beta1
@@ -65,12 +68,12 @@ webhooks:
       namespace: kube-system
       path: /validate-storage-quota
   failurePolicy: Fail
-  name: quota-create.validating.virtualmachinesnapshot.v1alpha5.vmoperator.vmware.com
+  name: quota-create.validating.virtualmachinesnapshot.v1alpha6.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
     apiVersions:
-    - v1alpha5
+    - v1alpha6
     operations:
     - CREATE
     resources:

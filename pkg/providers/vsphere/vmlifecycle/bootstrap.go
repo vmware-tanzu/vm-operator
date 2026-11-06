@@ -244,6 +244,8 @@ func DoBootstrap( //nolint:gocyclo
 
 // GetBootstrapArgs returns the information used to bootstrap the VM via
 // one of the many, possible bootstrap engines.
+//
+//nolint:gocyclo
 func GetBootstrapArgs(
 	ctx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
@@ -286,6 +288,31 @@ func GetBootstrapArgs(
 	// we don't here either. This is all a little nuts & complicated and
 	// probably not correct for every situation.
 	isTKG := kubeutil.HasCAPILabels(ctx.VM.Labels)
+
+	// Use the network provider's nameservers as the interface's own when the
+	// interface spec did not supply any.
+	for i := range bootstraps {
+		b := &bootstraps[i]
+		if len(b.Nameservers) == 0 && len(b.ProviderNameservers) > 0 {
+			b.Nameservers = b.ProviderNameservers
+		}
+	}
+
+	// LinuxPrep only supports the global DNS servers, and ignores the
+	// per-adapter ones. Propagate the network provider's nameservers, such as
+	// from a VPC SubnetPort, to the global list after the VM-level ones.
+	if bootstrap.LinuxPrep != nil {
+		global := slices.Clone(bsa.DNSServers)
+		for _, b := range bootstraps {
+			for _, ns := range b.ProviderNameservers {
+				if !slices.Contains(global, ns) {
+					global = append(global, ns)
+				}
+			}
+		}
+		bsa.DNSServers = global
+	}
+
 	getDNSInformationFromConfigMap := false
 	for _, b := range bootstraps {
 		if b.DHCP4 || b.DHCP6 {

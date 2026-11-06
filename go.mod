@@ -50,7 +50,7 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20250813160346-0f6259af5cbb
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20260619161849-aeb1b9769d4b
-	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c
+	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20261106031027-183b44a9b839
 	github.com/vmware/govmomi v0.57.0-alpha.0.0.20261030193052-f04ca79c0aa2
 	golang.org/x/exp v0.0.0-20261011100332-faecfb24eb49
 	golang.org/x/net v0.61.0 // indirect

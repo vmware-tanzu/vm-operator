@@ -5,6 +5,7 @@
 package vmlifecycle_test
 
 import (
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -12,11 +13,15 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	ctrlfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha6/sysprep"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -432,6 +437,120 @@ var _ = Describe("DoBootstrap", func() {
 			It("Noop", func() {
 				Expect(bsErr).ToNot(HaveOccurred())
 			})
+		})
+	})
+})
+
+var _ = Describe("GetBootstrapArgs provider nameservers", func() {
+	var (
+		vm         *vmopv1.VirtualMachine
+		bootstraps []network.Bootstrap
+		bsArgs     vmlifecycle.BootstrapArgs
+		err        error
+	)
+
+	BeforeEach(func() {
+		vm = &vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Network: &vmopv1.VirtualMachineNetworkSpec{},
+			},
+		}
+		bootstraps = []network.Bootstrap{
+			{
+				Name: "eth0",
+				IPConfigs: []network.NetworkInterfaceIPConfig{
+					{
+						IPCIDR:  "192.168.1.10/24",
+						IsIPv4:  true,
+						Gateway: "192.168.1.1",
+					},
+				},
+				ProviderNameservers: []string{"10.0.0.2"},
+			},
+		}
+	})
+
+	JustBeforeEach(func() {
+		vmCtx := pkgctx.VirtualMachineContext{
+			Context: pkgcfg.NewContextWithDefaultConfig(),
+			Logger:  logr.Discard(),
+			VM:      vm,
+		}
+
+		bsArgs, err = vmlifecycle.GetBootstrapArgs(
+			vmCtx,
+			ctrlfake.NewClientBuilder().Build(),
+			bootstraps,
+			false,
+			vmlifecycle.BootstrapData{})
+	})
+
+	When("LinuxPrep and the VM has no nameservers", func() {
+		BeforeEach(func() {
+			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+			}
+		})
+		It("propagates only the provider nameservers to the global list", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bsArgs.DNSServers).To(HaveExactElements("10.0.0.2"))
+		})
+	})
+
+	When("LinuxPrep and the VM has nameservers", func() {
+		BeforeEach(func() {
+			vm.Spec.Network.Nameservers = []string{"1.1.1.1", "10.0.0.2"}
+			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+			}
+			bootstraps[0].ProviderNameservers = []string{"10.0.0.2", "10.0.0.3"}
+		})
+		It("appends the provider nameservers without duplicates", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bsArgs.DNSServers).To(HaveExactElements("1.1.1.1", "10.0.0.2", "10.0.0.3"))
+			Expect(vm.Spec.Network.Nameservers).To(HaveExactElements("1.1.1.1", "10.0.0.2"))
+		})
+	})
+
+	When("LinuxPrep and the interface spec supplied nameservers", func() {
+		BeforeEach(func() {
+			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+			}
+			// InterfaceBootstrap clears the provider nameservers in this case.
+			bootstraps[0].Nameservers = []string{"10.0.0.9"}
+			bootstraps[0].ProviderNameservers = nil
+		})
+		It("does not propagate the interface nameservers to the global list", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bsArgs.NetBootstraps[0].Nameservers).To(HaveExactElements("10.0.0.9"))
+			Expect(bsArgs.DNSServers).ToNot(ContainElement("10.0.0.9"))
+		})
+	})
+
+	When("CloudInit", func() {
+		BeforeEach(func() {
+			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+			}
+		})
+		It("keeps the provider nameservers per interface only", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bsArgs.NetBootstraps[0].Nameservers).To(HaveExactElements("10.0.0.2"))
+			Expect(bsArgs.DNSServers).To(BeEmpty())
+		})
+	})
+
+	When("Sysprep", func() {
+		BeforeEach(func() {
+			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+			}
+		})
+		It("keeps the provider nameservers per adapter only", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(bsArgs.NetBootstraps[0].Nameservers).To(HaveExactElements("10.0.0.2"))
+			Expect(bsArgs.DNSServers).To(BeEmpty())
 		})
 	})
 })

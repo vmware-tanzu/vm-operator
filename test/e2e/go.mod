@@ -57,7 +57,7 @@ require (
 	github.com/onsi/gomega v1.44.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/vmware-tanzu/net-operator-api v0.0.0-20260619161849-aeb1b9769d4b
-	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20260611061705-128342c7b27c
+	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.0.0-20261106031027-183b44a9b839
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/capabilities v0.0.0-00010101000000-000000000000

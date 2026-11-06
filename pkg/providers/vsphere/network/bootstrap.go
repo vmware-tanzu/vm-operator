@@ -73,6 +73,14 @@ type Bootstrap struct {
 	// interface.  Same fallback semantics as Nameservers.
 	SearchDomains []string
 
+	// ProviderNameservers are the resolver addresses reported for this
+	// interface by its network provider, such as a VPC SubnetPort. It is
+	// cleared when the interface spec supplies its own nameservers.
+	// Otherwise, they are used as the interface's Nameservers ahead of the
+	// VM-level ones; see vmlifecycle.GetBootstrapArgs.
+	// Providers do not supply search domains.
+	ProviderNameservers []string
+
 	// Routes is the list of static routes to configure inside the guest,
 	// copied verbatim from interfaceSpec.Routes.
 	Routes []NetworkInterfaceRoute
@@ -223,6 +231,10 @@ func InterfaceBootstrap(
 
 	if n := interfaceSpec.Nameservers; len(n) > 0 {
 		bootstrap.Nameservers = n
+		bootstrap.ProviderNameservers = nil
+	} else if len(initial.ProviderNameservers) > 0 {
+		// Leave Nameservers unset; the bootstrap engine applies the provider
+		// nameservers, see vmlifecycle.GetBootstrapArgs.
 	} else if defaultToGlobalNameservers && networkSpec != nil {
 		bootstrap.Nameservers = networkSpec.Nameservers
 	}
@@ -394,48 +406,51 @@ func bootstrapFromVPC(
 				initial.NoIPAM = true
 			}
 		}
-		return initial
-	}
+	} else {
+		hasStaticV4 := slices.ContainsFunc(initial.IPConfigs, func(c NetworkInterfaceIPConfig) bool { return c.IsIPv4 })
+		hasStaticV6 := slices.ContainsFunc(initial.IPConfigs, func(c NetworkInterfaceIPConfig) bool { return !c.IsIPv4 })
 
-	hasStaticV4 := slices.ContainsFunc(initial.IPConfigs, func(c NetworkInterfaceIPConfig) bool { return c.IsIPv4 })
-	hasStaticV6 := slices.ContainsFunc(initial.IPConfigs, func(c NetworkInterfaceIPConfig) bool { return !c.IsIPv4 })
+		dhcp6Active := !cfg.DHCPv6DeactivatedOnSubnet
+		raActive := !cfg.RADeactivated
+		// ipv6Dynamic is true when either DHCPv6 or SLAAC is active on the subnet.
+		// Both paths need DHCP6/AcceptRA set independently: dhcp6Active drives the
+		// DHCPv6 client and raActive drives IPv6AcceptRA in the guest's netplan config.
+		ipv6Dynamic := dhcp6Active || raActive
 
-	dhcp6Active := !cfg.DHCPv6DeactivatedOnSubnet
-	raActive := !cfg.RADeactivated
-	// ipv6Dynamic is true when either DHCPv6 or SLAAC is active on the subnet.
-	// Both paths need DHCP6/AcceptRA set independently: dhcp6Active drives the
-	// DHCPv6 client and raActive drives IPv6AcceptRA in the guest's netplan config.
-	ipv6Dynamic := dhcp6Active || raActive
-
-	switch subnetPort.Spec.InterfaceIPType {
-	case vpcv1alpha1.IPAddressTypeIPv6:
-		if !hasStaticV6 {
-			if ipv6Dynamic {
+		switch subnetPort.Spec.InterfaceIPType {
+		case vpcv1alpha1.IPAddressTypeIPv6:
+			if !hasStaticV6 {
+				if ipv6Dynamic {
+					initial.DHCP6 = dhcp6Active
+					initial.AcceptRA = raActive
+				} else {
+					initial.NoIPAM = true
+				}
+			}
+		case vpcv1alpha1.IPAddressTypeIPv4IPv6:
+			if !hasStaticV4 && dhcp4Active {
+				initial.DHCP4 = true
+			}
+			if !hasStaticV6 && ipv6Dynamic {
 				initial.DHCP6 = dhcp6Active
 				initial.AcceptRA = raActive
-			} else {
+			}
+			if !initial.DHCP4 && !initial.DHCP6 && len(initial.IPConfigs) == 0 {
 				initial.NoIPAM = true
 			}
-		}
-	case vpcv1alpha1.IPAddressTypeIPv4IPv6:
-		if !hasStaticV4 && dhcp4Active {
-			initial.DHCP4 = true
-		}
-		if !hasStaticV6 && ipv6Dynamic {
-			initial.DHCP6 = dhcp6Active
-			initial.AcceptRA = raActive
-		}
-		if !initial.DHCP4 && !initial.DHCP6 && len(initial.IPConfigs) == 0 {
-			initial.NoIPAM = true
-		}
-	default: // "IPv4" or "" — IPv4-only path
-		if !hasStaticV4 {
-			if dhcp4Active {
-				initial.DHCP4 = true
-			} else {
-				initial.NoIPAM = true
+		default: // "IPv4" or "" — IPv4-only path
+			if !hasStaticV4 {
+				if dhcp4Active {
+					initial.DHCP4 = true
+				} else {
+					initial.NoIPAM = true
+				}
 			}
 		}
+	}
+
+	if len(cfg.DNSResolverIPs) > 0 {
+		initial.ProviderNameservers = cfg.DNSResolverIPs
 	}
 
 	return initial

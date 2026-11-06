@@ -143,6 +143,10 @@ func reconcileBootOrder(
 	vmBootOptions *vmopv1.VirtualMachineBootOptions,
 	ci vimtypes.VirtualMachineConfigInfo) ([]vimtypes.BaseVirtualMachineBootOptionsBootableDevice, error) {
 
+	if len(vmBootOptions.BootOrder) == 0 {
+		return nil, nil
+	}
+
 	devices := object.VirtualDeviceList(ci.Hardware.Device)
 	allDisks := devices.SelectByType((*vimtypes.VirtualDisk)(nil))
 	allCdrom := devices.SelectByType((*vimtypes.VirtualCdrom)(nil))

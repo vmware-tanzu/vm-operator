@@ -344,13 +344,20 @@ func isVMBackupUpToDate(vm *vmopv1.VirtualMachine, backup string) (bool, error) 
 		return false, err
 	}
 
-	// Copy the VM so we can synthesize the backup manifest by
-	// deleting fields that are trimmed from backup.
-	curVM := vm.DeepCopy()
+	if vm.Generation != backupVM.Generation {
+		return false, nil
+	}
+
+	// Copy only the metadata maps so trimming does not modify the VM.
+	curVM := &vmopv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:      maps.Clone(vm.Labels),
+			Annotations: maps.Clone(vm.Annotations),
+		},
+	}
 	trimBackupFields(curVM)
 
-	return curVM.Generation == backupVM.Generation &&
-		maps.Equal(curVM.Labels, backupVM.Labels) &&
+	return maps.Equal(curVM.Labels, backupVM.Labels) &&
 		maps.Equal(curVM.Annotations, backupVM.Annotations), nil
 }
 

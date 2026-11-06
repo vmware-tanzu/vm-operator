@@ -639,7 +639,7 @@ func (r *Reconciler) ReconcileNormal(ctx *pkgctx.VirtualMachineContext) (reterr 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
 		// Do not proceed unless the VMI cache this VM needs is ready.
 		if !r.isVMICacheReady(ctx) {
-			return pkgerr.NoRequeueError{Message: "disk image cache is not ready"}
+			return pkgerr.NoRequeueErrorf("disk image cache is not ready")
 		}
 	}
 
@@ -730,7 +730,7 @@ func (r *Reconciler) handleBlockingCreateErr(
 			// If the cache is not yet ready then do not return an error,
 			// but simultaneously, do not reflect a successful create. The
 			// VM will be requeued once the cache object is ready.
-			err = pkgerr.NoRequeueError{Message: "disk image cache is not ready"}
+			err = pkgerr.NoRequeueErrorf("disk image cache is not ready")
 		}
 	}
 

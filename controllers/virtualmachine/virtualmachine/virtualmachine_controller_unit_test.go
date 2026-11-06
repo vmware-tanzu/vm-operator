@@ -178,6 +178,33 @@ func unitTestsReconcile() {
 	})
 
 	Context("ReconcileNormal", func() {
+		It("reports that the image cache is not ready while waiting for create prerequisites", func() {
+			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+				config.Features.FastDeploy = true
+			})
+			providerfake.SetCreateOrUpdateFunction(vmCtx, fakeVMProvider,
+				func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					ctxop.MarkCreate(ctx)
+					return pkgerr.VMICacheNotReadyError{Name: "pending-image-cache"}
+				})
+
+			const message = "disk image cache is not ready"
+			err := reconciler.ReconcileNormal(vmCtx)
+			Expect(err).To(MatchError(message))
+			Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+			Expect(vm.Labels).To(HaveKeyWithValue(pkgconst.VMICacheLabelKey, "pending-image-cache"))
+			Eventually(ctx.Events).Should(Receive(Equal("Warning CreatePending " + message)))
+
+			// Subsequent reconciles wait for the cache before calling the provider.
+			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(context.Context, *vmopv1.VirtualMachine) error {
+				Fail("provider called before image cache became ready")
+				return nil
+			}
+			err = reconciler.ReconcileNormal(vmCtx)
+			Expect(err).To(MatchError(message))
+			Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+		})
+
 		BeforeEach(func() {
 			initObjects = append(initObjects, vm)
 		})

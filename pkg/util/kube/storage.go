@@ -25,6 +25,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
 )
@@ -115,7 +116,7 @@ func GetPVCZoneConstraints(
 
 			if isImmediate {
 				// Must wait for this PVC to get bound so we know its accessible zones.
-				return nil, fmt.Errorf("PVC %s is not bound", pvc.Name)
+				return nil, pkgerr.NoRequeueErrorf("PVC %s is not bound", pvc.Name)
 			}
 
 			z = getPVCRequestedZones(pvc)

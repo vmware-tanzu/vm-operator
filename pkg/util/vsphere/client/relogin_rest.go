@@ -128,7 +128,7 @@ func isSessionPath(path string) bool {
 //     populates it for the *bytes.Buffer that rest.Resource.Request's encode
 //     builds for JSON POST/PATCH/PUT bodies.
 //
-//  2. A provably empty body -- nil, http.NoBody, or ContentLength == 0 --
+//  2. A provably empty body -- nil or http.NoBody --
 //     replays as http.NoBody.
 //
 //  3. GET, HEAD, OPTIONS and DELETE replay with http.NoBody: govmomi's
@@ -138,15 +138,11 @@ func isSessionPath(path string) bool {
 //     lossless. Without this rule a plain REST GET whose body arrived with a
 //     non-zero ContentLength would 401 unretried.
 //
-//  4. Anything else -- a streaming POST/PATCH/PUT with ContentLength > 0,
-//     i.e. rest.Client.Upload of a content-library item via soap.Client.Upload
-//     -- is not replayable. The body must not be buffered into memory, and the
-//     request is not retried.
-//
-// Note on action-style POSTs (?~action=): rest.Resource.Request gives them the
-// same empty io.MultiReader body with ContentLength == 0, so rule 2 replays
-// them. Only a streaming action POST with ContentLength > 0 falls to rule 4,
-// which is the desired upload behavior.
+//  4. Other bodies without GetBody, including unknown-length uploads, are
+//     not replayable. ContentLength == 0 with a non-nil body means unknown
+//     length, not empty. This also conservatively excludes action POSTs
+//     built with an empty io.MultiReader: their emptiness cannot be proven
+//     from the request metadata without consuming the stream.
 func replayBody(req *http.Request) func() io.ReadCloser {
 	switch {
 	case req.GetBody != nil:
@@ -158,8 +154,7 @@ func replayBody(req *http.Request) func() io.ReadCloser {
 			return b
 		}
 	case req.Body == nil ||
-		req.Body == http.NoBody ||
-		req.ContentLength == 0:
+		req.Body == http.NoBody:
 		return func() io.ReadCloser { return http.NoBody }
 	case req.Method == http.MethodGet ||
 		req.Method == http.MethodHead ||

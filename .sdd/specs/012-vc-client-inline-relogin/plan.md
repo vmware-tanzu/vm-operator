@@ -121,6 +121,8 @@ This is the fix for reference-implementation gap §10.1: N goroutines faulting a
 
 SOAP and REST have independent generations (`genSOAP`, `genREST`) — they are separate sessions with separate lifetimes. REST also passes the failed request's session ID to the keeper and compares it with the current session under `muREST`. `rest.Client.Do` stamps the header before the transport reads the generation, so a request can carry an old session ID with a new generation. Either a changed generation or a changed session ID suppresses another login. The keepalive captures the generation and session ID before probing.
 
+`Client.Logout` retires the keeper under both login mutexes before logging out either session. Retirement waits for in-flight recovery and prevents subsequent SOAP/PBM and REST recovery, including requests carrying stale generations. Locks are released before stopping keepalive to avoid waiting on a send callback while holding its lock.
+
 ### 3. SOAP / PBM wrapper
 
 ```go
@@ -201,7 +203,7 @@ func (r *reloginREST) RoundTrip(req *http.Request) (*http.Response, error) {
 
 - `restSessionHeader = "vmware-api-session-id"` and the session path `"/rest/com/vmware/cis/session"` are **redeclared locally** — `github.com/vmware/govmomi/vapi/internal` is not importable from this repo. Comment each constant with its govmomi source.
 - The header rewrite is not optional: `rest.Client.Do` stamps the *old* session id before the transport sees the request.
-- `replayBody` implements an ordered rule and returns non-nil only when the body is safely repeatable: `req.GetBody != nil` (which `http.NewRequest` populates for the `*bytes.Buffer` that `rest.Resource.Request` produces via `encode()`); else a provably empty body (`req.Body == nil`, `http.NoBody`, or `ContentLength == 0`) replayed as `http.NoBody`; else `GET`/`HEAD`/`OPTIONS`/`DELETE` replayed as `http.NoBody` (govmomi's vapi/rest only ever puts the empty `io.MultiReader()` body on those verbs — `GetBody == nil` — and servers ignore bodies on them), with the stale `ContentLength` zeroed on any `http.NoBody` replay; else nil — streaming bodies with `ContentLength > 0` (`rest.Client.Upload`) are never buffered into memory and never retried. Action-style POSTs (`?~action=`) carry the empty MultiReader body with `ContentLength == 0`, so rule 2 replays them; only a streaming action POST with `ContentLength > 0` is excluded, which is the desired upload behavior.
+- `replayBody` uses `GetBody` when available, or replays provably empty bodies (`nil` or `http.NoBody`). The existing GET/HEAD/OPTIONS/DELETE handling preserves govmomi's bodiless requests. Other non-nil bodies without `GetBody` are not replayable, including `ContentLength == 0` (unknown length) uploads and action POSTs whose empty MultiReader cannot be proven empty from metadata. These requests heal the session but return the original 401.
 - **The re-login is decided before the replay is.** A request whose body cannot be repeated still re-authenticates; only its own 401 is surfaced unretried. Skipping the re-login there would leave the session dead until some later call happened to fault with a replayable body or the keepalive ticked — the latency this feature exists to remove.
 - **Draining restores the body.** `res` is handed back to the caller on every path that does not replay, so `drain` re-installs an equivalent reader over the bytes it read rather than leaving a consumed, closed body behind.
 - `http.RoundTripper`'s contract forbids mutating the request; hence `Clone`.
@@ -276,7 +278,7 @@ Deterministic, non-disruptive, and the direct test of the inline path. No VC dow
 
 1. Read the VM Operator solution-user name from the `wcp-vmop-sa-vc-auth` secret in `vmware-system-vmop` (`utils.GetSecret`, `.Data["username"]`).
 2. With the admin client, retrieve `mo.SessionManager` (`property.DefaultCollector(admin).RetrieveOne(ctx, *admin.ServiceContent.SessionManager, []string{"sessionList"}, &sm)`) and collect every `sm.SessionList[i].Key` whose `UserName` matches that solution user.
-3. `session.NewManager(admin).TerminateSession(ctx, keys)`.
+3. Copy the original session cookies into non-retrying clients and verify protected requests succeed. Call `session.NewManager(admin).TerminateSession(ctx, keys)`, then poll those clients until protected requests return `NotAuthenticated` before driving the VM operation. Termination can propagate asynchronously.
 4. Immediately drive a VM operation — `vmoperator.UpdateVirtualMachinePowerState(...)` to `PoweredOff`, then `vmoperator.WaitForVirtualMachinePowerState(...)`.
 5. Assert it completes within `vcSessionRecoveryTimeout` (below), and that the manager pod's `restartCount` did not change.
 

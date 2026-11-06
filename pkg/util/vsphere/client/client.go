@@ -382,6 +382,10 @@ func (c *Client) Valid() bool {
 }
 
 func (c *Client) Logout(ctx context.Context) {
+	if keeper := keeperFromVimClient(c.vimClient); keeper != nil {
+		keeper.retire()
+	}
+
 	log := pkglog.FromContextOrDefault(ctx).WithName("Logout")
 
 	clientURL := c.vimClient.URL()

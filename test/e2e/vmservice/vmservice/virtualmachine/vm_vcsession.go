@@ -7,6 +7,7 @@ package virtualmachine
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/soap"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"golang.org/x/crypto/ssh"
 	appsv1 "k8s.io/api/apps/v1"
@@ -29,6 +31,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vcclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	e2essh "github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/ssh"
@@ -167,7 +170,32 @@ func VCSessionRecoverySpec(ctx context.Context, inputGetter func() VCSessionReco
 		}
 		Expect(keys).NotTo(BeEmpty(), "no sessions found for user %q", vmopUserName)
 
+		// Copy each original cookie into a client with no recovery wrapper.
+		// Prove the cookie works before termination, then require an actual
+		// protected-call auth fault: termination can propagate asynchronously.
+		probes := make([]*vim25.Client, 0, len(keys))
+		for _, key := range keys {
+			sc := soap.NewClient(adminClient.URL(), true)
+			DeferCleanup(sc.CloseIdleConnections)
+			sc.Jar.SetCookies(sc.URL(), []*http.Cookie{{
+				Name: "vmware_soap_session", Value: key,
+			}})
+			probe, err := vim25.NewClient(ctx, sc)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = methods.GetCurrentTime(ctx, probe)
+			Expect(err).NotTo(HaveOccurred(), "original session must accept a protected request")
+			probes = append(probes, probe)
+		}
+
 		Expect(session.NewManager(adminClient).TerminateSession(ctx, keys)).To(Succeed())
+		By("Waiting for the original sessions to reject protected requests")
+		Eventually(func(g Gomega) {
+			for _, probe := range probes {
+				_, err := methods.GetCurrentTime(ctx, probe)
+				g.Expect(vcclient.IsNotAuthenticatedError(err)).To(BeTrue(),
+					"expected an authentication fault from the terminated session")
+			}
+		}, vcSessionRecoveryTimeout, time.Second).Should(Succeed())
 	}
 
 	// managerBaseline records the manager deployment's ready replicas and
@@ -305,6 +333,7 @@ func VCSessionRecoverySpec(ctx context.Context, inputGetter func() VCSessionReco
 
 			By("Terminating the VM Operator solution user's vCenter sessions")
 			adminClient := newAdminVimClient()
+			DeferCleanup(logoutTolerant, adminClient)
 			terminateVMOPSessions(adminClient)
 
 			By("Driving a VM power-state change and expecting recovery")

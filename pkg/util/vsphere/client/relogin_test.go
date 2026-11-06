@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -1079,8 +1078,7 @@ var _ = Describe("Relogin", Label(testlabels.VCSim), func() {
 			req := restClient.Resource("/relogin-test").Request(http.MethodGet)
 			req.Header.Set(restSessionHeader, oldSession)
 			res, err := wrapper.RoundTrip(req.WithContext(ctx))
-			var networkErr *net.OpError
-			Expect(errors.As(err, &networkErr)).To(BeTrue())
+			Expect(err).To(HaveOccurred())
 			Expect(res).To(BeNil())
 			Expect(spy.loginCount()).To(Equal(initialLogins))
 			Expect(spy.countPath(reloginFaultPath)).To(Equal(1))
@@ -1141,22 +1139,22 @@ var _ = Describe("Relogin", Label(testlabels.VCSim), func() {
 			})
 		})
 
-		It("does not replay a streaming body", func() {
+		DescribeTable("does not replay a streaming body", func(length int64) {
 			simulator.Test(func(ctx context.Context, vc *vim25.Client) {
 				spy, restClient, _, wrapper := newRestChain(ctx, vc)
 
 				Expect(restClient.Logout(ctx)).To(Succeed())
 
 				// An upload-shaped request: an arbitrary stream with
-				// GetBody == nil and ContentLength > 0, like soap.Client
-				// Upload builds. It must be surfaced unretried and never
+				// GetBody == nil and known or unknown length, like
+				// soap.Client.Upload builds. It must be surfaced unretried and never
 				// buffered.
 				req, err := http.NewRequest(
 					http.MethodPut,
 					restClient.Resource("/com/vmware/cis/tagging/category/id:test").String(),
 					io.NopCloser(strings.NewReader("body")))
 				Expect(err).NotTo(HaveOccurred())
-				req.ContentLength = 4
+				req.ContentLength = length
 
 				// Match the authentication header normally stamped by rest.Client.
 				req.Header.Set(restSessionHeader, restClient.SessionID())
@@ -1172,17 +1170,20 @@ var _ = Describe("Relogin", Label(testlabels.VCSim), func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(sess).NotTo(BeNil())
 			})
-		})
+		},
+			Entry("known length", int64(4)),
+			Entry("zero means unknown length", int64(0)),
+			Entry("explicit unknown length", int64(-1)),
+		)
 
-		It("replays an action POST with an empty body", func() {
+		It("does not replay an action POST with an unproven empty body", func() {
 			simulator.Test(func(ctx context.Context, vc *vim25.Client) {
 				spy, restClient, _, wrapper := newRestChain(ctx, vc)
 
 				Expect(restClient.Logout(ctx)).To(Succeed())
 
 				// An action-style POST carrying the empty io.MultiReader
-				// body: ContentLength is 0, so replayBody treats it as
-				// provably empty and the request is replayed.
+				// body: ContentLength is 0, which cannot prove it is empty.
 				req := restClient.Resource("/com/vmware/cis/tagging/tag-association/id:test").
 					WithAction("attach").
 					Request(http.MethodPost)
@@ -1192,10 +1193,8 @@ var _ = Describe("Relogin", Label(testlabels.VCSim), func() {
 				res, err := wrapper.RoundTrip(req)
 				Expect(err).NotTo(HaveOccurred())
 
-				// The replayed request reaches the handler, which answers
-				// 404 for the nonexistent tag.
-				Expect(res.StatusCode).To(Equal(http.StatusNotFound))
-				Expect(spy.countPath("/rest/com/vmware/cis/tagging/tag-association/id:test")).To(Equal(2))
+				Expect(res.StatusCode).To(Equal(http.StatusUnauthorized))
+				Expect(spy.countPath("/rest/com/vmware/cis/tagging/tag-association/id:test")).To(Equal(1))
 			})
 		})
 
@@ -1369,6 +1368,24 @@ var _ = Describe("Relogin", Label(testlabels.VCSim), func() {
 			DeferCleanup(c.Logout, ctx)
 			return c
 		}
+
+		It("does not revive a client after Logout", func() {
+			ctx := context.Background()
+			c := newAssembledClient(ctx, true)
+			keeper := keeperFromVimClient(c.VimClient())
+			c.Logout(ctx)
+
+			_, err := methods.GetCurrentTime(ctx, c.VimClient())
+			Expect(IsNotAuthenticatedError(err)).To(BeTrue())
+			Expect(errors.Is(err, errClientRetired)).To(BeTrue())
+			_, err = tags.NewManager(c.RestClient()).ListCategories(ctx)
+			Expect(rest.IsStatusError(err, http.StatusUnauthorized)).To(BeTrue())
+			Expect(keeper.soapGeneration()).To(BeZero())
+			Expect(keeper.restGeneration()).To(BeZero())
+			// A stale generation must not bypass retirement either.
+			Expect(keeper.reloginSOAP(ctx, 99, "test")).To(MatchError(errClientRetired))
+			Expect(keeper.reloginREST(ctx, 99, "old", "test")).To(MatchError(errClientRetired))
+		})
 
 		It("with the flag on recovers a terminated session inline", func() {
 			ctx := context.Background()

@@ -6,6 +6,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"sync"
@@ -40,6 +41,8 @@ func isNoReplay(ctx context.Context) bool {
 	return ok
 }
 
+var errClientRetired = errors.New("vSphere client has been retired")
+
 // sessionKeeper owns the re-authentication state shared by the SOAP, PBM and
 // REST inline re-login round trippers. It serializes logins so that N
 // goroutines faulting on the same dead session produce one login and one new
@@ -49,6 +52,8 @@ func isNoReplay(ctx context.Context) bool {
 // SOAP/vim25 and REST have independent generations because they are separate
 // sessions with separate lifetimes.
 type sessionKeeper struct {
+	// retired is protected by both login mutexes; readers hold either one.
+	retired  bool
 	sm       *session.Manager
 	userInfo *url.Userinfo
 
@@ -81,6 +86,16 @@ func newSessionKeeper(
 		userInfo: userInfo,
 		log:      pkglog.FromContextOrDefault(ctx),
 	}
+}
+
+// retire prevents future recovery and waits for in-flight logins to finish.
+// Release the locks before Logout stops keepalive, whose send may need them.
+func (k *sessionKeeper) retire() {
+	k.muSOAP.Lock()
+	k.muREST.Lock()
+	k.retired = true
+	k.muREST.Unlock()
+	k.muSOAP.Unlock()
 }
 
 // setRestClient attaches the REST client used by the REST re-login paths.
@@ -126,6 +141,10 @@ func (k *sessionKeeper) reloginSOAP(
 	k.muSOAP.Lock()
 	defer k.muSOAP.Unlock()
 
+	if k.retired {
+		return errClientRetired
+	}
+
 	// Another goroutine already refreshed while we were faulting.
 	if k.genSOAP.Load() != gen {
 		return nil
@@ -153,6 +172,10 @@ func (k *sessionKeeper) reloginREST(
 
 	k.muREST.Lock()
 	defer k.muREST.Unlock()
+
+	if k.retired {
+		return errClientRetired
+	}
 
 	// Another goroutine already refreshed while we were faulting.
 	if k.genREST.Load() != gen || k.rest.SessionID() != sessionID {

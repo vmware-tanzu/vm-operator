@@ -231,6 +231,7 @@ type WorkloadManagementAPI interface {
 	// IaaS Policy APIs.
 	CreateComputePolicy(spec ComputePolicySpec) (string, error)
 	CreateComputePolicyWithSpec(name, description string, capability ComputePolicyCapability, specJSON map[string]any) (string, error)
+	GetComputePolicy(policyID string) (ComputePolicyInfo, error)
 	DeleteComputePolicy(policyID string) error
 	CreateInfraPolicy(spec InfraPolicySpec) error
 	DeleteInfraPolicy(name string) error

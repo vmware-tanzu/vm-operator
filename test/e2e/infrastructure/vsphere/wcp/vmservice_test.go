@@ -4,10 +4,13 @@
 package wcp
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/vmware/govmomi/vim25/types"
+
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 )
 
 func TestGetVMClassInfo(t *testing.T) {
@@ -564,3 +567,96 @@ const listVMClassesJSON = `[
         ]
     }
 ]`
+
+func TestGetComputePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		response   string
+		capability ComputePolicyCapability
+		strictness ComputePolicyStrictness
+		topology   string
+	}{
+		{
+			name:       "preferred host affinity",
+			response:   `{"capability":"com.vmware.vcenter.compute.policies.capabilities.vm_vm_affinity_v2","strictness":"PREFERRED_DURING_PLACEMENT_PREFERRED_DURING_EXECUTION","topology":{"@type":"vim.vm.VmPlacementPolicy.VmPlacementPolicyTopology","@enum":"Host"},"vm_selector":{"tag":{"tag_id":"vm-tag"}}}`,
+			capability: ComputePolicyCapabilityVMVMAffinity,
+			strictness: ComputePolicyStrictnessPreferredDuringPlacementPreferredDuringExecution,
+			topology:   "Host",
+		},
+		{
+			name:       "required host affinity",
+			response:   `{"capability":"com.vmware.vcenter.compute.policies.capabilities.vm_vm_affinity_v2","strictness":"REQUIRED_DURING_PLACEMENT_PREFERRED_DURING_EXECUTION","topology":{"@enum":"Host"},"vm_selector":{"tag":{"tag_id":"vm-tag"}}}`,
+			capability: ComputePolicyCapabilityVMVMAffinity,
+			strictness: ComputePolicyStrictnessRequiredDuringPlacementPreferredDuringExecution,
+			topology:   "Host",
+		},
+		{
+			name:       "preferred host grouped anti-affinity",
+			response:   `{"capability":"com.vmware.vcenter.compute.policies.capabilities.vm.placement.vm_to_vm_groups_anti_affinity","strictness":"PREFERRED_DURING_PLACEMENT_PREFERRED_DURING_EXECUTION","topology":{"@enum":"Host"},"vm_selector":{"tag":{"tag_id":"vm-tag"}},"anti_affined_vm_selectors":[{"tag":{"tag_id":"target-tag"}}]}`,
+			capability: ComputePolicyCapabilityVMToVMGroupsAntiAffinity,
+			strictness: ComputePolicyStrictnessPreferredDuringPlacementPreferredDuringExecution,
+			topology:   "Host",
+		},
+		{
+			name:       "required zone affinity",
+			response:   `{"capability":"com.vmware.vcenter.compute.policies.capabilities.vm_vm_affinity_v2","strictness":"REQUIRED_DURING_PLACEMENT_PREFERRED_DURING_EXECUTION","topology":{"@enum":"VSphereZone"},"vm_selector":{"tag":{"tag_id":"vm-tag"}}}`,
+			capability: ComputePolicyCapabilityVMVMAffinity,
+			strictness: ComputePolicyStrictnessRequiredDuringPlacementPreferredDuringExecution,
+			topology:   "VSphereZone",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &computePolicyCommandRunner{response: []byte(tc.response)}
+			client := &wcpDcliClient{dcliClient: runner}
+			info, err := client.GetComputePolicy("policy-id")
+			if err != nil {
+				t.Fatal(err)
+			}
+			const expectedCommand = "com vmware vcenter compute policies get --policy policy-id +show-unreleased +formatter json"
+			if command := strings.Join(strings.Fields(runner.command), " "); command != expectedCommand {
+				t.Fatalf("unexpected command: %s", command)
+			}
+			if info.Capability != tc.capability || info.Strictness != tc.strictness || info.Topology.Value != tc.topology || info.VMSelector.Tag.ID != "vm-tag" {
+				t.Fatalf("unexpected policy fields: %+v", info)
+			}
+		})
+	}
+}
+
+func TestGetComputePolicyErrors(t *testing.T) {
+	commandErr := errors.New("policy lookup failed")
+	for _, tc := range []struct {
+		name     string
+		response string
+		err      error
+		context  string
+	}{
+		{name: "command failure", response: "policy not found", err: commandErr, context: `get compute policy "policy-id"`},
+		{name: "invalid JSON", response: `{`, context: `decode compute policy "policy-id"`},
+		{name: "invalid topology", response: `{"topology":"Host"}`, context: `decode compute policy "policy-id"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &computePolicyCommandRunner{response: []byte(tc.response), err: tc.err}
+			client := &wcpDcliClient{dcliClient: runner}
+			_, err := client.GetComputePolicy("policy-id")
+			if err == nil || !strings.Contains(err.Error(), tc.context) {
+				t.Fatalf("expected contextual error %q, got %v", tc.context, err)
+			}
+			if tc.err != nil && !errors.Is(err, tc.err) {
+				t.Fatalf("command error was not preserved: %v", err)
+			}
+		})
+	}
+}
+
+type computePolicyCommandRunner struct {
+	dcli.DCLICommandRunner
+	response []byte
+	err      error
+	command  string
+}
+
+func (r *computePolicyCommandRunner) RunDCLICommand(command string) ([]byte, error) {
+	r.command = command
+	return r.response, r.err
+}

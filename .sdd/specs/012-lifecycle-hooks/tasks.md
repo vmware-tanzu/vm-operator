@@ -41,17 +41,29 @@ Nothing outside `pkg/lifecycle` calls the library in this change set, so it has 
 - [x] T019 Add `pkg/lifecycle/{lifecycle_suite_test.go,stage_test.go}` covering every decision-table row including the `HookFailed` release-and-retry loop and ResourceDelete keeping the finalizer on `HookFailed`, optimistic-lock conflicts, evaluation failure, abandon, release, capability-off call counts, and the predicate
 - [x] T020 [P] Add `pkg/lifecycle/stages_test.go` covering create, drift overwrite, unchanged object not written, capability off, and publish failure
 
+## Controller: watch, adopt, release (`controllers/virtualmachine/virtualmachine`)
+
+An independently testable slice. With the capability on and a `LifecycleState` bound to a VM, VM Operator reconciles the VM when the `LifecycleState` status changes, adopts it by adding its finalizer, logs what it read, and removes its finalizer when the VM is deleted. No stage is paused or held: the Create, PowerStateChange, Delete and ResourceDelete gates are not part of this change set, so no VM operation is blocked.
+
+- [x] T021 Add `+kubebuilder:rbac` markers for `lifecyclestates` (get, list, watch, create, patch, delete) and `lifecyclesubscribedstages` (get, list, watch) to `virtualmachine_controller.go`; regenerate `config/rbac/role.yaml` with `make generate-manifests`
+- [x] T022 Add an `APIReader client.Reader` field to `Reconciler`, set from `mgr.GetAPIReader()` through a new `NewReconciler` parameter; update the existing unit-test caller
+- [x] T023 Add the `LifecycleState` watch to `AddToManager`, gated on `Features.LifecycleHooks`: `EnqueueRequestForOwner` with `lifecycle.StatusChangedPredicate{}`
+- [x] T024 `ReconcileNormal`: after the pause-annotation and VM-finalizer-add returns, call `GetOrCreateLifecycleState` once so a `LifecycleState` is adopted (finalizer added); return its error. Log the `LifecycleState` name and its stages' `workflowPaused`/`workflowResumed` and `HooksReady` at info level
+- [x] T025 `ReconcileDelete`: after the pause and `delete.check` early returns and before the VM finalizers are removed, call `GetOrCreateLifecycleState` and then `ReleaseLifecycleState` (with `APIReader`), and log the release. It is also called with the capability off. A `ReleaseLifecycleState` error is returned and the VM finalizers are kept
+- [x] T026 Add unit tests to `virtualmachine_controller_unit_test.go` (`testlabels.Controller`): adoption adds the finalizer; delete removes only VM Operator's finalizer and keeps others; capability off does only the `APIReader` read; error keeps the VM finalizers
+- [x] T027 [P] Add an envtest case (`testlabels.EnvTest`) in the controller's intg test: a `LifecycleState` status change re-queues the owning VM; VM Operator's own `spec` write does not
+
 ## Not in this change set
 
 Tracked for follow-up PRs, derived from `plan.md`'s "Controller / webhook impact" and "Test strategy" sections:
 
 - `vmutil.IsRestartDue` split out of `RestartAndWait`
   (`pkg/util/vsphere/vm/power_state.go`)
-- Create, PowerStateChange, Delete and ResourceDelete gate call sites in
-  `pkg/providers/vsphere/vmprovider_vm.go` and
-  `controllers/virtualmachine/virtualmachine/virtualmachine_controller.go`
-  (RBAC, `LifecycleState` watch, `APIReader` field, ResourceDelete gate,
-  Delete event suppression)
+- Create, PowerStateChange and Delete gate call sites in
+  `pkg/providers/vsphere/vmprovider_vm.go`
+- Create, PowerStateChange, Delete and ResourceDelete stage gates, `AbandonStage`
+  call sites, `ReconcileStage` use in the controller, and Delete event
+  suppression (`hooksBlocked`)
 - `initLifecycleStages()` in `main.go` after `initCRDs()`
 - `test/builder/fakelifecycle/` (test-only fake Lifecycle Operator)
 - `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`,

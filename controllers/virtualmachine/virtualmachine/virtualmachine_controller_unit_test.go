@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	lifecyclev1 "github.com/vmware-tanzu/vm-operator/external/lifecycle/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -28,6 +29,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	"github.com/vmware-tanzu/vm-operator/pkg/lifecycle"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
@@ -38,7 +40,27 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-const finalizer = "vmoperator.vmware.com/virtualmachine"
+const (
+	finalizer           = "vmoperator.vmware.com/virtualmachine"
+	stateFinalizer      = "lifecycle.vcfa.vmware.com/vm-operator-state"
+	otherStateFinalizer = "example.com/other"
+)
+
+// countingReader counts the Get calls made through it.
+type countingReader struct {
+	client.Reader
+	gets int
+}
+
+func (c *countingReader) Get(
+	ctx context.Context,
+	key client.ObjectKey,
+	obj client.Object,
+	opts ...client.GetOption) error {
+
+	c.gets++
+	return c.Reader.Get(ctx, key, obj, opts...)
+}
 
 func unitTests() {
 	Describe(
@@ -124,6 +146,7 @@ func unitTestsReconcile() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
+			ctx.Client,
 			ctx.VMProvider,
 			fakeProbeManagerIf)
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
@@ -580,6 +603,105 @@ func unitTestsReconcile() {
 			It("will delete the created VM and will not emit corresponding event", func() {
 				Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
 				doNotExpectEvent(ctx, "DeleteSuccess")
+			})
+		})
+	})
+
+	Context("LifecycleState", func() {
+		var (
+			state     *lifecyclev1.LifecycleState
+			apiReader *countingReader
+			capOn     bool
+		)
+
+		getState := func() *lifecyclev1.LifecycleState {
+			got := &lifecyclev1.LifecycleState{}
+			ExpectWithOffset(1, ctx.Client.Get(
+				ctx, client.ObjectKeyFromObject(state), got)).To(Succeed())
+			return got
+		}
+
+		BeforeEach(func() {
+			capOn = true
+			vm.UID = "dummy-vm-uid"
+
+			isController := true
+			state = &lifecyclev1.LifecycleState{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: vm.Namespace,
+					Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, vm.UID),
+					Labels: map[string]string{
+						lifecycle.TargetGroupLabel: lifecycle.TargetGroup,
+						lifecycle.TargetKindLabel:  lifecycle.TargetKind,
+					},
+					Finalizers: []string{otherStateFinalizer},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: vmopv1.GroupVersion.String(),
+						Kind:       lifecycle.TargetKind,
+						Name:       vm.Name,
+						UID:        vm.UID,
+						Controller: &isController,
+					}},
+				},
+				Spec: lifecyclev1.LifecycleStateSpec{
+					Stages: []lifecyclev1.StageSpec{{Name: lifecycle.StageCreate}},
+				},
+			}
+			initObjects = append(initObjects, vm, state)
+		})
+
+		JustBeforeEach(func() {
+			pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+				config.Features.LifecycleHooks = capOn
+			})
+			apiReader = &countingReader{Reader: ctx.Client}
+			reconciler.APIReader = apiReader
+		})
+
+		When("the capability is on", func() {
+			It("adopts the LifecycleState on ReconcileNormal", func() {
+				Expect(reconciler.ReconcileNormal(vmCtx)).To(Succeed())
+				Expect(getState().Finalizers).To(ConsistOf(otherStateFinalizer, stateFinalizer))
+			})
+
+			It("removes only VM Operator's finalizer on ReconcileDelete", func() {
+				Expect(reconciler.ReconcileNormal(vmCtx)).To(Succeed())
+				Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+
+				Expect(getState().Finalizers).To(ConsistOf(otherStateFinalizer))
+				Expect(vm.Finalizers).ToNot(ContainElement(finalizer))
+			})
+
+			When("the LifecycleState is not bound to the VM", func() {
+				BeforeEach(func() {
+					state.OwnerReferences = nil
+				})
+
+				It("keeps the VM finalizers on ReconcileDelete", func() {
+					Expect(reconciler.ReconcileDelete(vmCtx)).To(MatchError(
+						ContainSubstring("is not bound to VirtualMachine")))
+					Expect(vm.Finalizers).To(ContainElement(finalizer))
+				})
+			})
+		})
+
+		When("the capability is off", func() {
+			BeforeEach(func() {
+				capOn = false
+				state.Finalizers = append(state.Finalizers, stateFinalizer)
+			})
+
+			It("does not touch the LifecycleState on ReconcileNormal", func() {
+				Expect(reconciler.ReconcileNormal(vmCtx)).To(Succeed())
+				Expect(apiReader.gets).To(BeZero())
+				Expect(getState().Finalizers).To(ConsistOf(otherStateFinalizer, stateFinalizer))
+			})
+
+			It("releases through the APIReader on ReconcileDelete", func() {
+				Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+				Expect(apiReader.gets).To(Equal(1))
+				Expect(getState().Finalizers).To(ConsistOf(otherStateFinalizer))
+				Expect(vm.Finalizers).ToNot(ContainElement(finalizer))
 			})
 		})
 	})

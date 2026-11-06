@@ -24,16 +24,19 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2/textlogger"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
+	lifecyclev1 "github.com/vmware-tanzu/vm-operator/external/lifecycle/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	"github.com/vmware-tanzu/vm-operator/pkg/lifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -138,6 +141,93 @@ func intgTestsReconcile() {
 				} else {
 					Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				}
+			})
+		})
+
+		Context("LifecycleState", func() {
+			It("adopts a LifecycleState and reconciles on its status changes only", func() {
+				var reconciles int32
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+						atomic.AddInt32(&reconciles, 1)
+						// Without Created, the VM requeues itself and the
+						// reconcile counts below are unreliable.
+						conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+						return nil
+					},
+				)
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+				waitForVirtualMachineFinalizer(ctx, vmKey)
+
+				createdVM := getVirtualMachine(ctx, vmKey)
+				Expect(createdVM).ToNot(BeNil())
+
+				state := &lifecyclev1.LifecycleState{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vm.Namespace,
+						Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, createdVM.UID),
+						Labels: map[string]string{
+							lifecycle.TargetGroupLabel: lifecycle.TargetGroup,
+							lifecycle.TargetKindLabel:  lifecycle.TargetKind,
+						},
+					},
+					Spec: lifecyclev1.LifecycleStateSpec{
+						Stages: []lifecyclev1.StageSpec{{Name: lifecycle.StageCreate}},
+					},
+				}
+				Expect(controllerutil.SetControllerReference(
+					createdVM,
+					state,
+					ctx.Client.Scheme(),
+					controllerutil.WithBlockOwnerDeletion(false))).To(Succeed())
+				Expect(ctx.Client.Create(ctx, state)).To(Succeed())
+				stateKey := client.ObjectKeyFromObject(state)
+
+				By("VM Operator adopts the LifecycleState", func() {
+					Eventually(func(g Gomega) {
+						g.Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+						g.Expect(state.Finalizers).To(ContainElement(
+							"lifecycle.vcfa.vmware.com/vm-operator-state"))
+					}).Should(Succeed())
+				})
+
+				By("VM Operator's own spec write does not requeue the VM", func() {
+					// Wait for the reconcile that adopted the object to finish.
+					last := int32(-1)
+					Eventually(func() bool {
+						cur := atomic.LoadInt32(&reconciles)
+						settled := cur == last
+						last = cur
+						return settled
+					}, "10s", "1s").Should(BeTrue())
+
+					before := atomic.LoadInt32(&reconciles)
+					Consistently(func() int32 {
+						return atomic.LoadInt32(&reconciles)
+					}, "2s").Should(Equal(before))
+				})
+
+				By("a status change requeues the VM", func() {
+					before := atomic.LoadInt32(&reconciles)
+					Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+					state.Status.Stages = []lifecyclev1.StageStatus{{
+						Name: lifecycle.StageCreate,
+						Conditions: []metav1.Condition{{
+							Type:               lifecycle.HooksReadyConditionType,
+							Status:             metav1.ConditionTrue,
+							Reason:             "AllHooksDone",
+							LastTransitionTime: metav1.Now(),
+						}},
+					}}
+					Expect(ctx.Client.Status().Update(ctx, state)).To(Succeed())
+
+					Eventually(func() int32 {
+						return atomic.LoadInt32(&reconciles)
+					}).Should(BeNumerically(">", before))
+				})
 			})
 		})
 

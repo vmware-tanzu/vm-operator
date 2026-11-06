@@ -33,6 +33,7 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 				config.PoweredOnVMHasIPRequeueDelay = 1 * time.Second
 				config.AsyncSignalEnabled = false
 				config.AsyncCreateEnabled = false
+				config.Features.LifecycleHooks = true
 			}))),
 	virtualmachine.AddToManager,
 	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {

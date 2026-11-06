@@ -236,6 +236,25 @@ rules:
   - get
   - patch
 - apiGroups:
+  - lifecycle.vcfa.vmware.com
+  resources:
+  - lifecyclestates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - lifecycle.vcfa.vmware.com
+  resources:
+  - lifecyclesubscribedstages
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - netoperator.vmware.com
   resources:
   - networkinterfaces

@@ -1,0 +1,347 @@
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package vcenter
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/vmware/govmomi/crypto"
+	"github.com/vmware/govmomi/fault"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/pbm"
+	"github.com/vmware/govmomi/pbm/types"
+	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+)
+
+const (
+	encryptionCapabilityID        = "ad5a249d-cbc2-43af-9366-694d7664fa52"
+	encryptionCapabilityNamespace = "com.vmware.storageprofile.dataservice"
+	vSANDirectTypeID              = "vSANDirectType"
+	vSANDirect                    = "vSANDirect"
+	volumeAllocationNamespace     = "com.vmware.storage.volumeallocation"
+	volumeAllocationTypeID        = "VolumeAllocationType"
+	fullyInitializedValue         = "Fully initialized"
+	datastoreTypeVSAND            = "vsanD"
+	datastoreTypeVSAN             = "vsan"
+)
+
+// GetStoragePolicyIDFromName looks up a storage profile by name and returns its ID.
+// Useful when configuring WCP namespaces with storage profiles.
+func GetStoragePolicyIDFromName(client *vim25.Client, profileName string) (string, error) {
+	pbmClient, err := pbm.NewClient(context.Background(), client)
+	if err != nil {
+		return "", err
+	}
+
+	return pbmClient.ProfileIDByName(context.Background(), profileName)
+}
+
+// GetOrCreateEncryptionStoragePolicy Gets already created Encryption Storage Policy ID or creates one if not found.
+func GetOrCreateEncryptionStoragePolicy(ctx context.Context, client *vim25.Client, profileName, wcpProfileID string) (string, error) {
+	pbmClient, err := pbm.NewClient(ctx, client)
+	if err != nil {
+		return "", err
+	}
+
+	policyID, err := pbmClient.ProfileIDByName(ctx, profileName)
+	if err == nil {
+		return policyID, nil
+	}
+
+	if !strings.Contains(err.Error(), "no pbm profile found") {
+		return "", err
+	}
+
+	m, err := pbmClient.ProfileMap(ctx, wcpProfileID)
+	if err != nil {
+		return "", err
+	}
+
+	wcpProfile := m.Profile[0]
+
+	createSpec, err := pbm.CreateCapabilityProfileSpec(pbm.CapabilityProfileCreateSpec{
+		Name:           profileName,
+		SubProfileName: "Host based services",
+		Description:    "Encryption storage profile + " + wcpProfile.GetPbmProfile().Description,
+		CapabilityList: []pbm.Capability{{
+			ID:        encryptionCapabilityID,
+			Namespace: encryptionCapabilityNamespace,
+			PropertyList: []pbm.Property{{
+				ID:       encryptionCapabilityID,
+				Value:    encryptionCapabilityID, // Value is same as ID in this case
+				DataType: "string",
+			}},
+		}},
+		Category: string(types.PbmProfileCategoryEnumREQUIREMENT),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// Add wcpProfileID's capabilities - tagged shared datastore (sharedVmfs-0 / vsanDatastore)
+	// To see the result: govc storage.policy.info -dump "VM Service Encryption Policy"
+	subProfile := &createSpec.Constraints.(*types.PbmCapabilitySubProfileConstraints).SubProfiles[0]
+	if p, ok := wcpProfile.(*types.PbmCapabilityProfile); ok {
+		if c, ok := p.Constraints.(*types.PbmCapabilitySubProfileConstraints); ok {
+			subProfile.Capability = append(subProfile.Capability, c.SubProfiles[0].Capability...)
+		}
+	}
+
+	return createPbmProfile(ctx, pbmClient, profileName, *createSpec)
+}
+
+// GetOrCreateEZTStoragePolicy Gets already created EZT (Eager Zeroed Thick)
+// Storage Policy ID or creates one if not found. This creates a storage policy
+// with VMFS "Fully initialized" volume allocation and inherits datastore placement
+// tags from the base WCP profile.
+func GetOrCreateEZTStoragePolicy(ctx context.Context, client *vim25.Client, profileName, wcpProfileID string) (string, error) {
+	pbmClient, err := pbm.NewClient(ctx, client)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if policy already exists.
+	policyID, err := pbmClient.ProfileIDByName(ctx, profileName)
+	if err == nil {
+		return policyID, nil
+	}
+
+	// Check for not found error only then proceed for create.
+	if !strings.Contains(err.Error(), "no pbm profile found") {
+		return "", err
+	}
+
+	// Get the base WCP profile to inherit datastore tag/category capabilities.
+	m, err := pbmClient.ProfileMap(ctx, wcpProfileID)
+	if err != nil {
+		return "", err
+	}
+
+	wcpProfile := m.Profile[0]
+
+	// Create storage policy with VMFS "Fully initialized" (EZT) volume allocation.
+	createSpec, err := pbm.CreateCapabilityProfileSpec(pbm.CapabilityProfileCreateSpec{
+		Name:           profileName,
+		SubProfileName: "VMFS rules",
+		Description:    "EZT storage profile + " + wcpProfile.GetPbmProfile().Description,
+		CapabilityList: []pbm.Capability{{
+			ID:        volumeAllocationTypeID,
+			Namespace: volumeAllocationNamespace,
+			PropertyList: []pbm.Property{{
+				ID:       volumeAllocationTypeID,
+				Value:    fullyInitializedValue, // "Fully initialized" = Eager Zeroed Thick
+				DataType: "string",
+			}},
+		}},
+		Category: string(types.PbmProfileCategoryEnumREQUIREMENT),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// Add wcpProfileID's capabilities - tagged shared datastore (for placement).
+	// This inherits the tag/category from the base WCP profile
+	// (e.g., wcpglobal_tag/wcpglobal_tag_category).
+	subProfile := &createSpec.Constraints.(*types.PbmCapabilitySubProfileConstraints).SubProfiles[0]
+	if p, ok := wcpProfile.(*types.PbmCapabilityProfile); ok {
+		if c, ok := p.Constraints.(*types.PbmCapabilitySubProfileConstraints); ok {
+			// Copy all capabilities from the base profile (includes datastore tags)
+			subProfile.Capability = append(subProfile.Capability, c.SubProfiles[0].Capability...)
+		}
+	}
+
+	return createPbmProfile(ctx, pbmClient, profileName, *createSpec)
+}
+
+// createPbmProfile creates a PBM profile from spec and returns
+// its ID. If a concurrent caller wins the create race (e.g. a sibling e2e
+// shard provisioning the same globally-named policy against the same shared
+// vCenter), the profile now exists, so its ID is resolved instead of failing.
+// All callers of this helper build their base capabilities from the same
+// e2e config resolved against the same shared testbed, so the winner's
+// profile is guaranteed to match what this caller would have created.
+func createPbmProfile(
+	ctx context.Context,
+	pbmClient *pbm.Client,
+	profileName string,
+	spec types.PbmCapabilityProfileCreateSpec) (string, error) {
+
+	profile, err := pbmClient.CreateProfile(ctx, spec)
+	if err != nil {
+		if isPbmDuplicateNameFault(err) {
+			return pbmClient.ProfileIDByName(ctx, profileName)
+		}
+		return "", err
+	}
+
+	return profile.UniqueId, nil
+}
+
+// isPbmDuplicateNameFault reports whether err is a PBM CreateProfile failure
+// because a profile with the requested name already exists.
+func isPbmDuplicateNameFault(err error) bool {
+	var dn *types.PbmDuplicateName
+	if _, ok := fault.As(err, &dn); ok {
+		return true
+	}
+
+	var dnf *types.PbmDuplicateNameFault
+	_, ok := fault.As(err, &dnf)
+	return ok
+}
+
+// GetOrCreateVsanDirectStoragePolicyID Gets already created VSAN Direct Storage Policy ID or Creates one if not found.
+func GetOrCreateVsanDirectStoragePolicyID(ctx context.Context, client *vim25.Client, profileName string) (string, error) {
+	pbmClient, err := pbm.NewClient(ctx, client)
+	if err != nil {
+		return "", err
+	}
+
+	policyID, err := pbmClient.ProfileIDByName(ctx, profileName)
+	if err == nil {
+		return policyID, nil
+	}
+	// Check for not found error only then proceed for create
+	if !strings.Contains(err.Error(), "no pbm profile found") {
+		return "", err
+	}
+
+	createSpec, err := pbm.CreateCapabilityProfileSpec(pbm.CapabilityProfileCreateSpec{
+		Name:           profileName,
+		SubProfileName: "Storage sub profile",
+		Description:    "vSAN Direct Storage profile",
+		CapabilityList: []pbm.Capability{{
+			ID:        vSANDirectTypeID,
+			Namespace: vSANDirect,
+			PropertyList: []pbm.Property{{
+				ID:       vSANDirectTypeID,
+				Value:    vSANDirect,
+				DataType: "string",
+			}},
+		}},
+		Category: string(types.PbmProfileCategoryEnumREQUIREMENT),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return createPbmProfile(ctx, pbmClient, profileName, *createSpec)
+}
+
+// IsVSANDEnabledCluster checks if given wcp enabled cluster is enabled with vsand capability.
+func IsVSANDEnabledCluster(ctx context.Context, client *vim25.Client, kubeconfigPath string) (bool, error) {
+	return isDatastoreTypeEnabledOnCluster(ctx, client, kubeconfigPath, datastoreTypeVSAND)
+}
+
+// IsVSANEnabledCluster checks if given wcp enabled cluster is enabled with vsan capability.
+func IsVSANEnabledCluster(ctx context.Context, client *vim25.Client, kubeconfigPath string) (bool, error) {
+	return isDatastoreTypeEnabledOnCluster(ctx, client, kubeconfigPath, datastoreTypeVSAN)
+}
+
+func isDatastoreTypeEnabledOnCluster(ctx context.Context, client *vim25.Client, kubeconfigPath, datastoreType string) (bool, error) {
+	clusterMOID := GetClusterMoIDFromKubeconfig(ctx, kubeconfigPath)
+	if clusterMOID == "" {
+		return false, errors.New("could not fetch cluster moid from wcp cluster config")
+	}
+
+	cluster := object.NewClusterComputeResource(
+		client,
+		vimtypes.ManagedObjectReference{
+			Type:  "ClusterComputeResource",
+			Value: clusterMOID,
+		},
+	)
+	return clusterConfiguredWithDatastoreType(ctx, cluster, datastoreType)
+}
+
+func clusterConfiguredWithDatastoreType(ctx context.Context, cluster *object.ClusterComputeResource, datastoreType string) (bool, error) {
+	var cr mo.ComputeResource
+	if err := cluster.Properties(ctx, cluster.Reference(), []string{"datastore"}, &cr); err != nil {
+		return false, err
+	}
+
+	if len(cr.Datastore) == 0 {
+		return false, errors.New("no datastores in cluster")
+	}
+
+	var datastores []mo.Datastore
+	pc := property.DefaultCollector(cluster.Client())
+	if err := pc.Retrieve(ctx, cr.Datastore, []string{"summary"}, &datastores); err != nil {
+		return false, err
+	}
+
+	for _, d := range datastores {
+		if d.Summary.Type == datastoreType {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// NativeKeyProviderManager is implemented by anything that can create and
+// delete a native key provider by name (e.g. the WCP dcli client).
+type NativeKeyProviderManager interface {
+	CreateKeyProvider(provider string) error
+	DeleteKeyProvider(provider string) error
+	// BackupKeyProvider exports (backs up) the native key provider. vCenter
+	// requires a backup before the provider can be used for encryption.
+	BackupKeyProvider(provider string) error
+}
+
+// EnsureNativeKeyProvider ensures a native (vSphere-native) key provider with
+// the given providerID exists. It first checks for the provider via the vSphere
+// KMIP API (a read-only SOAP call), and if absent, creates it using the
+// supplied NativeKeyProviderManager. After creation it also backs up the
+// provider and enables encryption on all hosts, both of which are required by
+// vCenter before any VM can be encrypted with the provider. It returns a
+// cleanup function that deletes the provider if (and only if) this call created
+// it.
+func EnsureNativeKeyProvider(ctx context.Context, client *vim25.Client, mgr NativeKeyProviderManager, providerID string) (func(), error) {
+	m := crypto.NewManagerKmip(client)
+	existing, err := m.ListKmipServers(ctx, nil)
+	if err != nil {
+		return func() {}, err
+	}
+
+	alreadyExists := false
+	for _, c := range existing {
+		if c.ClusterId.Id == providerID {
+			alreadyExists = true
+			break
+		}
+	}
+
+	if !alreadyExists {
+		if err := mgr.CreateKeyProvider(providerID); err != nil {
+			return func() {}, err
+		}
+	}
+
+	// vCenter requires the native key provider to be backed up before it can
+	// be used for encryption. This is idempotent — backing up an already-backed
+	// up provider is a no-op.
+	if err := mgr.BackupKeyProvider(providerID); err != nil {
+		if !alreadyExists {
+			_ = mgr.DeleteKeyProvider(providerID)
+		}
+		return func() {}, fmt.Errorf("failed to backup key provider %q: %w", providerID, err)
+	}
+
+	if alreadyExists {
+		// Pre-existing provider — nothing to clean up.
+		return func() {}, nil
+	}
+
+	cleanup := func() {
+		_ = mgr.DeleteKeyProvider(providerID)
+	}
+	return cleanup, nil
+}

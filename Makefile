@@ -4,7 +4,8 @@ SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
 # The list of goals that do not require Golang.
-NON_GO_GOALS := lint-markdown lint-shell
+# e2e image targets are Docker-only; all Go compilation happens inside the container.
+NON_GO_GOALS := lint-markdown lint-shell e2e-%
 
 # If one of the goals that require golang is present and the
 # Go binary is not in the path, then print an error message
@@ -106,6 +107,16 @@ IMAGE ?= vmoperator-controller
 IMAGE_TAG ?= latest
 IMG ?= ${IMAGE}:${IMAGE_TAG}
 
+# E2E test image configuration
+E2E_BASE_IMAGE ?= mirror.gcr.io/library/photon:5.0
+E2E_IMAGE ?= vmoperator-e2e
+E2E_IMG ?= ${E2E_IMAGE}:${IMAGE_TAG}
+
+E2E_KUBECTL_VERSION ?= v1.36.0
+
+PACKER_PLUGIN_VSPHERE_REPO ?= https://github.com/vmware/packer-plugin-vsphere.git
+PACKER_PLUGIN_VSPHERE_REF  ?= v2.1.1
+
 # Code coverage files
 COVERAGE_FILE ?= cover.out
 
@@ -160,8 +171,8 @@ NET_OP_API_SLUG := github.com/vmware-tanzu/net-operator-api
 BUILD_TYPE ?= dev
 BUILD_NUMBER ?= 00000000
 
-BUILD_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
-BUILD_COMMIT ?= $(shell git rev-parse --short HEAD)
+BUILD_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+BUILD_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 # ex. 1.2.3+abcdefg+4.5.6+hijklmn
 ifeq (,$(strip $(PRDCT_VERSION)))
@@ -306,6 +317,7 @@ GO_MOD_DIRS_TO_LINT := $(GO_MOD_DIRS)
 GO_MOD_DIRS_TO_LINT := $(filter-out ./external%,$(GO_MOD_DIRS_TO_LINT))
 GO_MOD_DIRS_TO_LINT := $(filter-out ./hack/tools%,$(GO_MOD_DIRS_TO_LINT))
 GO_MOD_DIRS_TO_LINT := $(filter-out ./api-docs%,$(GO_MOD_DIRS_TO_LINT))
+GO_MOD_DIRS_TO_LINT := $(filter-out ./packer-plugin-vsphere-src%,$(GO_MOD_DIRS_TO_LINT))
 GO_LINT_DIR_TARGETS := $(addprefix lint-,$(GO_MOD_DIRS_TO_LINT))
 
 .PHONY: $(GO_LINT_DIR_TARGETS)
@@ -926,3 +938,102 @@ verify-local-manifests: ## Verify the local manifests
 .PHONY: verify-wcp-manifests
 verify-wcp-manifests: ## Verify the WCP manifests
 	VERIFY_MANIFESTS=true $(MAKE) deploy-wcp
+
+## --------------------------------------
+## E2E Tests
+## --------------------------------------
+
+.PHONY: e2e-image-build
+e2e-image-build: GOOS=linux
+e2e-image-build: ## Build E2E test container image
+	@echo "Building VM Operator E2E test image..."
+	@# Stage kubectl into the build context. This is to support passing the kubectl binary from the build system.
+	@if [ ! -s kubectl ]; then \
+		echo "Downloading kubectl $(E2E_KUBECTL_VERSION)..."; \
+		curl -fsSL "https://dl.k8s.io/release/$(E2E_KUBECTL_VERSION)/bin/linux/amd64/kubectl" -o kubectl && chmod +x kubectl; \
+	fi
+	@# Stage packer-plugin-vsphere source into the build context so the Dockerfile
+	@# can compile it without needing git credentials inside the Docker build.
+	@# Re-clone if the directory is absent or the checked-out ref doesn't match.
+	@if [ ! -d packer-plugin-vsphere-src ] || \
+	    ! git -C packer-plugin-vsphere-src describe --tags --exact-match 2>/dev/null | grep -qF "$(PACKER_PLUGIN_VSPHERE_REF)"; then \
+		echo "Cloning packer-plugin-vsphere $(PACKER_PLUGIN_VSPHERE_REF)..."; \
+		rm -rf packer-plugin-vsphere-src; \
+		git clone --depth=1 --branch $(PACKER_PLUGIN_VSPHERE_REF) $(PACKER_PLUGIN_VSPHERE_REPO) packer-plugin-vsphere-src; \
+	fi
+	$(CRI_BIN) build \
+	  -f Dockerfile.e2e \
+	  -t "$(E2E_IMAGE):$(IMAGE_TAG)" \
+	  -t "$(E2E_IMAGE):$(BUILD_NUMBER)" \
+	  -t "$(E2E_IMAGE):$(IMAGE_VERSION)" \
+	  --build-arg BUILD_BRANCH="$(BUILD_BRANCH)" \
+	  --build-arg BUILD_COMMIT="$(BUILD_COMMIT)" \
+	  --build-arg BUILD_NUMBER="$(BUILD_NUMBER)" \
+	  --build-arg BUILD_VERSION="$(BUILD_VERSION)" \
+	  --build-arg BASE_IMAGE="$(E2E_BASE_IMAGE)" \
+	  $(ADDITIONAL_CRI_BUILD_FLAGS) \
+	  .
+	@if [ -n "$(IMAGE_FILE)" ]; then \
+		mkdir -p "$$(dirname "$(IMAGE_FILE)")"; \
+		$(CRI_BIN) save "$(E2E_IMAGE):$(IMAGE_VERSION)" -o "$(IMAGE_FILE)"; \
+	fi
+	@echo "✅ E2E image build complete: $(E2E_IMAGE):$(IMAGE_TAG)"
+
+.PHONY: e2e-image-push
+e2e-image-push: ## Push E2E test container image
+	$(CRI_BIN) push $(E2E_IMG)
+
+.PHONY: e2e-image-remove
+e2e-image-remove: ## Remove E2E test container image
+	@if [[ "`$(CRI_BIN) images -q $(E2E_IMG) 2>/dev/null`" != "" ]]; then \
+		echo "Remove E2E test container $(E2E_IMG)"; \
+		$(CRI_BIN) rmi $(E2E_IMG); \
+	fi
+
+# E2E Test Environment Variables:
+#   E2E_NAMESPACE          - Use specific namespace for tests (default: random)
+#   TEST_FOCUS             - Ginkgo focus pattern to run specific tests
+#   TEST_SKIP              - Ginkgo skip pattern to exclude tests
+#   LABEL_FILTER           - Ginkgo label filter (e.g., "smoke", "!extended-functional")
+#   FLAKE_ATTEMPTS         - Number of retry attempts for flaky tests
+#   E2E_PREBUILT_BINARY    - Path to `go test -c` output (default: $(ROOT_DIR)e2e-tests)
+#   E2E_ARTIFACT_FOLDER    - Directory for test artifacts/logs (default: /tmp/test_logs)
+#   E2E_ARGS               - Override all e2e binary arguments (e.g. from CI pipelines)
+
+E2E_PREBUILT_BINARY ?= $(ROOT_DIR)e2e-tests
+
+.PHONY: test-e2e
+test-e2e: ## Run e2e tests (auto-detect: prebuilt binary if available, else ginkgo)
+	@if [ -x "$(E2E_PREBUILT_BINARY)" ]; then \
+		$(MAKE) test-e2e-prebuilt; \
+	else \
+		$(MAKE) test-e2e-ginkgo; \
+	fi
+
+.PHONY: test-e2e-prebuilt
+test-e2e-prebuilt: ## Run e2e tests using precompiled binary
+	@test -x "$(E2E_PREBUILT_BINARY)" || { echo "error: $(E2E_PREBUILT_BINARY) missing or not executable."; exit 1; }
+	@ROOT_DIR=$(ROOT_DIR) \
+	    E2E_PREBUILT_BINARY=$(E2E_PREBUILT_BINARY) \
+	    E2E_ARTIFACT_FOLDER=$(E2E_ARTIFACT_FOLDER) \
+	    ./hack/e2e/run-e2e.sh prebuilt
+
+.PHONY: test-e2e-ginkgo
+test-e2e-ginkgo: | $(GINKGO)
+test-e2e-ginkgo: ## Run e2e tests using ginkgo CLI (compile + run)
+	@ROOT_DIR=$(ROOT_DIR) \
+	    GINKGO_BIN=$(GINKGO) \
+	    E2E_ARTIFACT_FOLDER=$(E2E_ARTIFACT_FOLDER) \
+	    ./hack/e2e/run-e2e.sh ginkgo
+
+.PHONY: e2e-smoke
+e2e-smoke: ## Run e2e smoke tests
+	$(MAKE) test-e2e LABEL_FILTER="smoke && !experimental"
+
+.PHONY: e2e-core
+e2e-core: ## Run e2e core functional tests
+	$(MAKE) test-e2e LABEL_FILTER="!smoke && !extended-functional && !experimental"
+
+.PHONY: e2e-extended
+e2e-extended: ## Run e2e extended functional tests
+	$(MAKE) test-e2e LABEL_FILTER="extended-functional && !experimental"

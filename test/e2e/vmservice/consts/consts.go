@@ -1,0 +1,56 @@
+// Copyright (c) 2023-2025 Broadcom. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package consts
+
+const (
+	NSX = "nsx"
+	VDS = "vds"
+
+	NSXNetworkType = "nsx-t"
+	VDSNetworkType = "vsphere-distributed"
+	VPCNetworkType = "nsx-t-vpc"
+
+	DefaultVDSNetworkName = "primary"
+
+	WCP  = "wcp"
+	KIND = "kind"
+
+	VMServiceCLName = "vmservice"
+
+	HTTPProxyEnv          = "HTTP_PROXY"
+	DefaultVMUserName     = "vmware"
+	DefaultVMPassword     = "Admin!23"
+	AllowTCPForwardingKey = "AllowTcpForwarding"
+	SshdConfig            = "/etc/ssh/sshd_config"
+	CmdRestartSSHD        = "systemctl restart sshd"
+	SshPort               = 22
+
+	JumpboxPodVMName = "jumpbox"
+
+	// WindowsSysprepLabel decorates the Windows guest-customization specs
+	// (see vm_guestcustomization.go's "Sysprep" Context) so the suite setup
+	// can preview the filtered spec tree and only precreate the Windows VM
+	// when a spec carrying this label will actually run.
+	WindowsSysprepLabel = "windows-sysprep"
+
+	// VM condition type strings used when waiting on backfill/registration lifecycle.
+	VMUnmanagedVolumesBackfilledCondition = "VirtualMachineUnmanagedVolumesBackfilled"
+	VMUnmanagedVolumesRegisteredCondition = "VirtualMachineUnmanagedVolumesRegistered"
+
+	VMGroupsCapabilityName                   = "supports_VM_service_VM_groups"
+	VirtualMachineSnapshotCapabilityName     = "supports_VM_service_VM_snapshots"
+	VMPlacementPoliciesCapabilityName        = "supports_VM_service_VM_placement_policies"
+	VMAffinityDuringExecutionCapabilityName  = "supports_VM_service_VM_affinity_during_execution"
+	InventoryContentLibraryCapabilityName    = "supports_inventory_content_library"
+	SharedDisksCapabilityName                = "supports_shared_disks_with_VM_service_VMs"
+	AllDisksArePVCapabilityName              = "supports_vm_service_all_disks_are_pvcs"
+	MultiWriterDiskVMotionCapabilityName     = "supports_multiwriter_disk_vmotion"
+	IaaSComputePoliciesCapabilityName        = "supports_iaas_compute_policies"
+	VirtualMachineConfigPolicyCapabilityName = "supports_vm_service_vm_config_policy"
+
+	// ExtensionCompatConstraintCapabilityName gates VM Operator registering
+	// extension-compatibility INVARIANT constraints on VMs it manages; must
+	// match pkg/config/capabilities.CapabilityKeyExtensionCompatConstraint.
+	ExtensionCompatConstraintCapabilityName = "supports_extension_compat_constraint"
+)

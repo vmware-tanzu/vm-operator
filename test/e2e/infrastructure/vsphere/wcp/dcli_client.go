@@ -14,12 +14,13 @@ import (
 	"strings"
 	"time"
 
+	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
-
-	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/vim25/types"
 )
 
 // wcpDcliClient of WorkloadManagementAPI that uses DCLI + SSH to achieve the desired result.
@@ -128,70 +129,137 @@ func newWcpDcliClient(vCenterHostname, username, password, sshUsername, sshPassw
 	}, nil
 }
 
+// vmReservation is the DCLI wire form of a VM class reservation.
+type vmReservation struct {
+	ReservedVMClass string `json:"reserved_vm_class"`
+	Count           int    `json:"count"`
+}
+
+// vmReservations converts a VM class to reserved count map to its wire form.
+// The result is never nil so it always marshals to a JSON array.
+func vmReservations(reservedVMClassToCount map[string]int) []vmReservation {
+	reservations := make([]vmReservation, 0, len(reservedVMClassToCount))
+	for vmClass, count := range reservedVMClassToCount {
+		reservations = append(reservations, vmReservation{ReservedVMClass: vmClass, Count: count})
+	}
+
+	return reservations
+}
+
+// run runs the DCLI command and returns its output. A failure is returned as a
+// DcliError so callers can inspect the raw response with errors.As.
+func (d *wcpDcliClient) run(cmd string) ([]byte, error) {
+	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	if err != nil {
+		return resp, DcliError{
+			rawResponse: string(resp),
+			baseErr:     err,
+		}
+	}
+
+	return resp, nil
+}
+
+// runVoid runs the DCLI command and discards its output.
+func (d *wcpDcliClient) runVoid(cmd string) error {
+	_, err := d.run(cmd)
+	return err
+}
+
+// runJSON runs the DCLI command and decodes its JSON output into out.
+func (d *wcpDcliClient) runJSON(cmd string, out any) error {
+	resp, err := d.run(cmd)
+	if err != nil {
+		return err
+	}
+
+	return types.NewJSONDecoder(bytes.NewReader(resp)).Decode(out)
+}
+
+// runIgnoringAlreadyExists runs the DCLI command, treating an AlreadyExists
+// failure as success so creation is idempotent.
+func (d *wcpDcliClient) runIgnoringAlreadyExists(cmd string) error {
+	resp, err := d.run(cmd)
+	if err != nil && strings.Contains(string(resp), "errors.AlreadyExists") {
+		return nil
+	}
+
+	return err
+}
+
+// retry runs the DCLI command until it succeeds or the timeout expires,
+// returning the last error.
+func (d *wcpDcliClient) retry(cmd string, interval, timeout time.Duration) error {
+	var lastErr error
+
+	_ = wait.PollUntilContextTimeout(context.Background(), interval, timeout, true, func(context.Context) (bool, error) {
+		lastErr = d.runVoid(cmd)
+		return lastErr == nil, nil
+	})
+
+	return lastErr
+}
+
+// shellQuote single-quotes s for a POSIX shell, escaping embedded quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// jsonArg marshals v and shell-quotes the result for use as a flag value.
+func jsonArg(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+
+	return shellQuote(string(b)), nil
+}
+
 func (d *wcpDcliClient) ListSupervisorSummary() (SupervisorSummaryList, error) {
 	cmd := fmt.Sprintf("%s summary list %s", supervisors, jsonFormatter)
 	retVal := SupervisorSummaryList{}
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
 
 func (d *wcpDcliClient) ListClusters() ([]WCPClusterDetails, error) {
-	cmd := fmt.Sprintf("%s clusters list +formatter json", namespaceManagement)
+	cmd := fmt.Sprintf("%s clusters list %s", namespaceManagement, jsonFormatter)
 	retVal := []WCPClusterDetails{}
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
 
 func (d *wcpDcliClient) GetCluster(moID string) (WCPClusterDetails, error) {
-	cmd := fmt.Sprintf("%s clusters get --cluster %s +formatter json", namespaceManagement, moID)
+	cmd := fmt.Sprintf("%s clusters get --cluster %s %s", namespaceManagement, moID, jsonFormatter)
 	retVal := WCPClusterDetails{}
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
 
 func (d *wcpDcliClient) ListNamespaces() ([]NamespaceDetails, error) {
-	cmd := fmt.Sprintf("%s list +formatter json", namespacesInstances)
+	cmd := fmt.Sprintf("%s list %s", namespacesInstances, jsonFormatter)
 	retVal := []NamespaceDetails{}
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
 
 func (d *wcpDcliClient) GetNamespace(name string) (NamespaceDetails, error) {
-	cmd := fmt.Sprintf("%s get --namespace %s +formatter json", namespacesInstances, name)
-
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return NamespaceDetails{}, DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	retVal := NamespaceDetails{}
-	if err = json.Unmarshal(resp, &retVal); err != nil {
-		return NamespaceDetails{}, err
-	}
-
-	return retVal, err
+	return d.getNamespace("get", name)
 }
 
 func (d *wcpDcliClient) GetNamespaceV2(name string) (NamespaceDetails, error) {
-	cmd := fmt.Sprintf("%s getv2 --namespace %s +formatter json", namespacesInstances, name)
+	return d.getNamespace("getv2", name)
+}
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return NamespaceDetails{}, DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
+func (d *wcpDcliClient) getNamespace(verb, name string) (NamespaceDetails, error) {
+	cmd := fmt.Sprintf("%s %s --namespace %s %s", namespacesInstances, verb, name, jsonFormatter)
 
 	retVal := NamespaceDetails{}
-	if err = json.Unmarshal(resp, &retVal); err != nil {
+	if err := d.runJSON(cmd, &retVal); err != nil {
 		return NamespaceDetails{}, err
 	}
 
@@ -208,17 +276,9 @@ func (d *wcpDcliClient) CreateNamespacePermissions(principal Principal, namespac
 		principal.Type,
 	)
 
-	stdout, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		// Treat AlreadyExists as success — this can happen on FlakeAttempts retries
-		// when the previous attempt created the permission before failing at a later step.
-		if strings.Contains(string(stdout), "errors.AlreadyExists") {
-			return nil
-		}
-		return err
-	}
-
-	return nil
+	// Treat AlreadyExists as success — this can happen on FlakeAttempts retries
+	// when the previous attempt created the permission before failing at a later step.
+	return d.runIgnoringAlreadyExists(cmd)
 }
 
 func (d *wcpDcliClient) RemoveNamespacePermissions(principal Principal, namespace string) error {
@@ -229,9 +289,7 @@ func (d *wcpDcliClient) RemoveNamespacePermissions(principal Principal, namespac
 		principal.Name,
 		principal.Type,
 	)
-	_, err := d.dcliClient.RunDCLICommand(cmd)
-
-	return err
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) CreateNamespace(clusterMoid, namespace string) error {
@@ -240,9 +298,7 @@ func (d *wcpDcliClient) CreateNamespace(clusterMoid, namespace string) error {
 		clusterMoid,
 		namespace,
 	)
-	_, err := d.dcliClient.RunDCLICommand(cmd)
-
-	return err
+	return d.runVoid(cmd)
 }
 
 // buildCreateNamespaceCommand is a helper function to build the command string for creating a namespace.
@@ -261,12 +317,12 @@ func (d *wcpDcliClient) buildCreateNamespaceCommand(
 	cmd.WriteString(baseCmd)
 
 	if len(storageSpecs) > 0 {
-		storageSpecBuffer, err := json.Marshal(storageSpecs)
+		storage, err := jsonArg(storageSpecs)
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal storage specs: %w", err)
 		}
 
-		fmt.Fprintf(&cmd, " --storage-specs '%s'", string(storageSpecBuffer))
+		fmt.Fprintf(&cmd, " --storage-specs %s", storage)
 	}
 
 	for _, vmClass := range vmsvcSpec.VMClasses {
@@ -328,12 +384,12 @@ func (d *wcpDcliClient) buildCreateNamespaceBaseCommand(
 					{"path": network.VPCNetwork.VPCSharedSubnetPath},
 				}
 
-				sharedSubnetsJSON, err := json.Marshal(sharedSubnets)
+				sharedSubnetsJSON, err := jsonArg(sharedSubnets)
 				if err != nil {
 					return "", fmt.Errorf("failed to marshal shared subnets: %w", err)
 				}
 
-				cmd += fmt.Sprintf(" --network-spec-vpc-network-shared-subnets '%s'", string(sharedSubnetsJSON))
+				cmd += " --network-spec-vpc-network-shared-subnets " + sharedSubnetsJSON
 			}
 
 			return cmd, nil
@@ -359,14 +415,7 @@ func (d *wcpDcliClient) CreateNamespaceWithSpecs(
 		return err
 	}
 
-	stdout, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		if !strings.Contains(string(stdout), "errors.AlreadyExists") {
-			return err
-		}
-	}
-
-	return nil
+	return d.runIgnoringAlreadyExists(cmd)
 }
 
 // CreateNamespaceWithNetwork creates a namespace with the given specs and network.
@@ -380,42 +429,34 @@ func (d *wcpDcliClient) CreateNamespaceWithNetwork(
 		return err
 	}
 
-	_, err = d.dcliClient.RunDCLICommand(cmd)
-
-	return err
+	return d.runVoid(cmd)
 }
 
 // CreateNamespaceWithVMReservation creates a namespace with the given specs and VM reservations.
 func (d *wcpDcliClient) CreateNamespaceWithVMReservation(namespace, zone, supervisorID string, storageSpecs []StorageSpec, vmsvcSpec VMServiceSpecDetails, vmClassNameToReservedCount map[string]int) error {
-	var cmd strings.Builder
-	fmt.Fprintf(&cmd, "%s %s createv2 --namespace %s --supervisor %s --zones '[{\"name\": \"%s\", \"vm_reservations\": [",
-		namespacesInstances,
-		showUnreleased,
-		namespace,
-		supervisorID,
-		zone)
-
-	for vmClass, count := range vmClassNameToReservedCount {
-		fmt.Fprintf(&cmd, "{\"reserved_vm_class\": \"%s\", \"count\": %d},", vmClass, count)
+	type zoneSpec struct {
+		Name          string          `json:"name"`
+		VMReservation []vmReservation `json:"vm_reservations"`
 	}
 
-	// Remove the last comma in "vm_reservations" if exists.
-	cmdStr := cmd.String()
-	if cmdStr[len(cmdStr)-1] == ',' {
-		cmd.Reset()
-		cmd.WriteString(cmdStr[:len(cmdStr)-1])
-	}
-
-	cmd.WriteString("]}]'")
-
-	// Add storage specs.
-	storageSpecBuffer, err := json.Marshal(storageSpecs)
+	zones, err := jsonArg([]zoneSpec{{Name: zone, VMReservation: vmReservations(vmClassNameToReservedCount)}})
 	if err != nil {
 		return err
 	}
 
-	storageSpecString := string(storageSpecBuffer)
-	fmt.Fprintf(&cmd, " --storage-specs '%s'", storageSpecString)
+	storage, err := jsonArg(storageSpecs)
+	if err != nil {
+		return err
+	}
+
+	var cmd strings.Builder
+	fmt.Fprintf(&cmd, "%s %s createv2 --namespace %s --supervisor %s --zones %s --storage-specs %s",
+		namespacesInstances,
+		showUnreleased,
+		namespace,
+		supervisorID,
+		zones,
+		storage)
 
 	// Add vm service specs (VM Class and Content Library).
 	for _, vmClass := range vmsvcSpec.VMClasses {
@@ -426,22 +467,14 @@ func (d *wcpDcliClient) CreateNamespaceWithVMReservation(namespace, zone, superv
 		fmt.Fprintf(&cmd, " --vm-service-spec-content-libraries %s", clID)
 	}
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd.String())
 }
 
 // ListVSphereZones list all vSphere zones.
 func (d *wcpDcliClient) ListVSphereZones() (VSphereZoneList, error) {
-	cmd := fmt.Sprintf("%s list +formatter json", zones)
+	cmd := fmt.Sprintf("%s list %s", zones, jsonFormatter)
 	retVal := VSphereZoneList{}
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
@@ -450,23 +483,13 @@ func (d *wcpDcliClient) ListVSphereZones() (VSphereZoneList, error) {
 func (d *wcpDcliClient) UpdateNamespaceWithZones(
 	namespace string,
 	zones []ZoneSpec) error {
-	var cmd strings.Builder
-	fmt.Fprintf(&cmd, "%s %s update --namespace %s",
-		namespacesInstances,
-		showUnreleased,
-		namespace)
-
-	zoneSpec, err := json.Marshal(zones)
+	zoneSpec, err := jsonArg(zones)
 	if err != nil {
 		return err
 	}
 
-	zoneSpecString := string(zoneSpec)
-	fmt.Fprintf(&cmd, " --zones '%s'", zoneSpecString)
-
-	_, err = d.dcliClient.RunDCLICommand(cmd.String())
-
-	return err
+	return d.runVoid(fmt.Sprintf("%s %s update --namespace %s --zones %s",
+		namespacesInstances, showUnreleased, namespace, zoneSpec))
 }
 
 // DeleteZoneFromNamespace delete a zone from namespace (Mark Zone for removal).
@@ -480,9 +503,7 @@ func (d *wcpDcliClient) DeleteZoneFromNamespace(
 		namespace,
 		zone)
 
-	_, err := d.dcliClient.RunDCLICommand(cmd.String())
-
-	return err
+	return d.runVoid(cmd.String())
 }
 
 // GetZonesBoundWithSupervisor gets all zones bound with a supervisor.
@@ -495,44 +516,22 @@ func (d *wcpDcliClient) GetZonesBoundWithSupervisor(
 		supervisorID,
 		jsonFormatter)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
-	if err != nil {
-		return ZoneList{}, DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
 	retVal := ZoneList{}
-	if err = json.Unmarshal(resp, &retVal); err != nil {
+	if err := d.runJSON(cmd.String(), &retVal); err != nil {
 		return ZoneList{}, err
 	}
 
-	return retVal, err
+	return retVal, nil
 }
 
 func (d *wcpDcliClient) CreateZoneBindingsWithSupervisor(supervisorID string, zoneBindingSpecs []ZoneBindingSpecs) error {
-	specs, err := json.Marshal(zoneBindingSpecs)
-	Expect(err).NotTo(HaveOccurred())
-
-	zoneBindingSpecString := string(specs)
-
-	var cmd strings.Builder
-	fmt.Fprintf(&cmd, "%s %s zones bindings create --supervisor %s --specs '%s'",
-		namespaceManagementSupervisors,
-		showUnreleased,
-		supervisorID,
-		zoneBindingSpecString)
-
-	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
+	specs, err := jsonArg(zoneBindingSpecs)
 	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return err
 	}
 
-	return nil
+	return d.runVoid(fmt.Sprintf("%s %s zones bindings create --supervisor %s --specs %s",
+		namespaceManagementSupervisors, showUnreleased, supervisorID, specs))
 }
 
 func (d *wcpDcliClient) DeleteZoneBindingsWithSupervisor(supervisorID string, zone string) error {
@@ -543,63 +542,40 @@ func (d *wcpDcliClient) DeleteZoneBindingsWithSupervisor(supervisorID string, zo
 		supervisorID,
 		jsonFormatter)
 
-	fmt.Fprintf(&cmd, " --zone '%s'", zone)
+	fmt.Fprintf(&cmd, " --zone %s", shellQuote(zone))
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd.String())
 }
 
 // UpdateZoneBindingsWithVMReservation updates the zone bindings with the given VM reservations
 // and waits for the zone to be ready after the update.
 func (d *wcpDcliClient) UpdateZoneBindingsWithVMReservation(supervisorID, zoneID string, reservedVMClassToCount map[string]int) error {
-	var cmd strings.Builder
-	fmt.Fprintf(&cmd, "%s %s zones bindings update --supervisor %s --zone %s --resource-allocation-vm-reservations '[",
-		namespaceManagementSupervisors,
-		showUnreleased,
-		supervisorID,
-		zoneID)
-
-	for vmClass, count := range reservedVMClassToCount {
-		fmt.Fprintf(&cmd, "{\"reserved_vm_class\": \"%s\", \"count\": %d},", vmClass, count)
-	}
-
-	// Remove the last comma in "resource-allocation-vm-reservations" if exists.
-	cmdStr := cmd.String()
-	cmdStr = strings.TrimSuffix(cmdStr, ",")
-	cmdStr += "]'"
-
-	resp, err := d.dcliClient.RunDCLICommand(cmdStr)
+	reservations, err := jsonArg(vmReservations(reservedVMClassToCount))
 	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return err
 	}
 
-	timeout := time.Now().Add(60 * time.Second)
-	for time.Now().Before(timeout) {
+	cmd := fmt.Sprintf("%s %s zones bindings update --supervisor %s --zone %s --resource-allocation-vm-reservations %s",
+		namespaceManagementSupervisors, showUnreleased, supervisorID, zoneID, reservations)
+	if err := d.runVoid(cmd); err != nil {
+		return err
+	}
+
+	err = wait.PollUntilContextTimeout(context.Background(), 5*time.Second, 60*time.Second, true, func(context.Context) (bool, error) {
 		zList, err := d.GetZonesBoundWithSupervisor(supervisorID)
 		if err != nil {
-			return fmt.Errorf("failed to get zones bound with supervisor %s: %w", supervisorID, err)
+			return false, fmt.Errorf("failed to get zones bound with supervisor %s: %w", supervisorID, err)
 		}
 
-		for _, z := range zList.Zones {
-			if z.Zone == zoneID && z.Status == "READY" {
-				return nil
-			}
-		}
-
-		time.Sleep(5 * time.Second)
+		return slices.ContainsFunc(zList.Zones, func(z ZoneDetails) bool {
+			return z.Zone == zoneID && z.Status == "READY"
+		}), nil
+	})
+	if err != nil && wait.Interrupted(err) {
+		return fmt.Errorf("zone %s is not ready after update", zoneID)
 	}
 
-	return fmt.Errorf("zone %s is not ready after update", zoneID)
+	return err
 }
 
 func (d *wcpDcliClient) DeleteNamespace(namespace string) error {
@@ -607,28 +583,18 @@ func (d *wcpDcliClient) DeleteNamespace(namespace string) error {
 		namespacesInstances,
 		namespace,
 	)
-	_, err := d.dcliClient.RunDCLICommand(cmd)
-
-	return err
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) GetVirtualMachine(vmMoid string) (VirtualMachineDetails, error) {
-	cmd := fmt.Sprintf("%s get --vm %s +formatter json", virtualmachine, vmMoid)
-
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return VirtualMachineDetails{}, DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
+	cmd := fmt.Sprintf("%s get --vm %s %s", virtualmachine, vmMoid, jsonFormatter)
 
 	retVal := VirtualMachineDetails{}
-	if err = json.Unmarshal(resp, &retVal); err != nil {
+	if err := d.runJSON(cmd, &retVal); err != nil {
 		return VirtualMachineDetails{}, err
 	}
 
-	return retVal, err
+	return retVal, nil
 }
 
 type StorageSpec struct {
@@ -647,18 +613,13 @@ type ZoneBindingSpecs struct {
 }
 
 func (d *wcpDcliClient) SetNamespaceStorageSpecs(namespace string, specs []StorageSpec) error {
-	storageSpecBuffer, err := json.Marshal(specs)
-	Expect(err).NotTo(HaveOccurred())
+	storageSpecs, err := jsonArg(specs)
+	if err != nil {
+		return err
+	}
 
-	storageSpecString := string(storageSpecBuffer)
-	cmd := fmt.Sprintf("%s update --namespace %s --storage-specs '%s'",
-		namespacesInstances,
-		namespace,
-		storageSpecString,
-	)
-	_, err = d.dcliClient.RunDCLICommand(cmd)
-
-	return err
+	return d.runVoid(fmt.Sprintf("%s update --namespace %s --storage-specs %s",
+		namespacesInstances, namespace, storageSpecs))
 }
 
 var svcInstallTimeout = 120 * time.Second
@@ -673,39 +634,15 @@ func (d *wcpDcliClient) CreateOrSetClusterSupervisorService(op DcliOperationType
 		namespaceManagementClusterServices, op.String(), cluster, serviceID, version)
 
 	if serviceConfig != nil {
-		configJSON, err := json.Marshal(serviceConfig)
+		configJSON, err := jsonArg(serviceConfig)
 		if err != nil {
 			return fmt.Errorf("error converting service_config to json %w", err)
 		}
 
-		cmd = fmt.Sprintf("%s --service-config '%s'", cmd, string(configJSON))
+		cmd = fmt.Sprintf("%s --service-config %s", cmd, configJSON)
 	}
 
-	var (
-		resp    []byte
-		lastErr error
-	)
-
-	timeout := time.Now().Add(svcInstallTimeout)
-	for time.Now().Before(timeout) {
-		resp, lastErr = d.dcliClient.RunDCLICommand(cmd)
-		if lastErr != nil {
-			// Continue retrying on error
-			time.Sleep(svcInstallInterval)
-			continue
-		}
-		// Success, stop retrying
-		return nil
-	}
-
-	if lastErr != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     lastErr,
-		}
-	}
-
-	return nil
+	return d.retry(cmd, svcInstallInterval, svcInstallTimeout)
 }
 
 // CreateOrSetClusterSupervisorServiceWithYamlConfig creates or sets the Supervisor Service Version in the cluster with YAML Config.
@@ -716,71 +653,39 @@ func (d *wcpDcliClient) CreateOrSetClusterSupervisorServiceWithYamlConfig(op Dcl
 	cmd := fmt.Sprintf("%s %s --cluster %s --supervisor-service %s --version %s --yaml-service-config %s",
 		namespaceManagementClusterServices, op.String(), cluster, serviceID, version, yamlServiceConfig)
 
-	var (
-		resp    []byte
-		lastErr error
-	)
-
-	timeout := time.Now().Add(svcInstallTimeout)
-	for time.Now().Before(timeout) {
-		resp, lastErr = d.dcliClient.RunDCLICommand(cmd)
-		if lastErr != nil {
-			// Continue retrying on error
-			time.Sleep(svcInstallInterval)
-			continue
-		}
-		// Success, stop retrying
-		return nil
-	}
-
-	if lastErr != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     lastErr,
-		}
-	}
-
-	return nil
+	return d.retry(cmd, svcInstallInterval, svcInstallTimeout)
 }
 
 // EnableV1SupervisorService enables PSP supervisor service in the cluster using v1 "set" API.
 func (d *wcpDcliClient) EnableV1SupervisorService(cluster, serviceID string, version *string, serviceConfig map[string]string) error {
-	return setV1SupervisorService(true, cluster, serviceID, version, serviceConfig, d.dcliClient)
+	return d.setV1SupervisorService(true, cluster, serviceID, version, serviceConfig)
 }
 
 // DisableV1SupervisorService disables PSP supervisor service in the cluster using v1 "set" API.
 func (d *wcpDcliClient) DisableV1SupervisorService(cluster, serviceID string, version *string, serviceConfig map[string]string) error {
-	return setV1SupervisorService(false, cluster, serviceID, version, serviceConfig, d.dcliClient)
+	return d.setV1SupervisorService(false, cluster, serviceID, version, serviceConfig)
 }
 
 // setV1SupervisorService enables or disables PSP supervisor service.
-func setV1SupervisorService(enabled bool, cluster, serviceID string, version *string, serviceConfig map[string]string, dcliClient dcli.DCLICommandRunner) error {
+func (d *wcpDcliClient) setV1SupervisorService(enabled bool, cluster, serviceID string, version *string, serviceConfig map[string]string) error {
 	cmd := fmt.Sprintf("%s %s set --enabled %t --cluster %s --service-id %s",
 		namespaceServices, showUnreleased, enabled, cluster, serviceID) // the v1 "set" API is an internal API, thus requires +show
 
 	// v1alpha1 PSP services are *known* to only include a single version, so the version parameter can be omitted.
 	if version != nil {
-		cmd = fmt.Sprintf("%s --version '%s'", cmd, *version)
+		cmd = fmt.Sprintf("%s --version %s", cmd, shellQuote(*version))
 	}
 
 	if serviceConfig != nil {
-		configJSON, err := json.Marshal(serviceConfig)
+		configJSON, err := jsonArg(serviceConfig)
 		if err != nil {
 			return fmt.Errorf("error converting service_config to json %w", err)
 		}
 
-		cmd = fmt.Sprintf("%s --service-config '%s'", cmd, string(configJSON))
+		cmd = fmt.Sprintf("%s --service-config %s", cmd, configJSON)
 	}
 
-	resp, err := dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // DeleteClusterSupervisorService deletes the Supervisor Service from the cluster.
@@ -788,152 +693,71 @@ func (d *wcpDcliClient) DeleteClusterSupervisorService(cluster, serviceID string
 	cmd := fmt.Sprintf("%s delete --cluster %s --supervisor-service %s",
 		namespaceManagementClusterServices, cluster, serviceID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // DeleteSupervisorService removes a Service.
 func (d *wcpDcliClient) DeleteSupervisorService(serviceID string) error {
 	cmd := fmt.Sprintf("%s delete --supervisor-service %s", namespaceManagementServices, serviceID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // DeleteSupervisorServiceVersion deletes a specific version of a Supervisor Service.
 func (d *wcpDcliClient) DeleteSupervisorServiceVersion(serviceID, version string) error {
 	cmd := fmt.Sprintf("%s versions delete --supervisor-service %s --version %s", namespaceManagementServices, serviceID, version)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) ActivateSupervisorService(serviceID string) error {
 	cmd := fmt.Sprintf("%s activate --supervisor-service %s", namespaceManagementServices, serviceID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) DeactivateSupervisorService(serviceID string) error {
 	cmd := fmt.Sprintf("%s deactivate --supervisor-service %s", namespaceManagementServices, serviceID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) ActivateSupervisorServiceVersion(serviceID, versionID string) error {
 	cmd := fmt.Sprintf("%s versions activate --supervisor-service %s --version %s", namespaceManagementServices, serviceID, versionID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) DeactivateSupervisorServiceVersion(serviceID, versionID string) error {
 	cmd := fmt.Sprintf("%s versions deactivate --supervisor-service %s --version %s", namespaceManagementServices, serviceID, versionID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // RegisterCarvelService creates a Carvel service with one version.
 func (d *wcpDcliClient) RegisterCarvelService(carvelYaml []byte) error {
 	content := b64.StdEncoding.EncodeToString(carvelYaml)
-	cmd := fmt.Sprintf("%s create --carvel-spec-version-spec-content %s "+
-		" +formatter json", namespaceManagementServices, content)
+	cmd := fmt.Sprintf("%s create --carvel-spec-version-spec-content %s %s",
+		namespaceManagementServices, content, jsonFormatter)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // RegisterCarvelServiceVersion creates a Carvel service version.
 func (d *wcpDcliClient) RegisterCarvelServiceVersion(serviceID string, carvelYaml []byte) error {
 	content := b64.StdEncoding.EncodeToString(carvelYaml)
-	cmd := fmt.Sprintf("%s versions create --supervisor-service %s "+
-		" --carvel-spec-content %s "+
-		" +formatter json ", namespaceManagementServices, serviceID, content)
+	cmd := fmt.Sprintf("%s versions create --supervisor-service %s --carvel-spec-content %s %s",
+		namespaceManagementServices, serviceID, content, jsonFormatter)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // Precheck initiates a pre-check task for a Supervisor Service version against a Supervisor.
 func (d *wcpDcliClient) ServicePrecheck(serviceID, version, supervisor string) error {
-	cmd := fmt.Sprintf("%s precheck --supervisor %s --supervisor-service %s --target-version %s"+
-		" +formatter json ", namespaceMgmtSupervisorsSvServices, supervisor, serviceID, version)
+	cmd := fmt.Sprintf("%s precheck --supervisor %s --supervisor-service %s --target-version %s %s",
+		namespaceMgmtSupervisorsSvServices, supervisor, serviceID, version, jsonFormatter)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // NewClientUsingKubeconfig uses a kubeconfig pointed at a supervisor cluster context with an
@@ -976,53 +800,53 @@ func NewClientUsingKubeconfigFileWithCredentials(ctx context.Context, path strin
 	return wcpClient
 }
 
-func generateVirtualDevicesCommand(devices VirtualDevices) string {
+func generateVirtualDevicesCommand(devices VirtualDevices) (string, error) {
 	var result strings.Builder
+
 	if devices.VGPUDevices != nil {
-		result.WriteString(" --devices-vgpu-devices '[")
-		for index, val := range devices.VGPUDevices {
-			_, _ = fmt.Fprintf(&result, `{"profile_name":%q}`, val.ProfileName)
-			if index != len(devices.VGPUDevices)-1 {
-				result.WriteString(",")
-			}
-		}
-
-		result.WriteString("]' ")
-	}
-
-	if devices.DynamicDirectPathIODevices != nil {
-		result.WriteString(" --devices-dynamic-direct-path-io-devices '[")
-		for index, val := range devices.DynamicDirectPathIODevices {
-			_, _ = fmt.Fprintf(
-				&result,
-				`{"vendor_id":%d,"device_id":%d,"custom_label":%q}`,
-				val.VendorID, val.DeviceID, val.CustomLabel,
-			)
-			if index != len(devices.DynamicDirectPathIODevices)-1 {
-				result.WriteString(",")
-			}
-		}
-
-		result.WriteString("]' ")
-	}
-
-	return result.String()
-}
-
-func generateInstanceStorageCommand(instanceStorage InstanceStorage) (string, error) {
-	var result string
-
-	if len(instanceStorage.Volumes) > 0 && instanceStorage.StoragePolicy != "" {
-		volumes, err := json.Marshal(instanceStorage.Volumes)
+		arg, err := jsonArg(devices.VGPUDevices)
 		if err != nil {
 			return "", err
 		}
 
-		result = fmt.Sprintf(" --instance-storage-volumes '%s' --instance-storage-policy \"%s\"",
-			string(volumes), instanceStorage.StoragePolicy)
+		result.WriteString(" --devices-vgpu-devices " + arg + " ")
 	}
 
-	return result, nil
+	if devices.DynamicDirectPathIODevices != nil {
+		type directPathIO struct {
+			VendorID    int    `json:"vendor_id"`
+			DeviceID    int    `json:"device_id"`
+			CustomLabel string `json:"custom_label"`
+		}
+
+		devs := make([]directPathIO, 0, len(devices.DynamicDirectPathIODevices))
+		for _, val := range devices.DynamicDirectPathIODevices {
+			devs = append(devs, directPathIO{VendorID: val.VendorID, DeviceID: val.DeviceID, CustomLabel: val.CustomLabel})
+		}
+
+		arg, err := jsonArg(devs)
+		if err != nil {
+			return "", err
+		}
+
+		result.WriteString(" --devices-dynamic-direct-path-io-devices " + arg + " ")
+	}
+
+	return result.String(), nil
+}
+
+func generateInstanceStorageCommand(instanceStorage InstanceStorage) (string, error) {
+	if len(instanceStorage.Volumes) == 0 || instanceStorage.StoragePolicy == "" {
+		return "", nil
+	}
+
+	volumes, err := jsonArg(instanceStorage.Volumes)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf(" --instance-storage-volumes %s --instance-storage-policy %s",
+		volumes, shellQuote(instanceStorage.StoragePolicy)), nil
 }
 
 // GenerateVMClassSpecCmd is a helper function to create cmd for VMClass spec fields.
@@ -1045,7 +869,7 @@ func GenerateVMClassSpecCmd(vmClassSpec VMClassSpec) (string, error) {
 	}
 
 	if vmClassSpec.Description != nil {
-		cmd += fmt.Sprintf(" --description \"%s\"", *vmClassSpec.Description)
+		cmd += " --description " + shellQuote(*vmClassSpec.Description)
 	}
 
 	if vmClassSpec.ConfigSpec != nil {
@@ -1058,13 +882,15 @@ func GenerateVMClassSpecCmd(vmClassSpec VMClassSpec) (string, error) {
 			return "", err
 		}
 
-		cmd += fmt.Sprintf(
-			` --config-spec '%s'`,
-			strings.TrimSuffix(w.String(), "\n"),
-		)
+		cmd += " --config-spec " + shellQuote(strings.TrimSuffix(w.String(), "\n"))
 	}
 
-	cmd += generateVirtualDevicesCommand(vmClassSpec.Devices)
+	commandDevices, err := generateVirtualDevicesCommand(vmClassSpec.Devices)
+	if err != nil {
+		return "", err
+	}
+
+	cmd += commandDevices
 
 	commandIS, err := generateInstanceStorageCommand(vmClassSpec.InstanceStorage)
 	if err != nil {
@@ -1081,12 +907,9 @@ func (d *wcpDcliClient) GetVMClassInfo(vmClass string) (VMClassInfo, error) {
 	s := []string{namespaceManagementVMClassServices, operation, jsonFormatter}
 	cmd := strings.Join(s, " ")
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return VMClassInfo{}, DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return VMClassInfo{}, err
 	}
 
 	dec := types.NewJSONDecoder(bytes.NewReader(resp))
@@ -1106,16 +929,16 @@ func (d *wcpDcliClient) ListContentLibraries() ([]string, error) {
 
 	var retval []string
 
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retval)
+	err := d.runJSON(cmd, &retval)
 
 	return retval, err
 }
 
 func (d *wcpDcliClient) GetContentLibrary(id string) (ContentLibraryInfo, error) {
-	cmd := fmt.Sprintf("%s %s get --library-id \"%s\" %s", showUnreleased, dcliContentPrefix, id, jsonFormatter)
+	cmd := fmt.Sprintf("%s %s get --library-id %s %s", showUnreleased, dcliContentPrefix, shellQuote(id), jsonFormatter)
 
 	retVal := ContentLibraryInfo{}
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
@@ -1127,7 +950,7 @@ func (d *wcpDcliClient) FetchContentLibraryIDByName(name string, libraries []str
 		cmd := strings.Join(s, " ")
 		retVal := ContentLibraryInfo{}
 
-		err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+		err := d.runJSON(cmd, &retVal)
 		if err == nil {
 			if retVal.Name == name {
 				return libraryID, nil
@@ -1147,7 +970,7 @@ func (d *wcpDcliClient) ListVMClasses() ([]VMClassInfo, error) {
 
 	var retVal []VMClassInfo
 
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
@@ -1166,15 +989,7 @@ func (d *wcpDcliClient) CreateVMClass(createSpec VMClassSpec) error {
 	s := []string{namespaceManagementVMClassServices, operation, vmClassSpecCmd, jsonFormatter}
 	cmd := strings.Join(s, " ")
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) UpdateVMClass(updateSpec VMClassSpec) error {
@@ -1188,24 +1003,14 @@ func (d *wcpDcliClient) UpdateVMClass(updateSpec VMClassSpec) error {
 	s := []string{namespaceManagementVMClassServices, operation, vmClassSpecCmd, jsonFormatter}
 	cmd := strings.Join(s, " ")
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) DeleteVMClass(vmClass string) error {
 	operation := fmt.Sprintf("delete --vm-class %s", vmClass)
 	s := []string{namespaceManagementVMClassServices, operation, jsonFormatter}
 	cmd := strings.Join(s, " ")
-	_, err := d.dcliClient.RunDCLICommand(cmd)
-
-	return err
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) UpdateNamespaceVMServiceSpec(namespaceName string, updateSpec NamespaceUpdateVMserviceSpec) error {
@@ -1230,34 +1035,23 @@ func (d *wcpDcliClient) UpdateNamespaceVMServiceSpec(namespaceName string, updat
 	s := []string{namespacesInstances, operation, vmClassSpec, contentLibrariesSpec.String()}
 	cmd := strings.Join(s, " ")
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) ListDatastores() ([]Datastore, error) {
 	cmd := fmt.Sprintf("%s %s datastore list", jsonFormatter, dcliVCenterPrefix)
 	retVal := []Datastore{}
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
 
 func (d *wcpDcliClient) AddCLTrustedCertificate(trustedCertificate string) (string, error) {
-	cmd := fmt.Sprintf("%s com vmware content trustedcertificates create --cert-text '%s'", jsonFormatter, trustedCertificate)
+	cmd := fmt.Sprintf("%s com vmware content trustedcertificates create --cert-text %s", jsonFormatter, shellQuote(trustedCertificate))
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	return strings.TrimSpace(string(resp)), err
@@ -1266,37 +1060,28 @@ func (d *wcpDcliClient) AddCLTrustedCertificate(trustedCertificate string) (stri
 func (d *wcpDcliClient) DeleteCLTrustedCertificate(trustedCertificateID string) error {
 	cmd := fmt.Sprintf("%s com vmware content trustedcertificates delete --certificate %s", jsonFormatter, trustedCertificateID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) ListCLSecurityPolicies() ([]SecurityPolicyInfo, error) {
 	cmd := fmt.Sprintf("%s com vmware content securitypolicies list", jsonFormatter)
 	retVal := []SecurityPolicyInfo{}
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
 
 func (d *wcpDcliClient) CreateLocalContentLibrary(name string, storageBackings StorageBackingInfo) (string, error) {
-	storageBackingsJSON, err := json.Marshal(storageBackings.StorageBackings)
-	Expect(err).NotTo(HaveOccurred())
-
-	cmd := fmt.Sprintf("%s %s create --name \"%s\" --storage-backings '%s'", showUnreleased, dcliContentLocalPrefix, name, storageBackingsJSON)
-
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	storageBackingsJSON, err := jsonArg(storageBackings.StorageBackings)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
+	}
+
+	cmd := fmt.Sprintf("%s %s create --name %s --storage-backings %s", showUnreleased, dcliContentLocalPrefix, shellQuote(name), storageBackingsJSON)
+
+	resp, err := d.run(cmd)
+	if err != nil {
+		return "", err
 	}
 
 	return strings.TrimSpace(string(resp)), nil
@@ -1305,78 +1090,45 @@ func (d *wcpDcliClient) CreateLocalContentLibrary(name string, storageBackings S
 func (d *wcpDcliClient) DeleteLocalContentLibrary(id string) error {
 	cmd := fmt.Sprintf("%s %s delete --library-id %s", showUnreleased, dcliContentLocalPrefix, id)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) DeleteLocalContentLibraryByForce(id string) error {
 	cmd := fmt.Sprintf("%s %s forcedelete --library-id %s", showUnreleased, dcliContentLocalPrefix, id)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) UpdateContentLibrary(contentLibraryID, description string, securityPolicyID string) error {
-	cmd := fmt.Sprintf("%s %s update --library-id %s --description \"%s\"", showUnreleased, dcliContentPrefix, contentLibraryID, description)
+	cmd := fmt.Sprintf("%s %s update --library-id %s --description %s", showUnreleased, dcliContentPrefix, contentLibraryID, shellQuote(description))
 	if securityPolicyID != "" {
 		cmd = fmt.Sprintf("%s --security-policy-id %s", cmd, securityPolicyID)
 	}
 
-	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) UpdateLocalContentLibrary(contentLibraryID string, enablePublishing bool) error {
 	cmd := fmt.Sprintf("%s %s update --library-id %s --publish-info-published %t", showUnreleased, dcliContentLocalPrefix, contentLibraryID, enablePublishing)
 
-	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) CreateSubscribedContentLibrary(name, subscriptionURL, thumbprint string, onDemand bool, storageBackings StorageBackingInfo) (string, error) {
-	storageBackingsJSON, err := json.Marshal(storageBackings.StorageBackings)
+	storageBackingsJSON, err := jsonArg(storageBackings.StorageBackings)
 	if err != nil {
 		return "", err
 	}
 
-	cmd := fmt.Sprintf("%s %s create --name \"%s\" --subscription-info-subscription-url \"%s\" --subscription-info-on-demand %t --subscription-info-authentication-method %s --subscription-info-automatic-sync-enabled %t --storage-backings '%s'",
-		showUnreleased, dcliContentSubscribedPrefix, name, subscriptionURL, onDemand, "NONE", false, storageBackingsJSON)
+	cmd := fmt.Sprintf("%s %s create --name %s --subscription-info-subscription-url %s --subscription-info-on-demand %t --subscription-info-authentication-method %s --subscription-info-automatic-sync-enabled %t --storage-backings %s",
+		showUnreleased, dcliContentSubscribedPrefix, shellQuote(name), shellQuote(subscriptionURL), onDemand, "NONE", false, storageBackingsJSON)
 	if thumbprint != "" {
-		cmd += fmt.Sprintf(" --subscription-info-ssl-thumbprint \"%s\"", thumbprint)
+		cmd += " --subscription-info-ssl-thumbprint " + shellQuote(thumbprint)
 	}
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	return strings.TrimSpace(string(resp)), nil
@@ -1385,54 +1137,27 @@ func (d *wcpDcliClient) CreateSubscribedContentLibrary(name, subscriptionURL, th
 func (d *wcpDcliClient) SyncSubscribedContentLibrary(id string) error {
 	cmd := fmt.Sprintf("%s %s sync --library-id %s", showUnreleased, dcliContentSubscribedPrefix, id)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) DeleteSubscribedContentLibrary(id string) error {
 	cmd := fmt.Sprintf("%s %s delete --library-id %s", showUnreleased, dcliContentSubscribedPrefix, id)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) DeleteSubscribedContentLibraryByForce(id string) error {
 	cmd := fmt.Sprintf("%s %s forcedelete --library-id %s", showUnreleased, dcliContentSubscribedPrefix, id)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) CreateContentLibraryItem(contentLibraryID, name string, itemType ContentLibraryItemType) (string, error) {
 	cmd := fmt.Sprintf("%s %s item create --library-id %s --name %s --type %s", showUnreleased, dcliContentPrefix, contentLibraryID, name, string(itemType))
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	return strings.TrimSpace(string(resp)), nil
@@ -1441,12 +1166,9 @@ func (d *wcpDcliClient) CreateContentLibraryItem(contentLibraryID, name string, 
 func (d *wcpDcliClient) CreateContentLibraryOVFTemplateItemByPull(contentLibraryID, name, ovfFileURL string) (string, error) {
 	cmd := fmt.Sprintf("%s %s item create --library-id %s --name %s --type %s", showUnreleased, dcliContentPrefix, contentLibraryID, name, "ovf")
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	libraryItemID := strings.TrimSpace(string(resp))
@@ -1454,25 +1176,18 @@ func (d *wcpDcliClient) CreateContentLibraryOVFTemplateItemByPull(contentLibrary
 	// create update session to add OVF template files by URL
 	updateCmd := fmt.Sprintf("%s %s item updatesession create --library-item-id %s", showUnreleased, dcliContentPrefix, libraryItemID)
 
-	resp, err = d.dcliClient.RunDCLICommand(updateCmd)
+	resp, err = d.run(updateCmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	updateSessionID := strings.TrimSpace(string(resp))
 
-	probeCmd := fmt.Sprintf("%s %s item updatesession file probe --uri %s +formatter json", showUnreleased, dcliContentPrefix, ovfFileURL)
+	probeCmd := fmt.Sprintf("%s %s item updatesession file probe --uri %s %s", showUnreleased, dcliContentPrefix, ovfFileURL, jsonFormatter)
 	probeResult := ProbeResult{}
 
-	err = d.dcliClient.RunCommandAndUnmarshalJSONResult(probeCmd, &probeResult)
-	if err != nil {
-		return "", DcliError{
-			rawResponse: "",
-			baseErr:     err,
-		}
+	if err = d.runJSON(probeCmd, &probeResult); err != nil {
+		return "", err
 	}
 
 	sslThumbprint := strings.TrimSpace(probeResult.SSLThumbprint)
@@ -1481,22 +1196,14 @@ func (d *wcpDcliClient) CreateContentLibraryOVFTemplateItemByPull(contentLibrary
 	fileCmd := fmt.Sprintf("%s %s item updatesession file add --name %s --source-type %s --update-session-id %s --source-endpoint-uri %s --source-endpoint-ssl-certificate-thumbprint %s",
 		showUnreleased, dcliContentPrefix, fileName, "PULL", updateSessionID, ovfFileURL, sslThumbprint)
 
-	resp, err = d.dcliClient.RunDCLICommand(fileCmd)
-	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+	if err = d.runVoid(fileCmd); err != nil {
+		return "", err
 	}
 
 	completeCmd := fmt.Sprintf("%s %s item updatesession complete --update-session-id %s", showUnreleased, dcliContentPrefix, updateSessionID)
 
-	resp, err = d.dcliClient.RunDCLICommand(completeCmd)
-	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+	if err = d.runVoid(completeCmd); err != nil {
+		return "", err
 	}
 
 	return libraryItemID, nil
@@ -1508,7 +1215,7 @@ func (d *wcpDcliClient) ListContentLibraryItems(contentLibraryID string) ([]stri
 
 	var retVal []string
 
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
@@ -1518,35 +1225,20 @@ func (d *wcpDcliClient) GetContentLibraryItem(id string) (ContentLibraryItemInfo
 	cmd += " " + jsonFormatter
 
 	retVal := ContentLibraryItemInfo{}
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &retVal)
+	err := d.runJSON(cmd, &retVal)
 
 	return retVal, err
 }
 
 func (d *wcpDcliClient) UpdateContentLibraryItem(id, description string) error {
-	cmd := fmt.Sprintf("%s %s item update --library-item-id %s --description \"%s\"", showUnreleased, dcliContentPrefix, id, description)
-	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	cmd := fmt.Sprintf("%s %s item update --library-item-id %s --description %s", showUnreleased, dcliContentPrefix, id, shellQuote(description))
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) DeleteContentLibraryItem(id string) error {
 	cmd := fmt.Sprintf("%s %s item delete --library-item-id %s", showUnreleased, dcliContentPrefix, id)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) AssociateImageRegistryContentLibrariesToNamespace(namespace string, contentLibraries ...ContentLibrarySpec) error {
@@ -1561,28 +1253,17 @@ func (d *wcpDcliClient) AssociateImageRegistryContentLibrariesToNamespace(namesp
 
 	contentLibraries = append(contentLibraries, namespaceDetails.ContentLibraries...)
 
-	cmd := fmt.Sprintf("%s %s update --namespace %s --content-libraries '[", showUnreleased, namespacesInstances, namespace)
-
 	uniqueCLIDs := make(map[string]struct{})
+	specs := make([]ContentLibrarySpec, 0, len(contentLibraries))
+
 	for _, cl := range contentLibraries {
 		if _, ok := uniqueCLIDs[cl.ContentLibrary]; !ok {
 			uniqueCLIDs[cl.ContentLibrary] = struct{}{}
-			cmd += fmt.Sprintf("{\"content_library\": \"%s\", \"writable\": %t, \"allow_import\": %t, \"resource_naming_strategy\": \"%s\"},", cl.ContentLibrary, cl.Writable, cl.AllowImport, cl.ResourceNamingStrategy)
+			specs = append(specs, cl)
 		}
 	}
 
-	cmd = cmd[:len(cmd)-1]
-	cmd += "]'"
-
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.updateNamespaceContentLibraries(namespace, specs)
 }
 
 func (d *wcpDcliClient) DisassociateImageRegistryContentLibrariesFromNamespace(namespace string, contentLibraryIDs ...string) error {
@@ -1599,34 +1280,23 @@ func (d *wcpDcliClient) DisassociateImageRegistryContentLibrariesFromNamespace(n
 	clsToKeep := []ContentLibrarySpec{}
 
 	for _, cl := range namespaceDetails.ContentLibraries {
-		match := slices.Contains(contentLibraryIDs, cl.ContentLibrary)
-
-		if !match {
+		if !slices.Contains(contentLibraryIDs, cl.ContentLibrary) {
 			clsToKeep = append(clsToKeep, cl)
 		}
 	}
 
-	cmd := fmt.Sprintf("%s %s update --namespace %s --content-libraries '[", showUnreleased, namespacesInstances, namespace)
+	return d.updateNamespaceContentLibraries(namespace, clsToKeep)
+}
 
-	if len(clsToKeep) > 0 {
-		for _, cl := range clsToKeep {
-			cmd += fmt.Sprintf("{\"content_library\": \"%s\", \"writable\": %t, \"allow_import\": %t, \"resource_naming_strategy\": \"%s\"},", cl.ContentLibrary, cl.Writable, cl.AllowImport, cl.ResourceNamingStrategy)
-		}
-
-		cmd = cmd[:len(cmd)-1]
-	}
-
-	cmd += "]'"
-
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+// updateNamespaceContentLibraries sets the namespace's content libraries.
+func (d *wcpDcliClient) updateNamespaceContentLibraries(namespace string, contentLibraries []ContentLibrarySpec) error {
+	libraries, err := jsonArg(contentLibraries)
 	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return err
 	}
 
-	return nil
+	return d.runVoid(fmt.Sprintf("%s %s update --namespace %s --content-libraries %s",
+		showUnreleased, namespacesInstances, namespace, libraries))
 }
 
 func (d *wcpDcliClient) AssociateContentLibrariesToCluster(cluster string, contentLibraries ...ClusterContentLibrarySpec) error {
@@ -1648,35 +1318,18 @@ func (d *wcpDcliClient) AssociateContentLibrariesToCluster(cluster string, conte
 		}
 	}
 
-	cmd := fmt.Sprintf("%s %s clusters update --cluster %s --content-libraries '[", showUnreleased, namespaceManagement, cluster)
-
+	// Avoid duplicate content library error in running the dcli command.
 	uniqueCLIDs := make(map[string]struct{})
+	specs := make([]ClusterContentLibrarySpec, 0, len(contentLibraries))
+
 	for _, cl := range contentLibraries {
-		// Avoid duplicate content library error in running the dcli command.
 		if _, ok := uniqueCLIDs[cl.ContentLibrary]; !ok {
 			uniqueCLIDs[cl.ContentLibrary] = struct{}{}
-
-			supervisorServices := "[]"
-			if len(cl.SupervisorServices) > 0 {
-				supervisorServices = fmt.Sprintf("[\"%s\"]", strings.Join(cl.SupervisorServices, "\",\""))
-			}
-
-			cmd += fmt.Sprintf("{\"content_library\": \"%s\", \"supervisor_services\": %s, \"resource_naming_strategy\": \"%s\"},", cl.ContentLibrary, supervisorServices, cl.ResourceNamingStrategy)
+			specs = append(specs, cl)
 		}
 	}
 
-	cmd = cmd[:len(cmd)-1]
-	cmd += "]'"
-
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.updateClusterContentLibraries(cluster, specs)
 }
 
 func (d *wcpDcliClient) DisassociateContentLibrariesFromCluster(cluster string, contentLibraryIDs ...string) error {
@@ -1691,65 +1344,51 @@ func (d *wcpDcliClient) DisassociateContentLibrariesFromCluster(cluster string, 
 	}
 
 	// Run update with all existing content libraries, except the provided ones.
-	var clsToKeep []ClusterContentLibrarySpec
+	clsToKeep := []ClusterContentLibrarySpec{}
 
 	for _, clSpec := range clusterDetails.ContentLibraries {
-		match := false
-
-		for _, delID := range contentLibraryIDs {
-			if clSpec.ContentLibrary == delID {
-				match = true
-			}
+		if slices.Contains(contentLibraryIDs, clSpec.ContentLibrary) {
+			continue
 		}
 
-		if !match {
-			// Make sure that the ContentLibrary *exists* to update with.
-			_, err := d.GetContentLibrary(clSpec.ContentLibrary)
-			if err == nil {
-				clsToKeep = append(clsToKeep, clSpec)
-			}
+		// Make sure that the ContentLibrary *exists* to update with.
+		if _, err := d.GetContentLibrary(clSpec.ContentLibrary); err == nil {
+			clsToKeep = append(clsToKeep, clSpec)
 		}
 	}
 
 	// Run an update, omitting the passed in contentLibraryIDs, but keeping other added content libraries
 	// (to preserve state away from tests).
-	cmd := fmt.Sprintf("%s %s clusters update --cluster %s --content-libraries '[", showUnreleased, namespaceManagement, cluster)
+	return d.updateClusterContentLibraries(cluster, clsToKeep)
+}
 
-	if len(clsToKeep) > 0 {
-		for _, cl := range clsToKeep {
-			supervisorServices := "[]"
-			if len(cl.SupervisorServices) > 0 {
-				supervisorServices = fmt.Sprintf("[\"%s\"]", strings.Join(cl.SupervisorServices, "\",\""))
-			}
-
-			cmd += fmt.Sprintf("{\"content_library\": \"%s\", \"supervisor_services\": %s, \"resource_naming_strategy\": \"%s\"},", cl.ContentLibrary, supervisorServices, cl.ResourceNamingStrategy)
+// updateClusterContentLibraries sets the cluster's content libraries.
+func (d *wcpDcliClient) updateClusterContentLibraries(cluster string, contentLibraries []ClusterContentLibrarySpec) error {
+	// The API requires an empty array rather than null for no supervisor services.
+	specs := make([]ClusterContentLibrarySpec, len(contentLibraries))
+	for i, cl := range contentLibraries {
+		if cl.SupervisorServices == nil {
+			cl.SupervisorServices = []string{}
 		}
 
-		cmd = cmd[:len(cmd)-1]
+		specs[i] = cl
 	}
 
-	cmd += "]'"
-
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	libraries, err := jsonArg(specs)
 	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return err
 	}
 
-	return nil
+	return d.runVoid(fmt.Sprintf("%s %s clusters update --cluster %s --content-libraries %s",
+		showUnreleased, namespaceManagement, cluster, libraries))
 }
 
 func (d *wcpDcliClient) RegisterVM(namespace, vmMoID string) (string, error) {
 	cmd := fmt.Sprintf("%s %s registervm --namespace %s --vm %s", showUnreleased, namespacesInstances, namespace, vmMoID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	return strings.TrimSpace(string(resp)), nil
@@ -1774,8 +1413,7 @@ func (d *wcpDcliClient) UpdateClusterProxyConfig(clusterMoid string, proxyConfig
 		for flag, value := range flagMap {
 			// Filter out empty proxies, they cause an error in dcli
 			if value != "" {
-				flagStr := fmt.Sprintf(" --%s '%s'", flag, value)
-				cmd.WriteString(flagStr)
+				_, _ = fmt.Fprintf(&cmd, " --%s %s", flag, shellQuote(value))
 			}
 		}
 	case None:
@@ -1784,14 +1422,7 @@ func (d *wcpDcliClient) UpdateClusterProxyConfig(clusterMoid string, proxyConfig
 		return fmt.Errorf("invalid proxy source: %s", proxyConfig.ProxySettingsSource)
 	}
 
-	if resp, err := d.dcliClient.RunDCLICommand(cmd.String()); err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd.String())
 }
 
 func (d *wcpDcliClient) GetClusterProxyConfig(clusterMoid string) (ClusterProxyConfig, error) {
@@ -1804,40 +1435,34 @@ func (d *wcpDcliClient) GetClusterProxyConfig(clusterMoid string) (ClusterProxyC
 }
 
 func (d *wcpDcliClient) CreateContainerImageRegistry(supervisorID string, registry ContainerImageRegistry) (ContainerImageRegistryInfo, error) {
-	cmd := fmt.Sprintf("%s containerimageregistries create --name '%v' --supervisor '%v' ", namespaceManagementSupervisors, registry.Name, supervisorID)
+	cmd := fmt.Sprintf("%s containerimageregistries create --name %s --supervisor %s ", namespaceManagementSupervisors, shellQuote(registry.Name), shellQuote(supervisorID))
 
 	if registry.ImageRegistry.CertificateChain != "" {
-		cmd += fmt.Sprintf("--image-registry-certificate-chain '%v' ", registry.ImageRegistry.CertificateChain)
+		cmd += "--image-registry-certificate-chain " + shellQuote(registry.ImageRegistry.CertificateChain) + " "
 	}
 
 	if registry.ImageRegistry.Password != "" {
-		cmd += fmt.Sprintf("--image-registry-password '%v' ", registry.ImageRegistry.Password)
+		cmd += "--image-registry-password " + shellQuote(registry.ImageRegistry.Password) + " "
 	}
 
 	if registry.ImageRegistry.Username != "" {
-		cmd += fmt.Sprintf("--image-registry-username '%v' ", registry.ImageRegistry.Username)
+		cmd += "--image-registry-username " + shellQuote(registry.ImageRegistry.Username) + " "
 	}
 
 	if registry.ImageRegistry.Port != 0 {
 		cmd += fmt.Sprintf("--image-registry-port %v ", registry.ImageRegistry.Port)
 	}
 
-	cmd += fmt.Sprintf("--image-registry-hostname '%v' ", registry.ImageRegistry.Hostname)
-	cmd += fmt.Sprintf("--default-registry '%v' ", registry.DefaultRegistry)
+	cmd += "--image-registry-hostname " + shellQuote(registry.ImageRegistry.Hostname) + " "
+	cmd += fmt.Sprintf("--default-registry %t ", registry.DefaultRegistry)
 
 	cmd += jsonFormatter
 
 	result := ContainerImageRegistryInfo{}
 
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &result)
-	if err != nil {
-		return result, DcliError{
-			rawResponse: "",
-			baseErr:     err,
-		}
-	}
+	err := d.runJSON(cmd, &result)
 
-	return result, nil
+	return result, err
 }
 
 func (d *wcpDcliClient) GetContainerImageRegistry(supervisorID, registryName string) (ContainerImageRegistryInfo, error) {
@@ -1856,80 +1481,44 @@ func (d *wcpDcliClient) GetContainerImageRegistry(supervisorID, registryName str
 }
 
 func (d *wcpDcliClient) listContainerImageRegistries(supervisorID string) ([]ContainerImageRegistryInfo, error) {
-	cmd := fmt.Sprintf("%s containerimageregistries list --supervisor '%v' +formatter json", namespaceManagementSupervisors, supervisorID)
+	cmd := fmt.Sprintf("%s containerimageregistries list --supervisor %s %s", namespaceManagementSupervisors, shellQuote(supervisorID), jsonFormatter)
 
 	result := []ContainerImageRegistryInfo{}
 
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &result)
-	if err != nil {
-		return result, DcliError{
-			rawResponse: "",
-			baseErr:     err,
-		}
-	}
+	err := d.runJSON(cmd, &result)
 
-	return result, nil
+	return result, err
 }
 
 func (d *wcpDcliClient) DeleteContainerImageRegistry(supervisorID, registryID string) error {
-	cmd := fmt.Sprintf("%s containerimageregistries delete --container-image-registry '%v' --supervisor '%v' ", namespaceManagementSupervisors, registryID, supervisorID)
-	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	cmd := fmt.Sprintf("%s containerimageregistries delete --container-image-registry %s --supervisor %s ", namespaceManagementSupervisors, shellQuote(registryID), shellQuote(supervisorID))
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) CreateKeyProvider(provider string) error {
 	cmd := fmt.Sprintf("%s kms providers create --provider %s", cryptoManager, provider)
-	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) DeleteKeyProvider(provider string) error {
 	cmd := fmt.Sprintf("%s kms providers delete --provider %s", cryptoManager, provider)
-	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // BackupKeyProvider exports (backs up) a native key provider. vCenter requires
 // a backup before the provider can be used for encryption.
 func (d *wcpDcliClient) BackupKeyProvider(provider string) error {
 	cmd := fmt.Sprintf("%s kms providers export --provider %s", cryptoManager, provider)
-	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-	return nil
+	return d.runVoid(cmd)
 }
 
 // AssignLicenseEntitlement assigns the given license entitlement to the cluster using the dcli cis command.
 func (d *wcpDcliClient) AssignLicenseEntitlement(signedEntitlement string) (string, error) {
-	cmd := fmt.Sprintf("%s %s entitlements update-task --other-vc-usages '[]' --configuration '%s'", showUnreleased, dcliCISLicenseEntitlementPrefix, signedEntitlement)
+	cmd := fmt.Sprintf("%s %s entitlements update-task --other-vc-usages '[]' --configuration %s", showUnreleased, dcliCISLicenseEntitlementPrefix, shellQuote(signedEntitlement))
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	return strings.TrimSpace(string(resp)), nil
@@ -1944,12 +1533,8 @@ func (d *wcpDcliClient) GetSupervisorLoadBalancerProvider(supervisorID string) (
 		} `json:"edges"`
 	}
 
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &result)
-	if err != nil {
-		return "", DcliError{
-			rawResponse: "",
-			baseErr:     fmt.Errorf("failed to run DCLI command or parse result: %w", err),
-		}
+	if err := d.runJSON(cmd, &result); err != nil {
+		return "", fmt.Errorf("failed to run DCLI command or parse result: %w", err)
 	}
 
 	if len(result.Edges) == 0 || result.Edges[0].Provider == "" {
@@ -1973,14 +1558,7 @@ func (d *wcpDcliClient) UpdateWorkerDNS(clusterMoid string, dnsServerIPs ...stri
 
 	cmd := fmt.Sprintf("%s clusters update --cluster %s%s", namespaceManagement, clusterMoid, dnsServerIPArgs.String())
 
-	if resp, err := d.dcliClient.RunDCLICommand(cmd); err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 func (d *wcpDcliClient) GetWorkerDNS(clusterMoid string) ([]string, error) {
@@ -1990,12 +1568,8 @@ func (d *wcpDcliClient) GetWorkerDNS(clusterMoid string) ([]string, error) {
 		WorkerDNS []string `json:"worker_DNS"`
 	}
 
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &result)
-	if err != nil {
-		return nil, DcliError{
-			rawResponse: "",
-			baseErr:     fmt.Errorf("failed to run DCLI command or parse result: %w", err),
-		}
+	if err := d.runJSON(cmd, &result); err != nil {
+		return nil, fmt.Errorf("failed to run DCLI command or parse result: %w", err)
 	}
 
 	return result.WorkerDNS, nil
@@ -2012,8 +1586,8 @@ func (d *wcpDcliClient) CreateNamespaceNetwork(config NamespaceNetworkConfig) er
 			"--vsphere-network-mode %s "+
 			"--vsphere-network-ip-assignment-mode %s "+
 			"--vsphere-network-portgroup %s "+
-			"--vsphere-network-gateway '%s' "+
-			"--vsphere-network-subnet-mask '%s' %s",
+			"--vsphere-network-gateway %s "+
+			"--vsphere-network-subnet-mask %s %s",
 		namespaceManagementNetworks,
 		config.Cluster,
 		config.Network,
@@ -2021,22 +1595,13 @@ func (d *wcpDcliClient) CreateNamespaceNetwork(config NamespaceNetworkConfig) er
 		config.VsphereNetworkMode,
 		config.VsphereNetworkIPAssignmentMode,
 		config.VsphereNetworkPortgroup,
-		config.VsphereNetworkGateway,
-		config.VsphereNetworkSubnetMask,
+		shellQuote(config.VsphereNetworkGateway),
+		shellQuote(config.VsphereNetworkSubnetMask),
 		jsonFormatter,
 	)
 
-	stdout, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		// If the network already exists, treat it as success (idempotent operation)
-		if strings.Contains(string(stdout), "errors.AlreadyExists") {
-			return nil
-		}
-
-		return err
-	}
-
-	return nil
+	// If the network already exists, treat it as success (idempotent operation).
+	return d.runIgnoringAlreadyExists(cmd)
 }
 
 // GetNamespaceNetwork retrieves details about a vSphere network configured for WCP.
@@ -2051,7 +1616,7 @@ func (d *wcpDcliClient) GetNamespaceNetwork(cluster, network string) (map[string
 
 	var result map[string]any
 
-	err := d.dcliClient.RunCommandAndUnmarshalJSONResult(cmd, &result)
+	err := d.runJSON(cmd, &result)
 
 	return result, err
 }
@@ -2069,21 +1634,16 @@ func (d *wcpDcliClient) UpdateNamespaceWithNetworks(namespaceName, networkProvid
 		jsonFormatter,
 	)
 
-	_, err := d.dcliClient.RunDCLICommand(cmd)
-
-	return err
+	return d.runVoid(cmd)
 }
 
 // CreateTagCategory creates a new tag category with the given name and description.
 func (d *wcpDcliClient) CreateTagCategory(name, description string) (string, error) {
-	cmd := fmt.Sprintf("com vmware cis tagging category create --cardinality MULTIPLE --name %s --description %q", name, description)
+	cmd := fmt.Sprintf("com vmware cis tagging category create --cardinality MULTIPLE --name %s --description %s", name, shellQuote(description))
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	return strings.TrimSpace(string(resp)), nil
@@ -2091,14 +1651,11 @@ func (d *wcpDcliClient) CreateTagCategory(name, description string) (string, err
 
 // CreateTag creates a new tag with the given name, description and category ID.
 func (d *wcpDcliClient) CreateTag(name, description, categoryID string) (string, error) {
-	cmd := fmt.Sprintf("com vmware cis tagging tag create --name %s --description %q --category-id %s", name, description, categoryID)
+	cmd := fmt.Sprintf("com vmware cis tagging tag create --name %s --description %s --category-id %s", name, shellQuote(description), categoryID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	return strings.TrimSpace(string(resp)), nil
@@ -2119,15 +1676,7 @@ func (d *wcpDcliClient) AssignTagsToHost(tagIDs []string, hostID string) error {
 
 	fmt.Fprintf(&cmd, " --id %s --type HostSystem", hostID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd.String())
 }
 
 // CreateComputePolicy creates a compute policy with the given spec and returns the created compute policy ID.
@@ -2135,12 +1684,12 @@ func (d *wcpDcliClient) AssignTagsToHost(tagIDs []string, hostID string) error {
 // take a VM tag.
 func (d *wcpDcliClient) CreateComputePolicy(spec ComputePolicySpec) (string, error) {
 	var cmd strings.Builder
-	fmt.Fprintf(&cmd, "%s %s compute policies create --capability %s --name %s --description \"%s\" --vm-tag %s",
+	fmt.Fprintf(&cmd, "%s %s compute policies create --capability %s --name %s --description %s --vm-tag %s",
 		dcliVCenterPrefix,
 		showUnreleased,
 		spec.Capability,
 		spec.Name,
-		spec.Description,
+		shellQuote(spec.Description),
 		spec.VMTagID,
 	)
 
@@ -2148,12 +1697,9 @@ func (d *wcpDcliClient) CreateComputePolicy(spec ComputePolicySpec) (string, err
 		fmt.Fprintf(&cmd, " --host-tag %s", spec.HostTagID)
 	}
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
+	resp, err := d.run(cmd.String())
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	return strings.TrimSpace(string(resp)), nil
@@ -2174,24 +1720,21 @@ func (d *wcpDcliClient) CreateComputePolicyWithSpec(name, description string, ca
 		fullSpec[k] = v
 	}
 
-	policiesBuffer, err := json.Marshal([]map[string]any{{"spec": fullSpec}})
+	policies, err := jsonArg([]map[string]any{{"spec": fullSpec}})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal compute policy spec: %w", err)
 	}
 
-	cmd := fmt.Sprintf("%s %s createtagsandpolicies --policies '%s' %s",
+	cmd := fmt.Sprintf("%s %s createtagsandpolicies --policies %s %s",
 		computePolicies,
 		showUnreleased,
-		string(policiesBuffer),
+		policies,
 		jsonFormatter,
 	)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return "", DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return "", err
 	}
 
 	var result struct {
@@ -2215,25 +1758,17 @@ func (d *wcpDcliClient) CreateComputePolicyWithSpec(name, description string, ca
 func (d *wcpDcliClient) DeleteComputePolicy(policyID string) error {
 	cmd := fmt.Sprintf("%s %s delete --policy %s", computePolicies, showUnreleased, policyID)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // CreateInfraPolicy creates an infrastructure policy with the given spec.
 func (d *wcpDcliClient) CreateInfraPolicy(spec InfraPolicySpec) error {
 	var cmd strings.Builder
-	fmt.Fprintf(&cmd, "%s %s infrastructurepolicies create --policy %s --description \"%s\" --compute-policy-id %s ",
+	fmt.Fprintf(&cmd, "%s %s infrastructurepolicies create --policy %s --description %s --compute-policy-id %s ",
 		namespaceManagement,
 		showUnreleased,
 		spec.Name,
-		spec.Description,
+		shellQuote(spec.Description),
 		spec.ComputePolicyID)
 
 	if spec.EnforcementMode != "" {
@@ -2245,43 +1780,38 @@ func (d *wcpDcliClient) CreateInfraPolicy(spec InfraPolicySpec) error {
 	}
 
 	if len(spec.MatchWorkloadLabel) > 0 {
-		var labels []string
+		type labelSelector struct {
+			Key      string   `json:"key"`
+			Operator string   `json:"operator"`
+			Values   []string `json:"values,omitempty"`
+		}
+
+		labels := make([]labelSelector, 0, len(spec.MatchWorkloadLabel))
 
 		for key, value := range spec.MatchWorkloadLabel {
 			if value == "" {
-				labels = append(labels, fmt.Sprintf(`{"key":"%s","operator":"EXISTS"}`, key))
+				labels = append(labels, labelSelector{Key: key, Operator: "EXISTS"})
 			} else {
-				labels = append(labels, fmt.Sprintf(`{"key":"%s","operator":"IS_IN","values":["%s"]}`, key, value))
+				labels = append(labels, labelSelector{Key: key, Operator: "IS_IN", Values: []string{value}})
 			}
 		}
 
-		fmt.Fprintf(&cmd, " --match-workload-labels '[%s]'", strings.Join(labels, ","))
-	}
-
-	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
+		labelsArg, err := jsonArg(labels)
+		if err != nil {
+			return err
 		}
+
+		fmt.Fprintf(&cmd, " --match-workload-labels %s", labelsArg)
 	}
 
-	return nil
+	return d.runVoid(cmd.String())
 }
 
 // DeleteInfraPolicy deletes an infrastructure policy by name.
 func (d *wcpDcliClient) DeleteInfraPolicy(name string) error {
 	cmd := fmt.Sprintf("%s %s infrastructurepolicies delete --policy %s", namespaceManagement, showUnreleased, name)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd)
 }
 
 // UpdateNamespaceWithInfraPolicies updates a namespace with the given infrastructure policies.
@@ -2297,27 +1827,16 @@ func (d *wcpDcliClient) UpdateNamespaceWithInfraPolicies(namespace string, polic
 		fmt.Fprintf(&cmd, " --infrastructure-policies %s", policyName)
 	}
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd.String())
-	if err != nil {
-		return DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
-	}
-
-	return nil
+	return d.runVoid(cmd.String())
 }
 
 // ListHostIDs lists all host IDs in the vCenter.
 func (d *wcpDcliClient) ListHostIDs() ([]string, error) {
-	cmd := fmt.Sprintf("%s %s host list +formatter json", dcliVCenterPrefix, showUnreleased)
+	cmd := fmt.Sprintf("%s %s host list %s", dcliVCenterPrefix, showUnreleased, jsonFormatter)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return nil, DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return nil, err
 	}
 
 	var hosts []struct {
@@ -2339,12 +1858,9 @@ func (d *wcpDcliClient) ListHostIDs() ([]string, error) {
 func (d *wcpDcliClient) ListComputePolicyTagUsage(categoryName, tagName string) ([]TagUsageEntry, error) {
 	cmd := fmt.Sprintf("%s %s", computePolicyTagUsages, jsonFormatter)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return nil, DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return nil, err
 	}
 
 	var all []TagUsageEntry
@@ -2366,12 +1882,9 @@ func (d *wcpDcliClient) ListComputePolicyTagUsage(categoryName, tagName string) 
 func (d *wcpDcliClient) GetVMPolicyCompliance(policyID, vmMoid string) (VMPolicyComplianceStatus, error) {
 	cmd := fmt.Sprintf("%s --policy %s --vm %s %s", virtualmachineComputePolicy, policyID, vmMoid, jsonFormatter)
 
-	resp, err := d.dcliClient.RunDCLICommand(cmd)
+	resp, err := d.run(cmd)
 	if err != nil {
-		return VMPolicyComplianceStatus{}, DcliError{
-			rawResponse: string(resp),
-			baseErr:     err,
-		}
+		return VMPolicyComplianceStatus{}, err
 	}
 
 	var status VMPolicyComplianceStatus

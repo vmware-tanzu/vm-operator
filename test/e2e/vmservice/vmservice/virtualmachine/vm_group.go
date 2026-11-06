@@ -2956,6 +2956,8 @@ func verifyGuestCmds(
 		vmservice.VerifyLoginAndRunCmdsInNSXSetup(ctx, config, clusterProxy, namespace, consts.JumpboxPodVMName, vmIP, cmds, expectedOutput)
 	case consts.VDS:
 		vmservice.VerifyLoginAndRunCmdsInVDSSetup(config, vmIP, cmds, expectedOutput)
+	default:
+		Fail(fmt.Sprintf("Unsupported NetworkingTopology: %v", config.InfraConfig.NetworkingTopology))
 	}
 }
 

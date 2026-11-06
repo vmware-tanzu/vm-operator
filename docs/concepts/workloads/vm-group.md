@@ -64,6 +64,7 @@ spec:
     - name: app-server-3
       kind: VirtualMachine
     powerOnDelay: 30s  # Wait 30 seconds after the database tier is powered on
+    powerOffDelay: 15s  # When powering off, wait 15 seconds after the web tier is powered off
 
   # Third: Start the web tier
   - members:
@@ -72,6 +73,7 @@ spec:
     - name: nginx-2
       kind: VirtualMachine
     powerOnDelay: 20s  # Wait 20 seconds after the application tier is powered on
+    # The web tier powers off first, so powerOffDelay has no effect on it
 ```
 
 ## Joining VMs to a Group
@@ -153,7 +155,7 @@ spec:
 - Members automatically sync to the group's power state
 - New members added to a powered-on group will be powered on
 - Power on operations process boot groups in order, one at a time: a boot group powers on only after the previous boot group is powered on, and its optional `powerOnDelay` counts from that time (see [Power-On Ordering](vm.md#power-on-ordering))
-- Power off operations process boot groups in reverse order, one at a time: a boot group powers off only after the previous boot group is powered off, and its optional `powerOffDelay` counts from that time (see [Power-Off Ordering](vm.md#power-off-ordering))
+- Power off operations process boot groups in reverse order, one at a time: a boot group powers off only after the group before it in the power-off sequence is powered off, and its optional `powerOffDelay` counts from that time (see [Power-Off Ordering](vm.md#power-off-ordering))
 
 ### Individual VM Power Control
 
@@ -205,11 +207,11 @@ spec:
   - members:
     - name: application-tier
       kind: VirtualMachineGroup
-    powerOnDelay: 1m
+    powerOnDelay: 1m  # Wait 1 minute after every VM in the database tier is powered on
   - members:
     - name: web-tier
       kind: VirtualMachineGroup
-    powerOnDelay: 30s
+    powerOnDelay: 30s  # Wait 30 seconds after every VM in the application tier is powered on
 ```
 
 ## Affinity and Anti-Affinity

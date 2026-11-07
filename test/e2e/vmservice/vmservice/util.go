@@ -730,7 +730,7 @@ func VerifyLoginAndRunCmdsInVDSSetup(config *config.E2EConfig, vmIP string, cmds
 	By(fmt.Sprintf("Verify that ssh login to VM with vmIP (ipv4): %s succeeds", vmIP))
 
 	httpProxy := os.Getenv(consts.HTTPProxyEnv)
-	Expect(httpProxy).NotTo(BeEmpty(), fmt.Sprintf("%s env var is not set", consts.HTTPProxyEnv))
+	Expect(httpProxy).NotTo(BeEmpty(), "%s env var is not set", consts.HTTPProxyEnv)
 
 	gatewayVMIP := strings.Split(httpProxy, ":")[0]
 
@@ -1156,7 +1156,7 @@ func VerifyPostRegisterVM(
 	Eventually(func() bool {
 		vmIP := vmoperator.GetVirtualMachineIP(ctx, svClusterClient, vmNamespace, vmName)
 		return vmIP == newIP
-	}, config.GetIntervals("default", "wait-virtual-machine-vmip")...).Should(BeTrue(), fmt.Sprintf("restored VM doesn't have the new IP from network provider: %s", newIP))
+	}, config.GetIntervals("default", "wait-virtual-machine-vmip")...).Should(BeTrue(), "restored VM doesn't have the new IP from network provider: %s", newIP)
 }
 
 // VerifyRegisterVMOnlyClassicDisk verifies the register VM API with the following steps:

@@ -177,7 +177,7 @@ func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid 
 
 		// Check that the property exists
 		actualProp, exists := actualPropsMap[expectedProp.Key]
-		Expect(exists).To(BeTrue(), fmt.Sprintf("Expected vApp property '%s' should exist on VM", expectedProp.Key))
+		Expect(exists).To(BeTrue(), "Expected vApp property '%s' should exist on VM", expectedProp.Key)
 
 		// User-configurable properties
 		if actualProp.UserConfigurable != nil && *actualProp.UserConfigurable {
@@ -192,10 +192,10 @@ func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid 
 				switch expectedLower {
 				case "true":
 					Expect(actualProp.Value).To(Equal("True"),
-						fmt.Sprintf("Boolean property '%s' should be 'True', got '%s'", expectedProp.Key, actualProp.Value))
+						"Boolean property '%s' should be 'True'", expectedProp.Key)
 				case "false":
 					Expect(actualProp.Value).To(Equal("False"),
-						fmt.Sprintf("Boolean property '%s' should be 'False', got '%s'", expectedProp.Key, actualProp.Value))
+						"Boolean property '%s' should be 'False'", expectedProp.Key)
 				}
 			case "int":
 				fallthrough
@@ -206,7 +206,7 @@ func verifyVAppConfigs(ctx context.Context, vCenterClient *vim25.Client, vmmoid 
 				// Note: vApp properties may trim whitespace, so we trim expected values too
 				expectedTrimmed := strings.TrimSpace(literalVAppValue(expectedProp))
 				Expect(actualProp.Value).To(Equal(expectedTrimmed),
-					fmt.Sprintf("Property '%s' of type %s, should have value '%s', got '%s'", expectedProp.Key, actualProp.Type, expectedTrimmed, actualProp.Value))
+					"Property '%s' of type %s, should have value '%s'", expectedProp.Key, actualProp.Type, expectedTrimmed)
 			}
 		} else {
 			// for non-userconfigurable properties, check actualProp.Defaultvalue as actualProp.Value is empty

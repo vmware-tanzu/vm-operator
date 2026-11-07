@@ -5,7 +5,6 @@ package vmoperator
 
 import (
 	"context"
-	"fmt"
 
 	. "github.com/onsi/gomega"
 
@@ -83,7 +82,7 @@ func DeleteVirtualMachineReplicaSetAndWait(ctx context.Context, config *config.E
 		return
 	}
 	Expect(err).ToNot(HaveOccurred(), "failed to get VirtualMachineReplicaSet %s/%s", ns, name)
-	Expect(client.Delete(ctx, rs)).To(Succeed(), fmt.Sprintf("failed to delete VirtualMachineReplicaSet %s/%s", ns, name))
+	Expect(client.Delete(ctx, rs)).To(Succeed(), "failed to delete VirtualMachineReplicaSet %s/%s", ns, name)
 	WaitForVirtualMachineReplicaSetToBeDeleted(ctx, config, client, ns, name)
 }
 

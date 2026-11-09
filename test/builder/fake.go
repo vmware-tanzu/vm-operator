@@ -27,6 +27,7 @@ import (
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	lifecyclev1 "github.com/vmware-tanzu/vm-operator/external/lifecycle/api/v1alpha1"
+	mobilityv1a4 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha4"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha2"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -166,6 +167,7 @@ func KnownObjectTypes() []client.Object {
 		&vimv1.ConfigTarget{},
 		&vimv1.VirtualMachineConfigOptions{},
 		&vimv1.VirtualMachineGuestOptions{},
+		&mobilityv1a4.VirtualMachineInfraMigration{},
 	}
 }
 
@@ -194,5 +196,6 @@ func NewScheme() *runtime.Scheme {
 	_ = vspherepolv1.AddToScheme(scheme)
 	_ = infrav1.AddToScheme(scheme)
 	_ = vimv1.AddToScheme(scheme)
+	_ = mobilityv1a4.AddToScheme(scheme)
 	return scheme
 }

@@ -86,6 +86,221 @@ func TestIsMethods(t *testing.T) {
 	g.Expect(GetLastTransitionTime(obj, "falseInfo1")).ToNot(BeNil())
 }
 
+func TestIsReady(t *testing.T) {
+	ready := func(
+		status metav1.ConditionStatus,
+		observedGeneration int64) metav1.Condition {
+
+		return metav1.Condition{
+			Type:               ReadyConditionType,
+			Status:             status,
+			Reason:             "reason",
+			ObservedGeneration: observedGeneration,
+		}
+	}
+
+	testCases := []struct {
+		name    string
+		in      Conditions
+		options []ReadyOption
+		out     bool
+	}{
+		{
+			name: "no conditions",
+			in:   nil,
+			out:  false,
+		},
+		{
+			name: "no Ready condition",
+			in:   Conditions{*true1},
+			out:  false,
+		},
+		{
+			name: "Ready is False",
+			in:   Conditions{ready(metav1.ConditionFalse, 1)},
+			out:  false,
+		},
+		{
+			name: "Ready is Unknown",
+			in:   Conditions{ready(metav1.ConditionUnknown, 1)},
+			out:  false,
+		},
+		{
+			name: "Ready is True",
+			in:   Conditions{ready(metav1.ConditionTrue, 0)},
+			out:  true,
+		},
+		{
+			name: "Ready is True with other conditions",
+			in:   Conditions{*falseInfo1, ready(metav1.ConditionTrue, 0), *unknown1},
+			out:  true,
+		},
+		{
+			name:    "without a generation option the observed generation is ignored",
+			in:      Conditions{ready(metav1.ConditionTrue, 1)},
+			options: nil,
+			out:     true,
+		},
+		{
+			name:    "generation: no conditions",
+			in:      nil,
+			options: []ReadyOption{WithGeneration(1)},
+			out:     false,
+		},
+		{
+			name:    "generation: Ready is False for the generation",
+			in:      Conditions{ready(metav1.ConditionFalse, 2)},
+			options: []ReadyOption{WithGeneration(2)},
+			out:     false,
+		},
+		{
+			name:    "generation: Ready is Unknown for the generation",
+			in:      Conditions{ready(metav1.ConditionUnknown, 2)},
+			options: []ReadyOption{WithGeneration(2)},
+			out:     false,
+		},
+		{
+			name:    "generation: Ready is True for an older generation",
+			in:      Conditions{ready(metav1.ConditionTrue, 1)},
+			options: []ReadyOption{WithGeneration(2)},
+			out:     false,
+		},
+		{
+			name:    "generation: Ready is True with an observed generation of zero",
+			in:      Conditions{ready(metav1.ConditionTrue, 0)},
+			options: []ReadyOption{WithGeneration(1)},
+			out:     false,
+		},
+		{
+			name:    "generation: Ready is True for the generation",
+			in:      Conditions{ready(metav1.ConditionTrue, 2)},
+			options: []ReadyOption{WithGeneration(2)},
+			out:     true,
+		},
+		{
+			name:    "generation: Ready is True for a newer generation",
+			in:      Conditions{ready(metav1.ConditionTrue, 3)},
+			options: []ReadyOption{WithGeneration(2)},
+			out:     true,
+		},
+		{
+			name:    "generation: zero is always satisfied",
+			in:      Conditions{ready(metav1.ConditionTrue, 0)},
+			options: []ReadyOption{WithGeneration(0)},
+			out:     true,
+		},
+		{
+			name: "generation: the last option wins",
+			in:   Conditions{ready(metav1.ConditionTrue, 2)},
+			options: []ReadyOption{
+				WithGeneration(5),
+				WithGeneration(2),
+			},
+			out: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Exercise both the function and the method.
+			g.Expect(IsReady(tc.in, tc.options...)).To(Equal(tc.out))
+			g.Expect(tc.in.IsReady(tc.options...)).To(Equal(tc.out))
+		})
+	}
+}
+
+func TestGetObservedAt(t *testing.T) {
+	cond := func(
+		conditionType string,
+		observedGeneration int64) metav1.Condition {
+
+		return metav1.Condition{
+			Type:               conditionType,
+			Status:             metav1.ConditionTrue,
+			Reason:             "reason",
+			ObservedGeneration: observedGeneration,
+		}
+	}
+
+	testCases := []struct {
+		name       string
+		in         Conditions
+		generation int64
+		out        Conditions
+	}{
+		{
+			name:       "no conditions",
+			in:         nil,
+			generation: 1,
+			out:        Conditions{},
+		},
+		{
+			name:       "all conditions describe the generation",
+			in:         Conditions{cond("a", 2), cond("b", 2)},
+			generation: 2,
+			out:        Conditions{cond("a", 2), cond("b", 2)},
+		},
+		{
+			name:       "no condition describes the generation",
+			in:         Conditions{cond("a", 1), cond("b", 1)},
+			generation: 2,
+			out:        Conditions{},
+		},
+		{
+			name:       "each condition is judged on its own",
+			in:         Conditions{cond("a", 1), cond("b", 2), cond("c", 1)},
+			generation: 2,
+			out:        Conditions{cond("b", 2)},
+		},
+		{
+			name:       "a newer observed generation describes the generation",
+			in:         Conditions{cond("a", 3), cond("b", 1)},
+			generation: 2,
+			out:        Conditions{cond("a", 3)},
+		},
+		{
+			name:       "no observed generation is behind a non-zero generation",
+			in:         Conditions{cond("a", 0), cond("b", 1)},
+			generation: 1,
+			out:        Conditions{cond("b", 1)},
+		},
+		{
+			name:       "a zero generation is always satisfied",
+			in:         Conditions{cond("a", 0), cond("b", 1)},
+			generation: 0,
+			out:        Conditions{cond("a", 0), cond("b", 1)},
+		},
+		{
+			name:       "the order is kept",
+			in:         Conditions{cond("c", 2), cond("a", 2), cond("b", 2)},
+			generation: 2,
+			out:        Conditions{cond("c", 2), cond("a", 2), cond("b", 2)},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Exercise both the function and the method.
+			g.Expect(GetObservedAt(tc.in, tc.generation)).To(Equal(tc.out))
+			g.Expect(tc.in.GetObservedAt(tc.generation)).To(Equal(tc.out))
+		})
+	}
+
+	t.Run("the result does not alias the input", func(t *testing.T) {
+		g := NewWithT(t)
+
+		in := Conditions{cond("a", 2)}
+		out := GetObservedAt(in, 2)
+		out[0].Reason = "changed"
+
+		g.Expect(in[0].Reason).To(Equal("reason"))
+	})
+}
+
 func TestMirror(t *testing.T) {
 	foo := FalseCondition("foo", "reason foo", "message foo")
 	ready := TrueCondition(ReadyConditionType)

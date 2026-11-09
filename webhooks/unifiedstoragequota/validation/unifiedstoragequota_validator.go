@@ -52,6 +52,11 @@ type RequestedCapacity struct {
 	// StorageClassName represents the StorageClass associated with the given resource
 	StorageClassName string `json:"storageClassName"`
 
+	// VolumeAttributesClassName represents the VolumeAttributesClass associated with the
+	// given resource. When set, quota validation uses the VAC's storage policy directly
+	// instead of resolving it from the StorageClass.
+	VolumeAttributesClassName string `json:"volumeAttributesClassName,omitempty"`
+
 	// StoragePolicyID represents the StoragePolicyId associated with the given resource
 	StoragePolicyID string `json:"storagePolicyId"`
 
@@ -192,6 +197,8 @@ func (h *VMRequestedCapacityHandler) Handle(req admission.Request) CapacityRespo
 }
 
 // HandleCreate returns the Boot Disk capacity from the corresponding VMI/CVMI for the VM object in the AdmissionRequest.
+// The capacity is requested against the storage policy of the VM's VolumeAttributesClass if it has one, otherwise
+// the storage policy of its StorageClass.
 func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestContext) CapacityResponse {
 	vm := &vmopv1.VirtualMachine{}
 	if err := h.Converter.FromUnstructured(ctx.Obj.UnstructuredContent(), vm); err != nil {
@@ -201,17 +208,9 @@ func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestCont
 			)}
 	}
 
-	scName := vm.Spec.StorageClass
-
-	sc := &storagev1.StorageClass{}
-	if err := h.Client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
-		if apierrors.IsNotFound(err) {
-			return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, err)}
-		}
-		return CapacityResponse{
-			Response: webhook.Errored(http.StatusInternalServerError,
-				fmt.Errorf("failed to get storage class %q: %w", scName, err),
-			)}
+	policyID, srcPolicyObj, err := kubeutil.GetStoragePolicyIDAndSource(ctx, h.Client, *vm)
+	if err != nil {
+		return storagePolicyErrorResponse(srcPolicyObj, err)
 	}
 
 	// This webhook will not be called if vm.Spec.Image is not set. This is done in order to ensure that imageless VMs
@@ -300,24 +299,21 @@ func (h *VMRequestedCapacityHandler) HandleCreate(ctx *pkgctx.WebhookRequestCont
 
 	return CapacityResponse{
 		RequestedCapacities: []*RequestedCapacity{
-			{
-				Capacity:         *capacity,
-				StorageClassName: scName,
-				// If this parameter does not exist, then it is not necessarily an error condition. Return
-				// an empty value for StoragePolicyID and let Storage Policy Quota extension service decide
-				// what to do.
-				StoragePolicyID: sc.Parameters[scParamStoragePolicyID],
-			},
+			newRequestedCapacity(vm, srcPolicyObj, policyID, *capacity),
 		},
 		Response: webhook.Allowed(""),
 	}
 }
 
-// HandleUpdate checks for any positive difference in boot disk size and returns that difference.
-//   - If both vm and oldVM have Spec.Advanced.BootDiskCapacity set, then only return a positive difference.
-//   - If vm has Spec.Advanced.BootDiskCapacity set, while it is not set for oldVM, then use the first classic disk in
-//     oldVM.Status.Volumes as this basis for comparison, again returning only a positive difference.
-//   - If vm does not have Spec.Advanced.BootDiskCapacity set, then return an empty response.
+// HandleUpdate returns the capacity that an update to the VM needs to reserve.
+//   - If the VM's VolumeAttributesClass changed, then return the VM's whole storage footprint,
+//     oldVM.Status.Storage.Total, because all of it moves to the storage policy of the new VolumeAttributesClass,
+//     or of the StorageClass if the VolumeAttributesClass was removed.
+//   - Also return any positive difference in boot disk size, see bootDiskGrowth.
+//   - If neither applies, then return an empty response.
+//
+// The capacity is requested against the storage policy of the VM's VolumeAttributesClass if it has one, otherwise
+// the storage policy of its StorageClass.
 func (h *VMRequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestContext) CapacityResponse {
 	if !ctx.Obj.GetDeletionTimestamp().IsZero() {
 		return CapacityResponse{Response: admission.Allowed(builder.AdmitMesgUpdateOnDeleting)}
@@ -338,14 +334,51 @@ func (h *VMRequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestCont
 			)}
 	}
 
-	var capacity, oldCapacity *resource.Quantity
+	capacity := bootDiskGrowth(vm, oldVM)
 
-	if vm.Spec.Advanced == nil || vm.Spec.Advanced.BootDiskCapacity == nil {
+	// If the VolumeAttributesClass changed, then the VM's whole storage
+	// footprint moves to the storage policy of the new object, so request all
+	// of it instead of only the boot disk growth. The growth is on top of the
+	// footprint because the footprint is the VM's size before this update.
+	if vm.Spec.VolumeAttributesClassName != oldVM.Spec.VolumeAttributesClassName {
+		if storage := oldVM.Status.Storage; storage != nil && storage.Total != nil {
+			capacity.Add(*storage.Total)
+		}
+	}
+
+	if capacity.IsZero() {
 		return CapacityResponse{Response: webhook.Allowed("")}
 	}
 
-	capacity = vm.Spec.Advanced.BootDiskCapacity
+	policyID, srcPolicyObj, err := kubeutil.GetStoragePolicyIDAndSource(ctx, h.Client, *vm)
+	if err != nil {
+		return storagePolicyErrorResponse(srcPolicyObj, err)
+	}
 
+	return CapacityResponse{
+		RequestedCapacities: []*RequestedCapacity{
+			newRequestedCapacity(vm, srcPolicyObj, policyID, capacity),
+		},
+		Response: webhook.Allowed(""),
+	}
+}
+
+// bootDiskGrowth returns how much larger the boot disk requested by vm is than
+// the boot disk of oldVM. It returns zero if vm does not request a boot disk
+// size or if the requested size did not grow.
+//   - If both vm and oldVM have Spec.Advanced.BootDiskCapacity set, then compare them.
+//   - If vm has Spec.Advanced.BootDiskCapacity set, while it is not set for oldVM, then use the first classic disk in
+//     oldVM.Status.Volumes as the basis for comparison.
+func bootDiskGrowth(vm, oldVM *vmopv1.VirtualMachine) resource.Quantity {
+	zero := *resource.NewQuantity(0, resource.BinarySI)
+
+	if vm.Spec.Advanced == nil || vm.Spec.Advanced.BootDiskCapacity == nil {
+		return zero
+	}
+
+	capacity := vm.Spec.Advanced.BootDiskCapacity.DeepCopy()
+
+	var oldCapacity *resource.Quantity
 	if oldVM.Spec.Advanced == nil || oldVM.Spec.Advanced.BootDiskCapacity == nil {
 		oldCapacity = resource.NewQuantity(0, resource.BinarySI)
 		for _, volume := range oldVM.Status.Volumes {
@@ -359,34 +392,51 @@ func (h *VMRequestedCapacityHandler) HandleUpdate(ctx *pkgctx.WebhookRequestCont
 	} else {
 		oldCapacity = oldVM.Spec.Advanced.BootDiskCapacity
 	}
+
 	if capacity.Cmp(*oldCapacity) != 1 {
-		return CapacityResponse{Response: webhook.Allowed("")}
+		return zero
 	}
+
 	capacity.Sub(*oldCapacity)
-	scName := vm.Spec.StorageClass
-	sc := &storagev1.StorageClass{}
-	if err := h.Client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
-		if apierrors.IsNotFound(err) {
-			return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, err)}
-		}
-		return CapacityResponse{
-			Response: webhook.Errored(http.StatusInternalServerError,
-				fmt.Errorf("failed to get StorageClass %q: %w", scName, err),
-			)}
+	return capacity
+}
+
+// storagePolicyErrorResponse returns the response for an error getting the
+// storage policy the VM uses.
+func storagePolicyErrorResponse(
+	srcPolicyObj kubeutil.StoragePolicySource,
+	err error) CapacityResponse {
+
+	if apierrors.IsNotFound(err) {
+		return CapacityResponse{Response: webhook.Errored(http.StatusNotFound, err)}
 	}
+
 	return CapacityResponse{
-		RequestedCapacities: []*RequestedCapacity{
-			{
-				Capacity:         *capacity,
-				StorageClassName: scName,
-				// If this parameter does not exist, then it is not necessarily an error condition. Return
-				// an empty value for StoragePolicyID and let Storage Policy Quota extension service decide
-				// what to do.
-				StoragePolicyID: sc.Parameters[scParamStoragePolicyID],
-			},
-		},
-		Response: webhook.Allowed(""),
+		Response: webhook.Errored(http.StatusInternalServerError,
+			fmt.Errorf("failed to get storage policy ID from %s %q: %w", srcPolicyObj.Kind, srcPolicyObj.Name, err),
+		)}
+}
+
+// newRequestedCapacity returns the capacity requested for the VM against the
+// storage policy identified by policyID. The VolumeAttributesClass is only
+// set if it is the source of the storage policy.
+func newRequestedCapacity(
+	vm *vmopv1.VirtualMachine,
+	srcPolicyObj kubeutil.StoragePolicySource,
+	policyID string,
+	capacity resource.Quantity) *RequestedCapacity {
+
+	requested := &RequestedCapacity{
+		Capacity:         capacity,
+		StorageClassName: vm.Spec.StorageClass,
+		StoragePolicyID:  policyID,
 	}
+
+	if srcPolicyObj.IsVolumeAttributesClass() {
+		requested.VolumeAttributesClassName = srcPolicyObj.Name
+	}
+
+	return requested
 }
 
 func (h *VMRequestedCapacityHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

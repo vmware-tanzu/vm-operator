@@ -191,7 +191,25 @@ func GetStoragePolicyIDFromVolumeAttributesClass(obj storagev1.VolumeAttributesC
 	return policyID, nil
 }
 
-// GetStoragePolicyID returns the storage policy ID for a given VM.
+// StoragePolicySource identifies the Kubernetes object a VM references as the
+// source of its storage policy ID.
+type StoragePolicySource struct {
+	// Kind is either "StorageClass" or "VolumeAttributesClass".
+	Kind string
+
+	// Name is the name of the object. It is empty if the VM references neither
+	// a StorageClass nor a VolumeAttributesClass.
+	Name string
+}
+
+// IsVolumeAttributesClass returns true if the source is a
+// VolumeAttributesClass.
+func (s StoragePolicySource) IsVolumeAttributesClass() bool {
+	return s.Kind == internal.VolumeAttributesClassKind
+}
+
+// GetStoragePolicyIDAndSource returns the storage policy ID for a given VM
+// along with the object the ID comes from.
 // The storage policy ID can be obtained from the VolumeAttributesClass (VAC)
 // object, depending on if the StoragePolicyMutability feature is enabled.
 // If the feature is disabled or VAC doesn't specify the policy ID,
@@ -199,55 +217,76 @@ func GetStoragePolicyIDFromVolumeAttributesClass(obj storagev1.VolumeAttributesC
 //
 // Throws an error if the VolumeAttributesClass field is used while the
 // StoragePolicyMutability feature is disabled.
+//
+// The source is always the object the VM references, even if an error is
+// returned, so callers can attribute the error to it. For example, if the
+// feature is disabled and the VM specifies a VolumeAttributesClass, the source
+// is that VolumeAttributesClass and the error says the capability is not
+// enabled.
+func GetStoragePolicyIDAndSource(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm vmopv1.VirtualMachine) (string, StoragePolicySource, error) {
+
+	var srcPolicyObj StoragePolicySource
+
+	// VolumeAttributeClass's policyID trumps StorageClass's policyID.
+
+	if vm.Spec.VolumeAttributesClassName != "" {
+		srcPolicyObj = StoragePolicySource{
+			Kind: internal.VolumeAttributesClassKind,
+			Name: vm.Spec.VolumeAttributesClassName,
+		}
+
+		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
+			return "", srcPolicyObj, fmt.Errorf(
+				"%s %q object is specified but capability is not enabled",
+				srcPolicyObj.Kind, srcPolicyObj.Name,
+			)
+		}
+		vac := &storagev1.VolumeAttributesClass{}
+		if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: srcPolicyObj.Name}, vac); err != nil {
+			return "", srcPolicyObj, err
+		}
+
+		policyID, err := GetStoragePolicyIDFromVolumeAttributesClass(*vac)
+		if err != nil {
+			return "", srcPolicyObj, err
+		}
+		return policyID, srcPolicyObj, nil
+	}
+
+	srcPolicyObj = StoragePolicySource{
+		Kind: internal.StorageClassKind,
+		Name: vm.Spec.StorageClass,
+	}
+
+	if srcPolicyObj.Name == "" {
+		return "", srcPolicyObj, fmt.Errorf("%s object is empty", srcPolicyObj.Kind)
+	}
+
+	sc := &storagev1.StorageClass{}
+	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: srcPolicyObj.Name}, sc); err != nil {
+		return "", srcPolicyObj, err
+	}
+
+	policyID, err := GetStoragePolicyIDFromStorageClass(*sc)
+	if err != nil {
+		return "", srcPolicyObj, err
+	}
+	return policyID, srcPolicyObj, nil
+}
+
+// GetStoragePolicyID returns the storage policy ID for a given VM. It calls
+// GetStoragePolicyIDAndSource and discards the source, so the ID is resolved,
+// and errors are returned, exactly as described there.
 func GetStoragePolicyID(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
 	vm vmopv1.VirtualMachine) (string, error) {
 
-	var objName string
-	var objKind string
-
-	// VolumeAttributeClass's policyID trumps StorageClass's policyID.
-
-	if vm.Spec.VolumeAttributesClassName != "" {
-		objName = vm.Spec.VolumeAttributesClassName
-		objKind = internal.VolumeAttributesClassKind
-
-		if !pkgcfg.FromContext(ctx).Features.StoragePolicyMutability {
-			return "", fmt.Errorf(
-				"%s %q object is specified but capability is not enabled",
-				objKind, objName,
-			)
-		}
-		vac := &storagev1.VolumeAttributesClass{}
-		if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: objName}, vac); err != nil {
-			return "", err
-		}
-
-		policyID, err := GetStoragePolicyIDFromVolumeAttributesClass(*vac)
-		if err != nil {
-			return "", err
-		}
-		return policyID, nil
-	}
-
-	objName = vm.Spec.StorageClass
-	objKind = internal.StorageClassKind
-
-	if objName == "" {
-		return "", fmt.Errorf("%s object is empty", objKind)
-	}
-
-	sc := &storagev1.StorageClass{}
-	if err := k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: objName}, sc); err != nil {
-		return "", err
-	}
-
-	policyID, err := GetStoragePolicyIDFromStorageClass(*sc)
-	if err != nil {
-		return "", err
-	}
-	return policyID, nil
+	policyID, _, err := GetStoragePolicyIDAndSource(ctx, k8sClient, vm)
+	return policyID, err
 }
 
 // SetStoragePolicyID sets the storage policy ID on the given StorageClass.

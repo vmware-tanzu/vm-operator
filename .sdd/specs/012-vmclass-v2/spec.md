@@ -64,7 +64,9 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 3. **Given** a class that sets only `min` and `default`, **when** it is stored, **then** `max` stays unset and is bounded only by the hardware (or by a parent class in Milestone 2).
 4. **Given** a fixed size, **when** it is written, **then** it is expressed as `min == max == default`; the class mutating webhook does not fill missing bounds.
 5. **Given** an existing v1alpha5 class, **when** it is read as v1alpha6, **then** each scalar field is `{min: v, max: v, default: v}` and the class behaves exactly as before.
-6. **Given** an existing class with `hardware.instanceStorage`, **when** it is read as v1alpha6, **then** instance storage is kept as a preset value and VMs that name the class get it as today.
+6. **Given** a class or a VM, **when** CPU requests or limits are written, **then** they are in cores (millicores allowed) on both, an unset limit means unlimited, and the provider converts cores to MHz with the cluster's minimum host frequency; there is no percentage form.
+7. **Given** a VM whose effective requests exceed its limits, or whose memory request exceeds its memory size, **when** it is written, **then** it is rejected, naming the fields; **given** a class whose defaults break those rules or whose bounds can't be met (`requests.min` above `limits.max`), **then** the class is rejected.
+8. **Given** an existing class with `hardware.instanceStorage`, **when** it is read as v1alpha6, **then** instance storage is kept as a preset value and VMs that name the class get it as today.
 
 ### US2 — CSP admin: a class governs the VMs in its zones (P1)
 

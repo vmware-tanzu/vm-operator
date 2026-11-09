@@ -51,8 +51,8 @@ Device items: independent count bounds and required entries are deferred. A devi
 | `governs.enforcement` | enum | One value, `Deny`, set by the mutating webhook. |
 | `governs.existingVMs` | enum | `AllowOnViolation` or `DenyPowerOn`. Required on a governing class with no parent. In Milestone 2 only the top class sets it; children inherit it. |
 | `parentClassRefs` | list of `{name}` | Milestone 2. Rejected in Milestone 1. One entry; same namespace. |
-| `resources.size.{cpu,memory}` | Number | CPU in vCPUs. |
-| `resources.{requests,limits}.{cpu,memory}` | Number | CPU in vCPUs; compared with a VM's MHz using the cluster's minimum host frequency. |
+| `resources.size.{cpu,memory}` | Number | CPU is a whole vCPU count; memory in bytes. |
+| `resources.{requests,limits}.{cpu,memory}` | Number | Absolute only; no percentage form. CPU in cores, millicores allowed (`"2"`, `"1500m"`), as in v1alpha5; resolved to MHz as cores × the cluster's minimum host frequency. Memory in bytes. An unset limit is unlimited (`-1`), as today. Same unit as the VM's `spec.resources`. See "Size, requests and limits". |
 | `cpuAdvanced.*`, `memoryAdvanced.*`, `bootOptions.*`, `advanced.*` | per field | Same paths as `VirtualMachine.spec`, for fields the VM spec has. `bootOptions.firmware`: an image that declares firmware wins over the class default, as today, and must be in `allowed`; a VM value still wins over the image. `bootOptions.networkBootProtocol`: `allowed` only, no class default, because the VM API defaults it to `IP4`. `enterBootSetup` is a one-time request and not a class setting. `cpuAdvanced.topology.exposeVnumaOnCpuHotadd` stays in `configSpec` until the VM has the field [NEEDS CLARIFICATION: whether the observed value is the setting or the effective state]. |
 | `advanced.extraConfig` | `ListPolicy` | At the VM's path. |
 | `hardware.devices.{vgpuDevices,dynamicDirectPathIODevices}` | `ListPolicy` of device items | See "Value shapes". |
@@ -64,6 +64,25 @@ Device items: independent count bounds and required entries are deferred. A devi
 | `configSpec` | `VirtualMachineConfigSpec` | Pass-through settings with no typed field; presets only, never governance. An elevated path is moved for older writers and rejected for v1alpha6 writers. Only the top class of a chain may set it. |
 
 Label: the schema-version label records the last CRD version that wrote the class. A write through an older version is rejected once a newer one has written it. The provider's class API shows it as read-only `schemaVersion`.
+
+### Size, requests and limits
+
+`size` is what the guest sees (vCPU count, memory). `requests` is the host reservation and `limits` the host ceiling. The class and the VM use the same units, so governance compares them directly with no host frequency; only the provider converts CPU cores to MHz when it builds the `ConfigSpec`.
+
+| Field | Unit | `ConfigSpec` |
+|---|---|---|
+| `size.cpu` | whole vCPU count | `NumCPUs` |
+| `size.memory` | bytes | `MemoryMB` |
+| `requests.cpu` | cores (millicores allowed) | `CpuAllocation.Reservation` = ceil(cores × minimum host MHz) |
+| `limits.cpu` | cores (millicores allowed); unset = unlimited | `CpuAllocation.Limit`; unset = `-1` |
+| `requests.memory` | bytes | `MemoryAllocation.Reservation` (MB) |
+| `limits.memory` | bytes; unset = unlimited | `MemoryAllocation.Limit` (MB); unset = `-1` |
+
+Relation rules, checked on the effective values (after defaulting):
+
+- **VM**: `requests.cpu ≤ limits.cpu` and `requests.memory ≤ limits.memory` when the limit is set; `requests.memory ≤ size.memory`. A limit above size is allowed and has no effect. `reservationLockedToMax: true` and an explicit `requests.memory` other than `size.memory` are rejected together.
+- **Class**: the defaults satisfy the VM rules (`requests.default ≤ limits.default`, `requests.memory.default ≤ size.memory.default`), and the bounds can be met: `requests.min ≤ limits.max` and `requests.memory.min ≤ size.memory.max`.
+- [NEEDS CLARIFICATION: whether vCenter rejects a CPU reservation above `size.cpu` × host MHz; if it does, add `requests.cpu ≤ size.cpu`.]
 
 ## `VirtualMachineClass.status`
 
@@ -78,6 +97,7 @@ Label: the schema-version label records the last CRD version that wrote the clas
 
 | Field | Rules |
 |---|---|
+| `spec.resources.{size,requests,limits}` | Same units and relation rules as the class ("Size, requests and limits"). `requests.cpu` and `limits.cpu` change from MHz to cores (millicores allowed) and the CEL rule rejecting the `m` suffix is removed; v1alpha6 has not shipped, so no conversion is needed. |
 | `spec.reservedProfileName` | string. Filled by the mutation webhook from the class's `reservedProfileName.default` (or the governing class's), like any other default; explicit `""` = no profile. Must be in `allowed`. On a class-backed VM it is class-supplied and can't be edited inline; a classless VM sets or inherits it. Can't change from one set value to another while the VM is powered on; vm-operator may set it from unset (schema upgrade). When set, the VM's CPU count, CPU reservation and limit, memory reservation and limit, and device identities and quantities must equal the profile's; overhead is not compared. vm-operator writes the vCenter profile ID from this field and removes it when the field is empty. |
 | `status.governingClassNames` | The classes governing the VM's zone, computed live. |
 | `conditions[GovernanceCompliant]` | `True`/`False`; reason `NoGoverningClass` when the zone has none (False for classless VMs, True for class-backed VMs). |

@@ -13,7 +13,7 @@ Tasks marked `[P]` within a story can run in parallel. The order of epics and wh
 
 Each open item changes the shape of an API or a check. A task that depends on one says so.
 
-- [x] T000 CPU requests and limits on the class stay in vCPUs, as today
+- [x] T000 CPU requests and limits stay absolute, in cores (millicores allowed), as in v1alpha5, on both the class and the VM; no percentage form. The VM's `spec.resources` CPU requests and limits change from MHz to cores (T108b). An unset limit is unlimited
 - [x] T001 A passthrough device requires full memory reservation: the VM webhook enforces it (T405), and fixed classes written through the existing class API keep today's class check
 - [x] T002 Number rule: `default` is required when `min` or `max` is set; an unset bound is open; a fixed size is `min == max == default`
 - [x] T003 `governs.existingVMs` is required on a governing class with no parent; in Milestone 2 only the top class sets it and children inherit it
@@ -67,6 +67,8 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 - [ ] T108 [P] [US3/US6/US10] [vmop-4317] VM API: `spec.reservedProfileName`, `status.governingClassNames`, the `GovernanceCompliant` condition, and the observed fields (firmware, change block tracking, SEV, SEV-SNP, TDX, CPU hot-remove, SMC, DirectPath I/O devices) — `api/v1alpha6/virtualmachine_types.go`
 - [ ] T108a [US8/US10] [vmop-4317] VM API: inline `hardware.devices.vgpuDevices` and `hardware.devices.dynamicDirectPathIODevices`, with the same item fields and key names as the class items (T009e) — `api/v1alpha6/virtualmachine_types.go`
+- [ ] T108b [US1] [vmop-4317] VM API: `spec.resources.{requests,limits}.cpu` in cores (millicores allowed) instead of MHz, matching the class; remove the CEL rule rejecting the `m` suffix; the provider converts with the cluster's minimum host frequency, as for the class — `api/v1alpha6/virtualmachine_compute_types.go`, `pkg/providers/vsphere/virtualmachine/configspec.go`
+- [ ] T108c [US1] [vmop-4317] VM validating webhook: size, requests and limits relation rules on the effective values (model.md, "Size, requests and limits") — `webhooks/virtualmachine/validation`
 - [ ] T109 [P] [US2] [vmop-4317] `Zone.status.governingClasses` — `external/tanzu-topology/api/v1alpha1/zone.go`; `make generate-external-manifests`
 - [ ] T110 [US10] [vmop-4317] Schema upgrade fills `spec.reservedProfileName` on existing VMs from their class's `reservedProfileName.default`; this unset-to-set write is exempt from the powered-on lock — `pkg/providers/vsphere/upgrade/virtualmachine/vm_schema_upgrade.go`
 
@@ -129,7 +131,7 @@ The class APIs, their generation and the namespace-copy integration are provider
 
 ### Story — Class validating webhook (vmop-4325)
 
-- [ ] T301 [US1/US2/US9/US12] [vmop-4325] Value-shape rules (T002) not covered by CEL, elevated `configSpec` paths, `externalID` immutable, `existingVMs` required (T003), `parentClassRefs` rejected in Milestone 1; the new class rules are gated on the capability — `webhooks/virtualmachineclass/validation`
+- [ ] T301 [US1/US2/US9/US12] [vmop-4325] Value-shape rules (T002) not covered by CEL, the size, requests and limits relation rules (model.md), elevated `configSpec` paths, `externalID` immutable, `existingVMs` required (T003), `parentClassRefs` rejected in Milestone 1; the new class rules are gated on the capability — `webhooks/virtualmachineclass/validation`
 - [ ] T302 [US2] [vmop-4325] One governing class per zone; a selectable class must fit inside the zone's governing class, including `advanced.extraConfig.default` against `allowed`/`denied` — `webhooks/virtualmachineclass/validation`
 - [ ] T303 [US10] [vmop-4325] A class's default configuration must match its default profile, and every allowed profile must fit within the class's resource and device policy (bounds are not fixed by listing a profile); every name in `reservedProfileName` resolves to a `VirtualMachineReservedProfile` in the namespace; `allowed` is required when `default` is set — `webhooks/virtualmachineclass/validation`
 - [ ] T303a [US10] [vmop-4325] On class update through the v2 path, reject only changes that alter an allocated profile's shape or make the class's default VM invalid for it; tests pin the exact field boundary (T009b) — `webhooks/virtualmachineclass/validation`

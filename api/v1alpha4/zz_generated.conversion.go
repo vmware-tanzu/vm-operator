@@ -4441,6 +4441,7 @@ func autoConvert_v1alpha6_VirtualMachineStatus_To_v1alpha4_VirtualMachineStatus(
 	} else {
 		out.Storage = nil
 	}
+	// WARNING: in.VolumeAttributesClassName requires manual conversion: does not exist in peer-type
 	// WARNING: in.Provider requires manual conversion: does not exist in peer-type
 	// WARNING: in.CurrentSnapshot requires manual conversion: does not exist in peer-type
 	// WARNING: in.RootSnapshots requires manual conversion: does not exist in peer-type

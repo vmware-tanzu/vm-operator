@@ -31,3 +31,4 @@ These CRDs are referenced only in local dev (`config/local`) or test suite setup
 * `imageregistry.vmware.com_contentlibraries.yaml` is used by virtualmachinepublishrequest_controller_suite_test.go for the integration tests
 * `imageregistry.vmware.com_clustercontentlibraryitems.yaml` is used by the clustercontentlibraryitem_controller_suite_test.go for the integration tests
 * `imageregistry.vmware.com_contentlibraryitems.yaml` is used by the contentlibraryitem_controller_suite_test.go for the integration tests
+* `mobility-operator.vmware.com_virtualmachineinframigrations.yaml` is used by the virtualmachineinframigration controller suite for the integration tests. It is generated from `external/mobility-operator/api/v1alpha4` by `make generate-external-manifests`

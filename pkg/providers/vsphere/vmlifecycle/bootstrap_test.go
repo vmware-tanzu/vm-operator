@@ -723,17 +723,74 @@ var _ = Describe("GetBootstrapArgs", func() {
 
 		When("an interface has DNS from the network provider", func() {
 			BeforeEach(func() {
-				bootstraps = []network.Bootstrap{withProviderNameservers(static(), provNameserver1), static()}
+				vm.Spec.Network.Nameservers = []string{"fd00::99"}
+				bootstraps = []network.Bootstrap{
+					withProviderNameservers(static(), provNameserver1),
+					static(),
+					withProviderNameservers(dhcp(), provNameserver2),
+				}
 			})
 
-			It("ignores the network provider's DNS", func() {
+			It("uses them ahead of the VM-level nameservers", func() {
 				Expect(err).ToNot(HaveOccurred())
-				Expect(bsa.NetBootstraps[0].Nameservers).To(Equal(cmNS))
-				Expect(bsa.NetBootstraps[0].SearchDomains).To(BeEmpty())
-				Expect(bsa.NetBootstraps[1].Nameservers).To(Equal(cmNS))
-				Expect(bsa.DNSServers).To(Equal(cmNS))
-				Expect(bsa.SearchSuffixes).To(Equal(cmSS))
-				Expect(bsa.TemplateDNSServers).To(Equal(cmNS))
+				Expect(bsa.NetBootstraps[0].Nameservers).To(Equal([]string{provNameserver1}))
+				Expect(bsa.NetBootstraps[1].Nameservers).To(Equal([]string{"fd00::99"}))
+				Expect(bsa.NetBootstraps[2].Nameservers).To(Equal([]string{provNameserver2}))
+				Expect(bsa.DNSServers).To(Equal([]string{"fd00::99"}))
+			})
+
+			When("the VM-level nameservers are not set", func() {
+				BeforeEach(func() {
+					vm.Spec.Network.Nameservers = nil
+				})
+
+				It("does not use the Supervisor's defaults for that interface", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(bsa.NetBootstraps[0].Nameservers).To(Equal([]string{provNameserver1}))
+					Expect(bsa.NetBootstraps[0].SearchDomains).To(BeEmpty())
+					Expect(bsa.NetBootstraps[1].Nameservers).To(Equal(cmNS))
+				})
+			})
+
+			When("the bootstrap provider is LinuxPrep", func() {
+				BeforeEach(func() {
+					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+					}
+					vm.Spec.Network.Nameservers = []string{"fd00::99", provNameserver2}
+				})
+
+				It("appends them to the global nameservers without duplicates", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(bsa.DNSServers).To(Equal([]string{"fd00::99", provNameserver2, provNameserver1}))
+					// The VM spec must not be modified.
+					Expect(vm.Spec.Network.Nameservers).To(Equal([]string{"fd00::99", provNameserver2}))
+				})
+
+				When("the VM-level nameservers are not set", func() {
+					BeforeEach(func() {
+						vm.Spec.Network.Nameservers = nil
+					})
+
+					It("uses them instead of the Supervisor's defaults", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsa.DNSServers).To(Equal([]string{provNameserver1, provNameserver2}))
+					})
+				})
+			})
+
+			When("the bootstrap provider is Sysprep", func() {
+				BeforeEach(func() {
+					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+					}
+				})
+
+				It("uses them per adapter and leaves the global nameservers alone", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(bsa.NetBootstraps[0].Nameservers).To(Equal([]string{provNameserver1}))
+					Expect(bsa.DNSServers).To(Equal([]string{"fd00::99"}))
+				})
 			})
 		})
 

@@ -565,7 +565,12 @@ func applyScopedDNSDefaults( //nolint:gocyclo
 
 // applyLegacyDNSDefaults applies the Supervisor's default DNS configuration
 // to the VM as it had always been done prior to the ScopedDNSDefaults
-// capability. This must not be changed.
+// capability. The only change is that nameservers from the network provider
+// are used ahead of the VM-level and Supervisor ones; this is intentionally
+// limited and does not scope them by primary interface or IP family like
+// applyScopedDNSDefaults does.
+//
+//nolint:gocyclo
 func applyLegacyDNSDefaults(
 	ctx pkgctx.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
@@ -579,6 +584,30 @@ func applyLegacyDNSDefaults(
 	isCloudInit := bootstrap.CloudInit != nil
 	isGOSC := bootstrap.LinuxPrep != nil || bootstrap.Sysprep != nil
 	bootstraps := bsa.NetBootstraps
+
+	// Use the network provider's nameservers, such as from a VPC SubnetPort, as
+	// the interface's own when the interface spec did not supply any.
+	// InterfaceBootstrap has cleared them when it did. This must happen before
+	// the VM-level nameservers are applied so the order of precedence is the
+	// interface spec, the network provider, and then the VM-level values.
+	for i := range bootstraps {
+		b := &bootstraps[i]
+		if len(b.Nameservers) == 0 && len(b.ProviderNameservers) > 0 {
+			b.Nameservers = b.ProviderNameservers
+		}
+	}
+
+	// LinuxPrep only supports the global DNS servers, and ignores the
+	// per-adapter ones. Append the interfaces' provider nameservers to the
+	// global list, after the VM-level ones and without duplicates. The
+	// Supervisor's defaults below are then only used if the list is empty.
+	if bootstrap.LinuxPrep != nil {
+		global := appendUnique(nil, bsa.DNSServers...)
+		for i := range bootstraps {
+			global = appendUnique(global, bootstraps[i].ProviderNameservers...)
+		}
+		bsa.DNSServers = global
+	}
 
 	if ci := bootstrap.CloudInit; ci != nil {
 		applyLegacyVMDNSToInterfaces(ci, bsa)

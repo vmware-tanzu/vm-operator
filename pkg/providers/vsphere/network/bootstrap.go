@@ -81,9 +81,10 @@ type Bootstrap struct {
 	// ProviderNameservers are the resolver addresses reported for this
 	// interface by its network provider, such as a VPC SubnetPort.
 	// InterfaceBootstrap clears them when the interface spec supplies its own
-	// nameservers. Otherwise, scoped DNS defaulting treats them as the
-	// interface's nameservers, ahead of VM-level and Supervisor nameservers.
-	// Legacy defaulting ignores them. Providers do not supply search domains.
+	// nameservers. Otherwise, both the scoped and legacy DNS defaulting treat
+	// them as the interface's nameservers, ahead of VM-level and Supervisor
+	// nameservers; see vmlifecycle.GetBootstrapArgs. Providers do not supply
+	// search domains.
 	ProviderNameservers []string
 
 	// Routes is the list of static routes to configure inside the guest,

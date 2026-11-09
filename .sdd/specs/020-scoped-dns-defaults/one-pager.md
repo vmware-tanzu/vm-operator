@@ -4,7 +4,7 @@
 |---|---|---|---|
 | TBD | TBD | TBD | vmop-4255 |
 
-**Status:** WIP. The branch implements scoped DNS selection and provider-nameserver handling. SubnetPort DNS ingestion, provider migration, resolver validation, and validation of the E2E cases on a real Supervisor remain pending.
+**Status:** WIP. The branch implements scoped DNS selection and provider-nameserver handling. `bootstrapFromVPC` reads SubnetPort DNS, as added on `main` by PR 2130. Provider migration, resolver validation, and validation of the E2E cases on a real Supervisor remain pending.
 
 **Draft PR:** [Implementation PR #2005](https://github.com/vmware-tanzu/vm-operator/pull/2005)
 
@@ -27,7 +27,7 @@ A Supervisor can be configured with cluster wide default DNS nameservers and sea
 | Supervisor defaults | `nameservers` and `searchsuffixes` in `vmoperator-network-config`, in VM Operator's namespace. |
 | VM-level DNS | `spec.network.nameservers` and `spec.network.searchDomains`. |
 | Interface-level DNS | `spec.network.interfaces[].nameservers` and `.searchDomains`. |
-| Provider DNS | Nameserver addresses reported for an interface by its network provider via the network interface CR; SubnetPort API changes are still pending. Providers do not supply search domains. |
+| Provider DNS | Nameserver addresses reported for an interface by its network provider via the network interface CR, such as a VPC SubnetPort's `status.dnsResolverIPs`. Providers do not supply search domains. |
 | Interface DNS | Interface-level nameservers, falling back to provider nameservers. Search domains resolve separately from the VM Spec and Supervisor defaults. |
 | NoIPAM | Network with no IP address management; addressing is left to the guest. |
 | Static interface | At least one static address, no DHCPv4 or DHCPv6, and not NoIPAM. |
@@ -129,9 +129,9 @@ A Linux VM without a bootstrap spec and without a CD-ROM is implicitly customize
 
 ### Network provider DNS
 
-SubnetPort `status.dnsResolverIPs` and its ingestion by `bootstrapFromVPC` are pending. Examples 7, 10, 13, and 18 use synthetic provider input.
+`bootstrapFromVPC` sets provider nameservers from SubnetPort `status.dnsResolverIPs`. PR 2130 added this to Legacy mode as a deliberately limited stopgap: it has no capability gating and does not scope by primary interface or IP family. Examples 7, 10, 13, and 18 show provider input.
 
-For Cloud-Init and Sysprep, interface-level nameservers replace provider nameservers, which take precedence over VM-level and Supervisor nameservers. Provider nameservers apply regardless of addressing mode and are unfiltered. LinuxPrep merges them globally, so users cannot preserve per-link resolver scope or remove them through interface fields, which admission rejects. Legacy mode ignores provider nameservers.
+For Cloud-Init and Sysprep, interface-level nameservers replace provider nameservers, which take precedence over VM-level and Supervisor nameservers. Provider nameservers apply regardless of addressing mode and are unfiltered. LinuxPrep merges them globally, so users cannot preserve per-link resolver scope or remove them through interface fields, which admission rejects. Legacy mode applies them the same way per interface, and for LinuxPrep appends every interface's to the global list after the VM-level ones, without primary-interface or IP family scoping.
 
 ### Status and templates
 
@@ -199,7 +199,7 @@ data:
 
 The non-empty `searchsuffixes` value is an example input, not a claim that Supervisor normally populates it. If the key is absent or empty, there are no Supervisor search domains to apply.
 
-Unless stated otherwise, the capability is activated and the VM has selected `scoped`. Interfaces shown with static addresses are on networks with IPAM, with DHCPv4, DHCPv6, and Router Advertisements disabled unless an example says otherwise. An address in the VM Spec alone does not establish this: provider addressing mode still matters. DHCP is shown the way it is usually configured, by the network: the interface's provider CR status reports it, either a NetOP `NetworkInterface` with `ipAssignmentMode: dhcp` or, in examples 10 and 13, a VPC `SubnetPort` with no address on a Subnet where DHCP is not deactivated. The examples don't set the VM Spec `dhcp4` and `dhcp6` fields, which override the provider's result. Provider-DNS examples 7, 10, 13, and 18 use synthetic `dnsResolverIPs` provider input; reading those values from SubnetPorts is a follow-up.
+Unless stated otherwise, the capability is activated and the VM has selected `scoped`. Interfaces shown with static addresses are on networks with IPAM, with DHCPv4, DHCPv6, and Router Advertisements disabled unless an example says otherwise. An address in the VM Spec alone does not establish this: provider addressing mode still matters. DHCP is shown the way it is usually configured, by the network: the interface's provider CR status reports it, either a NetOP `NetworkInterface` with `ipAssignmentMode: dhcp` or, in examples 10 and 13, a VPC `SubnetPort` with no address on a Subnet where DHCP is not deactivated. The examples don't set the VM Spec `dhcp4` and `dhcp6` fields, which override the provider's result. Provider-DNS examples 7, 10, 13, and 18 show SubnetPort `dnsResolverIPs` input.
 
 How to read the output:
 
@@ -223,7 +223,7 @@ How to read the output:
 | Sysprep, no DNS in the spec | Defaults in the global list, which Windows ignores | Defaults on the first adapter | 11 |
 | Sysprep, VM-level nameservers | In the global list, which Windows ignores | On each static adapter, filtered by family | 12 |
 | Linux VM with no bootstrap method | Default search suffixes applied | Not applied, like explicit LinuxPrep | 14 |
-| DNS from the network provider (future input) | Ignored | Treated as interface-level DNS; global rollup where required | 7, 10, 13, 18 |
+| DNS from the network provider | Used ahead of VM-level DNS per interface, unscoped | Treated as interface-level DNS; global rollup where required | 7, 10, 13, 18 |
 | Cloud-Init or Sysprep, VM nameservers of another family | Cloud-Init copies unfiltered; Sysprep writes unused global list | No matching nameservers and no fallback to Supervisor defaults | 15 |
 | Cloud-Init, NoIPAM with explicit addresses | DNS copied/defaulted as on other non-DHCP links | No VM-level or Supervisor DNS; explicit interface DNS still works | 16 |
 | Cloud-Init, useGlobal flags false | Suppress VM-level copy only | Still do not suppress Supervisor defaults | 17 |
@@ -489,7 +489,7 @@ The webhook still accepts the VM-level DNS, but the VM has no static interface t
 
 - **Prior behavior**: both interfaces get `192.168.1.53` and `app.example`, which netplan adds to the DNS from DHCP.
 
-#### 7. Cloud-Init, DNS from the network provider (future provider input)
+#### 7. Cloud-Init, DNS from the network provider
 
 ```yaml
 spec:
@@ -498,14 +498,14 @@ spec:
   network:
     nameservers: ["192.168.1.53"]
     interfaces:
-    - name: eth0   # future provider input supplies nameservers 10.1.0.53
+    - name: eth0   # provider supplies nameservers 10.1.0.53
       addresses: ["192.168.10.10/24"]
       gateway4: 192.168.10.1
     - name: eth1
       addresses: ["192.168.20.10/24"]
       gateway4: 192.168.20.1
 
-# Synthetic provider input (future SubnetPort API; not part of the VM Spec).
+# Network provider input (SubnetPort status; not part of the VM Spec).
 ---
 # SubnetPort status fragment for eth0
 status:
@@ -529,7 +529,7 @@ network:
 
 eth0 sets no nameservers of its own, so the provider's `10.1.0.53` is used as its interface-level nameservers, and eth0 doesn't fall back to the VM-level `192.168.1.53`. eth1 has no provider nameservers, so it falls back to the VM-level list. Setting `nameservers` on eth0 would replace the provider's. Each interface resolves nameservers in the order interface, provider, VM-level, then Supervisor defaults. That order is still open against the upstream proposal; see Supervisor DNS integration requirements.
 
-- **Prior behavior**: provider DNS is ignored, and both interfaces get `192.168.1.53`.
+- **Prior behavior**: Legacy mode now also uses the provider's nameservers ahead of the VM-level ones (PR 2130), so the result is the same. Before that, provider DNS was ignored and both interfaces got `192.168.1.53`.
 
 #### 8. LinuxPrep, DHCP first interface
 
@@ -606,7 +606,7 @@ Only the first interface is considered. Because the global list overrides DHCP o
 
 - **Prior behavior**: `dnsServerList` is `10.0.0.53, fd00::53`.
 
-#### 10. LinuxPrep, DNS in the VM Spec and from the network provider (future provider input)
+#### 10. LinuxPrep, DNS in the VM Spec and from the network provider
 
 ```yaml
 spec:
@@ -616,13 +616,12 @@ spec:
     nameservers: ["192.168.1.53"]
     searchDomains: ["app.example"]
     interfaces:
-    - name: eth0   # future provider input supplies 10.1.0.53
+    - name: eth0   # provider supplies 10.1.0.53
       addresses: ["192.168.10.10/24"]
       gateway4: 192.168.10.1
-    - name: eth1   # provider reports DHCP; future input: 10.2.0.53, 10.1.0.53
+    - name: eth1   # provider reports DHCP and supplies 10.2.0.53, 10.1.0.53
 
 # Network provider input (SubnetPort status; not part of the VM Spec).
-# dnsResolverIPs is synthetic: the SubnetPort API does not report it yet.
 ---
 # SubnetPort status fragment for eth0
 status:
@@ -654,7 +653,7 @@ nicSettingMap:
 
 LinuxPrep's global nameserver list gets the VM-level nameservers first, then each interface's provider nameservers in interface order without duplicates. eth1's provider nameservers are included even though it uses DHCP, and the global list overrides DHCP on eth1. The suffix list contains only the VM-level `app.example`; providers supply no search domains.
 
-- **Prior behavior**: provider DNS is ignored, so `dnsServerList` is `192.168.1.53` and `dnsSuffixList` is `app.example`.
+- **Prior behavior**: Legacy mode now also appends the provider nameservers to the global list (PR 2130), so the result is the same. Before that, provider DNS was ignored, so `dnsServerList` was `192.168.1.53` and `dnsSuffixList` was `app.example`.
 
 #### 11. Sysprep, no DNS in the spec
 
@@ -749,7 +748,7 @@ The VM-level nameservers go to every static adapter that doesn't set its own, so
 
 - **Prior behavior**: the VM-level nameservers only go into `globalIPSettings.dnsServerList`, which Windows ignores, so eth0 gets no DNS servers. eth2 and eth3 are the same as with the new behavior.
 
-#### 13. Sysprep, DNS from the network provider (future provider input)
+#### 13. Sysprep, DNS from the network provider
 
 ```yaml
 spec:
@@ -757,13 +756,12 @@ spec:
     sysprep: {}  # Identity and credentials omitted from this fragment.
   network:
     interfaces:
-    - name: eth0   # future provider input supplies 10.1.0.53
+    - name: eth0   # provider supplies 10.1.0.53
       addresses: ["192.168.10.10/24"]
       gateway4: 192.168.10.1
-    - name: eth1   # provider reports DHCP; future input supplies 10.2.0.53
+    - name: eth1   # provider reports DHCP and supplies 10.2.0.53
 
 # Network provider input (SubnetPort status; not part of the VM Spec).
-# dnsResolverIPs is synthetic: the SubnetPort API does not report it yet.
 ---
 # SubnetPort status fragment for eth0
 status:
@@ -795,7 +793,7 @@ nicSettingMap:
 
 The provider's nameservers go on their adapters like interface-level nameservers. On eth1 they replace DHCP DNS, and eth0 does not get Supervisor nameservers because the provider supplies its own. The global suffix list stays empty: providers do not supply search domains, and this VM specifies none. Setting `nameservers` on an interface overrides the provider's nameservers.
 
-- **Prior behavior**: provider DNS is ignored. `globalIPSettings.dnsServerList` is `10.0.0.53, fd00::53`, which Windows ignores, so eth0 gets no DNS servers.
+- **Prior behavior**: Legacy mode now also applies the provider nameservers per adapter (PR 2130), so the result is the same. Before that, provider DNS was ignored: `globalIPSettings.dnsServerList` was `10.0.0.53, fd00::53`, which Windows ignores, so eth0 got no DNS servers.
 
 #### 14. Linux VM with no bootstrap method (implicit LinuxPrep)
 
@@ -939,9 +937,9 @@ These flags control copying matching VM-level values only. The webhook rejects a
 
 **Legacy:** both non-DHCP interfaces get both default nameservers and `corp.local`, despite the false flags.
 
-#### 18. Cloud-Init, nameservers and search domains resolve independently (future provider input)
+#### 18. Cloud-Init, nameservers and search domains resolve independently
 
-Synthetic provider input supplies eth0 with nameservers `10.1.0.53` only:
+The network provider supplies eth0 with nameservers `10.1.0.53` only:
 
 ```yaml
 spec:
@@ -959,7 +957,7 @@ spec:
       addresses: ["192.168.20.10/24"]
       gateway4: 192.168.20.1
 
-# Synthetic provider input (future SubnetPort API; not part of the VM Spec).
+# Network provider input (SubnetPort status; not part of the VM Spec).
 ---
 # SubnetPort status fragment for eth0
 status:
@@ -983,7 +981,7 @@ network:
 
 The interface nameservers replace the provider nameservers, while eth0 independently receives the VM-level `app.example` search domain. Setting only interface search domains would leave provider nameservers intact; removing eth0's nameservers would select the provider's `10.1.0.53` and keep `app.example`. Neither interface nor provider nameservers are family filtered. DNS on eth1 alone does not suppress defaults on eth0 when the matching VM-level field and eth0 DNS are empty.
 
-**Legacy:** provider DNS is ignored; eth0 uses its explicit nameservers and the VM-level `app.example` search domain. Eth1 is unchanged.
+**Legacy:** the same, since eth0's explicit nameservers replace the provider's, and it uses the VM-level `app.example` search domain. Eth1 is unchanged.
 
 #### 19. Applied DNS in status versus nameservers in templates
 

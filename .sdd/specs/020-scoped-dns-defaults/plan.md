@@ -79,9 +79,9 @@ In Scoped mode, VM-level DNS is applied only to static interfaces:
 
 ### Network provider nameservers
 
-`network.Bootstrap.ProviderNameservers` holds only resolver addresses. The SubnetPort integration will populate it from `status.dnsResolverIPs` once that field is available. There is no provider search-domain field.
+`network.Bootstrap.ProviderNameservers` holds only resolver addresses. `bootstrapFromVPC` populates it from the SubnetPort's `status.dnsResolverIPs`. There is no provider search-domain field.
 
-`InterfaceBootstrap` clears provider nameservers when the interface spec sets its own nameservers. Setting interface search domains leaves provider nameservers intact. Scoped defaulting copies the provider nameservers to the interface before the VM-level and Supervisor fallbacks; Legacy mode ignores them.
+`InterfaceBootstrap` clears provider nameservers when the interface spec sets its own nameservers. Setting interface search domains leaves provider nameservers intact. Both Scoped and Legacy defaulting copy the provider nameservers to the interface before the VM-level and Supervisor fallbacks. For LinuxPrep, both append them to the global nameserver list after the VM-level ones, without duplicates.
 
 Cloud-Init and Sysprep retain provider nameservers per interface, including DHCP interfaces, without family filtering. LinuxPrep appends them to the global nameserver list after VM-level nameservers, in interface order and without duplicates, then clears the per-interface DNS that Linux GOSC cannot apply. LinuxPrep and Sysprep global search suffixes come only from `spec.network.searchDomains`. Provider nameservers do not suppress VM-level or VKS Supervisor search domains.
 
@@ -170,7 +170,7 @@ Out of scope for E2E:
 - **Guest resolver state.** Lease contents and resolver files depend on the image and the DHCP server, which these tests do not control. Guest verification belongs to upgrade or manual testing.
 - **Existing-guest selection and the full precedence, family, RA, NoIPAM, and marker combinations.** These are unit coverage. Capability activation against existing VMs can be exercised in upgrade testing.
 
-When SubnetPort ingestion lands, add a provider-path E2E proving that real `status.dnsResolverIPs` values reach a scoped Cloud-Init VM's metadata while VM-level search domains remain intact.
+SubnetPort ingestion has landed on `main`, so add a provider-path E2E proving that real `status.dnsResolverIPs` values reach a scoped Cloud-Init VM's metadata while VM-level search domains remain intact.
 
 ## Rollout / migration
 

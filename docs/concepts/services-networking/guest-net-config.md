@@ -390,7 +390,7 @@ Users who can edit a VM may add, change, or remove this annotation without privi
 
 ### Network Provider Nameservers
 
-Network providers supply resolver addresses only, not search domains. The scoped bootstrap plumbing accepts nameservers per interface, but reading `SubnetPort.status.dnsResolverIPs` is pending the SubnetPort API update. Legacy bootstrap ignores provider nameservers.
+Network providers supply resolver addresses only, not search domains. For VPC networks, VM Operator reads them from the SubnetPort's `status.dnsResolverIPs`. Legacy bootstrap also uses provider nameservers, but without the primary interface and IP family scoping of scoped bootstrap.
 
 When provider nameservers are available, interface-level nameservers override them. With Cloud-Init and Sysprep, provider nameservers override VM-level nameservers on that interface and are applied without family filtering, including on DHCP interfaces. Cloud-Init adds configured nameservers to DHCP DNS; Sysprep adapter nameservers replace DHCP DNS. LinuxPrep appends provider nameservers to the global list after VM-level nameservers in interface order without duplicates, and a non-empty global list overrides DHCP on all interfaces.
 

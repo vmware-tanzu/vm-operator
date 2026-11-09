@@ -59,7 +59,7 @@ Consequences:
 
 - With Cloud-Init, `useGlobal*AsDefault: false` can never be combined with VM-level DNS. In Legacy mode the knob therefore had no effect on the guest, and the global defaults were still applied.
 - Linux VMs with no bootstrap provider (implicit LinuxPrep) and vAppConfig-only VMs cannot set any DNS, so the global defaults are their only source. Adding `spec.bootstrap.linuxPrep` after creation is allowed.
-- Network providers do not supply nameservers yet. VPC SubnetPorts are expected to report resolver addresses in `status.dnsResolverIPs`; `Bootstrap.ProviderNameservers` is plumbed for them (G0a). Providers do not supply search domains.
+- Only VPC SubnetPorts supply nameservers, in `status.dnsResolverIPs`, which `bootstrapFromVPC` stores in `Bootstrap.ProviderNameservers` (G0a). Providers do not supply search domains.
 
 ## Netplan and DHCP
 
@@ -69,7 +69,7 @@ VM Operator does not set `dhcp4-overrides`/`dhcp6-overrides`. Nameservers on a D
 
 WIKI page 2485688854 was reviewed with its VM-related comments. Its proposed SubnetPort contract is `status.dnsResolverIPs` (IPv4 and IPv6 addresses), not search domains. The comments ask for explicit VM precedence (2492261667, 2517809043), LinuxPrep behavior with per-port DNS (2517809053), multiple SubnetPorts/shared-subnet VPCs (2517809056, 2912673119), and protection of existing VKS workloads (2512616389, 2913293257).
 
-Scoped bootstrap handles nameservers per interface for Cloud-Init/Sysprep and rolls them up for LinuxPrep. It pins detected existing guests to legacy behavior and keeps legacy provider DNS ignored. It does not implement SubnetPort resolver publication or ingestion, resolver forwarding, DNS auto-record generation, PodVM proxies, or ImageFetcher changes.
+Scoped bootstrap handles nameservers per interface for Cloud-Init/Sysprep and rolls them up for LinuxPrep. It pins detected existing guests to legacy behavior and applies provider DNS in legacy mode the same way, unscoped (PR 2130). It consumes SubnetPort resolver IPs but does not implement their publication, resolver forwarding, DNS auto-record generation, PodVM proxies, or ImageFetcher changes.
 
 The focused comment 3126531699 requires per-node prerequisite checks before DNS changes rather than relying on tenant diligence. That requirement is recorded in T009b: VKS/NSX integration must verify required names resolve through the selected VPC resolver before new/remediated nodes switch. Existing-VM pinning alone does not protect replacement nodes or prove that the resolver forwards existing workload names.
 

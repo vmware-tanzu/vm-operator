@@ -396,7 +396,7 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 		return err
 	} else if vcVM == nil {
 		// VM does not exist.
-		return nil
+		return vs.postDeleteVirtualMachine(vmCtx, vm)
 	}
 
 	if err := vcVM.Properties(
@@ -458,7 +458,23 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 		}
 	}
 
-	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
+	if err := virtualmachine.DeleteVirtualMachine(vmCtx, vcVM); err != nil {
+		return err
+	}
+
+	return vs.postDeleteVirtualMachine(vmCtx, vm)
+}
+
+// postDeleteVirtualMachine performs the general cleanup of resources related
+// to a VM once the VM has been deleted from, unregistered from, or is otherwise
+// gone from, vCenter. It is idempotent.
+func (vs *vSphereVMProvider) postDeleteVirtualMachine(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) error {
+
+	// Release any external network interfaces that the VM was associated
+	// with. VM Operator does not own or delete those.
+	return network.ReleaseAllExternalNetworkInterfaces(ctx, vm, vs.k8sClient)
 }
 
 func (vs *vSphereVMProvider) PublishVirtualMachine(

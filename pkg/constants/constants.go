@@ -264,4 +264,19 @@ const (
 	// at the time the VM is deleted. Presence of the key is sufficient; the
 	// value is never inspected.
 	KeepOwnerRefAnnotationKey = "vmoperator.vmware.com/keep-owner-ref"
+
+	// NetworkInterfaceVMNameLabel is the label put on a network interface CR that identifies
+	// its VM by name.
+	NetworkInterfaceVMNameLabel = "vmoperator.vmware.com/vm-name"
+
+	// ExternalNetworkInterfaceAnnotation is the annotation put on a network
+	// interface CR that is externally managed, meaning it was not created by VM
+	// Operator and is referenced by a VM interface's ExternalRef. VM Operator
+	// never deletes such a CR, regardless of its owner references, and removes
+	// the VM association metadata from it when it is no longer referenced.
+	ExternalNetworkInterfaceAnnotation = "vmoperator.vmware.com/external-network-interface"
+
+	// VPCAttachmentRef annotation key is for VPC SubnetPort to get virtual
+	// machine name.
+	VPCAttachmentRef = "nsx.vmware.com/attachment_ref"
 )

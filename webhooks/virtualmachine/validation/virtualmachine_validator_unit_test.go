@@ -2478,6 +2478,319 @@ func unitTestsValidateCreate() {
 
 	Context("Network", func() {
 
+		DescribeTable("network create with external network interface", doTest,
+			Entry("allow VDS NetworkInterface",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow VPC SubnetPort with static addresses",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "crd.nsx.vmware.com/v1alpha1",
+										Kind:       "SubnetPort",
+										Name:       "my-subnetport",
+									},
+									DHCP4:     ptr.To(false),
+									DHCP6:     ptr.To(false),
+									Addresses: []string{"192.168.1.100/24"},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow externalRef for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.IsPrivilegedAccount = false
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].externalRef: Forbidden: only privileged users may set an external network interface`,
+					),
+				},
+			),
+
+			Entry("disallow when external network interfaces are not enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].externalRef: Forbidden: external network interfaces are not enabled`,
+					),
+				},
+			),
+
+			Entry("disallow apiVersion not supported in the namespace",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "crd.nsx.vmware.com/v1alpha1",
+										Kind:       "SubnetPort",
+										Name:       "my-subnetport",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].externalRef.apiVersion: Unsupported value: "crd.nsx.vmware.com/v1alpha1": supported values: "netoperator.vmware.com/v1alpha1"`,
+					),
+				},
+			),
+
+			Entry("disallow kind not supported for the provider",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "Network",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].externalRef.kind: Unsupported value: "Network": supported values: "NetworkInterface"`,
+					),
+				},
+			),
+
+			Entry("disallow network with externalRef",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+									Network: &common.PartialObjectRef{
+										Name: "my-network",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].externalRef: Forbidden: network and externalRef are mutually exclusive`,
+					),
+				},
+			),
+
+			Entry("disallow macAddr with externalRef",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+									MACAddr: "00:50:56:00:00:01",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].externalRef: Forbidden: macAddr and externalRef are mutually exclusive`,
+					),
+				},
+			),
+
+			Entry("disallow duplicate externalRef",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+								{
+									Name: "eth1",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[1].externalRef: Duplicate value: "my-netif"`,
+					),
+				},
+			),
+
+			Entry("disallow duplicate externalRef with different API versions",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+								{
+									Name: "eth1",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha2",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[1].externalRef: Duplicate value: "my-netif"`,
+					),
+				},
+			),
+
+			Entry("disallow externalRef with the Named network provider",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeNamed
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "foo.example.com/v1",
+										Kind:       "Bar",
+										Name:       "x",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].externalRef: Forbidden: no network provider in the namespace supports this reference`,
+					),
+				},
+			),
+		)
+
 		DescribeTable("network create", doTest,
 			Entry("allow default",
 				testParams{
@@ -6977,6 +7290,189 @@ func unitTestsValidateUpdate() {
 	})
 
 	Context("Network", func() {
+
+		DescribeTable("update network with external network interface", doTest,
+			Entry("allow unchanged externalRef when external network interfaces are not enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = false
+						})
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Labels["unrelated"] = "change"
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow new externalRef when external network interfaces are not enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = false
+						})
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Network.Interfaces = append(ctx.vm.Spec.Network.Interfaces,
+							vmopv1.VirtualMachineNetworkInterfaceSpec{
+								Name: "eth1",
+								ExternalRef: &common.LocalObjectRef{
+									APIVersion: "netoperator.vmware.com/v1alpha1",
+									Kind:       "NetworkInterface",
+									Name:       "my-other-netif",
+								},
+							})
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[1].externalRef: Forbidden: external network interfaces are not enabled`,
+					),
+				},
+			),
+
+			Entry("allow unchanged externalRef for non-privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.IsPrivilegedAccount = false
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+						ctx.vm = ctx.oldVM.DeepCopy()
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow changing externalRef",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Network.Interfaces[0].ExternalRef.Name = "my-other-netif"
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].externalRef: Forbidden: field is immutable`,
+					),
+				},
+			),
+
+			Entry("allow replacing externalRef with network",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+							config.Features.MutableNetworks = true
+						})
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "netoperator.vmware.com/v1alpha1",
+										Kind:       "NetworkInterface",
+										Name:       "my-netif",
+									},
+								},
+							},
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Network.Interfaces[0].ExternalRef = nil
+						ctx.vm.Spec.Network.Interfaces[0].Network = &common.PartialObjectRef{
+							Name: "my-network",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow replacing network with externalRef",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVDS
+							config.Features.BringYourOwnNetworkInterface = true
+							config.Features.MutableNetworks = true
+						})
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Network: &common.PartialObjectRef{
+										Name: "my-network",
+									},
+								},
+							},
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Network.Interfaces[0].Network = nil
+						ctx.vm.Spec.Network.Interfaces[0].ExternalRef = &common.LocalObjectRef{
+							APIVersion: "netoperator.vmware.com/v1alpha1",
+							Kind:       "NetworkInterface",
+							Name:       "my-netif",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+		)
 
 		DescribeTable("update network", doTest,
 

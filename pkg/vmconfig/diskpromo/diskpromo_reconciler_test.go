@@ -407,6 +407,46 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						vm.Spec.PromoteDisksMode = vmopv1.VirtualMachinePromoteDisksModeOnline
 					})
 
+					When("the image has an inherited delta below the clone's delta", func() {
+						BeforeEach(func() {
+							// These ancestors belong to the source image, not to
+							// snapshots in this VM's snapshot layout.
+							for _, device := range moVM.Config.Hardware.Device {
+								if disk, ok := device.(*vimtypes.VirtualDisk); ok {
+									switch backing := disk.Backing.(type) {
+									case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+										if backing.Parent != nil {
+											backing.Parent.Parent = &vimtypes.VirtualDiskFlatVer2BackingInfo{
+												VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{FileName: "image-base.vmdk"},
+											}
+										}
+									case *vimtypes.VirtualDiskSeSparseBackingInfo:
+										if backing.Parent != nil {
+											backing.Parent.Parent = &vimtypes.VirtualDiskSeSparseBackingInfo{
+												VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{FileName: "image-base.vmdk"},
+											}
+										}
+									}
+								}
+							}
+						})
+						It("still submits the disks for promotion", func() {
+							Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
+							Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineDiskPromotionStarted)).To(BeTrue())
+						})
+						When("the promotion task succeeded but the chain remains", func() {
+							BeforeEach(func() {
+								ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{{
+									State: vimtypes.TaskInfoStateSuccess, DescriptionId: diskpromo.PromoteDisksTaskKey,
+								}})
+							})
+							It("waits for updated backings before reporting synced", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineDiskPromotionSynced)).To(BeTrue())
+							})
+						})
+					})
+
 					It("should promote disks", func() {
 						Expect(err).To(MatchError(diskpromo.ErrPromoteDisks))
 
@@ -492,6 +532,40 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 							Expect(c.Status).To(Equal(metav1.ConditionFalse))
 							Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
 							Expect(c.Message).To(Equal("Promotion is running"))
+						})
+					})
+
+					When("the promote disks task succeeded", func() {
+						BeforeEach(func() {
+							ctx = pkgctx.WithVMRecentTasks(ctx, []vimtypes.TaskInfo{
+								{
+									State:         vimtypes.TaskInfoStateSuccess,
+									DescriptionId: diskpromo.PromoteDisksTaskKey,
+								},
+							})
+						})
+
+						When("the disk backings still show child disks", func() {
+							It("should not mark disk promotion synced as true", func() {
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+								Expect(c).ToNot(BeNil())
+								Expect(c.Status).To(Equal(metav1.ConditionFalse))
+								Expect(c.Reason).To(Equal(diskpromo.ReasonRunning))
+								Expect(c.Message).To(Equal("Promotion completed, pending updated disk backings"))
+							})
+						})
+
+						When("the disk backings show no child disks", func() {
+							BeforeEach(func() {
+								moVM.Config.Hardware.Device = nil
+							})
+							It("should mark disk promotion synced as true", func() {
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineDiskPromotionSynced)
+								Expect(c).ToNot(BeNil())
+								Expect(c.Status).To(Equal(metav1.ConditionTrue))
+							})
 						})
 					})
 
@@ -661,7 +735,7 @@ var _ = Describe("Reconcile", Label(testlabels.V1Alpha5), func() {
 						BeforeEach(func() {
 							devices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
 							allDisks := devices.SelectByType(&vimtypes.VirtualDisk{})
-							snapshotDisks := make([]vimtypes.VirtualMachineFileLayoutExDiskLayout, 0, len(allDisks))
+							var snapshotDisks []vimtypes.VirtualMachineFileLayoutExDiskLayout
 							for _, d := range allDisks {
 								snapshotDisks = append(snapshotDisks, vimtypes.VirtualMachineFileLayoutExDiskLayout{
 									Key: d.GetVirtualDevice().Key,

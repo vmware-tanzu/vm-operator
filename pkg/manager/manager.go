@@ -9,8 +9,10 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,6 +43,7 @@ import (
 
 	vmopapi "github.com/vmware-tanzu/vm-operator/api"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
@@ -103,6 +106,13 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 			DefaultNamespaces: GetNamespaceCacheConfigs(opts.WatchNamespace),
 			DefaultTransform:  cache.TransformStripManagedFields(),
 			SyncPeriod:        &opts.SyncPeriod,
+			ByObject: map[client.Object]cache.ByObject{
+				// Only this configuration supplies the storage quota CA bundle.
+				// Filter API list/watch requests to avoid caching other webhooks.
+				&admissionv1.ValidatingWebhookConfiguration{}: {
+					Field: fields.OneTermEqualSelector("metadata.name", pkgconst.ValidatingWebhookConfigurationName),
+				},
+			},
 		},
 		Client: client.Options{
 			Cache: &client.CacheOptions{

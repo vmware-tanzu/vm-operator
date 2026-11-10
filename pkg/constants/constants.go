@@ -9,6 +9,10 @@ import (
 )
 
 const (
+	// ValidatingWebhookConfigurationName is the VM Operator validating webhook
+	// configuration whose CA bundle is used by storage policy quota extensions.
+	ValidatingWebhookConfigurationName = "vmware-system-vmop-validating-webhook-configuration"
+
 	createdAtPrefix = "vmoperator.vmware.com/created-at-"
 
 	// CreatedAtBuildVersionAnnotationKey is set on VirtualMachine

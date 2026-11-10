@@ -382,6 +382,119 @@ func setControllerForPVCWithBusNumber(vm *vmopv1.VirtualMachine, defaultBusNum i
 }
 
 // Validate Create operations.
+// affinityValidationCases exercises every term list through public admission.
+func affinityValidationCases(doTest func(testParams)) {
+	Context("Integrated affinity validation", func() {
+		for _, anti := range []bool{false, true} {
+			for _, bucket := range []string{"preferred", "required", "hard"} {
+				for _, invalid := range []string{
+					"valid", "topology", "operator", "reserved label", "reserved expression",
+					"invalid label key", "invalid label value", "invalid expression key", "invalid expression value",
+					"valid qualified key and empty value",
+				} {
+					It(fmt.Sprintf("validates anti=%t %s %s", anti, bucket, invalid), func() {
+						allowed := strings.HasPrefix(invalid, "valid")
+						doTest(testParams{
+							expectAllowed: allowed,
+							setup: func(ctx *unitValidatingWebhookContext) {
+								pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+									c.Features.TaggingAPI = false
+									c.Features.VMAffinityDuringExecution = true
+								})
+								createRequiredDuringExecutionPolicy(ctx)
+								metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+								term := vmopv1.VMAffinityTerm{TopologyKey: corev1.LabelHostname,
+									LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}}}
+								switch invalid {
+								case "topology":
+									term.TopologyKey = "invalid"
+								case "operator":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "app", Operator: metav1.LabelSelectorOpNotIn, Values: []string{"nginx"}}}
+								case "reserved label":
+									term.LabelSelector.MatchLabels = map[string]string{"vmoperator.vmware.com/test": "value"}
+								case "reserved expression":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "vmoperator.vmware.com/test", Operator: metav1.LabelSelectorOpIn, Values: []string{"value"}}}
+								case "invalid label key":
+									term.LabelSelector.MatchLabels = map[string]string{"bad:key": "nginx"}
+								case "invalid label value":
+									term.LabelSelector.MatchLabels = map[string]string{"app": "bad:value"}
+								case "invalid expression key":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "bad:key", Operator: metav1.LabelSelectorOpIn, Values: []string{"nginx"}}}
+								case "invalid expression value":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "app", Operator: metav1.LabelSelectorOpIn, Values: []string{"nginx", "bad value"}}}
+								case "valid qualified key and empty value":
+									metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "example.com/app", "")
+									term.LabelSelector = &metav1.LabelSelector{
+										MatchLabels:      map[string]string{"example.com/app": ""},
+										MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "example.com/app", Operator: metav1.LabelSelectorOpIn, Values: []string{""}}},
+									}
+								}
+								ctx.vm.Spec.Affinity = testAffinityTerms(anti, bucket, term)
+							},
+							validate: func(response admission.Response) {
+								if !allowed {
+									Expect(string(response.Result.Reason)).To(ContainSubstring("spec.affinity."))
+									Expect(string(response.Result.Reason)).ToNot(ContainSubstring("updating Affinity is not allowed"))
+								}
+								if strings.HasPrefix(invalid, "invalid") {
+									Expect(string(response.Result.Reason)).To(ContainSubstring("Invalid value:"))
+								}
+							},
+						})
+					})
+				}
+			}
+		}
+	})
+	Context("Legacy affinity selector syntax", func() {
+		It("does not validate label syntax when VMHardAffinityDuringExecution is disabled", func() {
+			doTest(testParams{
+				expectAllowed: true,
+				setup: func(ctx *unitValidatingWebhookContext) {
+					pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+						c.Features.VMHardAffinityDuringExecution = false
+						c.Features.VMGroups = true
+					})
+					ctx.vm.Spec.GroupName = "group"
+					ctx.vm.Spec.Affinity = testAffinityTerms(false, "preferred", vmopv1.VMAffinityTerm{
+						TopologyKey: corev1.LabelTopologyZone,
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"bad:key": "bad value"},
+						},
+					})
+					if ctx.oldVM != nil {
+						// Legacy affinity is immutable, so keep it unchanged on update.
+						ctx.oldVM.Spec.GroupName = ctx.vm.Spec.GroupName
+						ctx.oldVM.Spec.Affinity = ctx.vm.Spec.Affinity.DeepCopy()
+					}
+				},
+			})
+		})
+	})
+}
+
+func testAffinityTerms(anti bool, bucket string, term vmopv1.VMAffinityTerm) *vmopv1.AffinitySpec {
+	var preferred, required, hard []vmopv1.VMAffinityTerm
+	switch bucket {
+	case "preferred":
+		preferred = []vmopv1.VMAffinityTerm{term}
+	case "required":
+		required = []vmopv1.VMAffinityTerm{term}
+	case "hard":
+		hard = []vmopv1.VMAffinityTerm{term}
+	}
+	if anti {
+		return &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+			PreferredDuringSchedulingPreferredDuringExecution: preferred,
+			RequiredDuringSchedulingPreferredDuringExecution:  required,
+			RequiredDuringSchedulingRequiredDuringExecution:   hard}}
+	}
+	return &vmopv1.AffinitySpec{VMAffinity: &vmopv1.VMAffinitySpec{
+		PreferredDuringSchedulingPreferredDuringExecution: preferred,
+		RequiredDuringSchedulingPreferredDuringExecution:  required,
+		RequiredDuringSchedulingRequiredDuringExecution:   hard}}
+}
+
 func unitTestsValidateCreate() {
 
 	var (
@@ -537,6 +650,8 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+
+	affinityValidationCases(doTest)
 
 	Context("PVC Volume Controller Fields", func() {
 		DescribeTable("create", doTest,
@@ -5001,7 +5116,9 @@ func unitTestsValidateCreate() {
 										},
 										MatchExpressions: []metav1.LabelSelectorRequirement{
 											{
+												Key:      "foo",
 												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"bar"},
 											},
 										},
 									},
@@ -5014,7 +5131,9 @@ func unitTestsValidateCreate() {
 										},
 										MatchExpressions: []metav1.LabelSelectorRequirement{
 											{
+												Key:      "foo",
 												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"bar"},
 											},
 										},
 									},
@@ -5581,6 +5700,364 @@ func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 	setControllerForPVC(ctx.vm)
 }
 
+func unitTestsValidateUpdateAffinityUnchangedTerms(doTest func(testParams)) {
+	Context("Mutable affinity unchanged terms", func() {
+		var (
+			badValueTerm = vmopv1.VMAffinityTerm{
+				TopologyKey: corev1.LabelTopologyZone,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "my db!"},
+				},
+			}
+			goodTerm = vmopv1.VMAffinityTerm{
+				TopologyKey: corev1.LabelTopologyZone,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "nginx"},
+				},
+			}
+		)
+
+		setup := func(ctx *unitValidatingWebhookContext) {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TaggingAPI = false
+				config.Features.VMHardAffinityDuringExecution = true
+				config.Features.VMAffinityDuringExecution = true
+				config.Features.VMGroups = true
+			})
+			ctx.vm.Spec.GroupName = dummyGroupName
+			ctx.oldVM.Spec.GroupName = dummyGroupName
+		}
+
+		It("allows editing a preferred term when an unchanged required term has an invalid label value", func() {
+			doTest(testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setup(ctx)
+					ctx.oldVM.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{badValueTerm},
+					}}
+					ctx.vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution:  []vmopv1.VMAffinityTerm{badValueTerm},
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{goodTerm},
+					}}
+				},
+				expectAllowed: true,
+			})
+		})
+
+		It("rejects a changed term with an invalid label value", func() {
+			doTest(testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setup(ctx)
+					ctx.oldVM.Spec.Affinity = testAffinityTerms(true, "preferred", goodTerm)
+					ctx.vm.Spec.Affinity = testAffinityTerms(true, "preferred", badValueTerm)
+				},
+				validate: func(response admission.Response) {
+					Expect(string(response.Result.Reason)).To(ContainSubstring("my db!"))
+				},
+			})
+		})
+
+		type listCase struct {
+			anti bool
+			list string
+		}
+		// setList sets one named term list on a fresh affinity spec.
+		setList := func(c listCase, spec *vmopv1.AffinitySpec, terms []vmopv1.VMAffinityTerm) {
+			if c.anti {
+				if spec.VMAntiAffinity == nil {
+					spec.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{}
+				}
+				switch c.list {
+				case "requiredPreferred":
+					spec.VMAntiAffinity.RequiredDuringSchedulingPreferredDuringExecution = terms
+				case "preferred":
+					spec.VMAntiAffinity.PreferredDuringSchedulingPreferredDuringExecution = terms
+				case "requiredRequired":
+					spec.VMAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution = terms
+				}
+				return
+			}
+			if spec.VMAffinity == nil {
+				spec.VMAffinity = &vmopv1.VMAffinitySpec{}
+			}
+			switch c.list {
+			case "requiredPreferred":
+				spec.VMAffinity.RequiredDuringSchedulingPreferredDuringExecution = terms
+			case "preferred":
+				spec.VMAffinity.PreferredDuringSchedulingPreferredDuringExecution = terms
+			case "requiredRequired":
+				spec.VMAffinity.RequiredDuringSchedulingRequiredDuringExecution = terms
+			}
+		}
+		// other returns a list that is not c.list and needs no namespace policy.
+		other := func(c listCase) listCase {
+			if c.list == "preferred" {
+				return listCase{anti: c.anti, list: "requiredPreferred"}
+			}
+			return listCase{anti: c.anti, list: "preferred"}
+		}
+
+		DescribeTable("per term list",
+			func(c listCase, unchanged bool) {
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setup(ctx)
+						oldAffinity, newAffinity := &vmopv1.AffinitySpec{}, &vmopv1.AffinitySpec{}
+						if unchanged {
+							// The list keeps an invalid value, and an unrelated list changes.
+							setList(c, oldAffinity, []vmopv1.VMAffinityTerm{badValueTerm})
+							setList(c, newAffinity, []vmopv1.VMAffinityTerm{badValueTerm})
+							setList(other(c), newAffinity, []vmopv1.VMAffinityTerm{goodTerm})
+						} else {
+							setList(c, oldAffinity, []vmopv1.VMAffinityTerm{goodTerm})
+							setList(c, newAffinity, []vmopv1.VMAffinityTerm{badValueTerm})
+						}
+						ctx.oldVM.Spec.Affinity = oldAffinity
+						ctx.vm.Spec.Affinity = newAffinity
+					},
+					expectAllowed: unchanged,
+					validate: func(response admission.Response) {
+						if !unchanged {
+							Expect(string(response.Result.Reason)).To(ContainSubstring("my db!"))
+						}
+					},
+				})
+			},
+			Entry("affinity requiredPreferred unchanged is skipped", listCase{false, "requiredPreferred"}, true),
+			Entry("affinity preferred unchanged is skipped", listCase{false, "preferred"}, true),
+			Entry("affinity requiredRequired unchanged is skipped", listCase{false, "requiredRequired"}, true),
+			Entry("anti-affinity requiredPreferred unchanged is skipped", listCase{true, "requiredPreferred"}, true),
+			Entry("anti-affinity preferred unchanged is skipped", listCase{true, "preferred"}, true),
+			Entry("anti-affinity requiredRequired unchanged is skipped", listCase{true, "requiredRequired"}, true),
+			Entry("affinity requiredPreferred changed is validated", listCase{false, "requiredPreferred"}, false),
+			Entry("affinity preferred changed is validated", listCase{false, "preferred"}, false),
+			Entry("affinity requiredRequired changed is validated", listCase{false, "requiredRequired"}, false),
+			Entry("anti-affinity requiredPreferred changed is validated", listCase{true, "requiredPreferred"}, false),
+			Entry("anti-affinity preferred changed is validated", listCase{true, "preferred"}, false),
+			Entry("anti-affinity requiredRequired changed is validated", listCase{true, "requiredRequired"}, false),
+		)
+
+		It("allows editing a preferred term when an unchanged required host term is not allowed for the user", func() {
+			hostTerm := vmopv1.VMAffinityTerm{
+				TopologyKey: corev1.LabelHostname,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "nginx"},
+				},
+			}
+			doTest(testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setup(ctx)
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMAffinityDuringExecution = false
+					})
+					ctx.IsPrivilegedAccount = false
+					ctx.oldVM.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{hostTerm},
+					}}
+					ctx.vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution:  []vmopv1.VMAffinityTerm{hostTerm},
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{goodTerm},
+					}}
+				},
+				expectAllowed: true,
+			})
+		})
+	})
+}
+
+func unitTestsValidateUpdateAffinityAuthorization(doTest func(testParams)) {
+	type authorizationCase struct {
+		authorized     bool
+		hardAffinity   bool
+		expectAllowed  bool
+		expectedReason string
+	}
+
+	Context("Mutable affinity authorization", func() {
+		DescribeTableSubtree("rule type", func(antiAffinity bool) {
+			DescribeTable("namespace permission and feature gate", func(tc authorizationCase) {
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						if tc.authorized {
+							createRequiredDuringExecutionPolicy(ctx)
+						}
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.TaggingAPI = false
+							config.Features.VMHardAffinityDuringExecution = tc.hardAffinity
+							config.Features.VMAffinityDuringExecution = true
+							config.Features.VMGroups = true
+						})
+
+						ctx.vm.Spec.GroupName = dummyGroupName
+						ctx.oldVM.Spec.GroupName = dummyGroupName
+						metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+						ctx.vm.Spec.Affinity = testAffinityTerms(antiAffinity, "hard", vmopv1.VMAffinityTerm{
+							TopologyKey: corev1.LabelHostname,
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "nginx"},
+							},
+						})
+					},
+					expectAllowed: tc.expectAllowed,
+					validate: func(response admission.Response) {
+						if tc.expectedReason != "" {
+							Expect(string(response.Result.Reason)).To(ContainSubstring(tc.expectedReason))
+						}
+					},
+				})
+			},
+				Entry("allows an authorized namespace when hard affinity is enabled", authorizationCase{
+					authorized:    true,
+					hardAffinity:  true,
+					expectAllowed: true,
+				}),
+				Entry("rejects an unauthorized namespace when hard affinity is enabled", authorizationCase{
+					hardAffinity:   true,
+					expectedReason: "requiredDuringSchedulingRequiredDuringExecution",
+				}),
+				Entry("rejects an authorized namespace when hard affinity is disabled", authorizationCase{
+					authorized:     true,
+					expectedReason: "updating Affinity is not allowed",
+				}),
+				Entry("rejects an unauthorized namespace when hard affinity is disabled", authorizationCase{
+					expectedReason: "updating Affinity is not allowed",
+				}),
+			)
+		},
+			Entry("affinity", false),
+			Entry("anti-affinity", true),
+		)
+	})
+}
+
+func unitTestsValidateUpdateAffinityGate(doTest func(testParams)) {
+	type featureCase struct {
+		taggingAPI   bool
+		hardAffinity bool
+	}
+
+	Context("Mutable affinity gate", func() {
+		DescribeTableSubtree("feature flags", func(features featureCase) {
+			for _, powerState := range []vmopv1.VirtualMachinePowerState{
+				vmopv1.VirtualMachinePowerStateOff,
+				vmopv1.VirtualMachinePowerStateOn,
+			} {
+				Context(fmt.Sprintf("VM is powered %s", powerState), func() {
+					term := vmopv1.VMAffinityTerm{
+						TopologyKey: corev1.LabelHostname,
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "nginx"},
+						},
+					}
+					preferred := testAffinityTerms(false, "preferred", term)
+					required := testAffinityTerms(false, "required", term)
+
+					DescribeTable("affinity changes", func(oldAffinity, newAffinity *vmopv1.AffinitySpec) {
+						doTest(testParams{
+							setup: func(ctx *unitValidatingWebhookContext) {
+								pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+									config.Features.TaggingAPI = features.taggingAPI
+									config.Features.VMHardAffinityDuringExecution = features.hardAffinity
+									config.Features.VMAffinityDuringExecution = true
+									config.Features.VMGroups = true
+								})
+
+								ctx.vm.Spec.GroupName = dummyGroupName
+								ctx.oldVM.Spec.GroupName = dummyGroupName
+								ctx.vm.Spec.PowerState = powerState
+								ctx.oldVM.Spec.PowerState = powerState
+								ctx.vm.Status.PowerState = powerState
+								ctx.oldVM.Status.PowerState = powerState
+								metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+								ctx.vm.Spec.Affinity = newAffinity.DeepCopy()
+								ctx.oldVM.Spec.Affinity = oldAffinity.DeepCopy()
+							},
+							expectAllowed: features.hardAffinity,
+						})
+					},
+						Entry("add affinity", nil, preferred),
+						Entry("edit affinity", preferred, required),
+						Entry("clear affinity", preferred, nil),
+						Entry("replace affinity with an empty spec", preferred, &vmopv1.AffinitySpec{}),
+						Entry("replace nil affinity with an empty spec", nil, &vmopv1.AffinitySpec{}),
+					)
+				})
+			}
+		},
+			Entry("tagging disabled, hard affinity disabled", featureCase{}),
+			Entry("tagging disabled, hard affinity enabled", featureCase{
+				hardAffinity: true,
+			}),
+			Entry("tagging enabled, hard affinity disabled", featureCase{
+				taggingAPI: true,
+			}),
+			Entry("tagging enabled, hard affinity enabled", featureCase{
+				taggingAPI:   true,
+				hardAffinity: true,
+			}),
+		)
+	})
+
+	Context("Required during execution term with no namespace policy", func() {
+		var (
+			reqTerm = vmopv1.VMAffinityTerm{
+				TopologyKey: corev1.LabelHostname,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "nginx"},
+				},
+			}
+			prefTerm = func(value string) vmopv1.VMAffinityTerm {
+				return vmopv1.VMAffinityTerm{
+					TopologyKey: corev1.LabelTopologyZone,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"tier": value},
+					},
+				}
+			}
+			build = func(req vmopv1.VMAffinityTerm, pref string) *vmopv1.AffinitySpec {
+				return &vmopv1.AffinitySpec{
+					VMAffinity: &vmopv1.VMAffinitySpec{
+						RequiredDuringSchedulingRequiredDuringExecution:   []vmopv1.VMAffinityTerm{req},
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{prefTerm(pref)},
+					},
+				}
+			}
+			setup = func(newAff, oldAff *vmopv1.AffinitySpec) func(*unitValidatingWebhookContext) {
+				return func(ctx *unitValidatingWebhookContext) {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMHardAffinityDuringExecution = true
+						config.Features.VMAffinityDuringExecution = true
+						config.Features.VMGroups = true
+					})
+					ctx.vm.Spec.GroupName = dummyGroupName
+					ctx.oldVM.Spec.GroupName = dummyGroupName
+					metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+					metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "tier", "a")
+					ctx.vm.Spec.Affinity = newAff.DeepCopy()
+					ctx.oldVM.Spec.Affinity = oldAff.DeepCopy()
+				}
+			}
+		)
+
+		It("allows editing an unrelated preferred term", func() {
+			doTest(testParams{
+				setup:         setup(build(reqTerm, "b"), build(reqTerm, "a")),
+				expectAllowed: true,
+			})
+		})
+
+		It("rejects changing the required term", func() {
+			changed := reqTerm
+			changed.TopologyKey = corev1.LabelTopologyZone
+			doTest(testParams{
+				setup: setup(build(changed, "a"), build(reqTerm, "a")),
+				validate: doValidateWithMsg(
+					`spec.affinity.vmAffinity.requiredDuringSchedulingRequiredDuringExecution: Forbidden: requiredDuringSchedulingRequiredDuringExecution requires a RequiredDuringExecutionVMPlacementPolicy in the namespace`),
+			})
+		})
+	})
+}
+
 // Validate Update operations.
 func unitTestsValidateUpdate() {
 	var (
@@ -5735,6 +6212,8 @@ func unitTestsValidateUpdate() {
 			args.validate(response)
 		}
 	}
+
+	affinityValidationCases(doTest)
 
 	DescribeTable(
 		"spec.class and spec.className update",
@@ -9078,6 +9557,9 @@ func unitTestsValidateUpdate() {
 		)
 	})
 
+	unitTestsValidateUpdateAffinityAuthorization(doTest)
+	unitTestsValidateUpdateAffinityUnchangedTerms(doTest)
+	unitTestsValidateUpdateAffinityGate(doTest)
 	Context("Affinity", func() {
 		DescribeTable("Updates", doTest,
 			Entry("Immutable",

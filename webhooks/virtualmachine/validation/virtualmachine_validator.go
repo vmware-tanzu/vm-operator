@@ -7,6 +7,7 @@ package validation
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"reflect"
@@ -27,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	utilvalidation "k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
@@ -252,7 +254,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	fieldErrs = append(fieldErrs, v.validateBootOptions(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateSnapshot(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateGroupName(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateVMAffinity(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateVMAffinity(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateBiosUUID(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
@@ -2517,7 +2519,7 @@ func (v validator) validateImmutableFields(
 	}
 	allErrs = append(allErrs, v.validateImmutableReserved(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, v.validateImmutableNetwork(ctx, vm, oldVM)...)
-	allErrs = append(allErrs, v.validateImmutableVMAffinity(ctx, vm, oldVM)...)
+	allErrs = append(allErrs, v.validateVMAffinityOnUpdate(ctx, vm, oldVM)...)
 
 	return allErrs
 }
@@ -3309,9 +3311,12 @@ func (v validator) hasRequiredDuringExecutionPolicy(
 // and anti-affinity. The terms are only allowed when the
 // VMHardAffinityDuringExecution feature is enabled and the VM's namespace has
 // a RequiredDuringExecutionVMPlacementPolicy, which is looked up at most once.
+// When oldVM is non-nil, only term lists that differ from oldVM are checked, so
+// editing an unrelated term does not re-fail an unchanged required term (for
+// example after the namespace policy was removed).
 func (v validator) validateRequiredDuringExecution(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine) field.ErrorList {
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	var (
 		allErrs field.ErrorList
@@ -3319,14 +3324,28 @@ func (v validator) validateRequiredDuringExecution(
 		fields  []*field.Path
 	)
 
+	var oldAffinity, oldAntiAffinity []vmopv1.VMAffinityTerm
+	if oldVM != nil && oldVM.Spec.Affinity != nil {
+		if a := oldVM.Spec.Affinity.VMAffinity; a != nil {
+			oldAffinity = a.RequiredDuringSchedulingRequiredDuringExecution
+		}
+		if a := oldVM.Spec.Affinity.VMAntiAffinity; a != nil {
+			oldAntiAffinity = a.RequiredDuringSchedulingRequiredDuringExecution
+		}
+	}
+
 	if a := vm.Spec.Affinity.VMAffinity; a != nil &&
-		len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
+		len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 &&
+		!equality.Semantic.DeepEqual(
+			a.RequiredDuringSchedulingRequiredDuringExecution, oldAffinity) {
 
 		fields = append(fields, path.Child(
 			"vmAffinity", "requiredDuringSchedulingRequiredDuringExecution"))
 	}
 	if a := vm.Spec.Affinity.VMAntiAffinity; a != nil &&
-		len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 {
+		len(a.RequiredDuringSchedulingRequiredDuringExecution) > 0 &&
+		!equality.Semantic.DeepEqual(
+			a.RequiredDuringSchedulingRequiredDuringExecution, oldAntiAffinity) {
 
 		fields = append(fields, path.Child(
 			"vmAntiAffinity", "requiredDuringSchedulingRequiredDuringExecution"))
@@ -3336,7 +3355,8 @@ func (v validator) validateRequiredDuringExecution(
 		return nil
 	}
 
-	if !pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution {
+	features := pkgcfg.FromContext(ctx).Features
+	if !features.VMHardAffinityDuringExecution {
 		for _, p := range fields {
 			allErrs = append(allErrs, field.Forbidden(
 				p, requiredDuringSchedulingRequiredDuringExecutionNotSupported))
@@ -3358,224 +3378,168 @@ func (v validator) validateRequiredDuringExecution(
 	return allErrs
 }
 
-//nolint:gocyclo
 func (v validator) validateVMAffinity(
 	ctx *pkgctx.WebhookRequestContext,
-	vm *vmopv1.VirtualMachine) field.ErrorList {
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	affinity := vm.Spec.Affinity
 	if affinity == nil {
 		return nil
 	}
-
 	var allErrs field.ErrorList
-
-	if vm.Spec.GroupName == "" &&
-		!pkgcfg.FromContext(ctx).Features.VMHardAffinityDuringExecution {
-
-		allErrs = append(allErrs, field.Required(
-			field.NewPath("spec", "groupName"), "when setting affinity"))
+	features := pkgcfg.FromContext(ctx).Features
+	if vm.Spec.GroupName == "" && !features.VMHardAffinityDuringExecution {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "groupName"), "when setting affinity"))
+		return allErrs
 	}
-
+	allErrs = append(allErrs, v.validateRequiredDuringExecution(ctx, vm, oldVM)...)
 	path := field.NewPath("spec", "affinity")
-
-	allErrs = append(allErrs, v.validateRequiredDuringExecution(ctx, vm)...)
-
+	// Mutable affinity derives vCenter tag names from selector pairs, so they
+	// must be valid label keys and values.
+	validateLabels := features.VMHardAffinityDuringExecution
+	var oldAf vmopv1.VMAffinitySpec
+	var oldAaf vmopv1.VMAntiAffinitySpec
+	if oldVM != nil && oldVM.Spec.Affinity != nil {
+		if a := oldVM.Spec.Affinity.VMAffinity; a != nil {
+			oldAf = *a
+		}
+		if a := oldVM.Spec.Affinity.VMAntiAffinity; a != nil {
+			oldAaf = *a
+		}
+	}
+	// validateTermLists skips lists that are semantically unchanged from the
+	// old VM, so editing one list does not re-fail another that was admitted
+	// under different rules (e.g. by a privileged account).
+	validateTermLists := func(p *field.Path, lists []affinityTermList) field.ErrorList {
+		var errs field.ErrorList
+		for _, l := range lists {
+			if oldVM != nil && equality.Semantic.DeepEqual(l.terms, l.oldTerms) {
+				continue
+			}
+			errs = append(errs, validateAffinityTerms(l.terms, p.Child(l.name), l.topologies, validateLabels)...)
+		}
+		return errs
+	}
+	zone := []string{corev1.LabelTopologyZone}
+	zoneAndHost := []string{corev1.LabelTopologyZone, corev1.LabelHostname}
 	if a := affinity.VMAffinity; a != nil {
-		p := path.Child("vmAffinity")
-
-		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
-			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")
-
-			for idx, rs := range a.RequiredDuringSchedulingPreferredDuringExecution {
-				p := p.Index(idx)
-
-				if rs.LabelSelector != nil {
-					p := p.Child("labelSelector")
-
-					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
-						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
-					}
-
-					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
-						p := p.Child("matchExpressions").Index(exprIdx)
-
-						if expr.Operator != metav1.LabelSelectorOpIn {
-							allErrs = append(allErrs, field.NotSupported(
-								p.Child("operator"),
-								expr.Operator,
-								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
-						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
-							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
-						}
-					}
-				}
-
-				if pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution {
-					// When VMAffinityDuringExecution capability is enabled,
-					// either zone or host topology key is allowed for affinity required terms.
-					if rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
-						allErrs = append(allErrs, field.NotSupported(
-							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
-					}
-				} else {
-					// Without VMAffinityDuringExecution capability enabled,
-					// only zone topology key is allowed for affinity required terms.
-					if rs.TopologyKey != corev1.LabelTopologyZone {
-						allErrs = append(allErrs, field.NotSupported(
-							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
-					}
-				}
-			}
+		topologies := zone
+		if features.VMAffinityDuringExecution {
+			topologies = zoneAndHost
 		}
 
-		if len(a.PreferredDuringSchedulingPreferredDuringExecution) > 0 {
-			p := p.Child("preferredDuringSchedulingPreferredDuringExecution")
-
-			for idx, rs := range a.PreferredDuringSchedulingPreferredDuringExecution {
-				p := p.Index(idx)
-
-				if rs.LabelSelector != nil {
-					p := p.Child("labelSelector")
-
-					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
-						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
-					}
-
-					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
-						p := p.Child("matchExpressions").Index(exprIdx)
-
-						if expr.Operator != metav1.LabelSelectorOpIn {
-							allErrs = append(allErrs, field.NotSupported(
-								p.Child("operator"),
-								expr.Operator,
-								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
-						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
-							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
-						}
-					}
-				}
-
-				if pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution {
-					// When VMAffinityDuringExecution capability is enabled,
-					// either zone or host topology key is allowed for affinity required terms.
-					if rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
-						allErrs = append(allErrs, field.NotSupported(
-							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
-					}
-				} else {
-					// Without VMAffinityDuringExecution capability enabled,
-					// only zone topology key is allowed for affinity required terms.
-					if rs.TopologyKey != corev1.LabelTopologyZone {
-						allErrs = append(allErrs, field.NotSupported(
-							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
-					}
-				}
-			}
-		}
+		allErrs = append(allErrs, validateTermLists(path.Child("vmAffinity"), []affinityTermList{
+			{"requiredDuringSchedulingPreferredDuringExecution",
+				a.RequiredDuringSchedulingPreferredDuringExecution, oldAf.RequiredDuringSchedulingPreferredDuringExecution, topologies},
+			{"preferredDuringSchedulingPreferredDuringExecution",
+				a.PreferredDuringSchedulingPreferredDuringExecution, oldAf.PreferredDuringSchedulingPreferredDuringExecution, topologies},
+			{"requiredDuringSchedulingRequiredDuringExecution",
+				a.RequiredDuringSchedulingRequiredDuringExecution, oldAf.RequiredDuringSchedulingRequiredDuringExecution, zoneAndHost},
+		})...)
 	}
-
 	if a := affinity.VMAntiAffinity; a != nil {
-		p := path.Child("vmAntiAffinity")
-
-		if len(a.RequiredDuringSchedulingPreferredDuringExecution) > 0 {
-			p := p.Child("requiredDuringSchedulingPreferredDuringExecution")
-
-			for idx, rs := range a.RequiredDuringSchedulingPreferredDuringExecution {
-				p := p.Index(idx)
-
-				if rs.LabelSelector != nil {
-					p := p.Child("labelSelector")
-
-					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
-						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
-					}
-
-					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
-						p := p.Child("matchExpressions").Index(exprIdx)
-
-						if expr.Operator != metav1.LabelSelectorOpIn {
-							allErrs = append(allErrs, field.NotSupported(
-								p.Child("operator"),
-								expr.Operator,
-								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
-						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
-							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
-						}
-					}
-				}
-
-				if ctx.IsPrivilegedAccount || pkgcfg.FromContext(ctx).Features.VMAffinityDuringExecution {
-					// For privileged users or when VMAffinityRules capability
-					// is enabled, either zone or host topology key is allowed
-					// for anti-affinity required terms.
-					if rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
-						allErrs = append(allErrs, field.NotSupported(
-							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
-					}
-				} else {
-					// For non-privileged users without VMAffinityRules
-					// capability enabled, only zone topology key is allowed
-					// for anti-affinity required terms.
-					if rs.TopologyKey != corev1.LabelTopologyZone {
-						allErrs = append(allErrs, field.NotSupported(
-							p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone}))
-					}
-				}
-			}
+		requiredTopologies := zone
+		// Privileged accounts may use host anti-affinity required during
+		// scheduling even when VMAffinityDuringExecution is disabled.
+		if ctx.IsPrivilegedAccount || features.VMAffinityDuringExecution {
+			requiredTopologies = zoneAndHost
 		}
 
-		if len(a.PreferredDuringSchedulingPreferredDuringExecution) > 0 {
-			p := p.Child("preferredDuringSchedulingPreferredDuringExecution")
-
-			for idx, rs := range a.PreferredDuringSchedulingPreferredDuringExecution {
-				p := p.Index(idx)
-
-				if rs.LabelSelector != nil {
-					p := p.Child("labelSelector")
-
-					if kubeutil.HasVMOperatorLabels(rs.LabelSelector.MatchLabels) {
-						allErrs = append(allErrs, field.Forbidden(p.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
-					}
-
-					for exprIdx, expr := range rs.LabelSelector.MatchExpressions {
-						p := p.Child("matchExpressions").Index(exprIdx)
-
-						if expr.Operator != metav1.LabelSelectorOpIn {
-							allErrs = append(allErrs, field.NotSupported(
-								p.Child("operator"),
-								expr.Operator,
-								[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
-						} else if kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}) {
-							allErrs = append(allErrs, field.Forbidden(p.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
-						}
-					}
-				}
-
-				// Either zone or host topology key is allowed for anti-affinity preferred terms.
-				if rs.TopologyKey != corev1.LabelTopologyZone && rs.TopologyKey != corev1.LabelHostname {
-					allErrs = append(allErrs, field.NotSupported(
-						p.Child("topologyKey"), rs.TopologyKey, []string{corev1.LabelTopologyZone, corev1.LabelHostname}))
-				}
-			}
-		}
+		allErrs = append(allErrs, validateTermLists(path.Child("vmAntiAffinity"), []affinityTermList{
+			{"requiredDuringSchedulingPreferredDuringExecution",
+				a.RequiredDuringSchedulingPreferredDuringExecution, oldAaf.RequiredDuringSchedulingPreferredDuringExecution, requiredTopologies},
+			{"preferredDuringSchedulingPreferredDuringExecution",
+				a.PreferredDuringSchedulingPreferredDuringExecution, oldAaf.PreferredDuringSchedulingPreferredDuringExecution, zoneAndHost},
+			{"requiredDuringSchedulingRequiredDuringExecution",
+				a.RequiredDuringSchedulingRequiredDuringExecution, oldAaf.RequiredDuringSchedulingRequiredDuringExecution, zoneAndHost},
+		})...)
 	}
-
 	return allErrs
 }
 
-func (v validator) validateImmutableVMAffinity(
-	_ *pkgctx.WebhookRequestContext,
-	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+// affinityTermList is one term list of an affinity spec, with the same list on
+// the old VM and the topology keys it allows.
+type affinityTermList struct {
+	name       string
+	terms      []vmopv1.VMAffinityTerm
+	oldTerms   []vmopv1.VMAffinityTerm
+	topologies []string
+}
+
+// validateAffinityTerms applies the same structural checks to every term list.
+// When validateLabels is true, selector keys and In values must also be valid
+// label keys and values. Capability and namespace authorization are checked
+// independently by the caller.
+func validateAffinityTerms(
+	terms []vmopv1.VMAffinityTerm,
+	path *field.Path,
+	topologies []string,
+	validateLabels bool) field.ErrorList {
 
 	var allErrs field.ErrorList
-
-	if !equality.Semantic.DeepEqual(vm.Spec.Affinity, oldVM.Spec.Affinity) {
-		p := field.NewPath("spec", "affinity")
-		allErrs = append(allErrs, field.Forbidden(p, "updating Affinity is not allowed"))
+	for i, term := range terms {
+		p := path.Index(i)
+		if selector := term.LabelSelector; selector != nil {
+			s := p.Child("labelSelector")
+			if kubeutil.HasVMOperatorLabels(selector.MatchLabels) {
+				allErrs = append(allErrs, field.Forbidden(s.Child("matchLabels"), labelSelectorCanNotContainVMOperatorLabels))
+			}
+			if validateLabels {
+				for _, key := range slices.Sorted(maps.Keys(selector.MatchLabels)) {
+					m := s.Child("matchLabels").Key(key)
+					allErrs = append(allErrs, validateAffinityLabelKey(key, m)...)
+					allErrs = append(allErrs, validateAffinityLabelValue(selector.MatchLabels[key], m)...)
+				}
+			}
+			for j, expr := range selector.MatchExpressions {
+				e := s.Child("matchExpressions").Index(j)
+				switch {
+				case expr.Operator != metav1.LabelSelectorOpIn:
+					allErrs = append(allErrs, field.NotSupported(e.Child("operator"), expr.Operator,
+						[]metav1.LabelSelectorOperator{metav1.LabelSelectorOpIn}))
+				case kubeutil.HasVMOperatorLabels(map[string]string{expr.Key: ""}):
+					allErrs = append(allErrs, field.Forbidden(e.Child("key"), labelSelectorCanNotContainVMOperatorLabels))
+				case validateLabels:
+					allErrs = append(allErrs, validateAffinityLabelKey(expr.Key, e.Child("key"))...)
+					for k, value := range expr.Values {
+						allErrs = append(allErrs, validateAffinityLabelValue(value, e.Child("values").Index(k))...)
+					}
+				}
+			}
+		}
+		if !slices.Contains(topologies, term.TopologyKey) {
+			allErrs = append(allErrs, field.NotSupported(p.Child("topologyKey"), term.TopologyKey, topologies))
+		}
 	}
-
 	return allErrs
+}
+
+func validateAffinityLabelKey(key string, path *field.Path) field.ErrorList {
+	if errs := utilvalidation.IsQualifiedName(key); len(errs) != 0 {
+		return field.ErrorList{field.Invalid(path, key, strings.Join(errs, "; "))}
+	}
+	return nil
+}
+
+func validateAffinityLabelValue(value string, path *field.Path) field.ErrorList {
+	if errs := utilvalidation.IsValidLabelValue(value); len(errs) != 0 {
+		return field.ErrorList{field.Invalid(path, value, strings.Join(errs, "; "))}
+	}
+	return nil
+}
+
+func (v validator) validateVMAffinityOnUpdate(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	if equality.Semantic.DeepEqual(vm.Spec.Affinity, oldVM.Spec.Affinity) {
+		return nil
+	}
+	features := pkgcfg.FromContext(ctx).Features
+	if features.VMHardAffinityDuringExecution {
+		return v.validateVMAffinity(ctx, vm, oldVM)
+	}
+	return field.ErrorList{field.Forbidden(field.NewPath("spec", "affinity"), "updating Affinity is not allowed")}
 }
 
 // validateFieldsDuringSchemaUpgrade checks the fields that are

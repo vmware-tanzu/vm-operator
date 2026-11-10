@@ -158,7 +158,7 @@ var _ = Describe("NewWebhookRequestContext", Label(testlabels.Webhook), func() {
 
 		It("reports DeadlineExceeded", func() {
 			Eventually(reqCtx.Done()).Should(BeClosed())
-			Consistently(reqCtx.Err()).Should(MatchError(context.DeadlineExceeded))
+			Consistently(reqCtx.Err).Should(MatchError(context.DeadlineExceeded))
 			Expect(context.Cause(reqCtx)).To(MatchError(context.DeadlineExceeded))
 		})
 	})

@@ -40,6 +40,13 @@ const (
 	// instead of minutes.
 	HardAffinityDuringExecutionLabel = "hard-affinity-during-execution"
 
+	// ClasslessVMLabel decorates the VM-GROUP specs that need
+	// VMServiceClasslessVMCapabilityName, ex. the specs that set powerOffDelay,
+	// which the webhook rejects without it. The VM-GROUP suite checks the
+	// capability for these specs before creating and zone-binding a temporary
+	// namespace.
+	ClasslessVMLabel = "classless-vm"
+
 	// VM condition type strings used when waiting on backfill/registration lifecycle.
 	VMUnmanagedVolumesBackfilledCondition = "VirtualMachineUnmanagedVolumesBackfilled"
 	VMUnmanagedVolumesRegisteredCondition = "VirtualMachineUnmanagedVolumesRegistered"

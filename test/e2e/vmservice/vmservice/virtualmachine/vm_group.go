@@ -113,6 +113,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMHardAffinityDuringExecutionCapabilityName)
 		}
 
+		if slices.Contains(CurrentSpecReport().Labels(), consts.ClasslessVMLabel) {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
+		}
+
 		svClusterClient = clusterProxy.GetClient()
 		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 		DeferCleanup(func() { vcenter.LogoutVimClient(vCenterClient) })
@@ -527,15 +531,13 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		})
 	})
 
-	Context("Boot order power-off delay", func() {
+	Context("Boot order power-off delay", Label(consts.ClasslessVMLabel), func() {
 		var (
 			vmTemplate *vmopv1a5.VirtualMachine
 			groupKey   ctrlclient.ObjectKey
 		)
 
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
-
 			vmTemplate = &vmopv1a5.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: input.WCPNamespaceName,
@@ -558,30 +560,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			)
 
 			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
-
-			By("Creating VMs powered on directly, without a group")
-
-			for _, vmName := range vmMemberNames {
-				vm := &vmopv1a5.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: input.WCPNamespaceName,
-						Name:      vmName,
-					},
-					Spec: vmopv1a5.VirtualMachineSpec{
-						ImageName:    linuxVMIName,
-						ClassName:    clusterResources.VMClassName,
-						StorageClass: clusterResources.StorageClassName,
-						PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
-					},
-				}
-				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", vm.Name)
-			}
-
-			By("Waiting for all VMs to be powered on")
-
-			for _, vmName := range vmMemberNames {
-				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
-			}
 
 			By("Creating a VirtualMachineGroup (v1alpha6) with 3 boot order groups and power off delays")
 
@@ -611,15 +589,20 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			rootGroup = vmgRoot
 			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
 
-			By("Setting each VM's spec.groupName to point to the VirtualMachineGroup")
+			By("Creating the VMs powered on, with spec.groupName pointing to the VirtualMachineGroup")
 
 			for _, vmName := range vmMemberNames {
-				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-				Expect(err).ToNot(HaveOccurred(), "failed to get VM %q", vmName)
-				vmPatch := vm.DeepCopy()
-				vmPatch.Spec.GroupName = vmgRootName
-				Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).
-					To(Succeed(), "failed to patch groupName for VM %q", vmName)
+				vm := vmTemplate.DeepCopy()
+				vm.Name = vmName
+				vm.Spec.GroupName = vmgRootName
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", vm.Name)
+				deferDeleteVM(svClusterClient, vm)
+			}
+
+			By("Waiting for all VMs to be powered on")
+
+			for _, vmName := range vmMemberNames {
+				vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 			}
 
 			By("Waiting for all VMs to have group linked condition set to true")
@@ -1005,11 +988,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			groupKey = ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}
 		})
 
-		It("Should power off again a released member that a user powers on, and hold the next boot order group", func() {
-			// This test sets powerOffDelay, which the webhook rejects unless
-			// the classless VM capability is enabled.
-			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
-
+		// This test sets powerOffDelay, which the webhook rejects unless the
+		// classless VM capability is enabled.
+		It("Should power off again a released member that a user powers on, and hold the next boot order group", Label(consts.ClasslessVMLabel), func() {
 			// vm2's delay keeps it on for long enough to power on vm3 again
 			// while the request is still pending.
 			const vm2PowerOffDelay = 2 * time.Minute
@@ -4353,6 +4334,17 @@ func groupMemberPowerStateSynced(
 	return nil
 }
 
+// deferDeleteVM registers a cleanup that deletes the VM, and ignores a VM that
+// is already gone. It keeps the VM from lingering when the group it is meant
+// to join was never created, since no owner reference would delete it then.
+func deferDeleteVM(c ctrlclient.Client, vm *vmopv1a5.VirtualMachine) {
+	GinkgoHelper()
+
+	DeferCleanup(func(ctx context.Context) {
+		Expect(ctrlclient.IgnoreNotFound(c.Delete(ctx, vm))).To(Succeed(), "failed to delete VirtualMachine %s", vm.Name)
+	})
+}
+
 // createPoweredOnVMs creates a powered on VM from the template for each of
 // the given names, and waits for them to be powered on.
 func createPoweredOnVMs(
@@ -4368,6 +4360,7 @@ func createPoweredOnVMs(
 		vm := template.DeepCopy()
 		vm.Name = name
 		Expect(c.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", name)
+		deferDeleteVM(c, vm)
 	}
 
 	for _, name := range names {
@@ -4748,7 +4741,9 @@ func deferCleanupVirtualMachineGroup(
 			}
 
 			By("Deleting the root VirtualMachineGroup")
-			Expect(client.Delete(ctx, *rootGroup)).To(Succeed(), "failed to delete VirtualMachineGroup")
+			// The group may not exist, ex. when its creation was rejected.
+			// Tolerate that so the VMs below are still cleaned up.
+			Expect(ctrlclient.IgnoreNotFound(client.Delete(ctx, *rootGroup))).To(Succeed(), "failed to delete VirtualMachineGroup")
 			vmoperator.WaitForVirtualMachineGroupToBeDeleted(ctx, config, client, namespace, rootName)
 
 			By("Waiting for all group members to be deleted automatically due to owner reference to the root group")

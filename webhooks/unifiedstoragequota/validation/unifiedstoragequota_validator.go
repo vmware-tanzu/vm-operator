@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/go-logr/logr"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -155,6 +156,10 @@ func (h *VMRequestedCapacityHandler) Handle(ctx context.Context, req admission.R
 		}
 	}
 
+	if obj == nil {
+		return CapacityResponse{Response: webhook.Allowed(string(req.Operation))}
+	}
+
 	if _, ok := obj.GetAnnotations()[pkgconst.SkipValidationAnnotationKey]; ok {
 		// The VM has the skip validation annotation, so just allow this VM to
 		// effectively bypass quota validation by returning 0 to the quota
@@ -174,10 +179,6 @@ func (h *VMRequestedCapacityHandler) Handle(ctx context.Context, req admission.R
 				)}
 		}
 		handleRequest = h.HandleUpdate
-	}
-
-	if obj == nil {
-		return CapacityResponse{Response: webhook.Allowed(string(req.Operation))}
 	}
 
 	webhookRequestContext, cancel := builder.NewWebhookRequestContext(

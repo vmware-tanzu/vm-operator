@@ -141,23 +141,38 @@ func UpdateVirtualMachineClassName(ctx context.Context, config *config.E2EConfig
 	}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(Succeed(), "Timed out updating VirtualMachines %s ClassName to %s", vmName, className)
 }
 
-// CheckVirtualMachinesConditionConsistent asserts that the named condition on
-// the VirtualMachine remains at the expected status (and, if False, reason)
+// CheckVirtualMachinesConditionConsistent asserts that the named conditions on
+// the VirtualMachine remain at the expected status (and, if False, reason)
 // for the duration of the "consistent-virtual-machine-condition" interval.
+// At least one expected condition must be provided; an empty list fails the
+// spec immediately rather than passing vacuously. The failure message names
+// the condition type along with the expected and actual values.
 func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client,
-	ns string, vmName string, expectedCondition metav1.Condition) {
+	ns string, vmName string, expectedConditions ...metav1.Condition) {
+	GinkgoHelper()
+
+	if len(expectedConditions) == 0 {
+		Fail("CheckVirtualMachinesConditionConsistent requires at least one expected condition")
+	}
+
 	Consistently(func(g Gomega) {
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
-		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred(), "get VM %s/%s", ns, vmName)
 
-		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
-		g.Expect(actualCondition).ToNot(BeNil())
-		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
-
-		if actualCondition.Status == metav1.ConditionFalse {
-			g.Expect(actualCondition.Reason).Should(Equal(expectedCondition.Reason))
+		for _, expected := range expectedConditions {
+			actual := meta.FindStatusCondition(vm.GetConditions(), expected.Type)
+			g.Expect(actual).ToNot(BeNil(), "VM %s/%s condition %s is missing", ns, vmName, expected.Type)
+			g.Expect(actual.Status).To(Equal(expected.Status),
+				"VM %s/%s condition %s status changed: expected %s, got %s (reason %q)",
+				ns, vmName, expected.Type, expected.Status, actual.Status, actual.Reason)
+			if actual.Status == metav1.ConditionFalse {
+				g.Expect(actual.Reason).To(Equal(expected.Reason),
+					"VM %s/%s condition %s reason changed: expected %q, got %q",
+					ns, vmName, expected.Type, expected.Reason, actual.Reason)
+			}
 		}
-	}, config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed(), "VirtualMachine conditions changed")
+	}, config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed(),
+		"VM %s/%s conditions did not remain consistent", ns, vmName)
 }
 
 // WaitForVirtualMachineCreation waits for the VirtualMachine to exist, be

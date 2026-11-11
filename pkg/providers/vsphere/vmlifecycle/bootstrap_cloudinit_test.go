@@ -239,8 +239,12 @@ var _ = Describe("CloudInit DHCP overrides", Label(testlabels.API), func() {
 					eth0 := getEth0(transport, configSpec, custSpec)
 					Expect(eth0.Dhcp4Overrides).To(Equal(tc.expectedOverrides4))
 					Expect(eth0.Dhcp6Overrides).To(Equal(tc.expectedOverrides6))
-					Expect(eth0.Nameservers).NotTo(BeNil())
-					Expect(eth0.Nameservers.Addresses).To(Equal(tc.expectedNameservers))
+					if len(tc.expectedNameservers) == 0 {
+						Expect(eth0.Nameservers).To(BeNil())
+					} else {
+						Expect(eth0.Nameservers).NotTo(BeNil())
+						Expect(eth0.Nameservers.Addresses).To(Equal(tc.expectedNameservers))
+					}
 
 					// The remaining fields do not vary by test case: the
 					// spec's static route is always kept, and a gateway is

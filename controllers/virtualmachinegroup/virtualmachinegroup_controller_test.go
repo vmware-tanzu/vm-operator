@@ -986,6 +986,55 @@ var _ = Describe(
 		Context("PowerState", func() {
 			var updateGroupPowerStateTime time.Time
 
+			getVM := func(g Gomega, key types.NamespacedName) *vmopv1.VirtualMachine {
+				vm := &vmopv1.VirtualMachine{}
+				g.Expect(ctx.Client.Get(ctx, key, vm)).To(Succeed())
+				return vm
+			}
+
+			getVMG := func(g Gomega, key types.NamespacedName) *vmopv1.VirtualMachineGroup {
+				vmg := &vmopv1.VirtualMachineGroup{}
+				g.Expect(ctx.Client.Get(ctx, key, vmg)).To(Succeed())
+				return vmg
+			}
+
+			setVMStatusPowerState := func(key types.NamespacedName, ps vmopv1.VirtualMachinePowerState) {
+				GinkgoHelper()
+				vm := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, key, vm)).To(Succeed())
+				vmCopy := vm.DeepCopy()
+				vmCopy.Status.PowerState = ps
+				Expect(ctx.Client.Status().Patch(ctx, vmCopy, client.MergeFrom(vm))).To(Succeed())
+			}
+
+			memberPowerStateReason := func(
+				g Gomega,
+				groupKey types.NamespacedName,
+				kind, name string) string {
+
+				for _, ms := range getVMG(g, groupKey).Status.Members {
+					if ms.Kind == kind && ms.Name == name {
+						return conditions.GetReason(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)
+					}
+				}
+				return ""
+			}
+
+			vmPowerStateReason := func(
+				g Gomega,
+				groupKey, vmKey types.NamespacedName) string {
+
+				return memberPowerStateReason(g, groupKey, virtualMachineKind, vmKey.Name)
+			}
+
+			applyPowerStateTime := func(g Gomega, obj client.Object) time.Time {
+				v := obj.GetAnnotations()[constants.ApplyPowerStateTimeAnnotation]
+				g.Expect(v).ToNot(BeEmpty())
+				t, err := time.Parse(time.RFC3339Nano, v)
+				g.Expect(err).ToNot(HaveOccurred())
+				return t
+			}
+
 			BeforeEach(func() {
 				// Set the time earlier to be able to compare with the status time.
 				updateGroupPowerStateTime = time.Now().Add(-5 * time.Minute)
@@ -1057,11 +1106,10 @@ var _ = Describe(
 
 			When("group.Spec.PowerState is set and already synced with member", func() {
 				BeforeEach(func() {
-					vm1 := &vmopv1.VirtualMachine{}
-					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-					vm1Copy := vm1.DeepCopy()
-					vm1Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
-					Expect(ctx.Client.Status().Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+					// A power-on request is closed only when every member at
+					// any depth is observed powered on.
+					setVMStatusPowerState(vm1Key, vmopv1.VirtualMachinePowerStateOn)
+					setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOn)
 
 					vmGroup1 := &vmopv1.VirtualMachineGroup{}
 					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
@@ -1094,20 +1142,38 @@ var _ = Describe(
 				})
 			})
 
-			When("power off the group with try soft power off mode", func() {
+			Context("power off the group", func() {
+				var (
+					powerOffMode vmopv1.VirtualMachinePowerOpMode
+					bootOrder0   *metav1.Duration
+					bootOrder1   *metav1.Duration
+				)
+
+				// expectVM1Queued asserts vm-1 (boot order index 0) is not
+				// released while vmgroup-2 (boot order index 1) powers off.
+				expectVM1Queued := func(g Gomega) {
+					g.Expect(getVM(g, vm1Key).Spec.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOff))
+					g.Expect(vmPowerStateReason(g, vmGroup1Key, vm1Key)).To(Equal("Queued"))
+					g.Expect(getVMG(g, vmGroup1Key).Status.LastUpdatedPowerStateTime).To(BeNil())
+				}
+
 				BeforeEach(func() {
-					// Set VM power state status to be different from group.
-					vm1 := &vmopv1.VirtualMachine{}
-					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-					vm1Copy := vm1.DeepCopy()
-					vm1Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
-					Expect(ctx.Client.Status().Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+					powerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+					bootOrder0 = nil
+					bootOrder1 = nil
+				})
+
+				JustBeforeEach(func() {
+					setVMStatusPowerState(vm1Key, vmopv1.VirtualMachinePowerStateOn)
+					setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOn)
 
 					vmGroup1 := &vmopv1.VirtualMachineGroup{}
 					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
 					vmGroup1Copy := vmGroup1.DeepCopy()
 					vmGroup1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-					vmGroup1Copy.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeTrySoft
+					vmGroup1Copy.Spec.PowerOffMode = powerOffMode
+					vmGroup1Copy.Spec.BootOrder[0].PowerOffDelay = bootOrder0
+					vmGroup1Copy.Spec.BootOrder[1].PowerOffDelay = bootOrder1
 					// Mimic mutating webhook to set last updated power state time annotation.
 					vmGroup1Copy.Annotations = map[string]string{
 						constants.LastUpdatedPowerStateTimeAnnotation: updateGroupPowerStateTime.Format(time.RFC3339),
@@ -1115,147 +1181,323 @@ var _ = Describe(
 					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
 				})
 
-				It("should power off all members with try soft power off mode", func() {
-					Eventually(func(g Gomega) {
-						By("group should have expected member status")
-						vmGroup1 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
-						for _, ms := range vmGroup1.Status.Members {
-							if ms.Kind == virtualMachineKind {
-								g.Expect(ms.PowerState).To(HaveValue(Equal(vmopv1.VirtualMachinePowerStateOn)))
-								g.Expect(conditions.IsFalse(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeTrue())
-								// Reason should always be "Pending" because there's no VM controller to update the status.
-								g.Expect(conditions.GetReason(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(Equal("Pending"))
-							} else {
-								g.Expect(ms.PowerState).To(BeNil())
-								g.Expect(conditions.Has(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeFalse())
+				It("should release one boot order group at a time in reverse order", func() {
+					By("vmgroup-2 (boot order index 1) is released first", func() {
+						Eventually(func(g Gomega) {
+							vmGroup2 := getVMG(g, vmGroup2Key)
+							g.Expect(vmGroup2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+							g.Expect(vmGroup2.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
+
+							vm2 := getVM(g, vm2Key)
+							g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+							g.Expect(vm2.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
+							g.Expect(vmPowerStateReason(g, vmGroup2Key, vm2Key)).To(Equal("Pending"))
+
+							expectVM1Queued(g)
+						}, "5s", "100ms").Should(Succeed())
+					})
+
+					By("vm-1 (boot order index 0) waits while vm-2 is on", func() {
+						Consistently(expectVM1Queued, "2s", "100ms").Should(Succeed())
+					})
+
+					By("vm-1 is released when vm-2 is powered off", func() {
+						setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOff)
+						Eventually(func(g Gomega) {
+							vm1 := getVM(g, vm1Key)
+							g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+							g.Expect(vm1.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
+							g.Expect(vm1.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+							g.Expect(vmPowerStateReason(g, vmGroup1Key, vm1Key)).To(Equal("Pending"))
+							g.Expect(getVMG(g, vmGroup1Key).Status.LastUpdatedPowerStateTime).To(BeNil())
+						}, "5s", "100ms").Should(Succeed())
+					})
+
+					By("the request is closed when vm-1 is powered off", func() {
+						setVMStatusPowerState(vm1Key, vmopv1.VirtualMachinePowerStateOff)
+						Eventually(func(g Gomega) {
+							vmGroup1 := getVMG(g, vmGroup1Key)
+							g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).ToNot(BeNil())
+							g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">", updateGroupPowerStateTime))
+							// A synced member has the condition True.
+							g.Expect(vmPowerStateReason(g, vmGroup1Key, vm1Key)).To(Equal(string(metav1.ConditionTrue)))
+						}, "5s", "100ms").Should(Succeed())
+					})
+				})
+
+				It("should power off a child group again when one of its members is powered on after it powered off", func() {
+					By("vmgroup-2 and vm-1 power off", func() {
+						Eventually(expectVM1Queued, "5s", "100ms").Should(Succeed())
+						setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOff)
+						Eventually(func(g Gomega) {
+							g.Expect(getVM(g, vm1Key).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+							g.Expect(getVMG(g, vmGroup2Key).Status.LastUpdatedPowerStateTime).ToNot(BeNil())
+						}, "5s", "100ms").Should(Succeed())
+					})
+
+					By("a user powers on vm-2 after vmgroup-2 closed its request", func() {
+						vm2 := &vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
+						vm2Copy := vm2.DeepCopy()
+						vm2Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+						Expect(ctx.Client.Patch(ctx, vm2Copy, client.MergeFrom(vm2))).To(Succeed())
+						setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOn)
+					})
+
+					By("vmgroup-2 powers off vm-2 again, and vm-1 is not shown as queued", func() {
+						Eventually(func(g Gomega) {
+							g.Expect(getVM(g, vm2Key).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+
+							var child *vmopv1.VirtualMachineGroupMemberStatus
+							for _, ms := range getVMG(g, vmGroup1Key).Status.Members {
+								if ms.Kind == virtualMachineGroupKind {
+									child = &ms
+								}
 							}
-						}
+							g.Expect(child).ToNot(BeNil())
+							g.Expect(conditions.GetReason(child, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(Equal("Pending"))
+							g.Expect(conditions.GetMessage(child, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(ContainSubstring(vm2Key.Name))
 
-						By("group should have last updated power state time in status")
-						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).ToNot(BeNil())
-						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">", updateGroupPowerStateTime))
+							// vm-1 was already released, so it is not queued.
+							g.Expect(vmPowerStateReason(g, vmGroup1Key, vm1Key)).To(Equal("Pending"))
+							g.Expect(getVMG(g, vmGroup1Key).Status.LastUpdatedPowerStateTime).To(BeNil())
+						}, "5s", "100ms").Should(Succeed())
+					})
+				})
 
-						By("all group members should have expected power state and power off mode")
-						vm1 := &vmopv1.VirtualMachine{}
-						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-						g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
-						g.Expect(vm1.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
+				When("the members of the group form a loop", func() {
+					BeforeEach(func() {
+						// vmgroup-1 is listed first so that the completion walk
+						// reaches it before vm-2.
+						setupGroupWithMembers(vmGroup2Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
+							{
+								Members: []vmopv1.GroupMember{
+									{Kind: virtualMachineGroupKind, Name: vmGroup1Key.Name},
+								},
+							},
+							{
+								Members: []vmopv1.GroupMember{
+									{Kind: virtualMachineKind, Name: vm2Key.Name},
+								},
+							},
+						}, vmGroup1Key.Name)
+
+						vmGroup1 := &vmopv1.VirtualMachineGroup{}
+						Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
+						vmGroup1Copy := vmGroup1.DeepCopy()
+						vmGroup1Copy.Spec.GroupName = vmGroup2Key.Name
+						Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
+					})
+
+					It("should still reconcile the members without releasing them", func() {
+						Eventually(func(g Gomega) {
+							vmGroup1 := getVMG(g, vmGroup1Key)
+							g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+							g.Expect(vmPowerStateReason(g, vmGroup1Key, vm1Key)).To(Equal("Queued"))
+							g.Expect(getVMG(g, vmGroup2Key).Spec.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOff))
+							g.Expect(conditions.IsFalse(vmGroup1, vmopv1.ReadyConditionType)).To(BeTrue())
+						}, "5s", "100ms").Should(Succeed())
+					})
+				})
+
+				When("boot order groups have a power off delay", func() {
+					const (
+						bootOrder0Delay = 1 * time.Minute
+						bootOrder1Delay = 2 * time.Minute
+					)
+
+					BeforeEach(func() {
+						bootOrder0 = &metav1.Duration{Duration: bootOrder0Delay}
+						bootOrder1 = &metav1.Duration{Duration: bootOrder1Delay}
+					})
+
+					It("should wait for the delay after the previous boot order group powers off", func() {
+						By("vmgroup-2 is released at once since it is the first to power off", func() {
+							Eventually(func(g Gomega) {
+								vmGroup2 := getVMG(g, vmGroup2Key)
+								g.Expect(vmGroup2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+								g.Expect(vmGroup2.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+
+								vm2 := getVM(g, vm2Key)
+								g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+								g.Expect(vm2.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+
+								expectVM1Queued(g)
+							}, "5s", "100ms").Should(Succeed())
+						})
+
+						var released time.Time
+						By("vm-1 is released with its delay counted from vm-2 powering off", func() {
+							released = time.Now()
+							setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOff)
+							Eventually(func(g Gomega) {
+								vm1 := getVM(g, vm1Key)
+								g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+								g.Expect(applyPowerStateTime(g, vm1)).To(BeTemporally("~", released.Add(bootOrder0Delay), 5*time.Second))
+							}, "5s", "100ms").Should(Succeed())
+						})
+
+						By("the delay does not move on later reconciles", func() {
+							vm1 := &vmopv1.VirtualMachine{}
+							Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+							stamp := vm1.Annotations[constants.ApplyPowerStateTimeAnnotation]
+
+							reconcileVMG(vmGroup1Key)
+							Consistently(func(g Gomega) {
+								g.Expect(getVM(g, vm1Key).Annotations).To(HaveKeyWithValue(constants.ApplyPowerStateTimeAnnotation, stamp))
+								g.Expect(getVMG(g, vmGroup1Key).Status.LastUpdatedPowerStateTime).To(BeNil())
+							}, "2s", "100ms").Should(Succeed())
+						})
+
+						By("vm-1 is released again with a new delay when a user powers it on", func() {
+							vm1 := &vmopv1.VirtualMachine{}
+							Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
+							oldStamp := applyPowerStateTime(Default, vm1)
+
+							vm1Copy := vm1.DeepCopy()
+							vm1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+							Expect(ctx.Client.Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+
+							Eventually(func(g Gomega) {
+								vm1 := getVM(g, vm1Key)
+								g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+								g.Expect(applyPowerStateTime(g, vm1)).To(BeTemporally(">", oldStamp))
+							}, "5s", "100ms").Should(Succeed())
+						})
+					})
+				})
+
+				When("power off mode is soft and a member is suspended", func() {
+					BeforeEach(func() {
+						powerOffMode = vmopv1.VirtualMachinePowerOpModeSoft
+					})
+
+					It("should count the suspended member as powered off", func() {
+						Eventually(expectVM1Queued, "5s", "100ms").Should(Succeed())
+
+						setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateSuspended)
+						Eventually(func(g Gomega) {
+							g.Expect(getVM(g, vm1Key).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+						}, "5s", "100ms").Should(Succeed())
+					})
+				})
+
+				When("power off mode is try soft and a member is suspended", func() {
+					It("should wait for the suspended member to power off", func() {
+						Eventually(expectVM1Queued, "5s", "100ms").Should(Succeed())
+
+						setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateSuspended)
+						reconcileVMG(vmGroup1Key)
+						Consistently(expectVM1Queued, "2s", "100ms").Should(Succeed())
+					})
+				})
+
+				When("a member of the boot order group powering off is missing", func() {
+					BeforeEach(func() {
+						setupGroupWithMembers(vmGroup1Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
+							{
+								Members: []vmopv1.GroupMember{
+									{Kind: virtualMachineKind, Name: vm1Key.Name},
+								},
+							},
+							{
+								Members: []vmopv1.GroupMember{
+									{Kind: virtualMachineGroupKind, Name: vmGroup2Key.Name},
+									{Kind: virtualMachineKind, Name: "vm-missing"},
+								},
+							},
+						})
+					})
+
+					It("should not release the next boot order group", func() {
+						Eventually(expectVM1Queued, "5s", "100ms").Should(Succeed())
+
+						setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOff)
+						reconcileVMG(vmGroup1Key)
+						Consistently(expectVM1Queued, "2s", "100ms").Should(Succeed())
+					})
+				})
+			})
+
+			When("a child group waits for the apply power state time set by its parent", func() {
+				BeforeEach(func() {
+					vm2 := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
+					vm2Copy := vm2.DeepCopy()
+					vm2Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+					Expect(ctx.Client.Status().Patch(ctx, vm2Copy, client.MergeFrom(vm2))).To(Succeed())
+
+					// Mimic the parent group releasing this group with a delay.
+					vmGroup2 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+					vmGroup2Copy := vmGroup2.DeepCopy()
+					vmGroup2Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					vmGroup2Copy.Annotations = map[string]string{
+						constants.LastUpdatedPowerStateTimeAnnotation: updateGroupPowerStateTime.Format(time.RFC3339),
+						constants.ApplyPowerStateTimeAnnotation:       time.Now().Add(time.Hour).Format(time.RFC3339Nano),
+					}
+					Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
+				})
+
+				It("should not release its members until that time", func() {
+					expectQueued := func(g Gomega) {
+						vm2 := &vmopv1.VirtualMachine{}
+						g.Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
+						g.Expect(vm2.Spec.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOff))
 
 						vmGroup2 := &vmopv1.VirtualMachineGroup{}
 						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
-						g.Expect(vmGroup2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
-						g.Expect(vmGroup2.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
+						g.Expect(vmGroup2.Status.Members).To(HaveLen(1))
+						g.Expect(conditions.GetReason(&vmGroup2.Status.Members[0], vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(Equal("Queued"))
+					}
+					Eventually(expectQueued, "5s", "100ms").Should(Succeed())
+					Consistently(expectQueued, "2s", "100ms").Should(Succeed())
 
+					By("releasing its members once the time has passed")
+					vmGroup2 := &vmopv1.VirtualMachineGroup{}
+					Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+					vmGroup2Copy := vmGroup2.DeepCopy()
+					vmGroup2Copy.Annotations[constants.ApplyPowerStateTimeAnnotation] = time.Now().Add(-time.Second).Format(time.RFC3339Nano)
+					Expect(ctx.Client.Patch(ctx, vmGroup2Copy, client.MergeFrom(vmGroup2))).To(Succeed())
+
+					Eventually(func(g Gomega) {
 						vm2 := &vmopv1.VirtualMachine{}
 						g.Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
 						g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
-						g.Expect(vm2.Spec.PowerOffMode).To(Equal(vmopv1.VirtualMachinePowerOpModeTrySoft))
 					}, "5s", "100ms").Should(Succeed())
 				})
 			})
 
-			When("power on the group with delay", func() {
-				const (
-					bootOrder1Delay = 1 * time.Minute
-					bootOrder2Delay = 2 * time.Minute
+			Context("power on the group", func() {
+				var (
+					bootOrder0 *metav1.Duration
+					bootOrder1 *metav1.Duration
 				)
 
+				// expectVMGroup2Queued asserts vmgroup-2 (boot order index 1)
+				// is not released while vm-1 (boot order index 0) powers on.
+				expectVMGroup2Queued := func(g Gomega) {
+					g.Expect(getVMG(g, vmGroup2Key).Spec.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOn))
+					g.Expect(getVM(g, vm2Key).Spec.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOn))
+					g.Expect(memberPowerStateReason(g, vmGroup1Key, virtualMachineGroupKind, vmGroup2Key.Name)).To(Equal("Queued"))
+					g.Expect(getVMG(g, vmGroup1Key).Status.LastUpdatedPowerStateTime).To(BeNil())
+				}
+
 				BeforeEach(func() {
-					// Set VM power state status to be different from group.
-					vm1 := &vmopv1.VirtualMachine{}
-					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-					vm1Copy := vm1.DeepCopy()
-					vm1Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
-					Expect(ctx.Client.Status().Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
+					bootOrder0 = nil
+					bootOrder1 = nil
+				})
+
+				JustBeforeEach(func() {
+					setVMStatusPowerState(vm1Key, vmopv1.VirtualMachinePowerStateOff)
+					setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOff)
 
 					vmGroup1 := &vmopv1.VirtualMachineGroup{}
 					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
 					vmGroup1Copy := vmGroup1.DeepCopy()
 					vmGroup1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-					vmGroup1Copy.Spec.BootOrder[0].PowerOnDelay = &metav1.Duration{Duration: bootOrder1Delay}
-					vmGroup1Copy.Spec.BootOrder[1].PowerOnDelay = &metav1.Duration{Duration: bootOrder2Delay}
-					// Mimic mutating webhook to set last updated power state time annotation.
-					// This is used to verify the power on delay is applied correctly.
-					vmGroup1Copy.Annotations = map[string]string{
-						constants.LastUpdatedPowerStateTimeAnnotation: updateGroupPowerStateTime.Format(time.RFC3339),
-					}
-					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
-				})
-
-				It("should power on all members with the expected delay", func() {
-					Eventually(func(g Gomega) {
-						By("group should have expected member status")
-						vmGroup1 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
-						for _, ms := range vmGroup1.Status.Members {
-							if ms.Kind == virtualMachineKind {
-								g.Expect(ms.PowerState).To(HaveValue(Equal(vmopv1.VirtualMachinePowerStateOff)))
-								g.Expect(conditions.IsFalse(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeTrue())
-								// Reason should always be "Pending" because there's no VM controller to update the status.
-								g.Expect(conditions.GetReason(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(Equal("Pending"))
-							} else {
-								g.Expect(ms.PowerState).To(BeNil())
-								g.Expect(conditions.Has(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(BeFalse())
-							}
-						}
-
-						By("group should have last updated power state time in status")
-						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).ToNot(BeNil())
-						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">", updateGroupPowerStateTime))
-
-						By("group members CRs should have expected changes")
-						vm1 := &vmopv1.VirtualMachine{}
-						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-						g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
-						g.Expect(vm1.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
-						vm1ApplyPowerStateTime, err := time.Parse(time.RFC3339, vm1.Annotations[constants.ApplyPowerStateTimeAnnotation])
-						g.Expect(err).To(Not(HaveOccurred()))
-						g.Expect(vm1ApplyPowerStateTime).To(BeTemporally("~", updateGroupPowerStateTime.Add(bootOrder1Delay), 5*time.Second))
-
-						vmGroup2 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
-						g.Expect(vmGroup2.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
-						vmGroup2ApplyPowerStateTime, err := time.Parse(time.RFC3339, vmGroup2.Annotations[constants.ApplyPowerStateTimeAnnotation])
-						g.Expect(err).To(Not(HaveOccurred()))
-						// Boot order delay is cumulative.
-						bootOrder2DelayCum := bootOrder1Delay + bootOrder2Delay
-						g.Expect(vmGroup2ApplyPowerStateTime).To(BeTemporally("~", updateGroupPowerStateTime.Add(bootOrder2DelayCum), 5*time.Second))
-
-						vm2 := &vmopv1.VirtualMachine{}
-						g.Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
-						g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
-						g.Expect(vm2.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
-						vm2ApplyPowerStateTime, err := time.Parse(time.RFC3339, vm2.Annotations[constants.ApplyPowerStateTimeAnnotation])
-						g.Expect(err).To(Not(HaveOccurred()))
-						g.Expect(vm2ApplyPowerStateTime).To(BeTemporally("~", updateGroupPowerStateTime.Add(bootOrder2DelayCum), 5*time.Second))
-					}, "5s", "100ms").Should(Succeed())
-				})
-			})
-
-			When("power off the group with delay", func() {
-				const (
-					bootOrder1Delay = 1 * time.Minute
-					bootOrder2Delay = 2 * time.Minute
-				)
-
-				BeforeEach(func() {
-					// Set VM power state status to On so we can observe the
-					// transition to Off.
-					vm1 := &vmopv1.VirtualMachine{}
-					Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-					vm1Copy := vm1.DeepCopy()
-					vm1Copy.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
-					Expect(ctx.Client.Status().Patch(ctx, vm1Copy, client.MergeFrom(vm1))).To(Succeed())
-
-					vmGroup1 := &vmopv1.VirtualMachineGroup{}
-					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-					vmGroup1Copy := vmGroup1.DeepCopy()
-					vmGroup1Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-					vmGroup1Copy.Spec.BootOrder[0].PowerOffDelay = &metav1.Duration{Duration: bootOrder1Delay}
-					vmGroup1Copy.Spec.BootOrder[1].PowerOffDelay = &metav1.Duration{Duration: bootOrder2Delay}
+					vmGroup1Copy.Spec.BootOrder[0].PowerOnDelay = bootOrder0
+					vmGroup1Copy.Spec.BootOrder[1].PowerOnDelay = bootOrder1
 					// Mimic mutating webhook to set last updated power state time annotation.
 					vmGroup1Copy.Annotations = map[string]string{
 						constants.LastUpdatedPowerStateTimeAnnotation: updateGroupPowerStateTime.Format(time.RFC3339),
@@ -1263,48 +1505,184 @@ var _ = Describe(
 					Expect(ctx.Client.Patch(ctx, vmGroup1Copy, client.MergeFrom(vmGroup1))).To(Succeed())
 				})
 
-				It("should power off all members in reverse boot order with the expected delay", func() {
-					Eventually(func(g Gomega) {
-						By("group should have expected member status")
-						vmGroup1 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())
-						g.Expect(vmGroup1.Status.Members).To(HaveLen(2))
+				It("should release one boot order group at a time in order", func() {
+					By("vm-1 (boot order index 0) is released first", func() {
+						Eventually(func(g Gomega) {
+							vm1 := getVM(g, vm1Key)
+							g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+							g.Expect(vm1.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+							g.Expect(vmPowerStateReason(g, vmGroup1Key, vm1Key)).To(Equal("Pending"))
 
-						By("group should have last updated power state time in status")
-						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).ToNot(BeNil())
-						g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">", updateGroupPowerStateTime))
+							expectVMGroup2Queued(g)
+						}, "5s", "100ms").Should(Succeed())
+					})
 
-						By("vmgroup-2 (boot order index 1) should power off first with bootOrder2Delay")
-						vmGroup2 := &vmopv1.VirtualMachineGroup{}
-						g.Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
-						g.Expect(vmGroup2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
-						g.Expect(vmGroup2.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
-						vmGroup2ApplyTime, err := time.Parse(time.RFC3339, vmGroup2.Annotations[constants.ApplyPowerStateTimeAnnotation])
-						g.Expect(err).To(Not(HaveOccurred()))
-						g.Expect(vmGroup2ApplyTime).To(BeTemporally("~", updateGroupPowerStateTime.Add(bootOrder2Delay), 5*time.Second))
+					By("vmgroup-2 (boot order index 1) waits while vm-1 is off", func() {
+						Consistently(expectVMGroup2Queued, "2s", "100ms").Should(Succeed())
+					})
 
-						By("vm-2 (in vmgroup-2) should also have the annotation")
-						vm2 := &vmopv1.VirtualMachine{}
-						g.Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
-						g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
-						g.Expect(vm2.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+					By("vmgroup-2 is released when vm-1 is powered on", func() {
+						setVMStatusPowerState(vm1Key, vmopv1.VirtualMachinePowerStateOn)
+						Eventually(func(g Gomega) {
+							vmGroup2 := getVMG(g, vmGroup2Key)
+							g.Expect(vmGroup2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+							g.Expect(vmGroup2.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+							g.Expect(getVM(g, vm2Key).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+							g.Expect(memberPowerStateReason(g, vmGroup1Key, virtualMachineGroupKind, vmGroup2Key.Name)).To(Equal("Pending"))
+							g.Expect(getVMG(g, vmGroup1Key).Status.LastUpdatedPowerStateTime).To(BeNil())
+						}, "5s", "100ms").Should(Succeed())
+					})
 
-						By("vm-1 (boot order index 0) should power off last with cumulative delay")
-						vm1 := &vmopv1.VirtualMachine{}
-						g.Expect(ctx.Client.Get(ctx, vm1Key, vm1)).To(Succeed())
-						g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
-						g.Expect(vm1.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
-						vm1ApplyTime, err := time.Parse(time.RFC3339, vm1.Annotations[constants.ApplyPowerStateTimeAnnotation])
-						g.Expect(err).To(Not(HaveOccurred()))
-						// Cumulative: bootOrder2Delay (reverse first) + bootOrder1Delay (reverse second).
-						bootOrderCum := bootOrder2Delay + bootOrder1Delay
-						g.Expect(vm1ApplyTime).To(BeTemporally("~", updateGroupPowerStateTime.Add(bootOrderCum), 5*time.Second))
-					}, "5s", "100ms").Should(Succeed())
+					By("the request is closed when vm-2 is powered on", func() {
+						setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOn)
+						Eventually(func(g Gomega) {
+							vmGroup1 := getVMG(g, vmGroup1Key)
+							g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime).ToNot(BeNil())
+							g.Expect(vmGroup1.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">", updateGroupPowerStateTime))
+							// A synced member has the condition True.
+							g.Expect(vmPowerStateReason(g, vmGroup1Key, vm1Key)).To(Equal(string(metav1.ConditionTrue)))
+						}, "5s", "100ms").Should(Succeed())
+					})
+				})
+
+				When("the child group is the first boot order group", func() {
+					BeforeEach(func() {
+						setupGroupWithMembers(vmGroup1Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
+							{
+								Members: []vmopv1.GroupMember{
+									{Kind: virtualMachineGroupKind, Name: vmGroup2Key.Name},
+								},
+							},
+							{
+								Members: []vmopv1.GroupMember{
+									{Kind: virtualMachineKind, Name: vm1Key.Name},
+								},
+							},
+						})
+					})
+
+					It("should power on a child group again when one of its members is powered off after it powered on", func() {
+						By("vmgroup-2 powers on and closes its request, then vm-1 is released", func() {
+							Eventually(func(g Gomega) {
+								g.Expect(getVM(g, vm2Key).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+							}, "5s", "100ms").Should(Succeed())
+							setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOn)
+							Eventually(func(g Gomega) {
+								g.Expect(getVMG(g, vmGroup2Key).Status.LastUpdatedPowerStateTime).ToNot(BeNil())
+								g.Expect(getVM(g, vm1Key).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+								g.Expect(getVMG(g, vmGroup1Key).Status.LastUpdatedPowerStateTime).To(BeNil())
+							}, "5s", "100ms").Should(Succeed())
+						})
+
+						By("a user powers off vm-2 after vmgroup-2 closed its request", func() {
+							vm2 := &vmopv1.VirtualMachine{}
+							Expect(ctx.Client.Get(ctx, vm2Key, vm2)).To(Succeed())
+							vm2Copy := vm2.DeepCopy()
+							vm2Copy.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+							Expect(ctx.Client.Patch(ctx, vm2Copy, client.MergeFrom(vm2))).To(Succeed())
+							setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOff)
+						})
+
+						By("vmgroup-2 powers on vm-2 again, and vm-1 is not shown as queued", func() {
+							Eventually(func(g Gomega) {
+								g.Expect(getVM(g, vm2Key).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+								g.Expect(memberPowerStateReason(g, vmGroup1Key, virtualMachineGroupKind, vmGroup2Key.Name)).To(Equal("Pending"))
+
+								// vm-1 was already released, so it is not queued.
+								g.Expect(vmPowerStateReason(g, vmGroup1Key, vm1Key)).To(Equal("Pending"))
+								g.Expect(getVMG(g, vmGroup1Key).Status.LastUpdatedPowerStateTime).To(BeNil())
+							}, "5s", "100ms").Should(Succeed())
+						})
+					})
+				})
+
+				When("boot order groups have a power on delay", func() {
+					const (
+						bootOrder0Delay = 1 * time.Minute
+						bootOrder1Delay = 2 * time.Minute
+					)
+
+					BeforeEach(func() {
+						bootOrder0 = &metav1.Duration{Duration: bootOrder0Delay}
+						bootOrder1 = &metav1.Duration{Duration: bootOrder1Delay}
+					})
+
+					It("should wait for the delay after the previous boot order group powers on", func() {
+						By("vm-1 is released at once since it is the first to power on", func() {
+							Eventually(func(g Gomega) {
+								vm1 := getVM(g, vm1Key)
+								g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+								g.Expect(vm1.Annotations).ToNot(HaveKey(constants.ApplyPowerStateTimeAnnotation))
+
+								expectVMGroup2Queued(g)
+							}, "5s", "100ms").Should(Succeed())
+						})
+
+						var released time.Time
+						By("vmgroup-2 is released with its delay counted from vm-1 powering on", func() {
+							released = time.Now()
+							setVMStatusPowerState(vm1Key, vmopv1.VirtualMachinePowerStateOn)
+							Eventually(func(g Gomega) {
+								vmGroup2 := getVMG(g, vmGroup2Key)
+								g.Expect(vmGroup2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+								g.Expect(applyPowerStateTime(g, vmGroup2)).To(BeTemporally("~", released.Add(bootOrder1Delay), 5*time.Second))
+							}, "5s", "100ms").Should(Succeed())
+						})
+
+						By("vmgroup-2 does not release vm-2 until the delay has passed", func() {
+							Consistently(func(g Gomega) {
+								g.Expect(getVM(g, vm2Key).Spec.PowerState).ToNot(Equal(vmopv1.VirtualMachinePowerStateOn))
+								g.Expect(vmPowerStateReason(g, vmGroup2Key, vm2Key)).To(Equal("Queued"))
+							}, "2s", "100ms").Should(Succeed())
+						})
+
+						By("the delay does not move on later reconciles", func() {
+							vmGroup2 := &vmopv1.VirtualMachineGroup{}
+							Expect(ctx.Client.Get(ctx, vmGroup2Key, vmGroup2)).To(Succeed())
+							stamp := vmGroup2.Annotations[constants.ApplyPowerStateTimeAnnotation]
+
+							reconcileVMG(vmGroup1Key)
+							Consistently(func(g Gomega) {
+								g.Expect(getVMG(g, vmGroup2Key).Annotations).To(HaveKeyWithValue(constants.ApplyPowerStateTimeAnnotation, stamp))
+								g.Expect(getVMG(g, vmGroup1Key).Status.LastUpdatedPowerStateTime).To(BeNil())
+							}, "2s", "100ms").Should(Succeed())
+						})
+					})
+				})
+
+				When("a member of the boot order group powering on is missing", func() {
+					BeforeEach(func() {
+						setupGroupWithMembers(vmGroup1Key, []vmopv1.VirtualMachineGroupBootOrderGroup{
+							{
+								Members: []vmopv1.GroupMember{
+									{Kind: virtualMachineKind, Name: vm1Key.Name},
+									{Kind: virtualMachineKind, Name: "vm-missing"},
+								},
+							},
+							{
+								Members: []vmopv1.GroupMember{
+									{Kind: virtualMachineGroupKind, Name: vmGroup2Key.Name},
+								},
+							},
+						})
+					})
+
+					It("should not release the next boot order group", func() {
+						Eventually(expectVMGroup2Queued, "5s", "100ms").Should(Succeed())
+
+						setVMStatusPowerState(vm1Key, vmopv1.VirtualMachinePowerStateOn)
+						reconcileVMG(vmGroup1Key)
+						Consistently(expectVMGroup2Queued, "2s", "100ms").Should(Succeed())
+					})
 				})
 			})
 
 			When("VM's power state is changed directly outside of group", func() {
 				BeforeEach(func() {
+					// The VMs are observed on, so the power-on request closes.
+					setVMStatusPowerState(vm1Key, vmopv1.VirtualMachinePowerStateOn)
+					setVMStatusPowerState(vm2Key, vmopv1.VirtualMachinePowerStateOn)
+
 					// First set up the group with power state on.
 					vmGroup1 := &vmopv1.VirtualMachineGroup{}
 					Expect(ctx.Client.Get(ctx, vmGroup1Key, vmGroup1)).To(Succeed())

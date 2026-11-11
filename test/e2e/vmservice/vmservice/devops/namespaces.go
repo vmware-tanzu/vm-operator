@@ -68,7 +68,8 @@ func DevOpsSpec(ctx context.Context, inputGetter func() DevOpsSpecInput) {
 		vCenterAdminCreds = dcli.VCenterUserCredentials{Username: testbed.AdminUsername, Password: testbed.AdminPassword}
 		// Create SSO user
 		randomSSOUserName := fmt.Sprintf("%s-%s", randomSSOUserNameBase, capiutil.RandomString(6))
-		sshCommandRunner, _, supervisorClusterIP = testutils.GetHelpersFromKubeconfig(ctx, kubeconfigPath)
+		sshCommandRunner, supervisorClusterIP = testutils.GetHelpersFromKubeconfig(ctx, kubeconfigPath)
+		DeferCleanup(func() { _ = sshCommandRunner.Close() })
 		user = vcenter.NewUser(randomSSOUserName, randomSSOUserPassword).WithAdminCreds(vCenterAdminCreds).WithSSHCommandRunner(sshCommandRunner)
 		kubectlPlugin := testutils.CreateUserAndLogin(user, supervisorClusterIP, "", "")
 		userKubeconfigPath = kubectlPlugin.KubeconfigPath()

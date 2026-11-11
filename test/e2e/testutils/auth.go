@@ -17,14 +17,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 )
 
-func GetHelpersFromKubeconfig(ctx context.Context, kubeconfigPath string) (libssh.SSHCommandRunner, wcp.WorkloadManagementAPI, string) {
+func GetHelpersFromKubeconfig(ctx context.Context, kubeconfigPath string) (libssh.SSHCommandRunner, string) {
 	vCenterHostname := vcenter.GetVCPNIDFromKubeconfig(ctx, kubeconfigPath)
 	Expect(vCenterHostname).NotTo(Equal(""), "Unable to determine VC PNID")
 
 	var err error
 	// This is the port to SSH into the VC with.
 	vCenterPort := 22
-	wcpClient := wcp.NewClientUsingKubeconfigFile(ctx, kubeconfigPath)
 
 	supervisorClusterIPRaw := kubectl.GetKubectlClusterForCurrentContext(ctx, kubeconfigPath)
 	parsedSupervisorURL, err := url.Parse(supervisorClusterIPRaw)
@@ -36,7 +35,7 @@ func GetHelpersFromKubeconfig(ctx context.Context, kubeconfigPath string) (libss
 	sshCommandRunner, err := libssh.NewSSHCommandRunner(vCenterHostname, vCenterPort, testbed.RootUsername, []ssh.AuthMethod{ssh.Password(testbed.RootPassword)})
 	Expect(err).NotTo(HaveOccurred())
 
-	return sshCommandRunner, wcpClient, supervisorClusterIP
+	return sshCommandRunner, supervisorClusterIP
 }
 
 // Helper method to create a user on the VC and login, returning a kubectl plugin handle with a reference the their kubeconfig.

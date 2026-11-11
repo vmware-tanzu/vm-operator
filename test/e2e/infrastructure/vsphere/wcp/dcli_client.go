@@ -128,6 +128,11 @@ func newWcpDcliClient(vCenterHostname, username, password, sshUsername, sshPassw
 	}, nil
 }
 
+// Close closes the underlying DCLI command runner.
+func (d *wcpDcliClient) Close() error {
+	return d.dcliClient.Close()
+}
+
 func (d *wcpDcliClient) ListSupervisorSummary() (SupervisorSummaryList, error) {
 	cmd := fmt.Sprintf("%s summary list %s", supervisors, jsonFormatter)
 	retVal := SupervisorSummaryList{}

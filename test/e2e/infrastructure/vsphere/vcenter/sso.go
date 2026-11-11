@@ -102,8 +102,6 @@ func (u *User) checkIfUserExists() (bool, error) {
 //	attempt to create them again (and simply succeed). This allows it to be
 //	retried in an Eventually() block safely.
 func (u *User) Create() error {
-	// TODO You might have a bad time if you run this on Windows.
-	// Then again, if you're developing on Windows, maybe you're already having a bad time.
 	if exists, err := u.checkIfUserExists(); err == nil && exists {
 		// NOOP if the user definitely exists. Otherwise, retry. Worst
 		// case, we intermittently failed to check and it'll error out

@@ -168,7 +168,8 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 	It("Packer command to build and deploy a VM from a view only access SSO user", func() {
 		// Create SSO user and associate to the namespace with view only access.
 		randomSSOUserName := fmt.Sprintf("%s-%s", randomSSOUserNameBase, capiutil.RandomString(6))
-		sshCommandRunner, _, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, kubeconfigPath)
+		sshCommandRunner, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, kubeconfigPath)
+		DeferCleanup(func() { _ = sshCommandRunner.Close() })
 		vCenterAdminCreds := dcli.VCenterUserCredentials{Username: testbed.AdminUsername, Password: testbed.AdminPassword}
 		nonAdminUser := vcenter.NewUser(randomSSOUserName, randomSSOUserPassword).WithAdminCreds(vCenterAdminCreds).WithSSHCommandRunner(sshCommandRunner)
 		kubectlPlugin := testutils.CreateUserAndLogin(nonAdminUser, supervisorClusterIP, "", "")

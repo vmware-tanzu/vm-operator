@@ -5,6 +5,7 @@
 package validation
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -1530,6 +1531,16 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 	return allErrs
 }
 
+// sharedVolumeChecksEnabled returns true if the feature gates that enable the
+// shared volume and controller checks are on. It is the single source of truth
+// for both validateVolumes, which decides whether to compute hardwareChanged,
+// and validateVolume, which decides whether to run the checks, so the two
+// cannot drift apart.
+func sharedVolumeChecksEnabled(ctx context.Context) bool {
+	features := pkgcfg.FromContext(ctx).Features
+	return features.VMSharedDisks || features.AllDisksArePVCs
+}
+
 func (v validator) validateVolumes(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
@@ -1555,17 +1566,36 @@ func (v validator) validateVolumes(
 		volumePVCNamesSet = sets.New[string]()
 		oldVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
 		newVolumesMap     = map[string]*vmopv1.VirtualMachineVolume{}
+		hardwareChanged   bool
+		controllerSpecs   *vmopv1util.ControllerSpecs
 	)
 
-	for _, v := range vm.Spec.Volumes {
-		if v.Name != "" {
-			newVolumesMap[v.Name] = &v
+	// Reuse VM-wide work across volumes, but only construct controller lookups
+	// when an application or sharing check actually needs them.
+	lazyLoadControllerSpecs := func() vmopv1util.ControllerSpecs {
+		if controllerSpecs == nil {
+			controllerSpecs = new(vmopv1util.NewControllerSpecs(*vm))
+		}
+		return *controllerSpecs
+	}
+
+	if len(vm.Spec.Volumes) > 0 && sharedVolumeChecksEnabled(ctx) {
+		hardwareChanged = oldVM == nil ||
+			!equality.Semantic.DeepEqual(oldVM.Spec.Hardware, vm.Spec.Hardware)
+	}
+
+	for i := range vm.Spec.Volumes {
+		vol := &vm.Spec.Volumes[i]
+		if vol.Name != "" {
+			newVolumesMap[vol.Name] = vol
 		}
 	}
+
 	if oldVM != nil {
-		for _, v := range oldVM.Spec.Volumes {
-			if v.Name != "" {
-				oldVolumesMap[v.Name] = &v
+		for i := range oldVM.Spec.Volumes {
+			vol := &oldVM.Spec.Volumes[i]
+			if vol.Name != "" {
+				oldVolumesMap[vol.Name] = vol
 			}
 		}
 
@@ -1627,6 +1657,8 @@ func (v validator) validateVolumes(
 				vm,
 				oldVolumesMap[vol.Name],
 				vol,
+				hardwareChanged,
+				lazyLoadControllerSpecs,
 				volPath)...)
 
 	}
@@ -1676,7 +1708,7 @@ func (v validator) validateControllerFields(
 }
 
 func (v validator) validateApplicationFields(
-	vm *vmopv1.VirtualMachine,
+	lazyLoadControllerSpecs func() vmopv1util.ControllerSpecs,
 	vol vmopv1.VirtualMachineVolume,
 	volPath field.Path,
 ) field.ErrorList {
@@ -1711,7 +1743,7 @@ func (v validator) validateApplicationFields(
 		// Validate that the controller sharing mode is Physical for MicrosoftWSFC volumes
 		// if a controller is specified.
 		if vol.ControllerBusNumber != nil && vol.ControllerType != "" {
-			controllerSpecs := vmopv1util.NewControllerSpecs(*vm)
+			controllerSpecs := lazyLoadControllerSpecs()
 			if controller, ok := controllerSpecs.Get(vol.ControllerType, *vol.ControllerBusNumber); ok {
 				if vmopv1util.GetControllerSharingMode(controller) != vmopv1util.MicrosoftWSFCControllerSharingMode {
 					allErrs = append(allErrs, field.Invalid(
@@ -1732,6 +1764,8 @@ func (v validator) validateVolume(
 	oldVM, vm *vmopv1.VirtualMachine,
 	oldVol *vmopv1.VirtualMachineVolume,
 	vol vmopv1.VirtualMachineVolume,
+	hardwareChanged bool,
+	lazyLoadControllerSpecs func() vmopv1util.ControllerSpecs,
 	volPath *field.Path) field.ErrorList {
 
 	var (
@@ -1750,9 +1784,7 @@ func (v validator) validateVolume(
 		}
 	}
 
-	if !pkgcfg.FromContext(ctx).Features.VMSharedDisks &&
-		!pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
-
+	if !sharedVolumeChecksEnabled(ctx) {
 		return allErrs
 	}
 
@@ -1763,27 +1795,14 @@ func (v validator) validateVolume(
 	}
 
 	allErrs = append(allErrs,
-		v.validateApplicationFields(vm, vol, *volPath)...,
+		v.validateApplicationFields(lazyLoadControllerSpecs, vol, *volPath)...,
 	)
 
 	// Validate access mode, sharing mode, and controller combinations if VM is
 	// being created or volume is being updated.
 	// Skip the validation if the volume is not being updated to avoid rejecting
 	// an update caused by an external state change.
-	var (
-		volumeChanged   bool
-		hardwareChanged bool
-	)
-
-	if oldVol == nil || !equality.Semantic.DeepEqual(*oldVol, vol) {
-		volumeChanged = true
-	}
-
-	if oldVol == nil || vm == nil ||
-		!equality.Semantic.DeepEqual(oldVM.Spec.Hardware, vm.Spec.Hardware) {
-
-		hardwareChanged = true
-	}
+	volumeChanged := oldVol == nil || !equality.Semantic.DeepEqual(*oldVol, vol)
 
 	if volumeChanged || hardwareChanged {
 		allErrs = append(allErrs,
@@ -1791,6 +1810,7 @@ func (v validator) validateVolume(
 				ctx,
 				*vm,
 				vol,
+				lazyLoadControllerSpecs,
 				volPath, pvcPath,
 			)...,
 		)
@@ -1857,6 +1877,7 @@ func (v validator) validateSharedVolumesOrControllers(
 	ctx *pkgctx.WebhookRequestContext,
 	vm vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume,
+	lazyLoadControllerSpecs func() vmopv1util.ControllerSpecs,
 	volPath, pvcPath *field.Path) field.ErrorList {
 
 	var (
@@ -1918,7 +1939,7 @@ func (v validator) validateSharedVolumesOrControllers(
 
 	// Get the controller sharing mode for the specified controller
 	controllerSharingMode := v.getControllerSharingMode(
-		vm,
+		lazyLoadControllerSpecs,
 		vol,
 	)
 	controllerShared = vol.ControllerType == vmopv1.VirtualControllerTypeSCSI &&
@@ -2006,7 +2027,7 @@ func (v validator) validateSharedVolumesOrControllers(
 // sharing mode, otherwise returns the default sharing mode for the volume
 // based on the application type.
 func (v validator) getControllerSharingMode(
-	vm vmopv1.VirtualMachine,
+	lazyLoadControllerSpecs func() vmopv1util.ControllerSpecs,
 	vol vmopv1.VirtualMachineVolume,
 ) vmopv1.VirtualControllerSharingMode {
 
@@ -2014,7 +2035,7 @@ func (v validator) getControllerSharingMode(
 	controllerBusNumber := vol.ControllerBusNumber
 
 	if controllerType != "" && controllerBusNumber != nil {
-		controllerSpecs := vmopv1util.NewControllerSpecs(vm)
+		controllerSpecs := lazyLoadControllerSpecs()
 		if controller, ok := controllerSpecs.Get(controllerType, *controllerBusNumber); ok {
 			return vmopv1util.GetControllerSharingMode(controller)
 		}

@@ -104,8 +104,7 @@ type mutatingWebhookHandler struct {
 
 func (h *mutatingWebhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
 	if h.EnableWebhookClientVerification {
-		ctx = pkgcfg.JoinContext(ctx, h.WebhookContext)
-		if err := VerifyWebhookRequest(ctx); err != nil {
+		if err := VerifyWebhookRequest(pkgcfg.JoinContext(ctx, h.WebhookContext)); err != nil {
 			return webhook.Errored(http.StatusBadRequest, err)
 		}
 	}
@@ -148,29 +147,13 @@ func (h *mutatingWebhookHandler) Handle(ctx context.Context, req admission.Reque
 		}
 	}
 
-	var (
-		objName      string
-		objNamespace string
-	)
-	if obj != nil {
-		objName = obj.GetName()
-		objNamespace = obj.GetNamespace()
-	} else {
-		objName = oldObj.GetName()
-		objNamespace = oldObj.GetNamespace()
-	}
-
-	webhookRequestContext := &pkgctx.WebhookRequestContext{
-		WebhookContext:      h.WebhookContext,
-		Op:                  req.Operation,
-		Obj:                 obj,
-		RawObj:              req.Object.Raw,
-		OldObj:              oldObj,
-		UserInfo:            req.UserInfo,
-		IsPrivilegedAccount: IsPrivilegedAccount(h.WebhookContext, req.UserInfo),
-		IsVMOperatorAccount: IsVMOperatorServiceAccount(h.WebhookContext, req.UserInfo),
-		Logger:              h.WebhookContext.Logger.WithName(objNamespace).WithName(objName),
-	}
+	webhookRequestContext, cancel := NewWebhookRequestContext(
+		ctx,
+		h.WebhookContext,
+		req,
+		obj,
+		oldObj)
+	defer cancel()
 
 	return h.Mutate(webhookRequestContext)
 }

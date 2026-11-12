@@ -14,6 +14,7 @@ import (
 // testing webhooks with a fake client.
 func NewWebhookRequestContext(ctx *pkgctx.WebhookContext, obj, oldObj *unstructured.Unstructured) *pkgctx.WebhookRequestContext {
 	return &pkgctx.WebhookRequestContext{
+		Context:        ctx.Context,
 		WebhookContext: ctx,
 		Obj:            obj,
 		OldObj:         oldObj,

@@ -5,6 +5,7 @@
 package context
 
 import (
+	"context"
 	"fmt"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -15,9 +16,19 @@ import (
 )
 
 // WebhookRequestContext is a Go context used with a webhook request.
+//
+// The embedded context.Context is owned by this request. Handlers may replace
+// it, ex. to add request-scoped values, without affecting the webhook or any
+// other request.
 type WebhookRequestContext struct {
-	// WebhookContext is the context of the webhook that spawned this request context.
-	*WebhookContext
+	// Context is the request-scoped context. It carries the values of the
+	// webhook's long-lived context and is canceled when the admission request
+	// is done.
+	context.Context
+
+	// WebhookContext is the context of the webhook that spawned this request
+	// context. It is shared by all requests and must not be modified.
+	WebhookContext *WebhookContext
 
 	// Obj is the resource associated with the webhook request.
 	Obj *unstructured.Unstructured

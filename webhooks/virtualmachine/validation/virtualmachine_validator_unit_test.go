@@ -9457,6 +9457,119 @@ func unitTestsValidateUpdate() {
 				),
 			},
 		),
+
+		Entry("disallow interfaces change when VMNetworkUnitNumbers and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMNetworkUnitNumbers = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					// A Type (not unitNumber) change isolates this guard from
+					// validateNICUnitNumbers, whose flag-off rule only rejects
+					// new/changed unitNumber values and whose powered-on rules
+					// are skipped for a not-upgraded oldVM.
+					if ctx.oldVM.Spec.Network == nil {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.oldVM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0"},
+					}
+					if ctx.vm.Spec.Network == nil {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0", Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3},
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          false,
+				validate: doValidateWithMsg(
+					`spec.network.interfaces: Forbidden: modifying this VM is not allowed until it is upgraded`,
+				),
+			},
+		),
+
+		Entry("allow interfaces change by VM Operator service account when VMNetworkUnitNumbers and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					// Simulate the VM Operator service account: the schema-upgrade
+					// backfill records observed NIC unit numbers into the spec
+					// through this account, and validateSchemaUpgrade bypasses the
+					// not-upgraded field guards for it.
+					ctx.WebhookContext.Namespace = "vm-operator-system"
+					ctx.WebhookContext.ServiceAccountName = "vm-operator"
+					ctx.UserInfo.Username = "system:serviceaccount:vm-operator-system:vm-operator"
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMNetworkUnitNumbers = true
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					if ctx.oldVM.Spec.Network == nil {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.oldVM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0"},
+					}
+					if ctx.vm.Spec.Network == nil {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0", Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3},
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow interfaces change when upgraded with VMNetworkUnitNumbers",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMNetworkUnitNumbers = true
+					})
+					// Re-stamp the upgrade annotations now that the activated
+					// feature version includes the NIC bit, so the VMs read as
+					// upgraded and normal validation applies to the change.
+					bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+					ctx.vm.Spec.Network.Interfaces[0].Type = vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
+
+		Entry("allow interfaces change when VMNetworkUnitNumbers and VMServiceClasslessVM are disabled and not yet upgraded",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					ctx.IsPrivilegedAccount = false
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMNetworkUnitNumbers = false
+						config.Features.VMServiceClasslessVM = false
+					})
+					ctx.oldVM.Annotations = map[string]string{}
+					ctx.vm.Annotations = map[string]string{}
+					if ctx.oldVM.Spec.Network == nil {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.oldVM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0"},
+					}
+					if ctx.vm.Spec.Network == nil {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+					}
+					ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{Name: "eth0", Type: vmopv1.VirtualMachineNetworkInterfaceTypeVMXNet3},
+					}
+				},
+				skipBypassUpgradeCheck: true,
+				expectAllowed:          true,
+			},
+		),
 	)
 
 	Context("Snapshots", func() {

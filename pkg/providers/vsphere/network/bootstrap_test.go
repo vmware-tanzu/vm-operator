@@ -26,6 +26,42 @@ import (
 )
 
 var _ = Describe("InterfaceBootstrap", func() {
+	DescribeTable("DHCP DNS suppression requires interface nameservers",
+		func(globalDefault *bool, localDNS, expectedDNS []string) {
+			vm := &vmopv1.VirtualMachine{Spec: vmopv1.VirtualMachineSpec{
+				Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{},
+				Network:   &vmopv1.VirtualMachineNetworkSpec{Nameservers: []string{"192.0.2.53"}},
+			}}
+			vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+				UseGlobalNameserversAsDefault: globalDefault,
+			}
+			b := network.InterfaceBootstrap(context.Background(), vm,
+				network.Bootstrap{DHCP4: true, DHCP6: true},
+				vmopv1.VirtualMachineNetworkInterfaceSpec{Name: "eth0", Nameservers: localDNS})
+			Expect(b.Nameservers).To(Equal(expectedDNS))
+			Expect(b.IgnoreDHCPDNS).To(Equal(len(localDNS) > 0))
+		},
+		Entry("CloudInit global defaults", nil, nil, []string{"192.0.2.53"}),
+		Entry("CloudInit explicit global defaults", ptr.To(true), nil, []string{"192.0.2.53"}),
+		Entry("CloudInit interface preference", nil, []string{"2001:db8::53"}, []string{"2001:db8::53"}),
+		Entry("CloudInit global fallback disabled", ptr.To(false), nil, nil),
+		Entry("CloudInit local DNS without fallback", ptr.To(false), []string{"192.0.2.54"}, []string{"192.0.2.54"}),
+	)
+
+	DescribeTable("DHCP route suppression from gateway None",
+		func(gateway4, gateway6 string, ignore4, ignore6 bool) {
+			vm := &vmopv1.VirtualMachine{}
+			b := network.InterfaceBootstrap(context.Background(), vm, network.Bootstrap{DHCP4: true, DHCP6: true},
+				vmopv1.VirtualMachineNetworkInterfaceSpec{Name: "eth0", Gateway4: gateway4, Gateway6: gateway6})
+			Expect(b.IgnoreDHCP4Routes).To(Equal(ignore4))
+			Expect(b.IgnoreDHCP6Routes).To(Equal(ignore6))
+		},
+		Entry("no suppression by default", "", "", false, false),
+		Entry("IPv4 only", "None", "", true, false),
+		Entry("IPv6 only", "", "None", false, true),
+		Entry("both families", "None", "None", true, true),
+	)
+
 	var (
 		ctx           context.Context
 		vm            *vmopv1.VirtualMachine

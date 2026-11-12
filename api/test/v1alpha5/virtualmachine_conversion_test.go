@@ -619,6 +619,67 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(hubAfter.Spec.Network.Interfaces[0].UnitNumber).To(Equal(ptr.To(int32(9))))
 	})
 
+	t.Run("spec.network.interfaces.gateway-none", func(t *testing.T) {
+		testCases := []struct {
+			name     string
+			gateway4 string
+			gateway6 string
+			dhcp4    bool
+			dhcp6    bool
+		}{
+			{name: "IPv4", gateway4: "None", dhcp4: true},
+			{name: "IPv6", gateway6: "None", dhcp6: true},
+			{name: "dual-stack", gateway4: "None", gateway6: "None", dhcp4: true, dhcp6: true},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				g := NewWithT(t)
+				hub := &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						},
+						Network: &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:     "eth0",
+									Gateway4: tc.gateway4,
+									Gateway6: tc.gateway6,
+									DHCP4:    ptr.To(tc.dhcp4),
+									DHCP6:    ptr.To(tc.dhcp6),
+								},
+							},
+						},
+					},
+				}
+
+				spoke := &vmopv1a5.VirtualMachine{}
+				g.Expect(spoke.ConvertFrom(hub)).To(Succeed())
+				g.Expect(spoke.Spec.Network).NotTo(BeNil())
+				g.Expect(spoke.Spec.Network.Interfaces).To(HaveLen(1))
+				iface := spoke.Spec.Network.Interfaces[0]
+				g.Expect(iface.Gateway4).To(Equal(tc.gateway4))
+				g.Expect(iface.Gateway6).To(Equal(tc.gateway6))
+				g.Expect(iface.DHCP4).To(Equal(tc.dhcp4))
+				g.Expect(iface.DHCP6).To(Equal(tc.dhcp6))
+
+				after := &vmopv1.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(after)).To(Succeed())
+				g.Expect(apiequality.Semantic.DeepEqual(hub, after)).To(BeTrue(), cmp.Diff(hub, after))
+
+				// Verify a v1alpha5 request preserves "None" without conversion annotations.
+				spoke.Annotations = nil
+				after = &vmopv1.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(after)).To(Succeed())
+				g.Expect(after.Spec.Network).NotTo(BeNil())
+				g.Expect(after.Spec.Network.Interfaces).To(HaveLen(1))
+				g.Expect(after.Spec.Network.Interfaces[0].Gateway4).To(Equal(tc.gateway4))
+				g.Expect(after.Spec.Network.Interfaces[0].Gateway6).To(Equal(tc.gateway6))
+			})
+		}
+	})
+
 	t.Run("spec.network.interfaces.dhcp-spoke-override", func(t *testing.T) {
 		// Verify that when hub has DHCP4=*false the spoke user can override it
 		// to true and the up-conversion produces *true, not *false.

@@ -632,8 +632,8 @@ func TestGetComputePolicyErrors(t *testing.T) {
 		context  string
 	}{
 		{name: "command failure", response: "policy not found", err: commandErr, context: `get compute policy "policy-id"`},
-		{name: "invalid JSON", response: `{`, context: `decode compute policy "policy-id"`},
-		{name: "invalid topology", response: `{"topology":"Host"}`, context: `decode compute policy "policy-id"`},
+		{name: "invalid JSON", response: `{`, context: `get compute policy "policy-id"`},
+		{name: "invalid topology", response: `{"topology":"Host"}`, context: `get compute policy "policy-id"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runner := &computePolicyCommandRunner{response: []byte(tc.response), err: tc.err}

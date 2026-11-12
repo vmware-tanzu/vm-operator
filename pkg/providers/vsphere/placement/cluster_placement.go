@@ -320,14 +320,14 @@ func getClusterPlacementRecommendations(
 		}
 	}
 
-	logger.V(4).Info("PlaceVmsXCluster request", "spec", vimtypes.ToString(placementSpec))
+	logger.Info("PlaceVmsXCluster request", "spec", vimtypes.ToString(placementSpec))
 
 	results, err := object.NewRootFolder(vcClient).PlaceVmsXCluster(ctx, placementSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.V(6).Info("PlaceVmsXCluster response", "results", vimtypes.ToString(results))
+	logger.Info("PlaceVmsXCluster response", "results", vimtypes.ToString(results))
 
 	if len(results.Faults) != 0 {
 		return nil, NewPlaceVMsXClusterErrors(results.Faults)

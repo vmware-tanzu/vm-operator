@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/event"
@@ -40,6 +41,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	vmopvm "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
@@ -2269,6 +2271,131 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			}
 		})
 
+		It("Should tag and place a VM with host anti-affinity to another VM's label on different hosts", Label("experimental", consts.HardAffinityDuringExecutionLabel), func() {
+			// vm1 and vm2 carry label-A and each require a different host than
+			// VMs labeled B. vm3 carries label-B and is the anti-affinity target.
+			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+			const labelAKey, labelBKey = "role-a", "role-b"
+			labelA := map[string]string{labelAKey: vmgRootName}
+			labelB := map[string]string{labelBKey: vmgRootName}
+			restClient, err := vcenter.NewRestClient(ctx, vCenterClient, testbed.AdminUsername, testbed.AdminPassword)
+			Expect(err).ToNot(HaveOccurred(), "failed to create the vCenter REST client")
+			DeferCleanup(func() { Expect(restClient.Logout(ctx)).To(Succeed()) })
+			tagManager := tags.NewManager(restClient)
+			tagIntervals := config.GetIntervals("default", "wait-virtual-machine-compute-policy-status-update")
+			originalBTag := vmopvm.TagName(labelBKey, vmgRootName)
+
+			// Tag names derive only from the policy (type, strictness, topology,
+			// and targets), so both requesters share one self tag and the
+			// label-B VM gets one target tag derived from it.
+			policyHash, err := vmopvm.NewAffinityPolicyHash(
+				vmopvm.AffinityPolicyTypeGroupedAntiAffinity,
+				types.VmPlacementPolicyVmPlacementPolicyStrictnessRequiredDuringPlacementPreferredDuringExecution,
+				types.VmPlacementPolicyVmPlacementPolicyTopologyHost,
+				[]vmopvm.LabelPair{{Key: labelBKey, Value: vmgRootName}})
+			Expect(err).ToNot(HaveOccurred(), "failed to compute the expected policy hash")
+			expectedSelfTag := policyHash.TagName
+			expectedTargetTag := expectedSelfTag + "-" + labelBKey + ":" + vmgRootName
+
+			for _, vmName := range []string{vm1Name, vm2Name} {
+				By(fmt.Sprintf("Creating VM %s carrying label-A %v with required host anti-affinity to label-B", vmName, labelA))
+				createVMForAffinityTest(ctx, svClusterClient, tmpNamespaceName, tmpNamespaceVMIName,
+					clusterResources, vmName, labelA, requiredAntiAffinity(hostTopoKey, labelB))
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+			}
+
+			By("Verifying each requesting VM gets only its anti-affinity self tag")
+			for _, vmName := range []string{vm1Name, vm2Name} {
+				vcVM := vcVMForVM(ctx, svClusterClient, vCenterClient, tmpNamespaceName, vmName)
+				Eventually(func(g Gomega) {
+					names, err := attachedNamespaceTagNames(ctx, tagManager, vcVM, tmpNamespaceName)
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(names).To(ConsistOf(expectedSelfTag),
+						"VM %s must carry only the policy-derived self tag and no tag for label-B, which it does not carry", vmName)
+					expectConfiguredAffinityPolicy(g, input.WCPClient, tmpNamespaceName, expectedSelfTag,
+						wcp.ComputePolicyCapabilityVMToVMGroupsAntiAffinity,
+						wcp.ComputePolicyStrictnessRequiredDuringPlacementPreferredDuringExecution,
+						types.VmPlacementPolicyVmPlacementPolicyTopologyHost)
+				}, tagIntervals...).Should(Succeed(), "timed out waiting for the anti-affinity self tag on VM %s", vmName)
+			}
+
+			By(fmt.Sprintf("Creating VM %s carrying label-B %v", vm3Name, labelB))
+			createVMForAffinityTest(ctx, svClusterClient, tmpNamespaceName, tmpNamespaceVMIName,
+				clusterResources, vm3Name, labelB, nil)
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vm3Name)
+			vcVMC := vcVMForVM(ctx, svClusterClient, vCenterClient, tmpNamespaceName, vm3Name)
+
+			expectVMCTags := func(remaining ...string) {
+				GinkgoHelper()
+				Eventually(func(g Gomega) {
+					names, err := attachedNamespaceTagNames(ctx, tagManager, vcVMC, tmpNamespaceName)
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(names).To(ContainElement(originalBTag),
+						"VM %s must carry its original label-B tag %s", vm3Name, originalBTag)
+					g.Expect(names).To(ContainElement(expectedTargetTag),
+						"VM %s must carry the target tag %s of the remaining requesting VMs %v", vm3Name, expectedTargetTag, remaining)
+					g.Expect(names).To(ConsistOf(originalBTag, expectedTargetTag),
+						"VM %s must carry no tags other than the original and target tags", vm3Name)
+				}, tagIntervals...).Should(Succeed(), "timed out waiting for tags on VM %s", vm3Name)
+			}
+
+			By("Verifying the label-B VM gets its original tag and the derived anti-affinity target tags")
+			expectVMCTags(vm1Name, vm2Name)
+
+			By("Verifying the label-B VM is on a different host than both requesting VMs")
+			hostC := getVMHostFromVmodl(ctx, svClusterClient, vCenterClient, tmpNamespaceName, vm3Name)
+			for _, vmName := range []string{vm1Name, vm2Name} {
+				hostReq := getVMHostFromVmodl(ctx, svClusterClient, vCenterClient, tmpNamespaceName, vmName)
+				Expect(hostReq).ToNot(Equal(hostC), "VMs %s and %s are on the same host %s", vmName, vm3Name, hostC)
+			}
+
+			By("Verifying the Tag resources exist and are owned by the first requesting VM")
+			selfName := vmopvm.StripAffinityTagPrefix(expectedSelfTag)
+			originalBName := labelBKey + ":" + vmgRootName
+			tagCRs := map[string]vspherepolv1.TagKind{
+				selfName:                       vspherepolv1.TagKindGroupedAntiAffinitySelf,
+				originalBName:                  vspherepolv1.TagKindOriginal,
+				selfName + "-" + originalBName: vspherepolv1.TagKindGroupedAntiAffinityTarget,
+			}
+			for name, kind := range tagCRs {
+				Eventually(func(g Gomega) {
+					tag := &vspherepolv1.Tag{}
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName, Name: tagResourceName(tmpNamespaceName, name),
+					}, tag)).To(Succeed())
+					g.Expect(tag.Spec.Name).To(Equal(name))
+					g.Expect(tag.Spec.Kind).To(Equal(kind))
+					g.Expect(tag.OwnerReferences).To(ContainElement(
+						HaveField("Name", vm1Name)), "Tag %s must be owned by requesting VM %s", name, vm1Name)
+				}, tagIntervals...).Should(Succeed(), "timed out waiting for Tag %s (%s)", name, kind)
+			}
+
+			By("Deleting the second requesting VM and verifying the label-B VM still has its tags")
+			vmoperator.DeleteVirtualMachineAndWait(ctx, config, svClusterClient, tmpNamespaceName, vm2Name)
+			expectVMCTags(vm1Name)
+
+			By("Deleting the first requesting VM and verifying its Tag resources are removed")
+			vmoperator.DeleteVirtualMachineAndWait(ctx, config, svClusterClient, tmpNamespaceName, vm1Name)
+			for name := range tagCRs {
+				Eventually(func(g Gomega) {
+					err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName, Name: tagResourceName(tmpNamespaceName, name),
+					}, &vspherepolv1.Tag{})
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Tag %s still exists: %v", name, err)
+				}, tagIntervals...).Should(Succeed(), "timed out waiting for Tag %s to be removed", name)
+			}
+
+			By("Verifying the label-B VM no longer carries any affinity tag")
+			Eventually(func(g Gomega) {
+				names, err := attachedNamespaceTagNames(ctx, tagManager, vcVMC, tmpNamespaceName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(names).To(BeEmpty())
+			}, tagIntervals...).Should(Succeed(), "timed out waiting for tags to be detached from VM %s", vm3Name)
+
+			By("Deleting the label-B VM")
+			vmoperator.DeleteVirtualMachineAndWait(ctx, config, svClusterClient, tmpNamespaceName, vm3Name)
+		})
+
 		When("VMs are pinned to zones via the topology zone label", Label("experimental", consts.HardAffinityDuringExecutionLabel), func() {
 			var (
 				zones       []string
@@ -3353,10 +3480,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					}
 				})
 				waitForVMAdminPaused(ctx, config, svClusterClient, tmpNamespaceName, vm1Name)
-				var pausedVM mo.VirtualMachine
-				Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"config.extraConfig"}, &pausedVM)).To(Succeed())
-				pausedPolicy, _ := object.OptionValueList(pausedVM.Config.ExtraConfig).GetString("vmservice.placementpolicies")
-				pausedTags, _ := object.OptionValueList(pausedVM.Config.ExtraConfig).GetString("vmservice.placementpolicies.tags")
 
 				By("Changing host affinity from preferred to required while the VM is paused")
 				vm, err = utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vm1Name)
@@ -3366,10 +3489,12 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				af.RequiredDuringSchedulingPreferredDuringExecution = af.PreferredDuringSchedulingPreferredDuringExecution
 				af.PreferredDuringSchedulingPreferredDuringExecution = nil
 				Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(before))).To(Succeed())
-				expectAffinityStateUnchangedWhilePaused(ctx, config, input.WCPClient, tagManager, vcVM, tmpNamespaceName,
-					pausedPolicy, pausedTags, previousAffinityTag, tier)
+				// Affinity reconciles for a paused VM, like vSphere policies, so the
+				// change converges without unpausing.
+				waitForRequiredHostAffinityApplied(ctx, config, input.WCPClient, tagManager, vcVM, tmpNamespaceName,
+					tier, previousAffinityTag)
 
-				By("Unpausing the VM and applying the pending affinity update")
+				By("Unpausing the VM and verifying the affinity update is kept")
 				resumeTask, err := vcVM.Reconfigure(ctx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{&types.OptionValue{Key: vmopv1.PauseVMExtraConfigKey, Value: "FALSE"}},
 				})
@@ -4645,6 +4770,79 @@ func preferredAntiAffinity(topologyKey string, matchLabels map[string]string) *v
 	}
 }
 
+// tagResourceName returns the name of the Tag resource for a prefix-free tag
+// name: "tag-" followed by the 16 hex character XXHash64 digest of
+// "<namespace>:<name>".
+func tagResourceName(namespace, name string) string {
+	return fmt.Sprintf("tag-%016x", xxhash.Sum64String(namespace+":"+name))
+}
+
+// createVMForAffinityTest creates a powered-on VM with the given labels and
+// optional affinity.
+func createVMForAffinityTest(
+	ctx context.Context,
+	client ctrlclient.Client,
+	namespace, imageName string,
+	resources *e2eConfig.Resources,
+	name string,
+	labels map[string]string,
+	affinity *vmopv1a5.AffinitySpec) {
+
+	GinkgoHelper()
+	vm := &vmopv1a5.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name, Labels: labels},
+		Spec: vmopv1a5.VirtualMachineSpec{
+			ImageName:    imageName,
+			ClassName:    resources.VMClassName,
+			StorageClass: resources.StorageClassName,
+			PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+			Affinity:     affinity,
+		},
+	}
+	Expect(client.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", name)
+}
+
+// vcVMForVM returns the vCenter VM backing the named VirtualMachine.
+func vcVMForVM(
+	ctx context.Context,
+	client ctrlclient.Client,
+	vimClient *vim25.Client,
+	namespace, name string) *object.VirtualMachine {
+
+	GinkgoHelper()
+	moid := vmoperator.GetVirtualMachineMOID(ctx, client, namespace, name)
+	return object.NewVirtualMachine(vimClient, types.ManagedObjectReference{Type: "VirtualMachine", Value: moid})
+}
+
+// attachedNamespaceTagNames returns the names of all tags attached to the VM
+// that are in the namespace's tag category.
+func attachedNamespaceTagNames(
+	ctx context.Context,
+	manager *tags.Manager,
+	vm *object.VirtualMachine,
+	namespace string) ([]string, error) {
+
+	ids, err := manager.ListAttachedTags(ctx, vm.Reference())
+	if err != nil {
+		return nil, fmt.Errorf("list attached tags: %w", err)
+	}
+	var names []string
+	for _, id := range ids {
+		tag, err := manager.GetTag(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("get tag: %w", err)
+		}
+		category, err := manager.GetCategory(ctx, tag.CategoryID)
+		if err != nil {
+			return nil, fmt.Errorf("get tag category: %w", err)
+		}
+		if category.Name == namespace {
+			names = append(names, tag.Name)
+		}
+	}
+	return names, nil
+}
+
 // requiredAffinity returns an AffinitySpec that requires the VM to be placed in
 // the same topologyKey domain as the VMs matching matchLabels.
 func requiredAffinity(topologyKey string, matchLabels map[string]string) *vmopv1a5.AffinitySpec {
@@ -5049,34 +5247,6 @@ func waitForVMAdminPaused(
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(current.Labels[vmopv1.PausedVMLabelKey]).To(Equal("admin"))
 	}, config.GetIntervals("default", "wait-virtual-machine-compute-policy-status-update")...).Should(Succeed())
-}
-
-// expectAffinityStateUnchangedWhilePaused checks that policy receipts and attached tags remain unchanged throughout the pause.
-func expectAffinityStateUnchangedWhilePaused(
-	ctx context.Context,
-	config *e2eConfig.E2EConfig,
-	wcpClient wcp.WorkloadManagementAPI,
-	tagManager *tags.Manager,
-	vcVM *object.VirtualMachine,
-	namespace string,
-	pausedPolicy, pausedTags, previousAffinityTag, tier string) {
-
-	GinkgoHelper()
-	Consistently(func(g Gomega) {
-		var actual mo.VirtualMachine
-		g.Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"config.extraConfig"}, &actual)).To(Succeed())
-		policy, _ := object.OptionValueList(actual.Config.ExtraConfig).GetString("vmservice.placementpolicies")
-		record, _ := object.OptionValueList(actual.Config.ExtraConfig).GetString("vmservice.placementpolicies.tags")
-		g.Expect(policy).To(Equal(pausedPolicy))
-		g.Expect(record).To(Equal(pausedTags))
-		names, err := affinityTierTags(ctx, tagManager, vcVM, namespace)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(names).To(ConsistOf(previousAffinityTag, "vmoperator:tier:"+tier))
-		expectConfiguredAffinityPolicy(g, wcpClient, namespace, previousAffinityTag,
-			wcp.ComputePolicyCapabilityVMVMAffinity,
-			wcp.ComputePolicyStrictnessPreferredDuringPlacementPreferredDuringExecution,
-			types.VmPlacementPolicyVmPlacementPolicyTopologyHost)
-	}, config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed())
 }
 
 // waitForRequiredHostAffinityApplied verifies replacement of the preferred affinity tag and updates to the backend policy and receipts.

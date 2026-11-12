@@ -18,6 +18,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
@@ -45,6 +49,71 @@ type AffinityOpts struct {
 	// vmoperator: prefix instead of the bare key:value form. It equals the
 	// VMHardAffinityDuringExecution capability.
 	ConfigureTagPrefix bool
+
+	// ConfigureDerivedAntiAffinityTargets is true when grouped anti-affinity
+	// policies target the policy's derived target tags, which label-derived Tags
+	// attach to every VM that carries the source label, instead of the
+	// original tags. At placement the original tags are targeted as well. It
+	// is honored only when ConfigureHashedTags is true.
+	ConfigureDerivedAntiAffinityTargets bool
+}
+
+// LabelDerivedTags enables namespace-wide label-derived Tags. Grouped
+// anti-affinity policies target derived tags, and the VM also carries every Tag
+// whose source label it carries. A nil *LabelDerivedTags disables this, in which
+// case the output depends only on the VM's own spec and labels.
+type LabelDerivedTags struct {
+	// Client must be a cache-backed client with the Tag indexes registered.
+	Client ctrlclient.Client
+
+	// OwnedTags are Tags created or adopted by the caller in this reconcile.
+	// They may be nil.
+	OwnedTags []vspherepolv1.Tag
+}
+
+// addTagsFromTagCRs appends to tags the vCenter names of the Tags the VM carries
+// by its labels. The tags argument holds the names calculated from the VM's own
+// spec. It returns tags unchanged when m is nil.
+//
+// A hash that is both attached and implicit must stay attached. Implicit names,
+// which vCenter attaches itself, are subtracted from the Tag-derived names only.
+// They are not removed for placement, where policies target the original
+// names.
+func (m *LabelDerivedTags) addTagsFromTagCRs(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	isPlacement bool,
+	policies []vimtypes.BaseVmPlacementPolicy,
+	tags []string) ([]string, error) {
+
+	// Nothing to add if label-derived Tags are disabled.
+	if m == nil {
+		return tags, nil
+	}
+
+	// Look up the Tag CRs this VM is a member of.
+	crs, err := ListLabelDerivedTags(ctx, m.Client, vm, m.OwnedTags)
+	if err != nil {
+		return nil, err
+	}
+
+	// Skip existing tags.
+	skip := sets.New(tags...)
+
+	// Skip names vCenter attaches itself at create time.
+	if !isPlacement {
+		skip.Insert(implicitAffinityTags(policies)...)
+	}
+
+	// Append the Tag-derived names not already covered, on a copy.
+	merged := slices.Clone(tags)
+	for _, name := range TagVCenterNames(crs) {
+		if !skip.Has(name) {
+			merged = append(merged, name)
+		}
+	}
+	// Sort and dedupe the final list.
+	return normalizeTagNames(merged), nil
 }
 
 // ExtraConfigPlacementPoliciesKey records generated affinity policies separately
@@ -52,18 +121,20 @@ type AffinityOpts struct {
 const ExtraConfigPlacementPoliciesKey = "vmservice.placementpolicies"
 
 // AddAffinityPoliciesToConfigSpec adds eligible affinity policies and tags to
-// configSpec during vm Creation & placement. isPlacement selects
-// placement (true) or creation (false). Creation records generated policies and
-// managed tags; placement preserves those receipts.
-// Generated policies replace the existing policy list, including class policies,
-// as in the legacy path. Without generated policies the existing list is retained.
+// configSpec during vm Creation & placement. Creation records generated policies and
+// managed tags.
+// Generated policies replace the existing policy list.
+// Without generated policies the existing list is retained.
+// A non-nil labelTags extends the calculation with label-derived Tags; with nil the
+// result depends only on the VM's own spec and labels.
 func AddAffinityPoliciesToConfigSpec(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	configSpec *vimtypes.VirtualMachineConfigSpec,
-	isPlacement bool) error {
+	isPlacement bool,
+	labelTags *LabelDerivedTags) error {
 
-	opts := CalculateAffinityOpts(ctx, vm, isPlacement)
+	opts := CalculateAffinityOpts(ctx, vm, isPlacement, labelTags)
 	policies, tags, err := generateAffinityPolicies(ctx, vm, isPlacement, opts)
 	if err != nil {
 		return err
@@ -84,6 +155,10 @@ func AddAffinityPoliciesToConfigSpec(
 		return nil
 	}
 
+	tags, err = labelTags.addTagsFromTagCRs(ctx, vm, isPlacement, policies, tags)
+	if err != nil {
+		return err
+	}
 	setAffinityTagsDuringCreateVM(vm, configSpec, tags)
 	if isPlacement {
 		return nil
@@ -98,7 +173,8 @@ func UpdateConfigSpecAffinity(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	config *vimtypes.VirtualMachineConfigInfo,
-	spec *vimtypes.VirtualMachineConfigSpec) error {
+	spec *vimtypes.VirtualMachineConfigSpec,
+	labelTags *LabelDerivedTags) error {
 
 	features := pkgcfg.FromContext(ctx).Features
 	if !features.VMHardAffinityDuringExecution {
@@ -106,8 +182,12 @@ func UpdateConfigSpecAffinity(
 		return nil
 	}
 
-	opts := CalculateAffinityOpts(ctx, vm, false)
+	opts := CalculateAffinityOpts(ctx, vm, false, labelTags)
 	policies, tags, err := generateAffinityPolicies(ctx, vm, false, opts)
+	if err != nil {
+		return err
+	}
+	tags, err = labelTags.addTagsFromTagCRs(ctx, vm, false, policies, tags)
 	if err != nil {
 		return err
 	}
@@ -122,7 +202,8 @@ func UpdateConfigSpecAffinity(
 
 // CalculateAffinityOpts calculates the Affinity options based on the VM
 // and the workflow. isPlacement is true for placement and false for
-// creation or update.
+// creation or update. A non-nil labelTags enables
+// ConfigureDerivedAntiAffinityTargets.
 // ConfigureZoneRules is enabled when VMHardAffinityDuringExecution is enabled
 // and zone rules are considered during VM placement and  persisted during create.
 // Otherwise, ConfigureZoneRules is disabled when:
@@ -143,9 +224,12 @@ func CalculateAffinityOpts(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	isPlacement bool,
+	labelTags *LabelDerivedTags,
 ) AffinityOpts {
 	features := pkgcfg.FromContext(ctx).Features
-	opts := AffinityOpts{}
+	opts := AffinityOpts{
+		ConfigureDerivedAntiAffinityTargets: labelTags != nil,
+	}
 
 	// set base condition for zonal rules based on capability.
 	if features.VMPlacementPolicies {
@@ -240,7 +324,7 @@ func generateAffinityPolicies(
 		topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology) error {
 
 		pairs := affinityTargetsForTopology(ctx, terms, topology)
-		targets, self, attachments, err := calculateAntiAffinityTags(ctx, vm, pairs, strictness, topology, opts)
+		targets, self, attachments, err := calculateAntiAffinityTags(ctx, vm, pairs, strictness, topology, isPlacement, opts)
 		if err != nil {
 			return err
 		}
@@ -366,7 +450,7 @@ func calculateOriginalAffinityTags(vm *vmopv1.VirtualMachine, pairs []LabelPair,
 	return targets, tags
 }
 
-// calculateHashedAffinityTags derives AF hashes and local membership.
+// calculateHashedAffinityTags derives AF hashes and local label-derived Tags.
 // Placement targets the original names; both create and placement attach the
 // original and hashed tags when this VM carries the source label.
 func calculateHashedAffinityTags(
@@ -408,23 +492,30 @@ func calculateAntiAffinityTags(
 	pairs []LabelPair,
 	strictness vimtypes.VmPlacementPolicyVmPlacementPolicyStrictness,
 	topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology,
+	isPlacement bool,
 	opts AffinityOpts) ([]vimtypes.TagId, vimtypes.TagId, []string, error) {
 
 	if opts.ConfigureHashedTags {
-		return calculateHashedAntiAffinityTags(ctx, vm, pairs, strictness, topology)
+		return calculateHashedAntiAffinityTags(ctx, vm, pairs, strictness,
+			topology, isPlacement, opts.ConfigureDerivedAntiAffinityTargets)
 	}
 	targets, tags := calculateOriginalAffinityTags(vm, pairs, opts.ConfigureTagPrefix)
 	return targets, vimtypes.TagId{}, tags, nil
 }
 
-// calculateHashedAntiAffinityTags combines canonical original targets with a
-// hashed self tag that is always attached to the requesting VM.
+// calculateHashedAntiAffinityTags combines canonical targets with a hashed
+// self tag that is always attached to the requesting VM. The targets are the
+// original tags, or, when derived is true, the policy's derived target tags
+// plus the original tags at placement. With derived set, the requesting VM also
+// carries the derived target tag of each source label it carries.
 func calculateHashedAntiAffinityTags(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	pairs []LabelPair,
 	strictness vimtypes.VmPlacementPolicyVmPlacementPolicyStrictness,
-	topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology) ([]vimtypes.TagId, vimtypes.TagId, []string, error) {
+	topology vimtypes.VmPlacementPolicyVmPlacementPolicyTopology,
+	isPlacement bool,
+	derived bool) ([]vimtypes.TagId, vimtypes.TagId, []string, error) {
 
 	if len(pairs) == 0 {
 		return nil, vimtypes.TagId{}, nil, nil
@@ -436,6 +527,22 @@ func calculateHashedAntiAffinityTags(
 		return nil, vimtypes.TagId{}, nil, nil
 	}
 	targets, tags := calculateOriginalAffinityTags(vm, policyHash.Targets, true)
+	if derived {
+		labels := kubeutil.RemoveVMOperatorLabels(vm.Labels)
+		derivedTargets := make([]vimtypes.TagId, 0, len(targets))
+		for _, pair := range policyHash.Targets {
+			name := GroupedAntiAffinityTargetTagName(policyHash, pair)
+			derivedTargets = append(derivedTargets, affinityNameID(vm.Namespace, name))
+			if value, exists := labels[pair.Key]; exists && value == pair.Value {
+				tags = append(tags, name)
+			}
+		}
+		if isPlacement {
+			targets = slices.Concat(derivedTargets, targets)
+		} else {
+			targets = derivedTargets
+		}
+	}
 	self := affinityNameID(vm.Namespace, policyHash.TagName)
 	tags = append(tags, policyHash.TagName)
 	return targets, self, tags, nil

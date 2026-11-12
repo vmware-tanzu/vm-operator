@@ -20,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
@@ -902,15 +904,9 @@ var _ = Describe("UpdateVirtualMachine", func() {
 			err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
 			Expect(err == nil || errors.Is(err, session.ErrReconfigure)).To(BeTrue(), "update returned %v", err)
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
-			Expect(virtualmachine.GetVMTagsFromExtraConfig(vmCtx.MoVM.Config)).To(BeEmpty())
-			policyRecord, _ := object.OptionValueList(vmCtx.MoVM.Config.ExtraConfig).GetString(virtualmachine.ExtraConfigPlacementPoliciesKey)
-			Expect(policyRecord).To(BeEmpty())
-			attached, err := tagManager.GetAttachedTags(ctx, vcVM.Reference())
-			Expect(err).ToNot(HaveOccurred())
-			Expect(attached).To(BeEmpty())
-
-			// The pending affinity update must apply once the lifecycle guard clears.
-			delete(vm.Annotations, vmopv1.PauseAnnotation)
+			// Affinity applies immediately to a paused VM, like the vSphere
+			// policies reconciler: pausing does not defer the edit.
+			Expect(virtualmachine.GetVMTagsFromExtraConfig(vmCtx.MoVM.Config)).ToNot(BeEmpty())
 		}
 		Eventually(func(g Gomega) {
 			err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
@@ -940,6 +936,111 @@ var _ = Describe("UpdateVirtualMachine", func() {
 		Entry("suspended", true, false, "suspended"),
 		Entry("running task", true, false, "running task"),
 	)
+
+	Context("affinity Tag resources", func() {
+		var (
+			tagCreates int
+			failCreate bool
+			declared   []vspherepolv1.Tag
+		)
+
+		affinity := func(value string) *vmopv1.AffinitySpec {
+			return &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+					TopologyKey:   corev1.LabelHostname,
+					LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": value}},
+				}},
+			}}
+		}
+
+		update := func() error {
+			err := sess.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgs, getResizeArgs)
+			if errors.Is(err, session.ErrReconfigure) || errors.Is(err, vmlifecycle.ErrBootstrapCustomize) {
+				return nil
+			}
+			return err
+		}
+
+		JustBeforeEach(func() {
+			tagCreates, failCreate = 0, false
+			pkgcfg.SetContext(vmCtx, func(cfg *pkgcfg.Config) {
+				cfg.Features.TaggingAPI = true
+				cfg.Features.VMAffinityDuringExecution = true
+				cfg.Features.VMPlacementPolicies = true
+				cfg.Features.VMHardAffinityDuringExecution = true
+			})
+			vm.UID = "tag-vm"
+			vm.Labels = nil
+			vm.Spec.Affinity = nil
+
+			// A Tag this VM owns from an earlier affinity spec.
+			prev := vm.DeepCopy()
+			prev.Spec.Affinity = affinity("old")
+			var err error
+			declared, err = virtualmachine.DesiredAffinityTags(vmCtx, prev)
+			Expect(err).ToNot(HaveOccurred())
+			var objs []ctrlclient.Object
+			for i := range declared {
+				tag := declared[i].DeepCopy()
+				Expect(controllerutil.SetOwnerReference(vm, tag, builder.NewScheme())).To(Succeed())
+				objs = append(objs, tag)
+			}
+			sess.K8sClient = builder.NewFakeClientWithInterceptors(interceptor.Funcs{
+				Create: func(ctx context.Context, c ctrlclient.WithWatch, o ctrlclient.Object, opts ...ctrlclient.CreateOption) error {
+					if _, ok := o.(*vspherepolv1.Tag); ok {
+						tagCreates++
+						if failCreate {
+							return fmt.Errorf("injected tag create failure")
+						}
+					}
+					return c.Create(ctx, o, opts...)
+				},
+			}, objs...)
+		})
+
+		owned := func() int {
+			var l vspherepolv1.TagList
+			Expect(sess.K8sClient.List(vmCtx, &l, ctrlclient.InNamespace(vm.Namespace))).To(Succeed())
+			n := 0
+			for i := range l.Items {
+				for _, r := range l.Items[i].OwnerReferences {
+					if r.UID == vm.UID {
+						n++
+					}
+				}
+			}
+			return n
+		}
+
+		It("prunes ownership when the VM has no affinity", func() {
+			Expect(owned()).To(Equal(len(declared)))
+			Expect(update()).To(Succeed())
+			Expect(owned()).To(BeZero())
+		})
+
+		It("prunes ownership of a paused VM", func() {
+			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, "")
+			Expect(update()).To(Succeed())
+			Expect(owned()).To(BeZero())
+		})
+
+		It("writes nothing to vCenter when ensuring Tags fails", func() {
+			vm.Spec.Affinity = affinity("db")
+			failCreate = true
+			Expect(update()).To(MatchError(ContainSubstring("injected tag create failure")))
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), vmProps, &vmCtx.MoVM)).To(Succeed())
+			Expect(virtualmachine.GetVMTagsFromExtraConfig(vmCtx.MoVM.Config)).To(BeEmpty())
+			policyRecord, _ := object.OptionValueList(vmCtx.MoVM.Config.ExtraConfig).GetString(virtualmachine.ExtraConfigPlacementPoliciesKey)
+			Expect(policyRecord).To(BeEmpty())
+		})
+
+		It("does not touch Tags when the tagging API is disabled", func() {
+			pkgcfg.SetContext(vmCtx, func(cfg *pkgcfg.Config) { cfg.Features.TaggingAPI = false })
+			Expect(update()).To(Succeed())
+			Expect(tagCreates).To(BeZero())
+			Expect(owned()).To(Equal(len(declared)))
+		})
+	})
 
 	When("VM is powered off", func() {
 		JustBeforeEach(func() {

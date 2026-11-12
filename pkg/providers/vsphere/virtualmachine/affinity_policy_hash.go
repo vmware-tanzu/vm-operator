@@ -11,9 +11,10 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	utilvalidation "k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/api/validate/content"
 
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 )
 
 // AffinityPolicyType identifies a policy that has a derived tag identity.
@@ -26,7 +27,7 @@ const (
 	AffinityPolicyTypeGroupedAntiAffinity AffinityPolicyType = "VmToVmGroupsAntiAffinity"
 )
 
-// AffinityPolicyHash contains the canonical inputs, hash, and concrete tag name for
+// AffinityPolicyHash contains the canonical inputs, hash, and vc tag name for
 // a derived affinity tag. Namespace supplies the tag category separately; neither
 // namespace nor VM identity contributes to the policy hash. Changing policy
 // inputs requires calculating a new hash.
@@ -41,7 +42,8 @@ type AffinityPolicyHash struct {
 
 // NewAffinityPolicyHash canonicalizes resolved selector pairs and derives
 // the policy hash and backend tag name.
-// It rejects unsupported policy parameters and malformed labels. The caller
+// It rejects unsupported policy parameters, malformed labels, and label keys
+// in the reserved VM Operator domain. The caller
 // remains responsible for feature, topology eligibility, and namespace
 // authorization checks. The returned targets do not alias the input slice.
 func NewAffinityPolicyHash(
@@ -81,11 +83,14 @@ func NewAffinityPolicyHash(
 	}
 
 	for _, pair := range targets {
-		if errs := utilvalidation.IsQualifiedName(pair.Key); len(errs) != 0 {
+		if errs := content.IsLabelKey(pair.Key); len(errs) != 0 {
 			return AffinityPolicyHash{}, fmt.Errorf("invalid affinity target key %q: %s", pair.Key, strings.Join(errs, "; "))
 		}
-		if errs := utilvalidation.IsValidLabelValue(pair.Value); len(errs) != 0 {
+		if errs := content.IsLabelValue(pair.Value); len(errs) != 0 {
 			return AffinityPolicyHash{}, fmt.Errorf("invalid affinity target value %q: %s", pair.Value, strings.Join(errs, "; "))
+		}
+		if kubeutil.HasVMOperatorLabels(map[string]string{pair.Key: pair.Value}) {
+			return AffinityPolicyHash{}, fmt.Errorf("reserved affinity target key %q", pair.Key)
 		}
 	}
 

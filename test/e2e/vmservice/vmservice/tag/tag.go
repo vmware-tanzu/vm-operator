@@ -36,15 +36,15 @@ func vCenterTagName(key, value string) string {
 	return key + ":" + value
 }
 
-// tagResourceName returns the derived name of the Tag resource for a
-// namespace and label key/value pair: "tag-" followed by the 16 hex
-// character XXHash64 digest of "<namespace>:<key>:<value>".
+// tagResourceName returns the derived name of the Tag resource for an
+// original tag: "tag-" followed by the 16 hex character XXHash64 digest of
+// "<namespace>:<spec.name>", where spec.name is "<key>:<value>".
 func tagResourceName(namespace, key, value string) string {
 	return fmt.Sprintf("tag-%016x", xxhash.Sum64String(namespace+":"+vCenterTagName(key, value)))
 }
 
-// newTag returns a Tag for the given label key/value pair, named per its
-// derived name.
+// newTag returns a valid original Tag for the given label key/value pair,
+// named per its derived name.
 func newTag(namespace, key, value string) *vspherepolv1.Tag {
 	return &vspherepolv1.Tag{
 		ObjectMeta: metav1.ObjectMeta{
@@ -52,8 +52,11 @@ func newTag(namespace, key, value string) *vspherepolv1.Tag {
 			Namespace: namespace,
 		},
 		Spec: vspherepolv1.TagSpec{
-			Key:   key,
-			Value: value,
+			Name:       vCenterTagName(key, value),
+			Kind:       vspherepolv1.TagKindOriginal,
+			Membership: vspherepolv1.TagMembershipSourceLabel,
+			Key:        key,
+			Value:      value,
 		},
 	}
 }
@@ -111,7 +114,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	})
 
 	Context("When a privileged client manages a Tag directly", func() {
-		It("rejects a Tag whose name does not equal the name derived from spec.key and spec.value",
+		It("rejects a Tag whose name does not equal the name derived from the namespace and spec.name",
 			Label("core-functional", "experimental", consts.HardAffinityDuringExecutionLabel), func() {
 				key, value := randomLabelPair("badname")
 				tagObj := newTag(input.WCPNamespaceName, key, value)
@@ -119,7 +122,19 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 				err := adminClient.Create(ctx, tagObj)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("must equal"))
+				Expect(err.Error()).To(ContainSubstring("metadata.name must equal"))
+			})
+
+		It("rejects an original Tag whose spec.name does not match spec.key and spec.value",
+			Label("core-functional", "experimental", consts.HardAffinityDuringExecutionLabel), func() {
+				key, value := randomLabelPair("badspecname")
+				tagObj := newTag(input.WCPNamespaceName, key, value)
+				tagObj.Spec.Name = vCenterTagName(key, value+"-other")
+				tagObj.Name = tagResourceName(input.WCPNamespaceName, key, value+"-other")
+
+				err := adminClient.Create(ctx, tagObj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("spec.name must equal"))
 			})
 
 	})

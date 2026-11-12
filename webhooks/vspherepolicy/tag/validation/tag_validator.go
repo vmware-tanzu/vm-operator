@@ -10,10 +10,8 @@ import (
 	"reflect"
 
 	admissionv1 "k8s.io/api/admission/v1"
-	metavalidation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	utilvalidation "k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,25 +31,13 @@ const (
 	webHookName = "default"
 )
 
-// allowedSystemAccountsForTag are the control-plane clients that must be
-// allowed to write a Tag even though they are not privileged accounts.
-// generic-garbage-collector prunes a dangling owner reference on UPDATE and
-// deletes a Tag with zero owners on DELETE; namespace-controller deletes a
-// Tag as part of namespace teardown on DELETE. Without this allow-list,
-// both operations are denied, which wedges owner-reference cleanup and
-// namespace termination respectively.
-var allowedSystemAccountsForTag = map[string]struct{}{
-	"system:serviceaccount:kube-system:generic-garbage-collector": {},
-	"system:serviceaccount:kube-system:namespace-controller":      {},
-}
+// garbageCollectorUsername is the identity of the Kubernetes garbage
+// collector. It prunes a dangling owner reference from a Tag with an UPDATE
+// when an owning VM is deleted, and the Tag would otherwise keep a stale
+// owner.
+const garbageCollectorUsername = "system:serviceaccount:kube-system:generic-garbage-collector"
 
-var (
-	specKeyPath   = field.NewPath("spec", "key")
-	specValuePath = field.NewPath("spec", "value")
-	metadataPath  = field.NewPath("metadata")
-)
-
-// +kubebuilder:webhook:verbs=create;update;delete,path=/default-validate-vsphere-policy-vmware-com-v1alpha1-tag,mutating=false,failurePolicy=fail,groups=vsphere.policy.vmware.com,resources=tags,versions=v1alpha1,name=default.validating.tag.v1alpha1.vsphere.policy.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
+// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vsphere-policy-vmware-com-v1alpha1-tag,mutating=false,failurePolicy=fail,groups=vsphere.policy.vmware.com,resources=tags,versions=v1alpha1,name=default.validating.tag.v1alpha1.vsphere.policy.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tags,verbs=get;list
 
 // AddToManager adds the webhook to the provided manager.
@@ -84,8 +70,8 @@ func (v validator) For() schema.GroupVersionKind {
 	return vspherepolv1.GroupVersion.WithKind(reflect.TypeFor[vspherepolv1.Tag]().Name())
 }
 
-// ValidateCreate admits only privileged requesters, and requires a valid
-// label key and value whose derived name matches metadata.name.
+// ValidateCreate admits only privileged requesters, and requires a
+// consistent concrete identity and derived resource name.
 func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	tag, err := v.tagFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -95,16 +81,14 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 	var fieldErrs field.ErrorList
 
 	fieldErrs = append(fieldErrs, v.validatePrivileged(ctx, admissionv1.Create)...)
-	fieldErrs = append(fieldErrs, validateLabelKey(tag.Spec.Key)...)
-	fieldErrs = append(fieldErrs, validateLabelValue(tag.Spec.Value)...)
-	fieldErrs = append(fieldErrs, validateDerivedName(tag)...)
+	fieldErrs = append(fieldErrs, validateIdentity(tag)...)
 
 	return common.BuildValidationResponse(ctx, nil, fieldErrsToStrings(fieldErrs), nil)
 }
 
-// ValidateUpdate admits only privileged requesters and requires a valid label
-// key and value. Immutability of spec.key and spec.value is enforced by CEL
-// rules on the CRD.
+// ValidateUpdate admits only privileged requesters, or the garbage collector
+// pruning owner references. It validates the complete identity. Immutability
+// of spec is enforced by the CEL transition rule on the CRD.
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
 	tag, err := v.tagFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -114,73 +98,45 @@ func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.R
 	var fieldErrs field.ErrorList
 
 	fieldErrs = append(fieldErrs, v.validatePrivileged(ctx, admissionv1.Update)...)
-	fieldErrs = append(fieldErrs, validateLabelKey(tag.Spec.Key)...)
-	fieldErrs = append(fieldErrs, validateLabelValue(tag.Spec.Value)...)
+	fieldErrs = append(fieldErrs, validateIdentity(tag)...)
 
 	return common.BuildValidationResponse(ctx, nil, fieldErrsToStrings(fieldErrs), nil)
 }
 
-// ValidateDelete admits only privileged requesters.
-func (v validator) ValidateDelete(ctx *pkgctx.WebhookRequestContext) admission.Response {
-	fieldErrs := v.validatePrivileged(ctx, admissionv1.Delete)
-
-	return common.BuildValidationResponse(ctx, nil, fieldErrsToStrings(fieldErrs), nil)
+// ValidateDelete allows deletion. DELETE is not registered with this webhook.
+func (v validator) ValidateDelete(_ *pkgctx.WebhookRequestContext) admission.Response {
+	return admission.Allowed("")
 }
 
-// validatePrivileged permits only a privileged account, or one of the
-// allow-listed system service accounts, to create, update or delete a Tag.
-// The allow-list is checked before IsPrivilegedAccount, and neither test
-// admits a DevOps user: the Tag API is internal bookkeeping and is not
-// exposed to namespace users.
+// validatePrivileged permits only a privileged account to create or update a
+// Tag. On UPDATE the garbage collector is also admitted so it can prune a
+// dangling owner reference. A DevOps user is never admitted: the Tag API is
+// internal bookkeeping and is not exposed to namespace users.
 func (v validator) validatePrivileged(
 	ctx *pkgctx.WebhookRequestContext,
 	op admissionv1.Operation) field.ErrorList {
-	if _, ok := allowedSystemAccountsForTag[ctx.UserInfo.Username]; ok {
-		return nil
-	}
 
 	if ctx.IsPrivilegedAccount {
 		return nil
 	}
 
-	return field.ErrorList{
-		field.Forbidden(metadataPath,
-			fmt.Sprintf("only privileged users may %s a Tag", op)),
-	}
-}
+	if op == admissionv1.Update &&
+		ctx.UserInfo.Username == garbageCollectorUsername {
 
-// validateLabelKey requires spec.key to be non-empty and a valid
-// Kubernetes label key.
-func validateLabelKey(key string) field.ErrorList {
-	return metavalidation.ValidateLabelName(key, specKeyPath)
-}
-
-// validateLabelValue requires spec.value to be a valid Kubernetes label
-// value. An empty value is permitted.
-func validateLabelValue(value string) field.ErrorList {
-	var fieldErrs field.ErrorList
-	for _, msg := range utilvalidation.IsValidLabelValue(value) {
-		fieldErrs = append(fieldErrs, field.Invalid(specValuePath, value, msg))
-	}
-
-	return fieldErrs
-}
-
-// validateDerivedName requires metadata.name to equal the name derived
-// from the label key/value pair, so a Tag is always resolvable by the
-// keyed Get the VM reconcile path uses.
-func validateDerivedName(tag *vspherepolv1.Tag) field.ErrorList {
-	wantName := virtualmachine.TagResourceName(tag.Namespace, tag.Spec.Key, tag.Spec.Value)
-	if tag.Name == wantName {
 		return nil
 	}
 
 	return field.ErrorList{
-		field.Invalid(
-			field.NewPath("metadata", "name"),
-			tag.Name,
-			fmt.Sprintf("must equal %q, the name derived from spec.key and spec.value", wantName)),
+		field.Forbidden(field.NewPath("metadata"),
+			fmt.Sprintf("only privileged users may %s a Tag", op)),
 	}
+}
+
+func validateIdentity(tag *vspherepolv1.Tag) field.ErrorList {
+	if err := virtualmachine.ValidateTagIdentity(tag); err != nil {
+		return field.ErrorList{field.Invalid(field.NewPath("spec"), tag.Spec, err.Error())}
+	}
+	return nil
 }
 
 // tagFromUnstructured returns the Tag from the unstructured object.

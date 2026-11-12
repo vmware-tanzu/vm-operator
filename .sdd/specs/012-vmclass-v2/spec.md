@@ -208,7 +208,7 @@ A class lists one parent in `spec.parentClassRefs`; its ranges must fit inside t
 **Acceptance scenarios**:
 
 1. **Given** a class with `hardware.version: {min: 20, max: 22, default: 21}`, **when** a VM that sets no minimum is created, **then** it gets vmx-21; **when** a VM sets `minHardwareVersion: 23`, **then** it is rejected.
-2. **Given** a device that needs a higher version than the class default, **when** the VM is created, **then** it gets the device's minimum if that is ≤ `max`, and is rejected otherwise.
+2. **Given** a device or an image that needs a higher version than the class default, **when** the VM is created, **then** it gets that version if it is ≤ `max`, and is rejected otherwise, naming the image's or the device's version.
 3. **Given** an existing VM below a raised `min`, **when** it reconciles, **then** it reports `GovernanceCompliant=False` and is not upgraded; **when** the user raises its `minHardwareVersion`, **then** it is upgraded at the next power-off and becomes compliant.
 4. **Given** a class write that lowers `max` below a version some VMs already have, **when** it is written, **then** it is accepted with a warning; those VMs report `GovernanceCompliant=False`, and `DenyPowerOn` applies to them.
 5. **Given** a v1alpha5 class with `configSpec.version: vmx-21`, **when** it is read as v1alpha6, **then** it has `hardware.version: {min: 21, default: 21}` and no `max`.
@@ -280,6 +280,7 @@ vm-operator runs on a Supervisor whose provider supplies the pieces below. vm-op
 - [NEEDS CLARIFICATION: Confirmation from its owners that the zone's unreserved-DirectPath setting applies to classless VMs and non-reserved classes with devices.] Working assumption: it does.
 - [NEEDS CLARIFICATION: Reserved capacity: RP3 profiles not tied to a class and how VCFA discovers them; RP8 read access to reservations for a later per-zone status.] Findings in WIKI page 3118085468.
 - [NEEDS CLARIFICATION: Whether an explicit `""` means "no value" for every enum field, as it does for `reservedProfileName`.]
+- [NEEDS CLARIFICATION: Number fields where a bound has no meaningful default (shares `value`, NIC `vnumaNodeID`): whether their `Range` makes `default` optional, against the number rule (T002).]
 - Provider-side open items (platform behavior on a changed profile or a resize, profile naming across Supervisors, external readers of `reservedSlots`, the class API generator, namespace-copy sign-off, default classes, the vpxd config field drift check) are tracked in the provider's spec; vm-operator tasks that depend on them say so.
 - [NEEDS CLARIFICATION: Milestone 2: whether a child's branches need one `existingVMs` answer when a VM satisfies none of them.]
 

@@ -15,7 +15,7 @@
 
 `VirtualMachineClass` becomes the one kind for VM presets and VM governance:
 
-1. Every configuration field the class can bound has a typed value shape: number (`min`, `max`, `default`), enum, boolean or list. A fixed size is `min == max == default`, so one class can offer one size or a range. CPU requests and limits stay in vCPUs, as in today's class. Devices are one list; a separate set shape is deferred.
+1. Every configuration field the class can bound has a typed value shape: number (`min`, `max`, `default`), enum, boolean or list. A fixed size is `min == max == default`, so one class can offer one size or a range. CPU requests and limits stay in vCPUs, as in today's class. A list policy bounds how many items a VM list holds and which ones, and the first matching entry governs an item; each device type has its own list, and NICs have one list with per-type policies.
 2. A class can govern: with `spec.governs`, its constraints are the ceiling for every VM in the zones it governs, whether or not the VM names it. A zone with a governing class accepts classless (free-form) VMs; a zone without one requires a class, as today.
 3. Classes are zonal: `spec.zones` and `spec.governs.zones` say where a class is available and where it governs.
 4. `spec.externalID` holds the client's identity for the class, separate from the Kubernetes name.
@@ -74,7 +74,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 
 1. **Given** a class `flex` with `governs: {existingVMs: AllowOnViolation}` and `spec.zones: [zone-a]`, **when** a classless VM in `zone-a` requests more CPU than `flex`'s `max`, **then** it is rejected, naming the field.
 2. **Given** the same class, **when** a VM that names another class in `zone-a` gets values outside `flex`'s ranges, **then** it is rejected.
-3. **Given** a governing class with `advanced.extraConfig.denied: [{type: Glob, value: "guestinfo.*"}]`, **when** a VM sets `guestinfo.foo`, **then** it is rejected.
+3. **Given** a governing class with `advanced.extraConfig.denied: [{key: "guestinfo.*"}]`, **when** a VM sets `guestinfo.foo`, **then** it is rejected.
 4. **Given** a class already governs `zone-a`, **when** a second class is written so that it also governs `zone-a`, **then** the write is rejected.
 5. **Given** a governing class in `zone-a`, **when** a selectable class available in `zone-a` is written with a range outside the governing class's range, **then** the write is rejected.
 6. **Given** a governing class is narrowed after a selectable class was admitted, **when** the class controller reconciles, **then** the selectable class reports `WithinGovernance=False` for that zone and is not otherwise changed.
@@ -150,7 +150,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 3. **Given** an association entry with `zones` unset, `[]` or a list, **when** the namespace copy is written, **then** the three states stay distinct through every layer.
 4. **Given** an existing class, **when** it is migrated, **then** its `metadata.name` is unchanged and `spec.externalID` equals the name.
 5. **Given** a change to the v1alpha6 class types, **when** a field has neither a provider API mapping marker nor an explicit exclusion, **then** the field-coverage check fails.
-6. **Given** the v1alpha6 class CRD schema, **when** the schema test runs, **then** every governed field matches exactly one value shape by its field set, and every device list is a map list keyed by the same key fields as its environment-browser entry.
+6. **Given** the v1alpha6 class CRD schema, **when** the schema test runs, **then** every governed field matches exactly one value shape by its field set, every class policy pairs with exactly one VM field (the NIC type-key fields and `hardware.version` by their named mappings), the names under a NIC type key don't collide, and every device list is a map list keyed by `name` whose class entries use the same key fields as its environment-browser entry.
 
 ### US10 — CSP admin: reserved capacity works with flex classes (P1)
 
@@ -161,7 +161,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 3. **Given** a class whose `reservedProfileName` has a default, **when** a VM that names it, or a classless VM in a zone it governs, is created without `spec.reservedProfileName`, **then** the mutation webhook fills the default; an explicit `""` selects no profile, and is rejected when `required: true`.
 4. **Given** a class whose `reservedProfileName` sets `default` without `allowed`, or names a profile with no `VirtualMachineReservedProfile` in the namespace, or whose default configuration doesn't match its default profile, or lists a profile that doesn't fit within its resource and device policy, **when** it is written, **then** it is rejected. Listing a profile does not fix the class's bounds; VMs are validated against the selected profile's shape (scenario 6).
 5. **Given** a VM that sets `spec.reservedProfileName`, **when** the name is not in its class's (or governing class's) `allowed` list, **then** it is rejected.
-6. **Given** a VM, class-backed or classless, with a selected profile after defaulting, **when** its CPU count, CPU reservation or limit, memory reservation or limit, or device identities or quantities differ from the profile, **then** it is rejected, naming the field and the profile. Overhead is not compared. A resize past the profile is rejected the same way.
+6. **Given** a VM, class-backed or classless, with a selected profile after defaulting, **when** its CPU count, CPU reservation or limit, memory reservation or limit, or device identities (with how many devices have each) differ from the profile, **then** it is rejected, naming the field and the profile. Overhead is not compared. A resize past the profile is rejected the same way.
 7. **Given** a VM that names a class, **when** an update changes `spec.reservedProfileName` directly, **then** it is rejected by the inline-edit rule; a classless VM may set it.
 8. **Given** a powered-on VM with `spec.reservedProfileName` set, **when** an update changes it to another set value, **then** it is rejected; vm-operator setting it from unset (schema upgrade) is allowed.
 9. **Given** a powered-on VM with a reserved profile, **when** its class changes, **then** it is rejected; the class can change only while the VM is powered off. [NEEDS CLARIFICATION: whether the platform honors a changed or removed profile on a VM without a restart of its management service; until it does, this stays powered-off only. Tracked in the provider's spec.]
@@ -189,6 +189,40 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 
 A class lists one parent in `spec.parentClassRefs`; its ranges must fit inside the parent's (a child that exceeds its parent is rejected), fields it doesn't declare come from the chain, and a referenced parent can't be deleted. Only the top class of a chain may set `governs.existingVMs` and `configSpec`; children inherit `existingVMs`. Designed in the design page §8; behind its own capability, which depends on the Milestone 1 capability.
 
+### US14 — CSP admin: a class governs device and NIC lists (P1)
+
+**Acceptance scenarios**:
+
+1. **Given** a class with `hardware.vGPUs.allowed: [{profileName: nvidia-a100-80c, count: {max: 1}}, {profileName: "nvidia-a100-*"}]`, **when** a VM asks for two `nvidia-a100-80c` vGPUs, **then** it is rejected, naming the entry's count; one 80c and two 40c are admitted.
+2. **Given** the same class, **when** a VM asks for an `nvidia-h100-80c` vGPU, **then** it is rejected because no `allowed` entry matches; **given** `denied: [{profileName: nvidia-a100-10c}]`, **when** a VM asks for a 10c, **then** it is rejected even though `nvidia-a100-*` matches it.
+3. **Given** entries that both match an item, **when** the VM is validated, **then** only the first governs it: its field policies apply (for example `enableUVM: {allowOverride: false, default: false}` on the 80c entry) and the later entry's do not.
+4. **Given** a class `hardware.vGPUs.default` and a VM that omits `hardware.vGPUs`, **when** it is admitted, **then** the default items are filled in; **given** a VM that sets the list, including `[]`, **then** its list is validated as supplied and nothing is merged.
+5. **Given** a class whose `default` exceeds its `count`, **when** it is written, **then** it is rejected by CEL; **given** a `default` item that is denied, governed by no entry, or exceeds its entry's `count`, **then** the class webhook rejects it; **given** a malformed glob, **then** it is rejected.
+6. **Given** `count` unset at the list or entry level, **when** VMs are validated, **then** the class sets no count limit and only the platform's limits apply.
+7. **Given** a class with `network.interfaces: {count: {min: 1, max: 4}, type: {allowed: [VMXNet3]}, vmxnet3: {ctxPerDev: {allowed: [PerQueue], default: PerQueue}}}`, **when** a VM omits `ctxPerDev` on a VMXNET3 NIC, **then** it gets `PerQueue`; **when** a VM has five NICs or an SR-IOV NIC, **then** it is rejected.
+8. **Given** a class with an ordered `network.interfaces.default`, **when** a VM omits `interfaces`, **then** it gets those NICs in that order.
+9. **Given** a device `allowed` entry that matches nothing a zone has, **when** the class controller reconciles, **then** that zone reports `DevicePolicyResolved=False`, and nothing is rejected.
+
+### US15 — CSP admin: a class bounds the hardware version (P1)
+
+**Acceptance scenarios**:
+
+1. **Given** a class with `hardware.version: {min: 20, max: 22, default: 21}`, **when** a VM that sets no minimum is created, **then** it gets vmx-21; **when** a VM sets `minHardwareVersion: 23`, **then** it is rejected.
+2. **Given** a device that needs a higher version than the class default, **when** the VM is created, **then** it gets the device's minimum if that is ≤ `max`, and is rejected otherwise.
+3. **Given** an existing VM below a raised `min`, **when** it reconciles, **then** it reports `GovernanceCompliant=False` and is not upgraded; **when** the user raises its `minHardwareVersion`, **then** it is upgraded at the next power-off and becomes compliant.
+4. **Given** a class write that lowers `max` below a version some VMs already have, **when** it is written, **then** it is accepted with a warning; those VMs report `GovernanceCompliant=False`, and `DenyPowerOn` applies to them.
+5. **Given** a v1alpha5 class with `configSpec.version: vmx-21`, **when** it is read as v1alpha6, **then** it has `hardware.version: {min: 21, default: 21}` and no `max`.
+6. **Given** a zone whose maximum hardware version is below the class's `max` or default, **when** the class controller reconciles, **then** that zone reports `HardwareCompatible=False` with the reason.
+
+### US16 — CSP admin: CPU and memory shares (P1)
+
+**Acceptance scenarios**:
+
+1. **Given** a VM with `resources.shares.cpu: {level: Custom, value: 4000}`, **when** it is created, **then** vCenter shows custom CPU shares of 4000; **given** a `value` with any other level, or `value` ≤ 0, **then** it is rejected.
+2. **Given** a class with `resources.shares.cpu.level: {allowed: [Normal, High], default: High}`, **when** a VM omits shares, **then** it gets `High`; **when** it sets `Custom`, **then** it is rejected.
+3. **Given** a VM with no shares and a class that sets none, **when** it is created, **then** it gets `Normal`, as today.
+4. **Given** a v1alpha5 class whose `configSpec` sets CPU or memory allocation shares, **when** it is read as v1alpha6, **then** they are in `resources.shares`.
+
 ---
 
 ## Scope of work
@@ -196,7 +230,8 @@ A class lists one parent in `spec.parentClassRefs`; its ranges must fit inside t
 **vm-operator**:
 
 - The v1alpha6 `VirtualMachineClass` schema (reshaped in place; v1alpha6 has not shipped), value types, conversion from v1alpha5 and older, and round-trip annotations.
-- The VM and Zone API fields: `status.governingClassNames`, `GovernanceCompliant`, observed status fields, `spec.reservedProfileName`, `Zone.status.governingClasses`.
+- The VM and Zone API fields: `status.governingClassNames`, `GovernanceCompliant`, observed status fields, `spec.reservedProfileName`, `spec.resources.shares`, `Zone.status.governingClasses`; the per-type device lists with vmop-3791.
+- The class's list policies (devices, NICs, extraConfig), `hardware.version` and `resources.shares`, applied by one evaluator.
 - Class mutating and validating webhooks.
 - VM mutating and validating webhooks: defaults at admission, governance, the zone rule, device memory reservation, reserved profiles, `DenyPowerOn`.
 - The `VirtualMachineClass` controller: per-zone `HardwareCompatible`, `WithinGovernance` and `Governing`, and resolved limits.
@@ -241,7 +276,7 @@ vm-operator runs on a Supervisor whose provider supplies the pieces below. vm-op
 ## Open questions
 
 - [NEEDS CLARIFICATION: Who rejects an association zone outside the namespace or the class.] The class in `vmware-system-vmop` carries `spec.zones` and `governs.zones`, the association only narrows them, and its `status.zones` covers its `spec.zones`.
-- [NEEDS CLARIFICATION: Hardware version as a range with a default, its path, and whether a VM below the minimum is upgraded or rejected.]
+- [NEEDS CLARIFICATION: Agreement from the owner of the VM PCI device design (WIKI page 2477879529, vmop-3791) on one VM list per device type instead of one `pciDevices` union, and on its status list, `unitNumber` assignment across the lists, and the 128-device cap across them (model.md, "Devices").]
 - [NEEDS CLARIFICATION: Confirmation from its owners that the zone's unreserved-DirectPath setting applies to classless VMs and non-reserved classes with devices.] Working assumption: it does.
 - [NEEDS CLARIFICATION: Reserved capacity: RP3 profiles not tied to a class and how VCFA discovers them; RP8 read access to reservations for a later per-zone status.] Findings in WIKI page 3118085468.
 - [NEEDS CLARIFICATION: Whether an explicit `""` means "no value" for every enum field, as it does for `reservedProfileName`.]
@@ -258,4 +293,5 @@ vm-operator runs on a Supervisor whose provider supplies the pieces below. vm-op
 - [ ] The zone rule for VMs without a zone is specified (US5).
 - [ ] Hardware compatibility is asynchronous and never rejects a class (US7).
 - [ ] Visibility limits are specified (US7.4, US7.5).
+- [ ] List policies (counts, first match, defaults only for an omitted list), hardware version and shares are specified (US14–US16).
 - [ ] Every open question is mirrored as a blocked task in `tasks.md`.

@@ -54,3 +54,54 @@ A VM with a vGPU or DirectPath I/O device must reserve all its memory to power o
 ## Finding 6: the class API definition comes from the CRD
 
 The provider generates its v2 class API definition from the v1alpha6 class's OpenAPI schema plus mapping markers on vm-operator's Go types. vm-operator owns the markers and a check that every field is mapped or explicitly excluded (vmop-4326); the generator, its drift check (vmop-4392) and the vpxd config field drift check (vmop-4393) are the provider's (WIKI page 3118091426 §7).
+
+## Finding 7: list policies
+
+- **One string matcher, no regex.** A glob with no wildcard is an exact match (Go `path.Match`). The earlier `{fixed, glob, regex}` matcher had no requirement for regex, and a regex can't be rendered as a form or checked for overlaps.
+- **First match, not every match.** With every matching entry applied, two overlapping entries with different defaults made the class invalid, and an item's policy depended on all entries at once. With `denied` first and then the first matching `allowed` entry, each item has one governing entry and nothing is merged. The cost: an earlier, more specific entry must repeat any policy it shares with a later catch-all; the class webhook warns when an entry is shadowed.
+- **Counts.** `count` is a `CountRange {min, max}` without `default`, because the number rule (T002) would otherwise require a default count that is really the length of `default`. Each item counts 1. There is no total across device types: no use case asks for one. The NIC total stays (telco "Number of vNICs").
+- **Defaults.** A list's `default` fills only an omitted list, as the Full Schema page already says; an explicit list is validated as supplied.
+- **Where field policies sit.** On `allowed` entries when items have a governed key field (a vGPU's UVM support depends on its profile); on a type key when they don't (NICs). Per-network NIC rules were considered and dropped: network names belong to the namespace, not the class, and no requirement asks for them.
+
+## Finding 8: one VM list per device type
+
+The VM had no device spec field. The `{profileName, count}` items came from this spec. The VM PCI device design (WIKI page 2477879529, vmop-3791) needs one entry per device with a stable `name`: a fixed PCI slot (`unitNumber`), device-group membership, per-device UVM and advanced properties, and status per device. It does not need one union list:
+
+- Every per-device field fits on a per-type item.
+- Group members point at the group (`deviceGroup` → `pciDeviceGroups[].name`), so groups already span lists.
+- Unit-number uniqueness and the 128-device cap must be checked across lists anyway, because SR-IOV NICs in `network.interfaces` share the same slot space.
+- The mutation webhook assigns `unitNumber`, so the order between device types decides nothing, and per-type defaults lose nothing.
+
+Per-type lists remove the type-key level from the class, show a type's fields in its own struct instead of a CEL rule pairing `type` with a sub-struct, and follow the per-type controller lists. Rule for splitting VM lists: one list per identity and numbering space. Controllers are per type because each has its own bus numbers; NICs stay one list because the VM already has one. Names are required: a mutating webhook can't infer them, because `kubectl apply` and server-side apply merge keyed lists before webhooks run. Open with vmop-3791's owner (T020).
+
+## Finding 9: NICs
+
+- **Shape.** The VM already has typed telco NIC fields (`type`, `vnumaNodeID`, `vmxnet3.*`, `advancedProperties`), so the class mirrors them under `network.interfaces`: `count`, `type`, one ordered `default`, and a `vmxnet3` type key with the common and VMXNET3 fields flattened.
+- **Why one `default`.** With `MutableNetworks` on, spec NICs pair with devices by identity (`pkg/providers/vsphere/network/devices.go`), per-NIC `ethernetN.*` keys use the matched device's own index (`pkg/vmconfig/networkextraconfig/nic_matcher.go`), and guest customization maps NICs by MAC (`pkg/providers/vsphere/network/gosc.go`). Only the NIC's virtual PCI slot still follows creation order, which matters to guests that name NICs by PCI order and to DPDK workloads bound to a PCI address. `pciSlotNumber` (vmop-3576) removes that. Even then one list is better: it is the VM's own shape, matches the vCenter and VCFA adapter tables, needs no cross-list name or interleaving rule, and can't change shape after it ships.
+- **SR-IOV, plan only.** Nothing in this spec's schema or tasks. When SR-IOV is built end to end, its class policy is a `network.interfaces.sriov` type key under the same rules as `vmxnet3`, with `StringPolicy` for `network.name` and `dvx.deviceClass`. Until then a class can only allow or forbid SR-IOV NICs through `network.interfaces.type`, and those NICs have no tuning policy, including `vnumaNodeID`.
+
+## Finding 10: hardware version and shares
+
+- **Hardware version as a number.** The VM's `minHardwareVersion`, `status.hardwareVersion` and the image's hardware version are `int32`; public docs say `vmx-N`, which a form renders. `ConfigTarget` reports strings, parsed with `vimtypes.ParseHardwareVersion`. Raising `minHardwareVersion` upgrades a VM at power-off today (`ReconcileMinHardwareVersion`, `pkg/providers/vsphere/session/session_vm_update.go`), which is the way back into compliance below `min`.
+- **Shares.** The provider writes `Normal` shares whenever a class sets requests or limits (`pkg/providers/vsphere/virtualmachine/configspec.go`). The valid custom range comes from `ResourcePool.QueryResourceConfigOption`, which isn't in the environment-browser objects, so Milestone 1 checks only `value > 0` (vmop-4479).
+
+## Finding 11: telco requirement coverage
+
+Against the telco gap analysis and the v1alpha6 telco field reference:
+
+| Requirement | Covered by |
+|---|---|
+| Hardware version | `hardware.version` |
+| Number of vNICs | `network.interfaces.count` |
+| NIC to network | `vmxnet3.network.name` and the `default` items |
+| pnicFeatures, ctxPerDev, RSS offload, UDP RSS, coalescing, UPTv2 | `network.interfaces.vmxnet3.*` |
+| NIC vNUMA affinity | `vmxnet3.vnumaNodeID`, VMXNET3 NICs only; SR-IOV NICs, the main telco case, wait for the SR-IOV type key |
+| VMXNET3 and SR-IOV NIC types | `network.interfaces.type` |
+| vGPU count and UVM | `hardware.vGPUs` counts and `enableUVM` |
+| Latency sensitivity `HighWithHyperthreading` | The VM enum already has it |
+| Shares | `resources.shares` (vmop-4479) |
+| `pciSlotNumber` | A VM field (vmop-3576); not governed |
+| C-states | Out of scope in the field reference; set through `advanced.extraConfig` |
+| Percentage reservations and limits | Not covered: decided against (T000) |
+| Number and size of disks | Not covered: open with product management |
+| ISO | Not a class setting: the VM's `cdrom` |

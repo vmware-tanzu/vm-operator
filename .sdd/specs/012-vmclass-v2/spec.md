@@ -283,6 +283,7 @@ vm-operator runs on a Supervisor whose provider supplies the pieces below. vm-op
 - [NEEDS CLARIFICATION: Number fields where a bound has no meaningful default (shares `value`, NIC `vnumaNodeID`): whether their `Range` makes `default` optional, against the number rule (T002).]
 - Provider-side open items (platform behavior on a changed profile or a resize, profile naming across Supervisors, external readers of `reservedSlots`, the class API generator, namespace-copy sign-off, default classes, the vpxd config field drift check) are tracked in the provider's spec; vm-operator tasks that depend on them say so.
 - [NEEDS CLARIFICATION: Milestone 2: whether a child's branches need one `existingVMs` answer when a VM satisfies none of them.]
+- [NEEDS CLARIFICATION: Upgrade path (research.md, Finding 12): when cores are resolved to MHz (T022), conversion of a class's MHz CPU allocation (T023) and per-NIC settings (T024), down-conversion for older readers (T025), class-supplied fields after the backfill (T026), and shares conversion (T027).]
 
 ---
 

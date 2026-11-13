@@ -76,6 +76,7 @@ const (
 	addingNewCdromNotAllowedWhenPowerOn                         = "adding new CD-ROMs is not allowed when VM is powered on"
 	removingCdromNotAllowedWhenPowerOn                          = "removing CD-ROMs is not allowed when VM is powered on"
 	removingBackfilledVolumeNotAllowed                          = "removing volume backfilled from classic disk is not allowed"
+	removingVolumeAttributesClassNotAllowed                     = "removing the volume attributes class is not allowed once it is set"
 	storagePolicyNotAssociatedOnNSFmt                           = "Storage policy is not associated with the namespace %s by object %s"
 	vSphereVolumeSizeNotMBMultiple                              = "value must be a multiple of MB"
 	addingModifyingInstanceVolumesNotAllowed                    = "adding or modifying instance storage volume claim(s) is not allowed"
@@ -304,6 +305,11 @@ func (v validator) validateImageOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 //   - StorageClass
 //   - ResourcePolicyName
 //   - Minimum VM Hardware Version
+//
+// VolumeAttributesClassName cannot be removed once it has been set. Setting it
+// or changing it to another value requires the StoragePolicyMutability
+// capability to be enabled and the new class to be valid for the VM's
+// namespace. Leaving it unchanged is always allowed.
 //
 // Following fields can only be changed when the VM is powered off.
 //   - GuestID
@@ -782,21 +788,34 @@ func (v validator) validateStorageFields(
 		objName = vm.Spec.VolumeAttributesClassName
 	}
 
+	return v.validateStoragePolicyInNamespace(ctx, vm, objPath, objName)
+}
+
+// validateStoragePolicyInNamespace resolves the storage policy ID of the VM's
+// VolumeAttributesClass, if set, or StorageClass and verifies the policy is
+// associated with the VM's namespace. The objPath and objName parameters
+// identify the object the policy ID is read from and are used to report errors.
+func (v validator) validateStoragePolicyInNamespace(
+	ctx *pkgctx.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine,
+	objPath *field.Path,
+	objName string) field.ErrorList {
+
 	policyID, err := kubeutil.GetStoragePolicyID(ctx, v.client, *vm)
 	if err != nil {
-		return append(allErrs, field.Invalid(objPath, objName, err.Error()))
+		return field.ErrorList{field.Invalid(objPath, objName, err.Error())}
 	}
 
 	ok, err := spqutil.IsStoragePolicyInNamespace(ctx, v.client, objName, policyID, vm.Namespace)
 	if err != nil {
-		return append(allErrs, field.Invalid(objPath, objName, err.Error()))
+		return field.ErrorList{field.Invalid(objPath, objName, err.Error())}
 	}
 
 	if !ok {
-		allErrs = append(allErrs, field.Invalid(objPath, objName, fmt.Sprintf(storagePolicyNotAssociatedOnNSFmt, vm.Namespace, objName)))
+		return field.ErrorList{field.Invalid(objPath, objName, fmt.Sprintf(storagePolicyNotAssociatedOnNSFmt, vm.Namespace, objName))}
 	}
 
-	return allErrs
+	return nil
 }
 
 func (v validator) validateCrypto(
@@ -2509,6 +2528,7 @@ func (v validator) validateImmutableFields(
 	allErrs = append(allErrs, v.validateImageOnUpdate(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, v.validateClassOnUpdate(ctx, vm, oldVM)...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)
+	allErrs = append(allErrs, v.validateVolumeAttributesClassOnUpdate(ctx, vm, oldVM)...)
 	// New VMs always have non-empty biosUUID. Existing VMs being upgraded may have an empty biosUUID.
 	if oldVM.Spec.BiosUUID != "" {
 		allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.BiosUUID, oldVM.Spec.BiosUUID, specPath.Child("biosUUID"))...)
@@ -2522,6 +2542,39 @@ func (v validator) validateImmutableFields(
 	allErrs = append(allErrs, v.validateVMAffinityOnUpdate(ctx, vm, oldVM)...)
 
 	return allErrs
+}
+
+// validateVolumeAttributesClassOnUpdate validates changes to
+// spec.volumeAttributesClassName:
+//
+//   - An unchanged value is always allowed, even if the StoragePolicyMutability
+//     capability is not enabled, and is not re-validated.
+//   - Once set, the field cannot be removed. The VolumeAttributesClass policy ID
+//     takes precedence over the StorageClass policy ID, so removing the field
+//     would silently change the VM's effective storage policy.
+//   - Setting the field or changing it to another value is validated the same
+//     way as on create: the StoragePolicyMutability capability must be enabled,
+//     the VolumeAttributesClass must exist and specify a storage policy ID, and
+//     that policy must be associated with the VM's namespace.
+func (v validator) validateVolumeAttributesClassOnUpdate(
+	ctx *pkgctx.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	newName := vm.Spec.VolumeAttributesClassName
+
+	if newName == oldVM.Spec.VolumeAttributesClassName {
+		return nil
+	}
+
+	p := field.NewPath("spec", "volumeAttributesClassName")
+
+	if newName == "" {
+		return field.ErrorList{
+			field.Forbidden(p, removingVolumeAttributesClassNotAllowed),
+		}
+	}
+
+	return v.validateStoragePolicyInNamespace(ctx, vm, p, newName)
 }
 
 func (v validator) validateImmutableReserved(

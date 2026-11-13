@@ -6215,6 +6215,206 @@ func unitTestsValidateUpdate() {
 
 	affinityValidationCases(doTest)
 
+	Context("spec.volumeAttributesClassName update", func() {
+
+		var (
+			vacPath    = field.NewPath("spec", "volumeAttributesClassName")
+			anotherVAC = builder.DummyVolumeAttributesClassName + "-2"
+
+			removeMsg = field.Forbidden(
+				vacPath,
+				"removing the volume attributes class is not allowed once it is set",
+			).Error()
+
+			invalidMsg = func(name, msg string) string {
+				return field.Invalid(vacPath, name, msg).Error()
+			}
+
+			notEnabledMsg = func(name string) string {
+				return invalidMsg(name, fmt.Sprintf(
+					"VolumeAttributesClass %q object is specified but capability is not enabled",
+					name))
+			}
+
+			notFoundMsg = func(name string) string {
+				return invalidMsg(name, fmt.Sprintf(
+					"volumeattributesclasses.storage.k8s.io %q not found", name))
+			}
+
+			notInNamespaceMsg = func(name string) string {
+				return invalidMsg(name, fmt.Sprintf(
+					"Storage policy is not associated with the namespace %s by object %s",
+					dummyNamespaceName, name))
+			}
+
+			// createVAC creates a VolumeAttributesClass with the given name and
+			// policy ID, and a StoragePolicyQuota for quotaPolicyID in the VM's
+			// namespace.
+			createVAC = func(
+				ctx *unitValidatingWebhookContext,
+				name, policyID, quotaPolicyID string) {
+
+				vac := builder.DummyVolumeAttributesClassWithID(policyID)
+				vac.Name = name
+				ExpectWithOffset(1, ctx.Client.Create(ctx, vac)).To(Succeed())
+
+				spq := builder.DummyStoragePolicyQuota(
+					name+"-storagepolicyquota", ctx.vm.Namespace, quotaPolicyID)
+				ExpectWithOffset(1, ctx.Client.Create(ctx, spq)).To(Succeed())
+			}
+		)
+
+		Context("StoragePolicyMutability is enabled", func() {
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.PodVMOnStretchedSupervisor = true
+					config.Features.StoragePolicyMutability = true
+				})
+			})
+
+			DescribeTable("update", doTest,
+				Entry("should deny removing the volume attributes class once set",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = ""
+						},
+						validate: doValidateWithMsg(removeMsg),
+					},
+				),
+				Entry("should deny removing the volume attributes class for a privileged user",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.IsPrivilegedAccount = true
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = ""
+						},
+						validate: doValidateWithMsg(removeMsg),
+					},
+				),
+				Entry("should allow changing to another valid volume attributes class",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							createVAC(ctx, anotherVAC, "id-another", "id-another")
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = anotherVAC
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("should allow setting a valid volume attributes class when previously unset",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							createVAC(ctx, builder.DummyVolumeAttributesClassName, "id42", "id42")
+							ctx.oldVM.Spec.VolumeAttributesClassName = ""
+							ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+						},
+						expectAllowed: true,
+					},
+				),
+				Entry("should deny changing to a volume attributes class that does not exist",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = anotherVAC
+						},
+						validate: doValidateWithMsg(notFoundMsg(anotherVAC)),
+					},
+				),
+				Entry("should deny setting a volume attributes class that does not exist when previously unset",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.VolumeAttributesClassName = ""
+							ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+						},
+						validate: doValidateWithMsg(notFoundMsg(builder.DummyVolumeAttributesClassName)),
+					},
+				),
+				Entry("should deny changing to a volume attributes class whose policy is not associated with the namespace",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							createVAC(ctx, anotherVAC, "id-another", "some-other-id")
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = anotherVAC
+						},
+						validate: doValidateWithMsg(notInNamespaceMsg(anotherVAC)),
+					},
+				),
+				Entry("should allow leaving the volume attributes class unchanged without re-validating it",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							// The class does not exist in the cluster.
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+						},
+						expectAllowed: true,
+					},
+				),
+			)
+		})
+
+		Context("StoragePolicyMutability is disabled", func() {
+
+			BeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.PodVMOnStretchedSupervisor = true
+					config.Features.StoragePolicyMutability = false
+				})
+			})
+
+			DescribeTable("update", doTest,
+				Entry("should deny changing the volume attributes class to another one",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = anotherVAC
+						},
+						validate: doValidateWithMsg(notEnabledMsg(anotherVAC)),
+					},
+				),
+				Entry("should deny changing to a valid volume attributes class",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							createVAC(ctx, anotherVAC, "id-another", "id-another")
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = anotherVAC
+						},
+						validate: doValidateWithMsg(notEnabledMsg(anotherVAC)),
+					},
+				),
+				Entry("should deny setting the volume attributes class when previously unset",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.VolumeAttributesClassName = ""
+							ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+						},
+						validate: doValidateWithMsg(
+							notEnabledMsg(builder.DummyVolumeAttributesClassName)),
+					},
+				),
+				Entry("should deny removing the volume attributes class once set",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = ""
+						},
+						validate: doValidateWithMsg(removeMsg),
+					},
+				),
+				Entry("should allow leaving the volume attributes class unchanged",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+							ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+						},
+						expectAllowed: true,
+					},
+				),
+			)
+		})
+	})
+
 	DescribeTable(
 		"spec.class and spec.className update",
 		doTest,

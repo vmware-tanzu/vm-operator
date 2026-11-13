@@ -62,7 +62,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	})
 
 	It("Should not install the VirtualMachineConfigPolicy API",
-		Label("extended-functional", "experimental"),
+		Label("extended-functional"),
 		func() {
 			adminProxy, err := svClusterProxy.NewAdminClusterProxy(ctx)
 			Expect(err).ToNot(HaveOccurred())

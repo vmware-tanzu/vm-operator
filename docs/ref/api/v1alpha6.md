@@ -3652,6 +3652,29 @@ used to configure this VM's storage-related attributes.
 
 Please see https://kubernetes.io/docs/concepts/storage/storage-classes/
 for more information on Kubernetes storage classes. |
+| `volumeAttributesClassName` _string_ | VolumeAttributesClassName describes the name of a Kubernetes VolumeAttributesClass resource
+used to configure this VM's storage-related attributes.
+
+Please see https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/
+for more information on Kubernetes volume attribute classes.
+
+The storage policy that the VolumeAttributesClass refers to takes
+precedence over the one that spec.storageClass refers to.
+
+Please note this field is only supported when the storage policy
+mutability capability is enabled. A request that sets this field, or
+changes it to another value, while the capability is disabled is
+rejected. Leaving the field unchanged is always allowed.
+
+Once set, this field cannot be removed. The storage policy of the
+VolumeAttributesClass takes precedence over the one of the
+StorageClass, so removing the field would silently change the VM's
+effective storage policy.
+
+Changing this field on an existing VM requests a storage migration to
+the storage policy of the new VolumeAttributesClass. Once the migration
+is complete, the observed value is reported in
+status.volumeAttributesClassName. |
 | `bootstrap` _[VirtualMachineBootstrapSpec](#virtualmachinebootstrapspec)_ | Bootstrap describes the desired state of the guest's bootstrap
 configuration.
 
@@ -3896,6 +3919,25 @@ hardware version.
 Please refer to VirtualMachineSpec.MinHardwareVersion for more
 information on the topic of a VM's hardware version. |
 | `storage` _[VirtualMachineStorageStatus](#virtualmachinestoragestatus)_ | Storage describes the observed state of the VirtualMachine's storage. |
+| `volumeAttributesClassName` _string_ | VolumeAttributesClassName describes the observed name of the Kubernetes
+VolumeAttributesClass resource (also known as the storage profile name)
+that the VirtualMachine is configured to.
+
+Please see VirtualMachineSpec.VolumeAttributesClassName for the desired
+value.
+
+This field is only reported when the storage policy mutability
+capability is enabled. It is set after the VM's
+VirtualMachineInfraMigration, the resource with the same namespace and
+name as the VM, has completed, which is also when its
+VirtualMachineInfraMigrationReady condition becomes True. The value is
+the VolumeAttributesClass that refers to the storage policy the VM was
+migrated to, provided it is the one in
+spec.volumeAttributesClassName.
+
+Please note the VirtualMachineInfraMigration may be deleted after it
+completes. This field is not cleared when that happens, since it
+describes what the VM is configured to, not the migration. |
 | `provider` _[VirtualMachineProviderStatus](#virtualmachineproviderstatus)_ | Provider describes the observed state of the VirtualMachine from
 the underlying infrastructure provider (vSphere/vCenter). |
 | `currentSnapshot` _[VirtualMachineSnapshotReference](#virtualmachinesnapshotreference)_ | CurrentSnapshot describes the observed working snapshot of the VirtualMachine.

@@ -32,7 +32,7 @@ Milestone 1 (provider classes) ships all of the above with one governing class p
 
 - Existing classes **MUST** keep working unchanged after upgrade, with no manual step.
 - A class **MUST** be able to be a selectable preset, a governing ceiling, both, or neither, without a separate policy object.
-- A VM **MUST** be checked against exactly one complete governing class per zone in Milestone 1; ranges are never merged across classes.
+- A VM **MUST** be checked against complete governing classes, one at a time: it is admitted when it fully satisfies at least one, and ranges are never merged across classes.
 - A VM **MUST** get its unset fields filled from its class, or from the governing class when it has none, at admission.
 - Hardware compatibility **MUST** be reported per zone on the class, asynchronously; a class **MUST NOT** be rejected for hardware.
 - A namespace user **MUST NOT** be able to read more about hardware or other classes than they could obtain.
@@ -75,7 +75,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 1. **Given** a class `flex` with `governs: {existingVMs: AllowOnViolation}` and `spec.zones: [zone-a]`, **when** a classless VM in `zone-a` requests more CPU than `flex`'s `max`, **then** it is rejected, naming the field.
 2. **Given** the same class, **when** a VM that names another class in `zone-a` gets values outside `flex`'s ranges, **then** it is rejected.
 3. **Given** a governing class with `advanced.extraConfig.denied: [{key: "guestinfo.*"}]`, **when** a VM sets `guestinfo.foo`, **then** it is rejected.
-4. **Given** a class already governs `zone-a`, **when** a second class is written so that it also governs `zone-a`, **then** the write is rejected.
+4. **Given** a class already governs `zone-a`, **when** a second class is written so that it also governs `zone-a`, **then** the write is rejected. [NEEDS CLARIFICATION: implementation (T028): a concurrent write can't be rejected reliably, so whether to accept the second class with a warning, report it, and honor the newest first.] Either way, a VM in `zone-a` is admitted when it fully satisfies at least one of the governing classes.
 5. **Given** a governing class in `zone-a`, **when** a selectable class available in `zone-a` is written with a range outside the governing class's range, **then** the write is rejected.
 6. **Given** a governing class is narrowed after a selectable class was admitted, **when** the class controller reconciles, **then** the selectable class reports `WithinGovernance=False` for that zone and is not otherwise changed.
 7. **Given** a governing class with no parent, **when** it is written without `governs.existingVMs`, **then** it is rejected because `existingVMs` is required.
@@ -281,6 +281,7 @@ vm-operator runs on a Supervisor whose provider supplies the pieces below. vm-op
 - [NEEDS CLARIFICATION: Reserved capacity: RP3 profiles not tied to a class and how VCFA discovers them; RP8 read access to reservations for a later per-zone status.] Findings in WIKI page 3118085468.
 - [NEEDS CLARIFICATION: Number fields where a bound has no meaningful default (shares `value`, NIC `vnumaNodeID`): whether their `Range` makes `default` optional, against the number rule (T002). Decided when T104 and T120 are implemented (T021).]
 - Provider-side open items (platform behavior on a changed profile or a resize, profile naming across Supervisors, external readers of `reservedSlots`, the class API generator, namespace-copy sign-off, default classes, the vpxd config field drift check) are tracked in the provider's spec; vm-operator tasks that depend on them say so.
+- [NEEDS CLARIFICATION: Implementation: more than one governing class on a zone after concurrent writes: warn and report instead of rejecting, and honor the newest first (T028).]
 - [NEEDS CLARIFICATION: Milestone 2: whether a child's branches need one `existingVMs` answer when a VM satisfies none of them.]
 - [NEEDS CLARIFICATION: CPU cores to MHz (research.md, Finding 12): which frequency the provider uses and when it resolves, so a frequency change doesn't reconfigure existing VMs. Decided when vmop-4481 is implemented (T022). It also decides whether a v1alpha5 class's `configSpec` CPU allocation in MHz can be elevated into `resources.requests/limits.cpu` (T023).]
 

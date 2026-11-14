@@ -199,6 +199,8 @@ linters:
           pkg: github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1
         - alias: vimv1
           pkg: github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1
+        - alias: mobilityv1a4
+          pkg: github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha4
 
         - alias: proxyaddr
           pkg: github.com/vmware-tanzu/vm-operator/pkg/util/kube/proxyaddr

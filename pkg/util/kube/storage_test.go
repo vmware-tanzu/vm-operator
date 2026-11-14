@@ -64,7 +64,7 @@ var _ = DescribeTable("GetStoragePolicyIDFromStorageClass",
 		""),
 )
 
-var _ = DescribeTable("GetStoragePolicyIDFromVolumeAttributesClass",
+var _ = DescribeTable("GetStoragePolicyIDFromVAC",
 	func(inPolicyID, expPolicyID string, expectErr bool) {
 		obj := storagev1.VolumeAttributesClass{
 			ObjectMeta: metav1.ObjectMeta{
@@ -74,7 +74,7 @@ var _ = DescribeTable("GetStoragePolicyIDFromVolumeAttributesClass",
 		if inPolicyID != "" {
 			obj.Parameters = map[string]string{internal.StoragePolicyIDParameter: inPolicyID}
 		}
-		policyID, err := kubeutil.GetStoragePolicyIDFromVolumeAttributesClass(obj)
+		policyID, err := kubeutil.GetStoragePolicyIDFromVAC(obj)
 		if expectErr {
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(MatchError(kubeutil.ErrMissingParameter{
@@ -244,6 +244,125 @@ var _ = Describe("GetStoragePolicyID", func() {
 						ParameterName: internal.StoragePolicyIDParameter,
 					}))
 				})
+			})
+		})
+	})
+})
+
+var _ = Describe("GetVACNamesForStoragePolicyID", func() {
+	var (
+		ctx       context.Context
+		client    ctrlclient.Client
+		funcs     interceptor.Funcs
+		withObjs  []ctrlclient.Object
+		policyID  string
+		names     []string
+		err       error
+		newVAC    func(name string, params map[string]string) *storagev1.VolumeAttributesClass
+		policyKey = internal.StoragePolicyIDParameter
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		funcs = interceptor.Funcs{}
+		policyID = uuid.NewString()
+		withObjs = nil
+		newVAC = func(
+			name string,
+			params map[string]string) *storagev1.VolumeAttributesClass {
+
+			return &storagev1.VolumeAttributesClass{
+				ObjectMeta: metav1.ObjectMeta{Name: name},
+				DriverName: "fake",
+				Parameters: params,
+			}
+		}
+	})
+
+	JustBeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(storagev1.AddToScheme(scheme)).To(Succeed())
+
+		client = fake.NewClientBuilder().
+			WithObjects(withObjs...).
+			WithScheme(scheme).
+			WithInterceptorFuncs(funcs).
+			Build()
+
+		names, err = kubeutil.GetVACNamesForStoragePolicyID(
+			ctx, client, policyID)
+	})
+
+	When("there are no VolumeAttributesClasses", func() {
+		It("should return no names", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(names).To(BeEmpty())
+		})
+	})
+
+	When("listing the VolumeAttributesClasses returns an error", func() {
+		BeforeEach(func() {
+			funcs.List = func(
+				ctx context.Context,
+				client ctrlclient.WithWatch,
+				list ctrlclient.ObjectList,
+				opts ...ctrlclient.ListOption) error {
+
+				return apierrors.NewInternalError(errors.New(fakeString))
+			}
+		})
+		It("should return the error", func() {
+			Expect(err).To(MatchError(ContainSubstring(fakeString)))
+			Expect(names).To(BeEmpty())
+		})
+	})
+
+	When("one VolumeAttributesClass refers to the policy", func() {
+		BeforeEach(func() {
+			withObjs = []ctrlclient.Object{
+				newVAC("vac-a", map[string]string{policyKey: policyID}),
+				newVAC("vac-other", map[string]string{policyKey: uuid.NewString()}),
+			}
+		})
+		It("should return only its name", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(names).To(Equal([]string{"vac-a"}))
+		})
+	})
+
+	When("several VolumeAttributesClasses refer to the policy", func() {
+		BeforeEach(func() {
+			withObjs = []ctrlclient.Object{
+				newVAC("vac-c", map[string]string{policyKey: policyID}),
+				newVAC("vac-a", map[string]string{policyKey: policyID}),
+				newVAC("vac-b", map[string]string{policyKey: policyID}),
+			}
+		})
+		It("should return all of the names, sorted", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(names).To(Equal([]string{"vac-a", "vac-b", "vac-c"}))
+		})
+	})
+
+	When("a VolumeAttributesClass has no storage policy ID", func() {
+		BeforeEach(func() {
+			withObjs = []ctrlclient.Object{
+				newVAC("vac-none", nil),
+				newVAC("vac-empty", map[string]string{policyKey: ""}),
+			}
+		})
+		It("should ignore it", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(names).To(BeEmpty())
+		})
+
+		When("the provided policy ID is empty", func() {
+			BeforeEach(func() {
+				policyID = ""
+			})
+			It("should still not match it", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(names).To(BeEmpty())
 			})
 		})
 	})

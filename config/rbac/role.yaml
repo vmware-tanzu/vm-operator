@@ -228,6 +228,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - mobility-operator.vmware.com
+  resources:
+  - virtualmachineinframigrations
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - netoperator.vmware.com
   resources:
   - networkinterfaces

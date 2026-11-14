@@ -434,6 +434,9 @@ generate-go: ## Generate golang sources
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/external/vim/api/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/external/mobility-operator/... \
+		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
 	$(MAKE) -C ./pkg/util/cloudinit/schema $@
 	$(MAKE) -C ./pkg/util/netplan/schema $@
 
@@ -513,6 +516,14 @@ generate-external-manifests: ## Generate manifests for the external types for te
 		output:none
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/external/vim/api/... \
+		crd:crdVersions=v1 \
+		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
+		output:none
+# Only v1alpha4 is generated: it holds VirtualMachineInfraMigration, the only
+# mobility-operator API the controllers use. v1alpha2 holds ImportOperation,
+# which is only used by the E2E tests.
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha4/... \
 		crd:crdVersions=v1 \
 		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
 		output:none

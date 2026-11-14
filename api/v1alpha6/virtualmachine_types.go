@@ -135,6 +135,36 @@ const (
 	//  - Other properties can be modified, but the changes will not be applied until the VM is powered off and then powered on again.
 	//  - A third category of properties requires the VM to be powered off before any modification can even be made.
 	VirtualMachineConditionComputeConfigSynced = "VirtualMachineComputeConfigSynced"
+
+	// VirtualMachineConditionInfraMigrationPrefix is the prefix of every
+	// condition type that mirrors a condition of the VM's
+	// VirtualMachineInfraMigration, which is the resource with the same
+	// namespace and name as the VM.
+	//
+	// Each condition of the VirtualMachineInfraMigration is mirrored to the VM
+	// as a condition whose type is this prefix followed by the type of the
+	// VirtualMachineInfraMigration's condition, ex. the Validated condition is
+	// mirrored as VirtualMachineInfraMigrationValidated. The status and reason
+	// are copied as-is. The message is copied too, followed by a reference to
+	// the VirtualMachineInfraMigration in the form "<message> @ <kind>/<name>",
+	// ex. "<message> @ VirtualMachineInfraMigration/my-vm", or just the
+	// reference if the condition has no message. A condition is only mirrored
+	// if its observedGeneration has caught up to the generation of the
+	// VirtualMachineInfraMigration, otherwise it describes the previous spec.
+	// A mirrored condition is removed from the VM when it is no longer
+	// reported by the VirtualMachineInfraMigration, or when it no longer
+	// describes its current generation.
+	VirtualMachineConditionInfraMigrationPrefix = "VirtualMachineInfraMigration"
+
+	// VirtualMachineConditionInfraMigrationReady is the mirror of the Ready
+	// condition of the VM's VirtualMachineInfraMigration, and indicates whether
+	// the migration has converged on its target infrastructure.
+	//
+	// Like the other mirrored conditions, it reports the status of the
+	// VirtualMachineInfraMigration's Ready condition whether it is True, False,
+	// or Unknown. The condition's observedGeneration is not copied, since it
+	// refers to the generation of the VirtualMachineInfraMigration.
+	VirtualMachineConditionInfraMigrationReady = "VirtualMachineInfraMigrationReady"
 )
 
 const (
@@ -1523,6 +1553,17 @@ type VirtualMachineStatus struct {
 
 	// Storage describes the observed state of the VirtualMachine's storage.
 	Storage *VirtualMachineStorageStatus `json:"storage,omitempty"`
+
+	// +optional
+
+	// VolumeAttributesClassName describes the observed name of the Kubernetes
+	// VolumeAttributesClass resource (also known as the storage profile name)
+	// that the VirtualMachine is configured to.
+	//
+	// Please see VirtualMachineSpec.VolumeAttributesClassName for the desired
+	// value. This field is only reported when the storage policy mutability
+	// capability is enabled.
+	VolumeAttributesClassName string `json:"volumeAttributesClassName,omitempty"`
 
 	// +optional
 

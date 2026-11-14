@@ -55,6 +55,45 @@ func IsUnknown(from Getter, t string) bool {
 	return c4g(from).IsUnknown(t)
 }
 
+// readyOptions allows to set options for the IsReady operation.
+type readyOptions struct {
+	generation int64
+}
+
+// ReadyOption defines an option for checking whether an object is ready.
+type ReadyOption func(*readyOptions)
+
+// WithGeneration requires the Ready condition to describe the provided
+// generation, i.e. its ObservedGeneration must not be less than generation.
+// Use it with the object's metadata.generation: a condition whose
+// ObservedGeneration is less than that describes a previous spec.
+//
+// Only use this for objects whose controller sets ObservedGeneration on its
+// conditions. If it is used more than once, the last generation wins.
+func WithGeneration(generation int64) ReadyOption {
+	return func(o *readyOptions) {
+		o.generation = generation
+	}
+}
+
+// IsReady returns true if the Ready condition exists and is True, otherwise
+// false is returned. The options add further requirements.
+func IsReady(from Getter, options ...ReadyOption) bool {
+	return c4g(from).IsReady(options...)
+}
+
+// GetObservedAt returns the conditions that describe the provided generation, i.e.
+// the ones whose ObservedGeneration has caught up to generation. Use it with
+// the object's metadata.generation: a condition whose ObservedGeneration is
+// less than that describes a previous spec. Each condition is judged by its
+// own ObservedGeneration, and the returned conditions are a copy.
+//
+// Only use this for objects whose controller sets ObservedGeneration on its
+// conditions.
+func GetObservedAt(from Getter, generation int64) Conditions {
+	return c4g(from).GetObservedAt(generation)
+}
+
 // GetReason returns the condition's reason or an empty string if the condition
 // does not exist.
 func GetReason(from Getter, t string) string {

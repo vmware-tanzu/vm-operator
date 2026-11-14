@@ -5240,6 +5240,7 @@ func autoConvert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
 	out.HardwareVersion = in.HardwareVersion
 	out.Storage = (*VirtualMachineStorageStatus)(unsafe.Pointer(in.Storage))
+	// WARNING: in.VolumeAttributesClassName requires manual conversion: does not exist in peer-type
 	out.Provider = (*VirtualMachineProviderStatus)(unsafe.Pointer(in.Provider))
 	out.CurrentSnapshot = (*VirtualMachineSnapshotReference)(unsafe.Pointer(in.CurrentSnapshot))
 	out.RootSnapshots = *(*[]VirtualMachineSnapshotReference)(unsafe.Pointer(&in.RootSnapshots))

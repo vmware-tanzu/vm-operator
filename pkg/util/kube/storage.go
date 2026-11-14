@@ -176,10 +176,10 @@ func GetStoragePolicyIDFromStorageClass(obj storagev1.StorageClass) (string, err
 	return policyID, nil
 }
 
-// GetStoragePolicyIDFromVolumeAttributesClass returns the storage policy ID for a given VAC.
+// GetStoragePolicyIDFromVAC returns the storage policy ID for a given VAC.
 // If no ID is found, an error is returned.
 // Use GetStoragePolicyID for abstraction of the source of the policy ID (StorageClass or VolumeAttributesClass (VAC) object).
-func GetStoragePolicyIDFromVolumeAttributesClass(obj storagev1.VolumeAttributesClass) (string, error) {
+func GetStoragePolicyIDFromVAC(obj storagev1.VolumeAttributesClass) (string, error) {
 	policyID := obj.Parameters[internal.StoragePolicyIDParameter]
 	if policyID == "" {
 		return "", ErrMissingParameter{
@@ -189,6 +189,37 @@ func GetStoragePolicyIDFromVolumeAttributesClass(obj storagev1.VolumeAttributesC
 		}
 	}
 	return policyID, nil
+}
+
+// GetVACNamesForStoragePolicyID returns the sorted names of
+// the VolumeAttributesClass (VAC) objects that refer to the provided storage
+// policy ID. VACs that do not specify a storage policy ID are ignored.
+//
+// More than one name may be returned, since more than one VAC may refer to the
+// same storage policy.
+func GetVACNamesForStoragePolicyID(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	policyID string) ([]string, error) {
+
+	var list storagev1.VolumeAttributesClassList
+	if err := k8sClient.List(ctx, &list); err != nil {
+		return nil, fmt.Errorf("failed to list volume attributes classes: %w", err)
+	}
+
+	var names []string
+	for i := range list.Items {
+		id, err := GetStoragePolicyIDFromVAC(list.Items[i])
+		if err != nil {
+			continue
+		}
+		if id == policyID {
+			names = append(names, list.Items[i].Name)
+		}
+	}
+	slices.Sort(names)
+
+	return names, nil
 }
 
 // GetStoragePolicyID returns the storage policy ID for a given VM.
@@ -224,7 +255,7 @@ func GetStoragePolicyID(
 			return "", err
 		}
 
-		policyID, err := GetStoragePolicyIDFromVolumeAttributesClass(*vac)
+		policyID, err := GetStoragePolicyIDFromVAC(*vac)
 		if err != nil {
 			return "", err
 		}
@@ -314,7 +345,7 @@ func IsEncryptedStorageProfile(
 		}
 		foundStorageProfile = slices.IndexFunc(volumeAttributesClasses.Items,
 			func(volumeAttributesClass storagev1.VolumeAttributesClass) bool {
-				pid, _ := GetStoragePolicyIDFromVolumeAttributesClass(volumeAttributesClass)
+				pid, _ := GetStoragePolicyIDFromVAC(volumeAttributesClass)
 				return pid == profileID
 			},
 		) != -1

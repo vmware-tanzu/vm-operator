@@ -18423,6 +18423,16 @@ spec:
                   UniqueID describes a unique identifier that is provided by the underlying
                   infrastructure provider, such as vSphere.
                 type: string
+              volumeAttributesClassName:
+                description: |-
+                  VolumeAttributesClassName describes the observed name of the Kubernetes
+                  VolumeAttributesClass resource (also known as the storage profile name)
+                  that the VirtualMachine is configured to.
+
+                  Please see VirtualMachineSpec.VolumeAttributesClassName for the desired
+                  value. This field is only reported when the storage policy mutability
+                  capability is enabled.
+                type: string
               volumes:
                 description: |-
                   Volumes describes the observed state of the volumes that are intended to

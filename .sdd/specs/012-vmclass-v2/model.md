@@ -13,7 +13,7 @@ Every governable field has one shape. Each shape is a concrete, named Go struct 
 
 | Shape | Fields | Rules |
 |---|---|---|
-| Number (`Range`) | `min`, `max`, `default` | `default` is required when `min` or `max` is set, and must be within them. An unset bound is open: limited by the hardware, or by a parent class in Milestone 2. A fixed value is `min == max == default`. A wholly absent struct leaves the value to vpxd. |
+| Number (`Range`) | `min`, `max`, `default` | `min` and `max` are inclusive. `default` is required when `min` or `max` is set, and must be within them. An unset bound is open: limited by the hardware, or by a parent class in Milestone 2. A fixed value is `min == max == default`. A wholly absent struct leaves the value to vpxd. |
 | `CountRange` | `min`, `max` | How many items a list, or an entry of it, may hold. No `default`: the default count is the length of the list's `default`. Every field is optional; an unset `count`, `min` or `max` sets no class limit, and the platform's limits still apply. |
 | `EnumPolicy` | `allowed`, `default`, `required` | Unset `allowed` = all values; `[]` = none. `default` is required when `allowed` has more than one value; with one value, that value is the default. A set `default` must be in `allowed`. A VM that omits the field inherits `default`; `required: true` rejects an empty value after defaulting. An explicit `""` is not a value unless the field defines one; only `reservedProfileName` does (`""` = no profile), and its VM field is a pointer so `""` stays distinct from unset. Every other planned enum has an explicit value for "off" (`Normal`, `Disabled`, `PerVM`) or always has a value (NIC `type`, shares `level`). |
 | `StringPolicy` | `allowed`, `denied`, `default`, `required` | A free-form string. `allowed` and `denied` are lists of string matchers (below); `denied` is checked first. A set `default` must pass both. `default` and `required` behave as in `EnumPolicy`. |
@@ -117,7 +117,7 @@ Every other interface field is a per-VM input and not governed: `name`, `guestDe
 | `reservedSlots` | int32 | Deprecated. Same name and meaning as today: the namespace's desired slot total across zones. Preserved through conversion and the namespace copy, including zero; never overwritten with observed totals. |
 | `configSpec` | `VirtualMachineConfigSpec` | Pass-through settings with no typed field; presets only, never governance. An elevated path is moved for older writers and rejected for v1alpha6 writers. Only the top class of a chain may set it. |
 
-Label: the schema-version label records the last CRD version that wrote the class. A write through an older version is rejected once a newer one has written it. The provider's class API shows it as read-only `schemaVersion`.
+Label: the schema-version label records the last CRD version that wrote the class. Writes through older CRD versions are accepted and converted (T025). The provider's older class API reads the label and rejects edits of a class last written through v1alpha6; it shows the class as read-only `schemaVersion`.
 
 ### Hardware version
 
@@ -151,7 +151,7 @@ Relation rules, checked on the effective values (after defaulting):
 
 | Field | Meaning |
 |---|---|
-| `zones[].name` | Covers `spec.zones`, or every zone when unset. |
+| `zones[].name` | Covers `spec.zones`; when `spec.zones` is unset, every current zone of the namespace, including zones added later. |
 | `zones[].conditions` | `HardwareCompatible`, `WithinGovernance`, `Governing`, and the informational `DevicePolicyResolved`: `False` when a device `allowed` entry matches nothing in the zone's inventory (likely a typo, or hardware not there yet). It never rejects; a `default` device missing from the zone makes `HardwareCompatible=False`. |
 | `zones[]` resolved limits | Per-VM limits and options a VM can obtain in that zone, for every governed field: the class within the governing class (and the parent in Milestone 2), within what the environment browser reports for the zone. Ranges as `{min, max}`; enums, sets and device lists as the available values, with the entry's display fields. A field the class doesn't set is limited by the environment browser alone. Fields without a finite domain (extraConfig) carry their effective `allowed` and `denied`. Updated when the environment-browser objects change. Never pool totals, never what governance forbids. `pnumaNodeAffinity` options are the class's approved sets when set, otherwise the node IDs from `numNumaNodes`; a per-VM limit, not a pool total. |
 | `observedGeneration`, `conditions[Ready]` | As required for every controller. |

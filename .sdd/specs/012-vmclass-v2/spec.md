@@ -24,7 +24,7 @@
 7. Reserved capacity follows the VM: a class offers reserved profiles as a governed field, the VM carries the profile it uses and must match its shape, and the profiles themselves are read from `VirtualMachineReservedProfile` objects that the provider publishes.
 8. `VirtualMachineConfigPolicy` is removed.
 
-Milestone 1 (provider classes) ships all of the above with one governing class per zone, behind the `vm_service_classless_vm` Supervisor capability. Milestone 2 (tenant classes) adds `parentClassRefs`, so a class can be bounded by another class.
+Milestone 1 (provider classes) ships all of the above with one governing class per zone, behind the `supports_vm_service_classless_vm` Supervisor capability. Milestone 2 (tenant classes) adds `parentClassRefs`, so a class can be bounded by another class.
 
 ---
 
@@ -38,7 +38,7 @@ Milestone 1 (provider classes) ships all of the above with one governing class p
 - A namespace user **MUST NOT** be able to read more about hardware or other classes than they could obtain.
 - A VM that holds reserved capacity **MUST** match its reserved profile's shape.
 - The Milestone 1 schema **MUST** allow Milestone 2 without a breaking change.
-- Flex behavior, Telco VM APIs, and the configuration-policy/environment-browser pipeline **MUST** share the disabled-by-default `vm_service_classless_vm` Supervisor capability (vmop-4313), which replaces the Telco and configuration-policy capabilities. Enablement is tracked by vmop-4337.
+- Flex behavior, Telco VM APIs, and the configuration-policy/environment-browser pipeline **MUST** share the disabled-by-default `supports_vm_service_classless_vm` Supervisor capability (vmop-4313), which replaces the Telco and configuration-policy capabilities. Enablement is tracked by vmop-4337.
 
 ## Non-goals
 
@@ -99,7 +99,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 2. **Given** that VM, **when** an update changes a field `large` supplies, **then** it is rejected with a message to remove `spec.className` first.
 3. **Given** that VM, **when** `spec.className` is removed, **then** the VM keeps its values and is governed as a classless VM.
 4. **Given** `large` is edited, **when** the VM carries the same-class resize annotation, **then** the VM reconciler rewrites the class-supplied fields; without the annotation, the VM keeps its values.
-5. **Given** VM resize (`VMResize` or `VMResizeCPUMemory`) is enabled, **when** `spec.className` changes from `large` to `small`, **then** no annotation is needed: every class-supplied field is replaced from `small`, and fields `small` doesn't set are cleared and re-defaulted from the next source (the governing class, the image, or vpxd).
+5. **Given** VM resize is allowed, as today, **when** `spec.className` changes from `large` to `small`, **then** no annotation is needed: every class-supplied field is replaced from `small`, and fields `small` doesn't set are cleared and re-defaulted from the next source (the governing class, the image, or vpxd).
 6. **Given** a class edit that changes a typed field, **when** the class controller reconciles, **then** the class's `ClassInstance` hash changes, so VMs of the class see the new instance.
 
 ### US5 — DevOps user: a VM without a zone gets one only when it is unambiguous (P1)
@@ -145,7 +145,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 
 **Acceptance scenarios**:
 
-1. **Given** a class created or last updated through the v1alpha6 CRD version, **when** a client writes its spec through an older CRD version, **then** the write is rejected; reads still work.
+1. **Given** a class created or last updated through the v1alpha6 CRD version, **when** a client writes it through an older CRD version, **then** the write is accepted and converted (T025): a rendered value the writer changed replaces the default, and the rest is restored from the conversion annotation. **When** an admin edits it through the provider's older class API, **then** the edit is rejected; reads still work.
 2. **Given** a class in `vmware-system-vmop`, **when** the provider copies it into a namespace through v1alpha6, **then** every v1alpha6 field reaches the namespace copy.
 3. **Given** an association entry with `zones` unset, `[]` or a list, **when** the namespace copy is written, **then** the three states stay distinct through every layer.
 4. **Given** an existing class, **when** it is migrated, **then** its `metadata.name` is unchanged and `spec.externalID` equals the name.
@@ -177,11 +177,11 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 1. **Given** a Supervisor upgraded to this release, **when** a `Zone` reconciles, **then** no `VirtualMachineConfigPolicy` is created, and the CRD is not installed.
 2. **Given** the environment-browser pipeline from spec 001, **when** the policy is removed, **then** `ConfigTarget`, `VirtualMachineConfigOptions` and `VirtualMachineGuestOptions` keep working unchanged.
 
-### US12 — Platform engineer: flex behavior is gated by `vm_service_classless_vm` (P1)
+### US12 — Platform engineer: flex behavior is gated by `supports_vm_service_classless_vm` (P1)
 
 **Acceptance scenarios**:
 
-1. **Given** a Supervisor without the `vm_service_classless_vm` capability, **when** a class or VM is written, **then** there is no governance and no classless VMs, and the class write is not rejected for using ranges or `governs`. v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the `vm_service_classless_vm` capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement).
+1. **Given** a Supervisor without the `supports_vm_service_classless_vm` capability, **when** a class or VM is written, **then** there is no governance and no classless VMs, and the class write is not rejected for using ranges or `governs`. v1alpha6 `VirtualMachineClass` objects always use the new shape, whether or not the `supports_vm_service_classless_vm` capability is enabled. The capability gates webhook behavior (governance, defaulting from governing classes, the new VM and class rules) and controller reconciliation (compatibility, compliance, placement).
 2. **Given** the capability is enabled or disabled, **when** the capability is read by vm-operator, **then** governance, the new webhooks and the class controller turn on or off without a restart.
 3. **Given** the quarantined E2E pipeline, **when** it runs, **then** it runs the Flex VM Classes suites with the capability enabled, separately from the main pipeline.
 
@@ -254,9 +254,9 @@ A class lists one parent in `spec.parentClassRefs`; its ranges must fit inside t
 vm-operator runs on a Supervisor whose provider supplies the pieces below. vm-operator states what it assumes, not how the provider does it; the provider's spec tracks the implementation (plan.md, "Provider work").
 
 - **Reserved profiles are published.** The provider publishes a namespaced `VirtualMachineReservedProfile` for every profile a namespace can use, with the profile's shape (CPU count, CPU reservation and limit, memory reservation and limit, device identities and quantities) and per-zone counts. vm-operator only reads it.
-- **Backfilled before the capability.** Objects exist for every existing allocation before the `vm_service_classless_vm` capability is enabled. A profile name that doesn't resolve is a clear admission failure in vm-operator, with no fallback.
+- **Backfilled before the capability.** Objects exist for every existing allocation before the `supports_vm_service_classless_vm` capability is enabled. A profile name that doesn't resolve is a clear admission failure in vm-operator, with no fallback.
 - **Older writers keep working.** The provider may keep writing `reservedProfileID` and `reservedSlots` through older API versions; vm-operator converts them (US10.1, US10.2, US10.13).
-- **Capability.** The provider advertises the `vm_service_classless_vm` capability; vm-operator only reads it (US12).
+- **Capability.** The provider advertises the `supports_vm_service_classless_vm` capability; vm-operator only reads it (US12).
 - **Platform enforcement.** The platform rejects, at power-on, a VM whose configuration doesn't match its named profile. vm-operator rejects the same mismatch earlier, at admission.
 - **Class and namespace APIs.** The v2 class API, the older class API (including its block on editing a class with assigned capacity) and the namespace API with per-class zones are the provider's. Every class they write lands in `vmware-system-vmop` and is validated by vm-operator's webhooks; the provider copies classes into namespaces through v1alpha6, keeping unset and `[]` zone lists apart.
 

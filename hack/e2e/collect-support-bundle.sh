@@ -43,6 +43,12 @@ OUTPUT_DIR="${RESULTSDIR:-/tmp/support-bundles}"
 SUPPORT_BUNDLE_RETRY_ATTEMPTS="${SUPPORT_BUNDLE_RETRY_ATTEMPTS:-30}"
 SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS="${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS:-30}"
 
+# The bundle is generated and streamed within the same download request, so
+# this cap must cover generation plus transfer. Generation alone takes ~9
+# minutes on a small testbed and longer with more hosts; a 600s cap was
+# observed to truncate the stream mid-transfer.
+SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS="${SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS:-1800}"
+
 usage() {
     cat >&2 <<EOF
 Usage: ${SCRIPT_NAME} [OPTIONS]
@@ -162,7 +168,7 @@ OUT_FILE="${OUTPUT_DIR}/wcp-support-bundle.tar"
 # ---------------------------------------------------------------------------
 try_collect_bundle() {
     local trigger_url="$1" token_field="$2"
-    local response http_code body url token dl_tmp dl_http_code
+    local response http_code body url token dl_tmp dl_http_code dl_rc
 
     response=$(curl -sk -w '\n%{http_code}' --max-time 30 -X POST \
         -H "vmware-api-session-id: ${VC_SESSION}" "${trigger_url}")
@@ -183,13 +189,29 @@ try_collect_bundle() {
 
     _log "Downloading WCP support bundle from ${url}..."
     dl_tmp="$(mktemp "${OUTPUT_DIR}/wcp-support-bundle.XXXXXX.tar")"
-    dl_http_code=$(curl -sk -w '%{http_code}' --max-time 600 -X POST \
+    dl_http_code=$(curl -sk -w '%{http_code}' \
+        --max-time "${SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS}" -X POST \
         -H 'Content-Type: application/json' \
         -d "{\"wcp-support-bundle-token\": \"${token}\"}" \
         "${url}" -o "${dl_tmp}")
+    dl_rc=$?
+
+    if (( dl_rc != 0 )); then
+        _warn "Download of support bundle from ${url} failed (curl exit ${dl_rc}, HTTP ${dl_http_code}); discarding partial file"
+        rm -f "${dl_tmp}"
+        return 1
+    fi
 
     if [[ ! -s "${dl_tmp}" ]]; then
         _warn "Downloaded support bundle from ${url} was empty (HTTP ${dl_http_code}); another collection likely won the race"
+        rm -f "${dl_tmp}"
+        return 1
+    fi
+
+    # A complete transfer can still be a damaged archive, so a readable tar
+    # is the real success signal.
+    if ! tar -tf "${dl_tmp}" >/dev/null 2>&1; then
+        _warn "Downloaded support bundle from ${url} is not a complete tar archive; discarding"
         rm -f "${dl_tmp}"
         return 1
     fi

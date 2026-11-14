@@ -15,7 +15,7 @@ Every governable field has one shape. Each shape is a concrete, named Go struct 
 |---|---|---|
 | Number (`Range`) | `min`, `max`, `default` | `default` is required when `min` or `max` is set, and must be within them. An unset bound is open: limited by the hardware, or by a parent class in Milestone 2. A fixed value is `min == max == default`. A wholly absent struct leaves the value to vpxd. |
 | `CountRange` | `min`, `max` | How many items a list, or an entry of it, may hold. No `default`: the default count is the length of the list's `default`. Every field is optional; an unset `count`, `min` or `max` sets no class limit, and the platform's limits still apply. |
-| `EnumPolicy` | `allowed`, `default`, `required` | Unset `allowed` = all values; `[]` = none. `default` is required when `allowed` has more than one value; with one value, that value is the default. A set `default` must be in `allowed`. A VM that omits the field inherits `default`; an explicit `""` means no value; `required: true` rejects an empty value after defaulting. [NEEDS CLARIFICATION: whether `""` means "no value" for every enum field or only for `reservedProfileName`.] |
+| `EnumPolicy` | `allowed`, `default`, `required` | Unset `allowed` = all values; `[]` = none. `default` is required when `allowed` has more than one value; with one value, that value is the default. A set `default` must be in `allowed`. A VM that omits the field inherits `default`; `required: true` rejects an empty value after defaulting. An explicit `""` is not a value unless the field defines one; only `reservedProfileName` does (`""` = no profile), and its VM field is a pointer so `""` stays distinct from unset. Every other planned enum has an explicit value for "off" (`Normal`, `Disabled`, `PerVM`) or always has a value (NIC `type`, shares `level`). |
 | `StringPolicy` | `allowed`, `denied`, `default`, `required` | A free-form string. `allowed` and `denied` are lists of string matchers (below); `denied` is checked first. A set `default` must pass both. `default` and `required` behave as in `EnumPolicy`. |
 | `BoolPolicy` | `allowOverride`, `default` | `allowOverride: false` fixes the value and needs a `default`. Otherwise an unset `default` leaves the value to vpxd. |
 | `ListPolicy` | `count`, `default`, `allowed`, `denied` | See "List policies". |
@@ -60,7 +60,7 @@ One VM list per device type, each item one device with a required, unique `name`
 | Field | Shape | Governs |
 |---|---|---|
 | `count` | `CountRange` | how many NICs; the VM API caps it at 10 |
-| `type` | `EnumPolicy` | `interfaces[].type`; the only SR-IOV control in Milestone 1 (allow or forbid) |
+| `type` | `EnumPolicy`, `allowed` only, no `default` | `interfaces[].type`. The VM's `type` is optional: it stays unset at create, so a v1alpha5 class's ethernet card still applies by position, and the mutation webhook sets `VMXNet3` after the schema upgrade (T024). SR-IOV doesn't ship in Milestone 1 |
 | `default` | one ordered list of VM-shaped NIC items | the VM's NICs when it omits `interfaces` |
 | `vmxnet3` | type key | every NIC whose `type` is `VMXNet3` |
 
@@ -161,7 +161,7 @@ Relation rules, checked on the effective values (after defaulting):
 | Field | Rules |
 |---|---|
 | `spec.resources.{size,requests,limits}` | Same units and relation rules as the class ("Size, requests and limits"). `requests.cpu` and `limits.cpu` change from MHz to cores (millicores allowed) and the CEL rule rejecting the `m` suffix is removed; v1alpha6 has not shipped, so no conversion is needed. |
-| `spec.reservedProfileName` | string. Filled by the mutation webhook from the class's `reservedProfileName.default` (or the governing class's), like any other default; explicit `""` = no profile. Must be in `allowed`. On a class-backed VM it is class-supplied and can't be edited inline; a classless VM sets or inherits it. Can't change from one set value to another while the VM is powered on; vm-operator may set it from unset (schema upgrade). When set, the VM's CPU count, CPU reservation and limit, memory reservation and limit, and device identities, with how many devices have each identity, must equal the profile's; overhead is not compared. vm-operator writes the vCenter profile ID from this field and removes it when the field is empty. |
+| `spec.reservedProfileName` | `*string`. Filled by the mutation webhook from the class's `reservedProfileName.default` (or the governing class's), like any other default; explicit `""` = no profile. Must be in `allowed`. On a class-backed VM it is class-supplied and can't be edited inline; a classless VM sets or inherits it. Can't change from one set value to another while the VM is powered on; vm-operator may set it from unset (schema upgrade). When set, the VM's CPU count, CPU reservation and limit, memory reservation and limit, and device identities, with how many devices have each identity, must equal the profile's; overhead is not compared. vm-operator writes the vCenter profile ID from this field and removes it when the field is empty. |
 | `status.governingClassNames` | The classes governing the VM's zone, computed live. |
 | `conditions[GovernanceCompliant]` | `True`/`False`; reason `NoGoverningClass` when the zone has none (False for classless VMs, True for class-backed VMs). |
 | `spec.resources.shares.{cpu,memory}` | `{level, value}`; `value` only with `level: Custom` (CEL). The provider writes them to `CpuAllocation.Shares` and `MemoryAllocation.Shares`; with no value, `Normal`, as today (replacing the hard-coded `Normal`). |
@@ -193,9 +193,9 @@ A reserved profile is a platform object that holds one VM shape: vCPU count, CPU
 | scalar field `v` | `{min: v, max: v, default: v}` |
 | `hardware.{cpus,memory}` | `resources.size.{cpu,memory}` |
 | `configSpec.version: vmx-N` | `hardware.version: {min: N, default: N}` |
-| `configSpec` CPU and memory allocation shares | `resources.shares.{cpu,memory}` |
+| `configSpec` CPU and memory allocation shares | `resources.shares.{cpu,memory}`: `Normal` for a resource that `policies.resources` sets, as today; otherwise the `configSpec` shares (T027) |
 | `policies.resources.{requests,limits}` | `resources.{requests,limits}` |
-| `configSpec` path that has a typed field | that typed field |
+| `configSpec` path that has a typed field | that typed field, except a `configSpec` CPU allocation in MHz (T023) and NIC settings that differ by position (T024), which stay in `configSpec` as today |
 | (none) | `externalID` = name; `zones` unset |
 | `reservedProfileID: X` | `reservedProfileName: {default: X, allowed: [X], required: true}` |
 | `reservedSlots` | `reservedSlots`, unchanged, including zero |

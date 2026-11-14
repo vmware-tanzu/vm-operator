@@ -275,15 +275,14 @@ vm-operator runs on a Supervisor whose provider supplies the pieces below. vm-op
 
 ## Open questions
 
-- [NEEDS CLARIFICATION: Who rejects an association zone outside the namespace or the class.] The class in `vmware-system-vmop` carries `spec.zones` and `governs.zones`, the association only narrows them, and its `status.zones` covers its `spec.zones`.
+- [NEEDS CLARIFICATION: How an association zone outside the namespace or the class is handled (T010). Proposed: reported per zone in `status.zones[]` instead of rejected, because a zone can leave the namespace or the class after the association is written.] The class in `vmware-system-vmop` carries `spec.zones` and `governs.zones`, the association only narrows them, and its `status.zones` covers its `spec.zones`.
 - [NEEDS CLARIFICATION: Agreement from the owner of the VM PCI device design (WIKI page 2477879529, vmop-3791) on one VM list per device type instead of one `pciDevices` union, and on its status list, `unitNumber` assignment across the lists, and the 128-device cap across them (model.md, "Devices").]
 - [NEEDS CLARIFICATION: Confirmation from its owners that the zone's unreserved-DirectPath setting applies to classless VMs and non-reserved classes with devices.] Working assumption: it does.
 - [NEEDS CLARIFICATION: Reserved capacity: RP3 profiles not tied to a class and how VCFA discovers them; RP8 read access to reservations for a later per-zone status.] Findings in WIKI page 3118085468.
-- [NEEDS CLARIFICATION: Whether an explicit `""` means "no value" for every enum field, as it does for `reservedProfileName`.]
-- [NEEDS CLARIFICATION: Number fields where a bound has no meaningful default (shares `value`, NIC `vnumaNodeID`): whether their `Range` makes `default` optional, against the number rule (T002).]
+- [NEEDS CLARIFICATION: Number fields where a bound has no meaningful default (shares `value`, NIC `vnumaNodeID`): whether their `Range` makes `default` optional, against the number rule (T002). Decided when T104 and T120 are implemented (T021).]
 - Provider-side open items (platform behavior on a changed profile or a resize, profile naming across Supervisors, external readers of `reservedSlots`, the class API generator, namespace-copy sign-off, default classes, the vpxd config field drift check) are tracked in the provider's spec; vm-operator tasks that depend on them say so.
 - [NEEDS CLARIFICATION: Milestone 2: whether a child's branches need one `existingVMs` answer when a VM satisfies none of them.]
-- [NEEDS CLARIFICATION: Upgrade path (research.md, Finding 12): when cores are resolved to MHz (T022), conversion of a class's MHz CPU allocation (T023) and per-NIC settings (T024), down-conversion for older readers (T025), class-supplied fields after the backfill (T026), and shares conversion (T027).]
+- [NEEDS CLARIFICATION: CPU cores to MHz (research.md, Finding 12): which frequency the provider uses and when it resolves, so a frequency change doesn't reconfigure existing VMs. Decided when vmop-4481 is implemented (T022).]
 
 ---
 

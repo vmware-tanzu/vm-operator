@@ -43,6 +43,12 @@ OUTPUT_DIR="${RESULTSDIR:-/tmp/support-bundles}"
 SUPPORT_BUNDLE_RETRY_ATTEMPTS="${SUPPORT_BUNDLE_RETRY_ATTEMPTS:-30}"
 SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS="${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS:-30}"
 
+# The bundle is generated and streamed within the same download request, so
+# this cap must cover generation plus transfer. Generation alone takes ~9
+# minutes on a small testbed and longer with more hosts; a 600s cap was
+# observed to truncate the stream mid-transfer.
+SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS="${SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS:-1800}"
+
 usage() {
     cat >&2 <<EOF
 Usage: ${SCRIPT_NAME} [OPTIONS]
@@ -153,6 +159,9 @@ if [[ "${_vc_session_http}" != "20"* || -z "${VC_SESSION}" || "${VC_SESSION}" ==
 fi
 
 OUT_FILE="${OUTPUT_DIR}/wcp-support-bundle.tar"
+# A failed download may still have streamed a useful prefix of the archive,
+# so it is kept here (overwritten by each failed attempt) rather than deleted.
+PARTIAL_FILE="${OUTPUT_DIR}/wcp-support-bundle.partial.tar"
 
 # ---------------------------------------------------------------------------
 # Request a bundle and download it, in one attempt. A losing request in the
@@ -162,7 +171,7 @@ OUT_FILE="${OUTPUT_DIR}/wcp-support-bundle.tar"
 # ---------------------------------------------------------------------------
 try_collect_bundle() {
     local trigger_url="$1" token_field="$2"
-    local response http_code body url token dl_tmp dl_http_code
+    local response http_code body url token dl_tmp dl_http_code dl_rc
 
     response=$(curl -sk -w '\n%{http_code}' --max-time 30 -X POST \
         -H "vmware-api-session-id: ${VC_SESSION}" "${trigger_url}")
@@ -183,14 +192,28 @@ try_collect_bundle() {
 
     _log "Downloading WCP support bundle from ${url}..."
     dl_tmp="$(mktemp "${OUTPUT_DIR}/wcp-support-bundle.XXXXXX.tar")"
-    dl_http_code=$(curl -sk -w '%{http_code}' --max-time 600 -X POST \
+    dl_http_code=$(curl -sk -w '%{http_code}' \
+        --max-time "${SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS}" -X POST \
         -H 'Content-Type: application/json' \
         -d "{\"wcp-support-bundle-token\": \"${token}\"}" \
         "${url}" -o "${dl_tmp}")
+    dl_rc=$?
 
     if [[ ! -s "${dl_tmp}" ]]; then
-        _warn "Downloaded support bundle from ${url} was empty (HTTP ${dl_http_code}); another collection likely won the race"
+        if (( dl_rc != 0 )); then
+            _warn "Download of support bundle from ${url} failed (curl exit ${dl_rc}, HTTP ${dl_http_code}) with no data"
+        else
+            _warn "Downloaded support bundle from ${url} was empty (HTTP ${dl_http_code}); another collection likely won the race"
+        fi
         rm -f "${dl_tmp}"
+        return 1
+    fi
+
+    # Only a complete transfer that reads back as a tar counts as success.
+    if (( dl_rc != 0 )) || ! tar -tf "${dl_tmp}" >/dev/null 2>&1; then
+        _warn "Support bundle from ${url} is incomplete (curl exit ${dl_rc}, HTTP ${dl_http_code}); keeping partial copy at ${PARTIAL_FILE}"
+        mv -f "${dl_tmp}" "${PARTIAL_FILE}"
+        chmod 644 "${PARTIAL_FILE}"
         return 1
     fi
 

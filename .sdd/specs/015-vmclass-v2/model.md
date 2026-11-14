@@ -33,16 +33,16 @@ A `ListPolicy` governs a VM list of independent items.
 - **`count`** at the list level bounds the number of items; on an entry, the number of items that entry governs. Every item counts as 1. Required items are expressed only through `count.min`.
 - **Where checked.** CEL: `size(default)` within the list-level `count`, and unique keys in `default`. Class webhook (Go), because CEL can't evaluate globs: matcher syntax; every `default` item is not denied, is governed by an `allowed` entry, fits that entry's `count` and its field policies. The webhook also warns when an entry can never govern an item because an earlier entry matches everything it matches.
 
-Field policies sit where the matching happens: on `allowed` entries for lists whose items have a governed key field (devices, extraConfig, `advancedProperties`). NIC types have no governed key field, so NIC policies sit on a type key instead ("Network interfaces").
+Field policies sit where the matching happens: on `allowed` entries for lists whose items have a governed key field (devices, extraConfig, `advancedProperties`); an extraConfig entry's `value` policy governs the value of the keys it matches. NIC types have no governed key field, so NIC policies sit on a type key instead ("Network interfaces").
 
 A collection field's shape follows what its value is. A collection of independent items, each of which can be added or removed on its own, is a `ListPolicy` (`advanced.extraConfig`, devices). A collection that is one setting, whose meaning changes when any member changes, is a `SetPolicy`. The admin chooses the approved sets.
 
 | Collection | Shape | Milestone |
 |---|---|---|
-| `advanced.extraConfig` | `ListPolicy`; key `key` | 1 |
+| `advanced.extraConfig` | `ListPolicy`; key `key`; entry field policies: `value` (`StringPolicy`), so a class can restrict the value of an allowed key | 1 |
 | `hardware.vGPUs` | `ListPolicy`; key `profileName`; entry field policies: `enableUVM` (`BoolPolicy`) | 1 |
 | `hardware.dynamicDirectPathIODevices` | `ListPolicy`; key `vendorID` + `deviceID`. `customLabel` is passed through to the device backing; it is not a key and not governed. | 1 |
-| `hardware.pciDeviceGroups` | `ListPolicy`; key `vendorGroupName` | 1 |
+| `hardware.pciDeviceGroups` | `ListPolicy`; key `vendorGroupName` | Deferred (vmop-4485) |
 | `network.interfaces` | Typed list (see "Network interfaces") | 1 |
 | `advanced.pnumaNodeAffinity` | `Int32SetPolicy` of node IDs, e.g. `{default: [0,1], allowed: [{members: [0,1]}, {members: [2,3]}], required: true}`. Unset `allowed` = any set of valid node IDs; `required: false` permits an explicit `[]` (no pinning). Each node ID is checked against `ConfigTarget.numNumaNodes`. | 1 |
 | `hardware.cpuFeatureMask` | Preset of the top class only in Milestone 1 (no VM field, so nothing below it to govern); checked against config options `cpuFeatureMaskSupported`. [NEEDS CLARIFICATION: shape for Milestone 2 child classes. Each CPUID leaf's mask is one setting, but the leaves are independent items.] | 2 |
@@ -51,7 +51,7 @@ There is no total across device types: no use case needs one.
 
 ### Devices
 
-One VM list per device type, each item one device with a required, unique `name`: `hardware.vGPUs[]` and `hardware.dynamicDirectPathIODevices[]`, plus `hardware.pciDeviceGroups[]` for vendor device groups. An item has no `count`; two GPUs of one profile are two items. Per-device fields (the PCI slot `unitNumber`, `deviceGroup`, `enableUVM`, `advancedProperties`) sit on each item. The class mirrors each list at the same path. The VM lists come from the VM PCI device design (WIKI page 2477879529, vmop-3791), which proposes one `pciDevices` union instead; this spec asks for one list per type (research.md, Finding 8). [NEEDS CLARIFICATION: agreement on per-type lists with vmop-3791's owner, including per-type or one status list, `unitNumber` assignment by the mutation webhook from the PCI passthrough slot space shared across the lists (and SR-IOV NICs), unit-number uniqueness and the 128-device cap across lists.] A per-type `default` loses nothing because the mutation webhook assigns `unitNumber`, so the order between types doesn't decide PCI slots.
+One VM list per device type, each item one device with a required, unique `name`: `hardware.vGPUs[]` and `hardware.dynamicDirectPathIODevices[]`. Vendor device groups (`hardware.pciDeviceGroups[]`, keyed by `vendorGroupName`) are deferred (vmop-4485). An item has no `count`; two GPUs of one profile are two items. Per-device fields (the PCI slot `unitNumber`, `enableUVM`, `advancedProperties`; `deviceGroup` with the deferred device groups) sit on each item. The class mirrors each list at the same path. The VM lists come from the VM PCI device design (WIKI page 2477879529, vmop-3791), which proposes one `pciDevices` union instead; this spec asks for one list per type (research.md, Finding 8). [NEEDS CLARIFICATION: agreement on per-type lists with vmop-3791's owner, including per-type or one status list, `unitNumber` assignment by the mutation webhook from the PCI passthrough slot space shared across the lists (and SR-IOV NICs), unit-number uniqueness and the 128-device cap across lists.] A per-type `default` loses nothing because the mutation webhook assigns `unitNumber`, so the order between types doesn't decide PCI slots.
 
 ### Network interfaces
 
@@ -86,7 +86,7 @@ Every other interface field is a per-VM input and not governed: `name`, `guestDe
 |---|---|---|---|
 | Dynamic DirectPath I/O | ConfigTarget `dynamicPassthroughDevices[]`: `vendorID`, `deviceID` (+ `vendorName`, `deviceName`, `customLabel`) | `vendorID`, `deviceID` | `name`, `vendorID`, `deviceID`, `customLabel`, per-device fields |
 | vGPU | ConfigTarget `vgpuProfile[]`: `profileName` (+ display fields) | `profileName` | `name`, `profileName`, `enableUVM`, per-device fields |
-| Device group | config options `deviceGroupTypes`: `vendorGroupName` | `vendorGroupName` | `name`, `vendorGroupName` |
+| Device group (deferred, vmop-4485) | config options `deviceGroupTypes`: `vendorGroupName` | `vendorGroupName` | `name`, `vendorGroupName` |
 | pNUMA node | ConfigTarget `numNumaNodes` (IDs 0..n-1) | node ID | `pnumaNodeAffinity []int32` |
 
 **Mapping to VM fields.** Each class policy governs the VM field at the same path, with two named exceptions: the flattened fields under a NIC type key (above), and `hardware.version`, which governs the VM's actual hardware version rather than its `spec.minHardwareVersion` ("Hardware version"). One reflection-based evaluator applies every policy; a schema test pairs each class policy with exactly one VM field and reserves `count`, `default`, `allowed`, `denied` and `type`.
@@ -108,7 +108,7 @@ Every other interface field is a per-VM input and not governed: `name`, `guestDe
 | `resources.shares.{cpu,memory}` | `{level: EnumPolicy, value: Number}` | Same path and shape as the VM's `spec.resources.shares`. `level` is `Low`, `Normal`, `High` or `Custom`; `value` is the custom share count, allowed only when `level` can be `Custom` (CEL on the class defaults and on the VM). [NEEDS CLARIFICATION: the number rule requires a `default` whenever `value` has a bound, so a class can't default to `Normal` while bounding custom values (T021).] Milestone 1 checks `value > 0` and leaves the upper bound to vCenter (`ResourcePool.QueryResourceConfigOption`, not in the environment-browser objects). |
 | `cpuAdvanced.*`, `memoryAdvanced.*`, `bootOptions.*`, `advanced.*` | per field | Same paths as `VirtualMachine.spec`, for fields the VM spec has. `bootOptions.firmware`: an image that declares firmware wins over the class default, as today, and must be in `allowed`; a VM value still wins over the image. `bootOptions.networkBootProtocol`: `allowed` only, no class default, because the VM API defaults it to `IP4`. `enterBootSetup` is a one-time request and not a class setting. `cpuAdvanced.topology.exposeVnumaOnCpuHotadd` stays in `configSpec` until the VM has the field [NEEDS CLARIFICATION: whether the observed value is the setting or the effective state]. |
 | `advanced.extraConfig` | `ListPolicy` | At the VM's path. |
-| `hardware.{vGPUs,dynamicDirectPathIODevices,pciDeviceGroups}` | `ListPolicy` | At the VM's paths. See "Devices". |
+| `hardware.{vGPUs,dynamicDirectPathIODevices}` | `ListPolicy` | At the VM's paths. See "Devices"; device groups are deferred (vmop-4485). |
 | `network.interfaces` | typed list | At the VM's path. See "Network interfaces". |
 | `hardware.*` | per field | Settings that aren't in the VM spec but are exposed or checked. |
 | `hardware.version` | Number (`int32`) | See "Hardware version". |
@@ -165,7 +165,7 @@ Relation rules, checked on the effective values (after defaulting):
 | `status.governingClassNames` | The classes governing the VM's zone, computed live. |
 | `conditions[GovernanceCompliant]` | `True`/`False`; reason `NoGoverningClass` when the zone has none (False for classless VMs, True for class-backed VMs). |
 | `spec.resources.shares.{cpu,memory}` | `{level, value}`; `value` only with `level: Custom` (CEL). The provider writes them to `CpuAllocation.Shares` and `MemoryAllocation.Shares`; with no value, `Normal`, as today (replacing the hard-coded `Normal`). |
-| `spec.hardware.{vGPUs,dynamicDirectPathIODevices,pciDeviceGroups}` | Per-type device lists (see "Devices"); defined with vmop-3791. |
+| `spec.hardware.{vGPUs,dynamicDirectPathIODevices}` | Per-type device lists (device groups deferred, vmop-4485) (see "Devices"); defined with vmop-3791. |
 | `spec.network.interfaces[]` | Unchanged; governed by the class's `network.interfaces` (see "Network interfaces"). |
 | observed status fields | firmware, change block tracking, SEV, SEV-SNP, TDX, CPU hot-remove, SMC, DirectPath I/O devices. CPU `reservationLockedToMax` and NUMA fixed auto-affinity are added with the vmx-23 fields below. |
 

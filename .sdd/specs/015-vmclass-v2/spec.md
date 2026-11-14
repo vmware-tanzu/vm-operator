@@ -74,7 +74,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 
 1. **Given** a class `flex` with `governs: {existingVMs: AllowOnViolation}` and `spec.zones: [zone-a]`, **when** a classless VM in `zone-a` requests more CPU than `flex`'s `max`, **then** it is rejected, naming the field.
 2. **Given** the same class, **when** a VM that names another class in `zone-a` gets values outside `flex`'s ranges, **then** it is rejected.
-3. **Given** a governing class with `advanced.extraConfig.denied: [{key: "guestinfo.*"}]`, **when** a VM sets `guestinfo.foo`, **then** it is rejected.
+3. **Given** a governing class with `advanced.extraConfig.denied: [{key: "guestinfo.*"}]`, **when** a VM sets `guestinfo.foo`, **then** it is rejected; **given** an `allowed` entry `{key: "sched.cpu.affinity", value: {allowed: ["0-3"]}}`, **when** a VM sets that key to another value, **then** it is rejected.
 4. **Given** a class already governs `zone-a`, **when** a second class is written so that it also governs `zone-a`, **then** the write is rejected. [NEEDS CLARIFICATION: implementation (T028): a concurrent write can't be rejected reliably, so whether to accept the second class with a warning, report it, and honor the newest first.] Either way, a VM in `zone-a` is admitted when it fully satisfies at least one of the governing classes.
 5. **Given** a governing class in `zone-a`, **when** a selectable class available in `zone-a` is written with a range outside the governing class's range, **then** the write is rejected.
 6. **Given** a governing class is narrowed after a selectable class was admitted, **when** the class controller reconciles, **then** the selectable class reports `WithinGovernance=False` for that zone and is not otherwise changed.

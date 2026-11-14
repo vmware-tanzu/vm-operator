@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/net/proxy"
 	"k8s.io/apimachinery/pkg/util/wait"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 
@@ -26,6 +27,10 @@ import (
 const (
 	sshRetryDuration = time.Minute
 	sshRetryInterval = 5 * time.Second
+
+	// sshHandshakeTimeout bounds the TCP connect and SSH handshake of a single
+	// dial attempt.
+	sshHandshakeTimeout = 30 * time.Second
 )
 
 // SSHCommandRunner knows how to run SSH commands on an arbitrary host. This is
@@ -73,6 +78,7 @@ func newClientConfig(user string, authMethods []ssh.AuthMethod) *ssh.ClientConfi
 		User:            user,
 		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         sshHandshakeTimeout,
 	}
 }
 
@@ -87,7 +93,7 @@ func newSSHDialerWithRetries(hostname string, port int, config *ssh.ClientConfig
 	addr := net.JoinHostPort(hostname, strconv.Itoa(port))
 
 	pollErr := wait.PollUntilContextTimeout(context.Background(), interval, timeout, true, func(context.Context) (bool, error) {
-		newClient, lastErr = ssh.Dial("tcp", addr, config)
+		newClient, lastErr = dialSSH(addr, config)
 		return lastErr == nil, nil
 	})
 	if lastErr != nil {
@@ -98,6 +104,34 @@ func newSSHDialerWithRetries(hostname string, port int, config *ssh.ClientConfig
 	}
 
 	return newClient, nil
+}
+
+// dialSSH opens an SSH connection to addr. The TCP connection honors the
+// ALL_PROXY / NO_PROXY environment variables (via proxy.FromEnvironment), so in
+// an isolated testbed, where ALL_PROXY=socks5h://127.0.0.1:<port> points at a
+// tunnel through the jumphost, the vCenter and Supervisor become reachable. With
+// no ALL_PROXY set this is a plain direct TCP dial.
+func dialSSH(addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	conn, err := proxy.FromEnvironment().Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Bound the handshake so a proxy that accepts the connection but never
+	// completes it cannot hang the caller forever.
+	if config.Timeout > 0 {
+		_ = conn.SetDeadline(time.Now().Add(config.Timeout))
+	}
+
+	ncc, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
+	_ = conn.SetDeadline(time.Time{})
+
+	return ssh.NewClient(ncc, chans, reqs), nil
 }
 
 // NewSSHCommandRunner returns a helper configured with the given host, for the given username and auth methods.
@@ -181,24 +215,47 @@ func (s *sshCommandRunnerImpl) Close() error {
 	return errors.Join(errs...)
 }
 
-func GetGateway() (*Gateway, error) {
+// GetGatewayHost returns the host of the SSH gateway VM (the external gateway
+// that fronts guest VMs). GATEWAY_IP is authoritative. For backwards
+// compatibility it falls back to the host of HTTP_PROXY, which on a normal
+// testbed is the same gateway running Squid. HTTP_PROXY is never used when it
+// is a URL with a scheme (e.g. socks5h://127.0.0.1:1080 in an isolated
+// testbed), since that is a proxy address, not the gateway.
+func GetGatewayHost() (string, error) {
+	if ip := strings.TrimSpace(os.Getenv(consts.GatewayIPEnv)); ip != "" {
+		return ip, nil
+	}
+
 	httpProxy := os.Getenv(consts.HTTPProxyEnv)
 	if httpProxy == "" {
-		return nil, errors.New("HTTP_PROXY environment variable should be set")
+		return "", fmt.Errorf("%s or %s environment variable should be set",
+			consts.GatewayIPEnv, consts.HTTPProxyEnv)
+	}
+
+	if strings.Contains(httpProxy, "://") {
+		return "", fmt.Errorf("%s=%q is a proxy URL, not a gateway address; set %s",
+			consts.HTTPProxyEnv, httpProxy, consts.GatewayIPEnv)
 	}
 
 	parsedURL, err := url.Parse("http://" + httpProxy)
 	if err != nil {
+		return "", err
+	}
+
+	return parsedURL.Hostname(), nil
+}
+
+// GetGateway returns the SSH gateway VM identity. See GetGatewayHost.
+func GetGateway() (*Gateway, error) {
+	host, err := GetGatewayHost()
+	if err != nil {
 		return nil, err
 	}
 
-	gatewayIP := parsedURL.Hostname()
-	gw := &Gateway{
-		Hostname:    gatewayIP,
+	return &Gateway{
+		Hostname:    host,
 		Username:    testbed.GatewayUsername,
 		Port:        consts.SshPort,
 		AuthMethods: []ssh.AuthMethod{ssh.Password(testbed.GatewayPassword)},
-	}
-
-	return gw, nil
+	}, nil
 }

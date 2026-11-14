@@ -18,6 +18,7 @@ const (
 	VMServiceCLName = "vmservice"
 
 	HTTPProxyEnv          = "HTTP_PROXY"
+	GatewayIPEnv          = "GATEWAY_IP"
 	DefaultVMUserName     = "vmware"
 	DefaultVMPassword     = "Admin!23"
 	AllowTCPForwardingKey = "AllowTcpForwarding"

@@ -294,6 +294,31 @@ By("Debug checkpoint: VM creation")
 framework.Logf("VM status: %+v", vm.Status)
 ```
 
+### Isolated testbeds (`hack/e2e/isolated.sh`)
+
+On an isolated Nimbus testbed the vCenter, Supervisor, and ESXi hosts sit on a private network that is only reachable through a single perimeter jumphost. The runner needs no privileged routing, `sshuttle`, or `CAP_NET_ADMIN`, and works as an arbitrary unprivileged UID. `setup-testbed-env.sh` detects an isolated testbed (the testbed JSON carries `isolatedNetworkOptions`, top-level or under `testbed_spec`, whether it is a direct `testbedInfo.json` or a UTS `deliverable_blob`) and, before the first vCenter call:
+
+1. Discovers the jumphost (the `network[]` entry with a `gateway` and `username`; this is distinct from the in-testbed external gateway VM that fronts guest workloads).
+2. Opens one authenticated SSH ControlMaster to the jumphost that also serves a SOCKS5 listener on a free local port. A background supervisor relaunches the master (same socket, port, and forwards) if the connection drops, so the exported environment stays valid; in-flight connections are lost across a reconnect, a silently dead link is noticed after about 45 seconds (`ServerAliveInterval`), and the supervisor gives up (and the failure is visible in `supervisor.log` in the state directory) after 5 consecutive failures to stay up.
+3. Exports `ALL_PROXY=socks5h://127.0.0.1:<port>` (used by the Go SSH dialer, `curl`, and `govc`) and `E2E_SSH_CONFIG`, an ssh_config that multiplexes `ssh`/`scp` to private hosts over the master (`ProxyCommand ssh -W`).
+4. Discovers the external gateway VM on the isolated management network (`networkPrefix`) and exports its identity as `GATEWAY_IP`/`GATEWAY_VM_*`. In isolated mode `HTTP_PROXY` is the SOCKS tunnel, never the gateway.
+5. After Squid is installed on the external gateway, forwards a local port on the master to it and points `HTTP(S)_PROXY` at `http://127.0.0.1:<port>`. This is needed because `kubectl exec`/`attach`/`port-forward` reject a `socks5h://` proxy over both WebSocket and SPDY ("unknown scheme" / "proxy URL scheme not supported"), while an HTTP CONNECT proxy carries them. If the forward cannot be verified, setup warns that streaming will not work and leaves `HTTP(S)_PROXY` on SOCKS (REST still works).
+
+The tunnel lives in a per-run `/tmp/e2e-iso.*` directory and on a dynamic port, and no files outside that directory (no `~/.ssh/config`) are written, so concurrent runs do not interfere. `run-e2e.sh` keeps the tunnel up through support-bundle collection and the result callback. In the pipeline (`TEST_CALLBACK_URL` set) it then stops the tunnel, also on interrupt. For local runs the tunnel is left up so several `make e2e-*` targets can share it; set `E2E_STOP_TUNNEL=true` to stop it after a run, or stop it by hand with `E2E_ISOLATED_STATE_DIR=/tmp/e2e-iso.XXXXXX ./hack/e2e/isolated.sh stop`. A failed setup always stops its tunnel (after reporting the failure callback).
+
+Required connectivity failures (jumphost login, tunnel to vCenter) stop setup with a message. Ordinary testbeds are unaffected.
+
+| Variable | Purpose |
+|----------|---------|
+| `E2E_ISOLATED` | `true`/`false` forces isolated mode on or off instead of auto-detecting it |
+| `E2E_STOP_TUNNEL` | `true` stops the tunnel when `run-e2e.sh` exits (default on when `TEST_CALLBACK_URL` is set) |
+| `E2E_JUMPHOST_IP`, `E2E_JUMPHOST_USERNAME`, `E2E_JUMPHOST_PASSWORD` | Override the jumphost found in the testbed JSON |
+| `PIP_INDEX_URL` | PyPI mirror reachable from the gateway VM, e.g. `https://packages.vcfd.broadcom.net/artifactory/api/pypi/pypi-virtual/simple`. External PyPI is blocked at the corporate firewall, so without this (or a dedicated PyKMIP VM) the `gce2e-standard` KMIP provider is skipped on an isolated testbed and only `gce2e-native` is configured |
+
+Verified on an isolated VDS testbed: `kubectl exec` (WebSocket and SPDY, with `-it`, stdin, and multi-MB output), `logs -f`, and `port-forward` work through the proxy forward, and killing the master (`kill -9`) recovers SOCKS, `exec`, and shell `ssh` within a few seconds. With that mirror set, PyKMIP installs on the isolated gateway and `gce2e-standard` and `gce2e-native` both go green.
+
+Known limits: `NO_PROXY` bypasses `.broadcom.net` and `.vmware.com`; Veeam appliance-to-vCenter/ESXi reachability is a separate network prerequisite that the runner tunnel does not provide; Packer and NSX/VPC isolated runs have not yet been validated.
+
 ### Encryption Key Provider Setup (`hack/e2e/kms.sh`)
 
 `setup-testbed-env.sh --e2e` runs `hack/e2e/kms.sh` to register the `gce2e-native` and `gce2e-standard` key providers in vCenter. `gce2e-standard` needs an external PyKMIP server: the testbed's dedicated PyKMIP server if there is one, otherwise the gateway VM. `kms.sh install` configures both providers; `kms.sh setup` configures only `gce2e-native`, and is used when no PyKMIP server can be set up.

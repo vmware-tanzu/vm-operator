@@ -31,6 +31,11 @@ GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-}"
 # the password, which causes "Too many authentication failures" when the
 # agent holds several keys and the server's MaxAuthTries is low.
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password"
+# Isolated testbeds: hop through the jumphost via the ssh_config that
+# setup-testbed-env.sh/isolated.sh wrote (no-op otherwise).
+if [[ -n "${E2E_SSH_CONFIG:-}" ]]; then
+	SSH_OPTS="-F ${E2E_SSH_CONFIG} ${SSH_OPTS}"
+fi
 
 
 find_gateway_vm_path() {
@@ -65,8 +70,9 @@ find_gateway_ip() {
 			echo "$i" | grepcidr "$mgmtCidr" || true
 		else
 			# fallback: accept any non-link-local IP that starts with a '10.' prefix
-			# (the management network uses 10.0.0.0/8 in standard testbeds)
-			echo "$i" | grep -v "^169\.254\." | grep "^10\." || true
+			# (the management network uses 10.0.0.0/8 in standard testbeds; isolated
+			# testbeds override the prefix via E2E_MGMT_IP_PREFIX)
+			echo "$i" | grep -v "^169\.254\." | grep "^$(printf '%s' "${E2E_MGMT_IP_PREFIX:-10.}" | sed 's/\./\\./g')" || true
 		fi
 	done
 }

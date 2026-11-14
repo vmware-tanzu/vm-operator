@@ -103,6 +103,13 @@ if [[ -n "${_CALLBACK_SCRIPT_DIR}" ]]; then
     source "${_CALLBACK_SCRIPT_DIR}/callback.sh"
 fi
 
+# Isolated testbed connectivity (jumphost discovery, SOCKS/SSH tunnel). Sourced
+# unconditionally but inert unless the testbed is isolated.
+if [[ -n "${_CALLBACK_SCRIPT_DIR}" && -f "${_CALLBACK_SCRIPT_DIR}/isolated.sh" ]]; then
+    # shellcheck source=./isolated.sh
+    source "${_CALLBACK_SCRIPT_DIR}/isolated.sh"
+fi
+
 # _report_setup_failure reports the most recent _err message as a "Failed"
 # callback. Setup failures happen before run-e2e.sh ever runs (the two are
 # chained with "&&" in the E2E container's entrypoint), so without this the
@@ -111,6 +118,11 @@ _report_setup_failure() {
     if declare -F report_callback >/dev/null 2>&1; then
         report_callback "Failed" "${_LAST_ERR}"
     fi
+    # A failed setup never reaches run-e2e.sh, which would otherwise own the
+    # tunnel teardown, so release the jumphost tunnel here. This is done after
+    # the callback, which may itself be sent through the tunnel.
+    declare -F _iso_stop_tunnel >/dev/null 2>&1 && _iso_stop_tunnel
+    return 0
 }
 
 # _retry_with_backoff <max_attempts> <initial_delay_seconds> <description> <cmd> [args...]
@@ -379,6 +391,50 @@ _decrypt_wcp_credentials() {
 }
 
 # ---------------------------------------------------------------------------
+# _ensure_sshpass
+#
+# Installs sshpass when missing. Must run before the first SSH connection,
+# including the isolated-testbed jumphost tunnel.
+# ---------------------------------------------------------------------------
+_ensure_sshpass() {
+    command -v sshpass >/dev/null 2>&1 && return 0
+    _log "sshpass not found — attempting to install..."
+    if command -v apt-get >/dev/null 2>&1; then
+        { apt-get update -qq && apt-get install -y -qq sshpass; } >&2
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y -q sshpass >&2
+    else
+        _warn "sshpass unavailable and no recognised package manager found; SSH-based setup may fail"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# _setup_isolated_connectivity
+#
+# When the testbed is isolated, brings up the jumphost tunnel (see isolated.sh)
+# before anything touches vCenter, and routes every later ssh/scp through it.
+# A no-op on ordinary testbeds. Required: failure stops setup.
+# Reads: testbed_info, vc_url. Sets: mgmt_ip_prefix, mgmt_cidr.
+# ---------------------------------------------------------------------------
+_setup_isolated_connectivity() {
+    mgmt_ip_prefix="10." mgmt_cidr="10.0.0.0/8"
+    _iso_is_isolated "${testbed_info}" || _iso_is_isolated "${testbed_data}" || return 0
+
+    _log "Isolated testbed detected"
+    local iso_jump_ip iso_jump_user iso_jump_password
+    _iso_parse_jumphost "${testbed_info}" || return 1
+    _ensure_sshpass
+    _iso_start_tunnel "${vc_url}" || return 1
+    _SSH_OPTS+=(-F "${E2E_SSH_CONFIG}")
+
+    local net
+    net="$(_iso_mgmt_network "${testbed_info}" "${vc_url}")"
+    mgmt_ip_prefix="${net%% *}" mgmt_cidr="${net##* }"
+    _export E2E_MGMT_IP_PREFIX "${mgmt_ip_prefix}"
+    _export E2E_MGMT_CIDR      "${mgmt_cidr}"
+}
+
+# ---------------------------------------------------------------------------
 # _fetch_supervisor_access <enable_e2e>
 #
 # SSHes to vCenter to run decryptK8Pwd.py, downloads the supervisor kubeconfig,
@@ -391,16 +447,7 @@ _fetch_supervisor_access() {
 
     _log "Retrieving WCP/Supervisor cluster credentials..."
 
-    if ! command -v sshpass >/dev/null 2>&1; then
-        _log "sshpass not found — attempting to install..."
-        if command -v apt-get >/dev/null 2>&1; then
-            { apt-get update -qq && apt-get install -y -qq sshpass; } >&2
-        elif command -v yum >/dev/null 2>&1; then
-            yum install -y -q sshpass >&2
-        else
-            _warn "sshpass unavailable and no recognised package manager found; WCP credential extraction may fail"
-        fi
-    fi
+    _ensure_sshpass
 
     local wcp_raw=""
     if ! _retry_with_backoff "${_DECRYPT_RETRY_ATTEMPTS}" "${_DECRYPT_RETRY_INITIAL_DELAY}" \
@@ -604,7 +651,8 @@ _setup_kms_providers() {
 # ---------------------------------------------------------------------------
 _setup_gateway_and_proxy() {
     local -r script_dir="$1"
-    local -r mgmt_cidr='10.0.0.0/8'
+    # mgmt_cidr / mgmt_ip_prefix come from _main (dynamic scoping): 10.0.0.0/8
+    # normally, the isolated network's /24 on an isolated testbed.
 
     if ! command -v govc >/dev/null 2>&1; then
         _warn "Skipping gateway/proxy and KMS setup: govc not found in PATH"
@@ -633,7 +681,7 @@ _setup_gateway_and_proxy() {
     local gateway_ip
     gateway_ip=$(GOVC_USERNAME="${vc_vim_username}" GOVC_PASSWORD="${vc_vim_password}" \
         "${script_dir}/proxy.sh" gateway "${vc_url}" "${mgmt_cidr}" 2>&1 \
-        | grep "^10\." | head -1 || true)
+        | grep "^${mgmt_ip_prefix//./\\.}" | grep -E "^[0-9.]+$" | head -1 || true)
 
     if [[ -z "${gateway_ip:-}" || "${gateway_ip}" == "null" ]]; then
         _warn "Could not find gateway VM (may not be a VDS testbed)"
@@ -682,17 +730,39 @@ _setup_gateway_and_proxy() {
     # IP for direct SSH (port 22) — they do not connect through squid (3128).
     # The runner's subnet is firewalled from 3128 even when squid is healthy,
     # so gating on nc to 3128 would give false negatives.
-    local no_proxy_val="localhost,127.0.0.1,${vc_url},${SUPERVISOR_CLUSTER_IP:-}"
-    _export HTTP_PROXY          "${gateway_ip}:3128"
-    _export HTTPS_PROXY         "${gateway_ip}:3128"
-    _export NO_PROXY            "${no_proxy_val}"
-    _export no_proxy            "${no_proxy_val}"
+    if [[ "${E2E_ISOLATED:-}" == "true" ]]; then
+        # Isolated: the runner already reaches everything through the jumphost
+        # tunnel (ALL_PROXY/NO_PROXY set by isolated.sh), so the gateway is not
+        # used as the proxy address. GATEWAY_IP is the SSH identity of the
+        # external gateway VM (guest access).
+        # HTTP clients need an HTTP CONNECT proxy for Kubernetes streaming
+        # (exec/attach/port-forward), which SOCKS cannot carry. Reuse the Squid
+        # just installed on the gateway via a forward on the tunnel.
+        if ! _iso_add_http_proxy "${gateway_ip}" 3128 "${vc_url}"; then
+            _warn "Isolated: kubectl exec/attach/port-forward will NOT work (HTTP(S)_PROXY stays ${HTTPS_PROXY:-unset}); REST calls still do"
+        fi
+    else
+        local no_proxy_val="localhost,127.0.0.1,${vc_url},${SUPERVISOR_CLUSTER_IP:-}"
+        _export HTTP_PROXY          "${gateway_ip}:3128"
+        _export HTTPS_PROXY         "${gateway_ip}:3128"
+        _export NO_PROXY            "${no_proxy_val}"
+        _export no_proxy            "${no_proxy_val}"
+        _log "✓ HTTP_PROXY=${gateway_ip}:3128  NO_PROXY=${no_proxy_val}"
+    fi
     _export GATEWAY_IP          "${gateway_ip}"
     _export GATEWAY_VM_USERNAME "${GATEWAY_VM_USERNAME:-root}"
     _export GATEWAY_VM_PASSWORD "${_gw_password}"
-    _log "✓ HTTP_PROXY=${gateway_ip}:3128  NO_PROXY=${no_proxy_val}"
 
-    _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "${_gw_password}" "full"
+    # An isolated testbed's gateway VM has no general internet access, so
+    # installing PyKMIP on it only works when pip is pointed at a reachable
+    # mirror (PIP_INDEX_URL) or a dedicated PyKMIP VM exists. Otherwise skip the
+    # KMIP provider up front rather than retrying a doomed install.
+    local final_kms_mode="full"
+    if [[ "${E2E_ISOLATED:-}" == "true" && -z "${pykmip_ip:-}" && -z "${PIP_INDEX_URL:-}" ]]; then
+        _warn "Isolated testbed: skipping the gce2e-standard (KMIP) provider; set PIP_INDEX_URL to a PyPI mirror reachable from the gateway VM to enable it"
+        final_kms_mode="native-only"
+    fi
+    _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "${_gw_password}" "${final_kms_mode}"
 }
 
 # ---------------------------------------------------------------------------
@@ -769,12 +839,14 @@ EOF
     local vc_url="" vc_root_password="" vc_root_old_password=""
     local vc_root_username="" vc_vim_username="" vc_vim_password=""
     local wcp_ip="" wcp_ip_primary="" wcp_password=""
+    local mgmt_ip_prefix="10." mgmt_cidr="10.0.0.0/8"
     local pykmip_ip="" pykmip_username="" pykmip_password=""
 
     _load_testbed "${testbed_source}"  || return
     _parse_vc_credentials              || return
     _parse_pykmip_server
     _export_common_vars
+    _setup_isolated_connectivity       || return
     _fetch_supervisor_access "${enable_e2e}" || return
 
     # Export WCP/supervisor under both naming conventions used in the test suite.

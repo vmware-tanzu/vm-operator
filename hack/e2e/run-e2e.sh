@@ -46,6 +46,29 @@ if [ -f "${_SCRIPT_DIR}/callback.sh" ]; then
     source "${_SCRIPT_DIR}/callback.sh"
 fi
 
+# Isolated testbeds keep a jumphost tunnel open for the whole run (opened by
+# setup-testbed-env.sh, owned by E2E_ISOLATED_STATE_DIR). It must outlive the
+# tests and support-bundle collection. The pipeline (TEST_CALLBACK_URL set, one
+# run per container) owns the tunnel and releases it on exit or interrupt. A
+# local developer who sourced the setup script may run several make targets (or
+# several at once) against one tunnel, so teardown is opt-in there: set
+# E2E_STOP_TUNNEL=true, or run "hack/e2e/isolated.sh stop" when finished.
+# Inert (no state dir) on ordinary testbeds.
+if [ -f "${_SCRIPT_DIR}/isolated.sh" ]; then
+    # shellcheck source=./isolated.sh
+    source "${_SCRIPT_DIR}/isolated.sh"
+fi
+stop_isolated_tunnel() {
+    if declare -F _iso_stop_tunnel >/dev/null 2>&1; then
+        _iso_stop_tunnel || true
+    fi
+}
+if [ "${E2E_STOP_TUNNEL:-${TEST_CALLBACK_URL:+true}}" = "true" ]; then
+    trap stop_isolated_tunnel EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+fi
+
 # parse_json_report reads a Ginkgo JSON report (written by --json-report) and
 # emits a JSON array of per-test results suitable for the subtest_details field
 # of a test callback payload. Each element has "testcasename" and "result".

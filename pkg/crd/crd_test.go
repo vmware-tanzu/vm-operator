@@ -6,6 +6,7 @@ package crd_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -96,10 +97,9 @@ var (
 		"tags.vsphere.policy.vmware.com",
 	}
 
-	externalVIMConfigPolicy = []string{
+	externalEnvironmentBrowser = []string{
 		"configtargets.vim.vmware.com",
 		"virtualmachineconfigoptions.vim.vmware.com",
-		"virtualmachineconfigpolicies.vim.vmware.com",
 		"virtualmachineguestoptions.vim.vmware.com",
 	}
 
@@ -116,7 +116,7 @@ var (
 		externalBYOK,
 		externalVSpherePolicy,
 		externalTagAPI,
-		externalVIMConfigPolicy,
+		externalEnvironmentBrowser,
 		externalVMEviction,
 		externalControlledRebalancing,
 		[]string{storagePoliciesCRD},
@@ -634,22 +634,22 @@ var _ = Describe("Install", func() {
 				Entry("groupName", "groupName"),
 			)
 
-			It("vmgroup api should not have powerOffDelay without TelcoVMServiceAPI", func() {
+			It("vmgroup api should not have powerOffDelay without VMServiceClasslessVM", func() {
 				assertVMGroupField(false, specFieldPath("bootOrder.[].powerOffDelay")...)
 			})
 		})
 
-		When("groups and TelcoVMServiceAPI are enabled", func() {
+		When("groups and VMServiceClasslessVM are enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 					config.Features.VMGroups = true
-					config.Features.TelcoVMServiceAPI = true
+					config.Features.VMServiceClasslessVM = true
 				})
 			})
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesVMGroups)...)
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, basesVMGroups, externalEnvironmentBrowser)...)
 			})
 
 			It("vmgroup api should have powerOffDelay", func() {
@@ -744,16 +744,16 @@ var _ = Describe("Install", func() {
 			)
 		})
 
-		When("VM extra config capability is enabled", func() {
+		When("classless VM capability is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.TelcoVMServiceAPI = true
+					config.Features.VMServiceClasslessVM = true
 				})
 			})
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, basesNonGated...)
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalEnvironmentBrowser)...)
 			})
 			DescribeTable("vm api should have spec fields",
 				func(field string) {
@@ -962,16 +962,16 @@ var _ = Describe("Install", func() {
 			})
 		})
 
-		When("VM config policy is enabled", func() {
+		When("the environment browser is enabled", func() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-					config.Features.VirtualMachineConfigPolicy = true
+					config.Features.VMServiceClasslessVM = true
 				})
 			})
 			It("should get the expected crds", func() {
 				var obj apiextensionsv1.CustomResourceDefinitionList
 				Expect(client.List(ctx, &obj)).To(Succeed())
-				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalVIMConfigPolicy)...)
+				assertCRDsConsistOf(obj.Items, slices.Concat(basesNonGated, externalEnvironmentBrowser)...)
 			})
 		})
 
@@ -987,8 +987,7 @@ var _ = Describe("Install", func() {
 					config.Features.ControlledRebalancingPolicy = true
 					config.Features.BringYourOwnEncryptionKey = true
 					config.Features.GuestCustomizationVCDParity = true
-					config.Features.TelcoVMServiceAPI = true
-					config.Features.VirtualMachineConfigPolicy = true
+					config.Features.VMServiceClasslessVM = true
 					config.Features.K8sWorkloadMgmtAPI = true
 					config.Features.TaggingAPI = true
 					config.Features.VMNetworkUnitNumbers = true
@@ -1036,7 +1035,7 @@ var _ = Describe("Install", func() {
 						VMEviction:                  true,
 						ControlledRebalancingPolicy: true,
 						BringYourOwnEncryptionKey:   true,
-						VirtualMachineConfigPolicy:  true,
+						VMServiceClasslessVM:        true,
 						K8sWorkloadMgmtAPI:          true,
 						TaggingAPI:                  true,
 						VMNetworkUnitNumbers:        true,
@@ -1564,13 +1563,33 @@ var _ = Describe(
 					// CRD deletion is asynchronous. Wait for finalization before
 					// checking that subsequent installs no longer issue deletes.
 					Eventually(func(g Gomega) {
-						var crds apiextensionsv1.CustomResourceDefinitionList
+						// Avoid fetching large CRD schemas on every poll.
+						var crds metav1.PartialObjectMetadataList
+						crds.SetGroupVersionKind(apiextensionsv1.SchemeGroupVersion.WithKind("CustomResourceDefinitionList"))
 						g.Expect(envTestClient.List(ctx, &crds)).To(Succeed())
 						for _, crd := range crds.Items {
 							g.Expect(crd.DeletionTimestamp.IsZero()).To(BeTrue(),
 								"CRD %s is still terminating", crd.Name)
 						}
-					}).WithTimeout(30 * time.Second).Should(Succeed())
+					}).WithTimeout(3*time.Minute).WithPolling(time.Second).Should(Succeed(), func() string {
+						// Fetch status only on failure to help diagnose slow cleanup.
+						var crds apiextensionsv1.CustomResourceDefinitionList
+						if err := envTestClient.List(ctx, &crds); err != nil {
+							return fmt.Sprintf("Failed to collect CRD cleanup diagnostics: %v", err)
+						}
+						var diagnostics []string
+						for _, crd := range crds.Items {
+							if !crd.DeletionTimestamp.IsZero() {
+								diagnostics = append(diagnostics, fmt.Sprintf(
+									"CRD %s: deletionTimestamp=%v, finalizers=%v, conditions=%+v",
+									crd.Name, crd.DeletionTimestamp, crd.Finalizers, crd.Status.Conditions))
+							}
+						}
+						if len(diagnostics) == 0 {
+							return "No CRDs remain terminating while collecting cleanup diagnostics."
+						}
+						return strings.Join(diagnostics, "\n")
+					})
 				}
 				if !cleanup {
 					// Creation always removes disabled feature fields, so allow
@@ -1709,7 +1728,7 @@ func featureStates(enabled bool) pkgcfg.FeatureStates {
 			f.SetBool(enabled)
 		}
 	}
-	fs.VirtualMachineConfigPolicy = true
+	fs.VMServiceClasslessVM = true
 	return fs
 }
 

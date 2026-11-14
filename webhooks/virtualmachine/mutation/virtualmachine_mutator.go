@@ -136,6 +136,10 @@ func init() {
 	MutateOnUpdateFuncs.Store(
 		"update.vmoperator.vmware.com/default-network-interface-type",
 		(MutateOnUpdateFn)(mutateOnUpdateDefaultNetworkInterfaceType))
+
+	MutateOnUpdateFuncs.Store(
+		"update.vmoperator.vmware.com/mutate-nic-unit-numbers",
+		(MutateOnUpdateFn)(MutateNICUnitNumbersOnUpdate))
 }
 
 // NewMutator returns the package's Mutator.

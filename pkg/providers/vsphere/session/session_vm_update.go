@@ -133,7 +133,7 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	features := pkgcfg.FromContext(vmCtx).Features
-	if features.BringYourOwnEncryptionKey || features.TelcoVMServiceAPI {
+	if features.BringYourOwnEncryptionKey || features.VMServiceClasslessVM {
 		for _, r := range vmconfig.FromContext(vmCtx) {
 			if err := r.OnResult(
 				vmCtx,
@@ -433,7 +433,7 @@ func (s *Session) poweredOnReconfigure(
 	}
 
 	// Apply compute config changes while the VM is powered on.
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, true, configSpec)
 	}
 
@@ -485,7 +485,7 @@ func (s *Session) poweredOffReconfigure(
 	}
 
 	// Overlay vm spec compute fields onto the ConfigSpec.
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *config, false, configSpec)
 	}
 
@@ -701,7 +701,7 @@ func updateConfigSpec(
 		resize.CompareMemoryAllocation(*config, updateArgs.ConfigSpec, configSpec)
 		// For backward compatibility, sync the class CPU/memory values into vm.Spec so that
 		// OverwriteSpecComputeConfig does not override them with backfilled spec values.
-		if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+		if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 			vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, updateArgs.ConfigSpec)
 		}
 	}
@@ -989,7 +989,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 			// For backward compatibility, sync class compute fields into spec
 			// before building the diff so that OverwriteSpecComputeConfig
 			// applies the class intent. Scope of sync matches the scope of the resize path.
-			if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+			if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 				vmopv1util.SyncClassSizeAndAllocationToSpec(vmCtx.VM, resizeArgs.ConfigSpec)
 			}
 			configSpec, err = resize.CreateResizeCPUMemoryConfigSpec(vmCtx, *moVM.Config, resizeArgs.ConfigSpec)
@@ -1001,7 +1001,7 @@ func (s *Session) resizeVMWhenPoweredStateOff(
 
 	// Overlay vm spec compute fields after the class-based resize diff so that
 	// spec values take precedence.
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(vmCtx).Features.VMServiceClasslessVM {
 		vmopv1util.OverwriteSpecComputeConfig(*vmCtx.VM, *moVM.Config, false, &configSpec)
 	}
 
@@ -1481,6 +1481,19 @@ func reconcileNetworkExtraConfig(
 		configSpec)
 }
 
+func reconcileAffinity(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	moVM mo.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+
+	if paused.ByAdmin(moVM) || paused.ByDevOps(vm) {
+		return nil
+	}
+
+	return virtualmachine.UpdateConfigSpecAffinity(ctx, vm, moVM.Config, configSpec)
+}
+
 func doReconfigure(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -1489,7 +1502,8 @@ func doReconfigure(
 	moVM mo.VirtualMachine,
 	configSpec vimtypes.VirtualMachineConfigSpec) error {
 
-	if pkgcfg.FromContext(ctx).Features.FastDeploy {
+	features := pkgcfg.FromContext(ctx).Features
+	if features.FastDeploy {
 		if err := reconcileDiskPromo(
 			ctx,
 			k8sClient,
@@ -1502,7 +1516,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
+	if features.BringYourOwnEncryptionKey {
 		if err := reconcileCrypto(
 			ctx,
 			k8sClient,
@@ -1515,7 +1529,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.AllDisksArePVCs {
+	if features.AllDisksArePVCs {
 		if err := reconcileRegisterUnmanagedDisks(
 			ctx,
 			k8sClient,
@@ -1528,7 +1542,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.ExtensionCompatConstraint {
+	if features.ExtensionCompatConstraint {
 		if err := reconcileExtensionCompatConstraint(
 			ctx,
 			k8sClient,
@@ -1563,7 +1577,7 @@ func doReconfigure(
 		return err
 	}
 
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if features.VMServiceClasslessVM {
 		if err := reconcileAdvancedExtraConfig(
 			ctx,
 			k8sClient,
@@ -1586,7 +1600,7 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VSpherePolicies {
+	if features.VSpherePolicies {
 		if err := reconcileVSpherePolicies(
 			ctx,
 			k8sClient,
@@ -1599,7 +1613,13 @@ func doReconfigure(
 		}
 	}
 
-	if pkgcfg.FromContext(ctx).Features.VMSharedDisks {
+	if features.VMHardAffinityDuringExecution {
+		if err := reconcileAffinity(ctx, vm, moVM, &configSpec); err != nil {
+			return err
+		}
+	}
+
+	if features.VMSharedDisks {
 		if err := reconcileVirtualControllers(
 			ctx,
 			k8sClient,

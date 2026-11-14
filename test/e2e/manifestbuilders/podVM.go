@@ -9,15 +9,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/fixtures"
 )
 
-type PodVMConfig struct {
-	Metadata metadata `yaml:"metadata"`
-}
-
-type metadata struct {
-	Name      string `yaml:"name"`
-	Namespace string `yaml:"namespace"`
-}
-
 type PodVMTemplateConfig struct {
 	Name                           string
 	Namespace                      string

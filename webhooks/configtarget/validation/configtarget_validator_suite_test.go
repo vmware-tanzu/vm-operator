@@ -19,7 +19,7 @@ var suite = builder.NewTestSuiteForValidatingWebhookWithContext(
 	pkgcfg.WithConfig(
 		pkgcfg.Config{
 			Features: pkgcfg.FeatureStates{
-				VirtualMachineConfigPolicy: true,
+				VMServiceClasslessVM: true,
 			},
 		}),
 	validation.AddToManager,

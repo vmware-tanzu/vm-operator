@@ -11,7 +11,6 @@ infraConfig:
       encryptedImageDisplayName: "${ENCRYPTED_IMAGE_DISPLAY_NAME:-photon-5.0-encrypted}"
       storageClassName: "${STORAGE_CLASS:-wcpglobal-storage-profile}"
       vmClassName: "best-effort-small"
-      vmResourcePolicyName: ""
       contentLibrarySubscriptionURL: "${CONTENT_LIBRARY_SUBSCRIPTION_URL:-https://wp-content-pstg.broadcom.com/vmsvc/lib.json}"
 
 # Veeam Backup & Replication server used by the "backup-restore" suite. The

@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -140,23 +141,38 @@ func UpdateVirtualMachineClassName(ctx context.Context, config *config.E2EConfig
 	}, config.GetIntervals("default", "wait-virtual-machine-resize")...).Should(Succeed(), "Timed out updating VirtualMachines %s ClassName to %s", vmName, className)
 }
 
-// CheckVirtualMachinesConditionConsistent asserts that the named condition on
-// the VirtualMachine remains at the expected status (and, if False, reason)
+// CheckVirtualMachinesConditionConsistent asserts that the named conditions on
+// the VirtualMachine remain at the expected status (and, if False, reason)
 // for the duration of the "consistent-virtual-machine-condition" interval.
+// At least one expected condition must be provided; an empty list fails the
+// spec immediately rather than passing vacuously. The failure message names
+// the condition type along with the expected and actual values.
 func CheckVirtualMachinesConditionConsistent(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client,
-	ns string, vmName string, expectedCondition metav1.Condition) {
+	ns string, vmName string, expectedConditions ...metav1.Condition) {
+	GinkgoHelper()
+
+	if len(expectedConditions) == 0 {
+		Fail("CheckVirtualMachinesConditionConsistent requires at least one expected condition")
+	}
+
 	Consistently(func(g Gomega) {
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
-		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred(), "get VM %s/%s", ns, vmName)
 
-		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
-		g.Expect(actualCondition).ToNot(BeNil())
-		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
-
-		if actualCondition.Status == metav1.ConditionFalse {
-			g.Expect(actualCondition.Reason).Should(Equal(expectedCondition.Reason))
+		for _, expected := range expectedConditions {
+			actual := meta.FindStatusCondition(vm.GetConditions(), expected.Type)
+			g.Expect(actual).ToNot(BeNil(), "VM %s/%s condition %s is missing", ns, vmName, expected.Type)
+			g.Expect(actual.Status).To(Equal(expected.Status),
+				"VM %s/%s condition %s status changed: expected %s, got %s (reason %q)",
+				ns, vmName, expected.Type, expected.Status, actual.Status, actual.Reason)
+			if actual.Status == metav1.ConditionFalse {
+				g.Expect(actual.Reason).To(Equal(expected.Reason),
+					"VM %s/%s condition %s reason changed: expected %q, got %q",
+					ns, vmName, expected.Type, expected.Reason, actual.Reason)
+			}
 		}
-	}, config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed(), "VirtualMachine conditions changed")
+	}, config.GetIntervals("default", "consistent-virtual-machine-condition")...).Should(Succeed(),
+		"VM %s/%s conditions did not remain consistent", ns, vmName)
 }
 
 // WaitForVirtualMachineCreation waits for the VirtualMachine to exist, be
@@ -165,7 +181,7 @@ func WaitForVirtualMachineCreation(ctx context.Context, config *config.E2EConfig
 	By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", ns, vmName))
 	WaitForVirtualMachineToExist(ctx, config, svClusterClient, ns, vmName)
 	WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, ns, vmName)
-	WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+	WaitForVirtualMachinePowerState(ctx, config, svClusterClient, ns, vmName, vmopv1.VirtualMachinePowerStateOn)
 	WaitForVirtualMachineIP(ctx, config, svClusterClient, ns, vmName)
 }
 
@@ -494,7 +510,7 @@ func WaitForVirtualMachineToBeDeleted(ctx context.Context, config *config.E2ECon
 		_, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-	}, config.GetIntervals("default", "wait-virtual-machine-deletion")...).Should(Succeed(), "Timed out waiting for VirtualMachine %s to be deleted", vmName)
+	}, config.GetIntervals("default", "wait-virtual-machine-deletion")...).WithContext(ctx).Should(Succeed(), "Timed out waiting for VirtualMachine %s to be deleted", vmName)
 }
 
 // Utility function to ensure that a Subnet/SubnetSet is deleted.
@@ -530,27 +546,109 @@ func WaitForVirtualMachineZone(ctx context.Context, config *config.E2EConfig, cl
 	}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for VirtualMachines %s to be created in zone %s", vmName, zone)
 }
 
-func UpdateVirtualMachinePowerState(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName, powerState string) {
-	Eventually(func(g Gomega) {
-		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
-		g.Expect(err).NotTo(HaveOccurred())
+// PatchVirtualMachine fetches an existing VM, applies mutateFn, and patches any
+// changes to its spec or metadata. It never creates a VM. The callback must not
+// change the VM's name or namespace. By default, it uses a plain merge patch.
+// Pass ctrlclient.MergeFromWithOptimisticLock{} to reject concurrent changes.
+// Callers that retry must invoke this helper again to fetch the latest VM.
+func PatchVirtualMachine(
+	ctx context.Context,
+	client ctrlclient.Client,
+	ns, vmName string,
+	mutateFn func(*vmopv1.VirtualMachine) error,
+	opts ...ctrlclient.MergeFromOption) error {
 
-		vm.Spec.PowerState = vmopv1.VirtualMachinePowerState(powerState)
-		g.Expect(client.Update(ctx, vm)).To(Succeed())
-	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(Succeed(), "Timed out updating VirtualMachines %s PowerState to %s", vmName, powerState)
+	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
+	if err != nil {
+		return fmt.Errorf("failed to get VirtualMachine %s/%s: %w", ns, vmName, err)
+	}
+
+	base := vm.DeepCopy()
+	if err := mutateFn(vm); err != nil {
+		return fmt.Errorf("failed to mutate VirtualMachine %s/%s: %w", ns, vmName, err)
+	}
+	if vm.Name != vmName || vm.Namespace != ns {
+		return fmt.Errorf("mutateFn must not change VirtualMachine %s/%s name or namespace", ns, vmName)
+	}
+	if apiequality.Semantic.DeepEqual(base, vm) {
+		return nil
+	}
+
+	if err := client.Patch(ctx, vm, ctrlclient.MergeFromWithOptions(base, opts...)); err != nil {
+		return fmt.Errorf("failed to patch VirtualMachine %s/%s: %w", ns, vmName, err)
+	}
+	return nil
 }
 
+// UpdateVirtualMachinePowerState patches the desired power state of an existing
+// VM using optimistic locking, retrying with the latest VM until the patch succeeds.
+func UpdateVirtualMachinePowerState(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string, powerState vmopv1.VirtualMachinePowerState) {
+	GinkgoHelper()
+	Eventually(func() error {
+		return PatchVirtualMachine(ctx, client, ns, vmName, func(vm *vmopv1.VirtualMachine) error {
+			vm.Spec.PowerState = powerState
+			return nil
+		}, ctrlclient.MergeFromWithOptimisticLock{})
+	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).WithContext(ctx).Should(Succeed(),
+		"Timed out updating VirtualMachine %s/%s PowerState to %s", ns, vmName, powerState)
+}
+
+// UpdateVirtualMachinePowerStateAndWait patches the desired power state of an
+// existing VM and waits for its status to report that state.
+func UpdateVirtualMachinePowerStateAndWait(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string, powerState vmopv1.VirtualMachinePowerState) {
+	GinkgoHelper()
+	UpdateVirtualMachinePowerState(ctx, config, client, ns, vmName, powerState)
+	WaitForVirtualMachinePowerState(ctx, config, client, ns, vmName, powerState)
+}
+
+// PowerOnVirtualMachineAndWait powers on an existing VM and waits for it to be powered on.
+func PowerOnVirtualMachineAndWait(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
+	GinkgoHelper()
+	UpdateVirtualMachinePowerStateAndWait(ctx, config, client, ns, vmName, vmopv1.VirtualMachinePowerStateOn)
+}
+
+// PowerOffVirtualMachineAndWait powers off an existing VM and waits for it to be powered off.
+func PowerOffVirtualMachineAndWait(ctx context.Context, config *config.E2EConfig, client ctrlclient.Client, ns, vmName string) {
+	GinkgoHelper()
+	UpdateVirtualMachinePowerStateAndWait(ctx, config, client, ns, vmName, vmopv1.VirtualMachinePowerStateOff)
+}
+
+// SuspendVirtualMachineAndWait suspends an existing VM using the specified
+// suspend mode and waits for it to be suspended.
+func SuspendVirtualMachineAndWait(
+	ctx context.Context,
+	config *config.E2EConfig,
+	client ctrlclient.Client,
+	ns, vmName string,
+	suspendMode vmopv1.VirtualMachinePowerOpMode) {
+
+	GinkgoHelper()
+	Eventually(func() error {
+		return PatchVirtualMachine(ctx, client, ns, vmName, func(vm *vmopv1.VirtualMachine) error {
+			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateSuspended
+			vm.Spec.SuspendMode = suspendMode
+			return nil
+		}, ctrlclient.MergeFromWithOptimisticLock{})
+	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).WithContext(ctx).Should(Succeed(),
+		"Timed out suspending VirtualMachine %s/%s using %s suspend mode", ns, vmName, suspendMode)
+	WaitForVirtualMachinePowerState(ctx, config, client, ns, vmName, vmopv1.VirtualMachinePowerStateSuspended)
+}
+
+// WaitForVirtualMachinePowerState waits for the VM's status to report the
+// expected power state.
 func WaitForVirtualMachinePowerState(
 	ctx context.Context,
 	config *config.E2EConfig,
 	client ctrlclient.Client,
-	ns, vmName, expectedPowerState string) {
-	By(fmt.Sprintf("Waiting for VM power state to reach %s", expectedPowerState))
+	ns, vmName string,
+	expectedPowerState vmopv1.VirtualMachinePowerState) {
+	GinkgoHelper()
+	By(fmt.Sprintf("Waiting for VM %s/%s power state to reach %s", ns, vmName, expectedPowerState))
 	Eventually(func(g Gomega) {
 		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
 		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerState(expectedPowerState)))
-	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).Should(Succeed(), "Timed out waiting for VirtualMachines %s PowerState to be updated to %s", vmName, expectedPowerState)
+		g.Expect(vm.Status.PowerState).To(Equal(expectedPowerState))
+	}, config.GetIntervals("default", "wait-virtual-machine-powerstate")...).WithContext(ctx).Should(Succeed(), "Timed out waiting for VirtualMachines %s PowerState to be updated to %s", vmName, expectedPowerState)
 }
 
 func WaitForLinuxPrepCustomizeNextPowerOnFalse(
@@ -951,6 +1049,26 @@ func GetVirtualMachinePublishRequestSourceName(ctx context.Context, config *conf
 	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-condition")...).Should(Succeed(), "failed to get vmpub %s source name", vmPubName)
 
 	return vmPubSourceName, nil
+}
+
+// GetVirtualMachinePublishRequestImageName returns the name of the
+// VirtualMachineImage realized from the item the publish request uploaded,
+// as recorded in status.imageName. The controller sets this by matching the
+// image's providerItemID to the uploaded item's ID, so unlike a lookup by
+// display name it cannot resolve to another image that shares the target
+// item name, e.g. an item published to a different library by an earlier spec.
+func GetVirtualMachinePublishRequestImageName(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmPubName string) string {
+	var imageName string
+
+	Eventually(func(g Gomega) {
+		vmPub, err := utils.GetVirtualMachinePublishRequest(ctx, svClusterClient, ns, vmPubName)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		imageName = vmPub.Status.ImageName
+		g.Expect(imageName).ToNot(BeEmpty())
+	}, config.GetIntervals("default", "wait-virtual-machine-publish-request-condition")...).Should(Succeed(), "failed to get vmpub %s image name", vmPubName)
+
+	return imageName
 }
 
 func GetVirtualMachinePublishRequestTargetItemName(ctx context.Context, config *config.E2EConfig, svClusterClient ctrlclient.Client, ns, vmPubName string) (string, error) {

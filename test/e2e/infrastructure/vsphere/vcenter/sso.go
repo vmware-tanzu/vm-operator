@@ -102,8 +102,6 @@ func (u *User) checkIfUserExists() (bool, error) {
 //	attempt to create them again (and simply succeed). This allows it to be
 //	retried in an Eventually() block safely.
 func (u *User) Create() error {
-	// TODO You might have a bad time if you run this on Windows.
-	// Then again, if you're developing on Windows, maybe you're already having a bad time.
 	if exists, err := u.checkIfUserExists(); err == nil && exists {
 		// NOOP if the user definitely exists. Otherwise, retry. Worst
 		// case, we intermittently failed to check and it'll error out
@@ -151,7 +149,7 @@ func CreateUserOrFail(user *User) {
 	Eventually(
 		// user.Create() returns an error if it failed to create the
 		// user, and is meant to be idempotent.
-		user.Create, 1*time.Minute, 5*time.Second).Should(Succeed(), "User should have eventually been created", user.Credentials.Username)
+		user.Create, 1*time.Minute, 5*time.Second).Should(Succeed(), "User %s should have eventually been created", user.Credentials.Username)
 }
 
 // DeleteUserOrFail is a convenience method that retries user deletion until it
@@ -160,7 +158,7 @@ func DeleteUserOrFail(user *User) {
 	Eventually(
 		// user.Delete() returns an error if it failed to delete the
 		// user, and is meant to be idempotent.
-		user.Delete, 1*time.Minute, 5*time.Second).Should(Succeed(), "User should have eventually been deleted", user.Credentials.Username)
+		user.Delete, 1*time.Minute, 5*time.Second).Should(Succeed(), "User %s should have eventually been deleted", user.Credentials.Username)
 }
 
 // TODO Similar abstractions for groups.

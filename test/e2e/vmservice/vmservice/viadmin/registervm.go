@@ -14,15 +14,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/alarm"
 	"github.com/vmware/govmomi/cns"
 	cnstypes "github.com/vmware/govmomi/cns/types"
-	"github.com/vmware/govmomi/event"
 	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vslm"
@@ -33,8 +30,9 @@ import (
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	backupapi "github.com/vmware-tanzu/vm-operator/pkg/backup/api"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/lib"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"
@@ -76,9 +74,8 @@ func deletePVCOrIgnore(ctx context.Context, c ctrlclient.Client, namespace, name
 func deleteRegisteredVMAndPVCs(
 	ctx context.Context,
 	svClusterClient ctrlclient.Client,
-	clusterProxy *common.VMServiceClusterProxy,
-	namespace, vmName string,
-	vmYaml []byte) {
+	e2eConfig *config.E2EConfig,
+	namespace, vmName string) {
 
 	var pvcNames []string
 	if vm, err := utils.GetVirtualMachine(ctx, svClusterClient, namespace, vmName); err == nil {
@@ -100,13 +97,22 @@ func deleteRegisteredVMAndPVCs(
 		}
 	}
 
-	_ = clusterProxy.DeleteWithArgs(ctx, vmYaml)
+	// Delete the PVCs even if waiting for the VM to go away fails or times out,
+	// so they do not leak into the shared namespace. A PVC that is still in use
+	// stays Terminating until the VM is gone. The context is detached because
+	// it may already be cancelled, e.g. by the NodeTimeout on the cleanup node.
+	defer func() {
+		pvcCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
 
-	for _, name := range pvcNames {
-		_ = svClusterClient.Delete(ctx, &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		})
-	}
+		for _, name := range pvcNames {
+			_ = svClusterClient.Delete(pvcCtx, &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			})
+		}
+	}()
+
+	vmoperator.DeleteVirtualMachineAndWait(ctx, e2eConfig, svClusterClient, namespace, vmName)
 }
 
 type VIAdminRegisterVMSpecInput struct {
@@ -139,7 +145,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		svClusterClient               ctrlclient.Client
 		vmServiceBackupRestoreEnabled bool
 		incrementalRestoreEnabled     bool
-		linuxImageDisplayName         string
 		linuxVMIName                  string
 	)
 
@@ -158,7 +163,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 		svClusterClient = clusterProxy.GetClient()
 
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(config.InfraConfig.ManagementClusterConfig.Resources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(config.InfraConfig.ManagementClusterConfig.Resources)
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
@@ -168,39 +173,39 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 	Context("Authorization test", func() {
 		var (
-			vCenterHostname                    string
-			authTestWCPClient                  wcp.WorkloadManagementAPI
-			vimClient                          *vim25.Client
-			user                               *vcenter.User
-			testUserWithoutPrivilege           = "test-user-without-privilege"
-			password                           = "Password!23"
-			testUserWithoutPrivilegeWithDomain = "test-user-without-privilege@vsphere.local"
+			authTestWCPClient wcp.WorkloadManagementAPI
+			user              *vcenter.User
 		)
 
 		BeforeEach(func() {
+			testUserWithoutPrivilege := "test-user-without-privilege"
+			password := "Password!23"
+			testUserWithoutPrivilegeWithDomain := "test-user-without-privilege@vsphere.local"
+
 			vCenterAdminCreds := dcli.VCenterUserCredentials{Username: testbed.AdminUsername, Password: testbed.AdminPassword}
-			vCenterHostname = vcenter.GetVCPNIDFromKubeconfig(context.TODO(), clusterProxy.GetKubeconfigPath())
+			vCenterHostname := vcenter.GetVCPNIDFromKubeconfig(context.TODO(), clusterProxy.GetKubeconfigPath())
 			Expect(vCenterHostname).NotTo(BeZero(), "Unable to determine VC PNID")
 
-			sshCommandRunner, _, _ := testutils.GetHelpersFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			sshCommandRunner, _ := testutils.GetHelpersFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+			DeferCleanup(func() { _ = sshCommandRunner.Close() })
 			user = vcenter.NewUser(testUserWithoutPrivilege, password).WithAdminCreds(vCenterAdminCreds).WithSSHCommandRunner(sshCommandRunner)
 
 			var err error
 
 			err = user.Create()
 			Expect(err).ToNot(HaveOccurred())
+			// Registered after the SSH runner cleanup, so (LIFO) the user is
+			// deleted while the runner it depends on is still open.
+			DeferCleanup(func() { vcenter.DeleteUserOrFail(user) })
 
 			authTestWCPClient, err = wcp.NewWCPAPIClient(vCenterHostname, testUserWithoutPrivilegeWithDomain, password, testbed.RootUsername, testbed.RootPassword)
 			Expect(err).NotTo(HaveOccurred())
-			vimClient, err = vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
+			// Registered last so the client is closed before the user is deleted.
+			DeferCleanup(func() { _ = authTestWCPClient.Close() })
+			vimClient, err := vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
 			Expect(err).NotTo(HaveOccurred())
 			err = vcenter.AddToGroup(ctx, vimClient, testUserWithoutPrivilege, "ReadOnlyUsers")
 			Expect(err).NotTo(HaveOccurred())
-		})
-
-		AfterEach(func() {
-			// Delete the SSO user.
-			vcenter.DeleteUserOrFail(user)
 		})
 
 		It("A user without namespaces.Configure privilege should not be able to invoke RegisterVM API", Label("smoke"), func() {
@@ -285,581 +290,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 		})
 	})
 
-	// Deprecated: This test simulates a restore (pause, CnsUnregisterVolume, and an ExtraConfig rewrite) instead of performing
-	// one. It is superseded by "Should restore an existing VM in place and register it" in the Veeam-backed
-	// backuprestore suite and will be removed once that suite leaves
-	// quarantine (spec 010-veeam-e2e-backup-restore).
-	Context("Incremental Restore - Register VM with pre-existing VM CR", func() {
-		It("Should register VM successfully", func() {
-			if !incrementalRestoreEnabled {
-				Skip("WCP_VMService_Incremental_Restore FSS is not enabled")
-			}
-
-			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-			defer vcenter.LogoutVimClient(vCenterClient)
-
-			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			secretName := vmName + "-cloud-config-data"
-			secret := manifestbuilders.Secret{
-				Namespace: input.WCPNamespaceName,
-				Name:      secretName,
-			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
-			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
-
-			resources := config.InfraConfig.ManagementClusterConfig.Resources
-
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
-						},
-					},
-				},
-				PowerState: "PoweredOn",
-			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
-			// End create new VM
-
-			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-
-			// Wait for backup to complete before reading the backup data.
-			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, nil)
-
-			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
-			vmObj := object.NewVirtualMachine(vCenterClient, vmMoRef)
-
-			var vmMO mo.VirtualMachine
-
-			var (
-				backupVersion string
-				resourceYAML  string
-			)
-			// VM Operator starts recording backup when disk promotion and volume registration has happened.
-			propCollector := property.DefaultCollector(vCenterClient)
-			Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.extraConfig"}, &vmMO)).To(Succeed())
-			Expect(vmMO.Config).ToNot(BeNil(), "VM Config should not be nil")
-
-			ecList := object.OptionValueList(vmMO.Config.ExtraConfig)
-			resourceYAML, _ = ecList.GetString(backupapi.VMResourceYAMLExtraConfigKey)
-			backupVersion, _ = ecList.GetString(backupapi.BackupVersionExtraConfigKey)
-
-			Expect(resourceYAML).ToNot(BeEmpty())
-			Expect(backupVersion).ToNot(BeEmpty())
-
-			By("Power off the VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-
-			By("Add the pause annotation to VM")
-
-			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-			base := vm.DeepCopy()
-			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
-			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
-
-			// Collect all PVC names from the VM spec
-			var pvcNames []string
-			for _, volume := range vm.Spec.Volumes {
-				if volume.PersistentVolumeClaim != nil {
-					pvcNames = append(pvcNames, volume.PersistentVolumeClaim.ClaimName)
-				}
-			}
-
-			// Unregister all PVCs using the helper function
-			vmservice.UnregisterPVCVolumes(ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, pvcNames, config)
-
-			// reconfigBeforeRegister changes the VM's resource.yaml, backupVersion to the given value.
-			reconfigBeforeRegister := func(value []string) {
-				vmSpec := types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{Key: backupapi.VMResourceYAMLExtraConfigKey, Value: value[0]},
-						&types.OptionValue{Key: backupapi.BackupVersionExtraConfigKey, Value: value[1]},
-					},
-				}
-
-				task, err := vmObj.Reconfigure(ctx, vmSpec)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(task.Wait(ctx)).To(Succeed())
-			}
-
-			By(fmt.Sprintf("Reconfigure VM with saved vm yaml %v: %s\n, backupVersion %v: %s\n",
-				backupapi.VMResourceYAMLExtraConfigKey, resourceYAML,
-				backupapi.BackupVersionExtraConfigKey, backupVersion))
-			reconfigBeforeRegister([]string{resourceYAML, backupVersion})
-
-			taskInfo, err := vmservice.InvokeRegisterVM(ctx, existingVM.Status.UniqueID, existingVM.Namespace, clusterProxy, wcpClient)
-
-			By("Verify task state is success")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(taskInfo).ToNot(BeNil())
-			Expect(taskInfo.Error).To(BeNil())
-			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
-
-			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, len(existingVM.Spec.Volumes), clusterProxy, config, svClusterClient, wcpClient)
-		})
-	})
-
-	// Deprecated: This test simulates a restore (removable volumes and CnsUnregisterVolume) instead of performing
-	// one. It is superseded by "Should restore an existing VM in place and register it" in the Veeam-backed
-	// backuprestore suite and will be removed once that suite leaves
-	// quarantine (spec 010-veeam-e2e-backup-restore).
-	Context("Incremental Restore - Register VM with pre-existing VM CR and PVCs", func() {
-		It("Should register VM successfully", func() {
-			if !incrementalRestoreEnabled {
-				Skip("WCP_VMService_Incremental_Restore FSS is not enabled")
-			}
-
-			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-			defer vcenter.LogoutVimClient(vCenterClient)
-
-			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			secretName := vmName + "-cloud-config-data"
-			secret := manifestbuilders.Secret{
-				Namespace: input.WCPNamespaceName,
-				Name:      secretName,
-			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
-			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
-
-			resources := config.InfraConfig.ManagementClusterConfig.Resources
-			pvcNameA := vmName + "-pvc-a"
-			testutils.AssertCreatePVC(svClusterClient, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
-			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, pvcNameA)
-
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
-						},
-					},
-				},
-				PowerState: "PoweredOn",
-				PVCNames:   []string{pvcNameA},
-			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
-			// End create new VM
-
-			// Wait for IP, a valid moID and the PVC attachment.
-			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			vmoperator.WaitForPVCAttachment(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, pvcNameA)
-
-			// Set Removable=true on every volume before backup is captured so the
-			// backup YAML reflects the correct value. The CSI CnsRegisterVolume
-			// controller reads spec.volumes[*].removable when a newly registered FCD
-			// is processed; if removable is missing the disk may be misclassified
-			// during a restore pass.
-			By("Set all PVC volumes as removable=true before backup is captured")
-			vmPatch, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-			baseRemovable := vmPatch.DeepCopy()
-			for i := range vmPatch.Spec.Volumes {
-				vmPatch.Spec.Volumes[i].Removable = ptr.To(true)
-			}
-			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(baseRemovable))).To(Succeed())
-
-			// Wait for backup to complete before reading the backup data.
-			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, nil)
-
-			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: existingVM.Status.UniqueID}
-			vmObj := object.NewVirtualMachine(vCenterClient, vmMoRef)
-
-			var vmMO mo.VirtualMachine
-
-			// take a copy of the backed up vm resource and pvc backup data.
-			By("Save original VM resource, backup version and PVC backup from ExtraConfig")
-
-			propCollector := property.DefaultCollector(vCenterClient)
-			Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.extraConfig"}, &vmMO)).To(Succeed())
-			Expect(vmMO.Config).ToNot(BeNil(), "VM Config should not be nil")
-
-			var (
-				backupVersion string
-				resourceYAML  string
-			)
-
-			ecList := object.OptionValueList(vmMO.Config.ExtraConfig)
-			resourceYAML, _ = ecList.GetString(backupapi.VMResourceYAMLExtraConfigKey)
-			pvcBackup, _ := ecList.GetString(backupapi.PVCDiskDataExtraConfigKey)
-			backupVersion, _ = ecList.GetString(backupapi.BackupVersionExtraConfigKey)
-
-			Expect(resourceYAML).ToNot(BeEmpty())
-			Expect(pvcBackup).ToNot(BeEmpty())
-			Expect(backupVersion).ToNot(BeEmpty())
-
-			// Create and attach another pvc to the VM.
-			pvcNameB := vmName + "-pvc-b"
-			testutils.AssertCreatePVC(svClusterClient, pvcNameB, input.WCPNamespaceName, resources.StorageClassName)
-			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, pvcNameB)
-
-			By(fmt.Sprintf("Updating the VM with two PVCs: '%v'", vmParameters.PVCNames))
-
-			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-			base := vm.DeepCopy()
-			vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-				Name: pvcNameB,
-				VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: pvcNameB,
-						},
-					},
-				},
-			})
-			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(base))).To(Succeed())
-
-			vmoperator.WaitForPVCAttachment(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, pvcNameB)
-			// Both PVC A and B are now attached to VM.
-
-			By("Power off the VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-
-			By("Add the pause annotation and set all volumes as removable")
-
-			// RegisterVM restores from the backup yaml (pvcA only), requiring pvcB
-			// removal; the validating webhook blocks that unless Removable=true on
-			// every volume.
-			vm, err = utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-			basePause := vm.DeepCopy()
-			metav1.SetMetaDataAnnotation(&vm.ObjectMeta, vmopv1.PauseAnnotation, trueString)
-			for i := range vm.Spec.Volumes {
-				vm.Spec.Volumes[i].Removable = ptr.To(true)
-			}
-			Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(basePause))).To(Succeed())
-
-			// Collect all PVC names from the VM spec
-			var pvcNames []string
-
-			for _, volume := range vm.Spec.Volumes {
-				if volume.PersistentVolumeClaim != nil {
-					pvcNames = append(pvcNames, volume.PersistentVolumeClaim.ClaimName)
-				}
-			}
-
-			// Unregister all PVCs using the helper function
-			vmservice.UnregisterPVCVolumes(ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, pvcNames, config)
-
-			// reconfigBeforeRegister changes the VM's resource.yaml, backupVersion and PVC properties to the given value.
-			reconfigBeforeRegister := func(value []string) {
-				vmSpec := types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{Key: backupapi.VMResourceYAMLExtraConfigKey, Value: value[0]},
-						&types.OptionValue{Key: backupapi.PVCDiskDataExtraConfigKey, Value: value[1]},
-						&types.OptionValue{Key: backupapi.BackupVersionExtraConfigKey, Value: value[2]},
-					},
-				}
-
-				task, err := vmObj.Reconfigure(ctx, vmSpec)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(task.Wait(ctx)).To(Succeed())
-			}
-
-			By(fmt.Sprintf("Reconfigure VM with saved vm yaml %v: %s\n, backupVersion %v: %s\n, and PVC backup with one PVC (pvc-a) %v: %s\n",
-				backupapi.VMResourceYAMLExtraConfigKey, resourceYAML,
-				backupapi.BackupVersionExtraConfigKey, backupVersion,
-				backupapi.PVCDiskDataExtraConfigKey, pvcBackup))
-			reconfigBeforeRegister([]string{resourceYAML, pvcBackup, backupVersion})
-
-			// Call registerVM on existing VM CR currently having two PVCs (a and b) with backup VM yaml having one PVC (a)
-			taskInfo, err := vmservice.InvokeRegisterVM(ctx, existingVM.Status.UniqueID, existingVM.Namespace, clusterProxy, wcpClient)
-
-			By("Verify task state is success")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(taskInfo).ToNot(BeNil())
-			Expect(taskInfo.Error).To(BeNil())
-			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
-
-			// Expected registered VM should have pvc-a-restored in vm.spec.volumes
-			// There should be two restored volumes: one from classic disk, and one for pvc-a since pvc-b was added after backup.
-			expectedRestoredPVCCount := 2
-			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, expectedRestoredPVCCount, clusterProxy, config, svClusterClient, wcpClient)
-		})
-	})
-
-	// Deprecated: This test simulates a restore (the vSphere VM is kept and only the CR is deleted) instead of performing
-	// one. It is superseded by "Should raise the RegisterVM alarm on failure and clear it on success" in the Veeam-backed
-	// backuprestore suite and will be removed once that suite leaves
-	// quarantine (spec 010-veeam-e2e-backup-restore).
-	Context("RegisterVM Alarm", func() {
-		// Predefined Alarm definition added in main/9.0 (CLN 13918662)
-		// If using a VC without the predefined alarm, create with:
-		//  govc alarm.create -n WCPRegisterVMFailedAlarm \
-		//   -d "registervm failed (for gce2e)" \
-		//   -green com.vmware.wcp.RegisterVM.success \
-		//   -yellow com.vmware.wcp.RegisterVM.failure
-		// Note: "alarm." prefix can only be used in predefined SystemName
-		const (
-			alarmName    = "WCPRegisterVMFailedAlarm"
-			eventPrefix  = "com.vmware.wcp.RegisterVM."
-			eventSuccess = eventPrefix + "success"
-			eventFailure = eventPrefix + "failure"
-		)
-
-		alarmMatches := func(info types.AlarmInfo) bool {
-			return info.SystemName == "alarm."+alarmName || info.Name == alarmName
-		}
-
-		// Test summary:
-		// - DeleteVMResource, removing the K8s CR
-		// - Reconfig VM's resource.yaml to invalid
-		// - InvokeRegisterVM, expecting to fail and trigger alarm
-		// - Reconfig VM's resource.yaml to valid
-		// - InvokeRegisterVM, expecting to succeed and clear triggered alarm
-		// - VerifyPostRegisterVM, expecting VM is powered on, has IP, etc
-		It("Should trigger on failure", func() {
-			if !vmServiceBackupRestoreEnabled {
-				Skip("WCP_VMService_BackupRestore FSS is not enabled")
-			}
-
-			vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-			defer vcenter.LogoutVimClient(vCenterClient)
-
-			alarmManager := alarm.NewManager(vCenterClient)
-			alarms, err := alarmManager.GetAlarm(ctx, vCenterClient.ServiceContent.RootFolder)
-			Expect(err).NotTo(HaveOccurred())
-
-			var wcpAlarm *mo.Alarm
-
-			for _, alarm := range alarms {
-				if alarmMatches(alarm.Info) {
-					wcpAlarm = &alarm
-					break
-				}
-			}
-
-			if wcpAlarm == nil {
-				Skip(alarmName + " not defined in this vCenter")
-			}
-
-			// Create a new VM (copy-n-paste of vmservicee2e.deployVMWithCloudInit)
-			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			vmsvcClusterProxy := input.ClusterProxy.(*common.VMServiceClusterProxy)
-			secretName := vmName + "-cloud-config-data"
-			secret := manifestbuilders.Secret{
-				Namespace: input.WCPNamespaceName,
-				Name:      secretName,
-			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
-			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, input.WCPNamespaceName, secretName)
-
-			resources := config.InfraConfig.ManagementClusterConfig.Resources
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
-						},
-					},
-				},
-				PowerState: "PoweredOn",
-			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
-			DeferCleanup(deleteRegisteredVMAndPVCs, ctx, svClusterClient, clusterProxy, input.WCPNamespaceName, vmName, vmYaml)
-
-			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-
-			// Wait for backup to complete before reading the backup data.
-			// Use the returned VM to avoid a redundant Get call.
-			existingVM := vmservice.WaitForBackupToComplete(ctx, vmName, input.WCPNamespaceName, clusterProxy, config, nil)
-
-			// Delete the VM Service VM CR, keeping the vCenter VM in inventory.
-			vmMoID := vmservice.DeleteVMResource(ctx, existingVM.Name, existingVM.Namespace, nil, clusterProxy, config, svClusterClient)
-			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
-			vmObj := object.NewVirtualMachine(vCenterClient, vmMoRef)
-
-			var vmMO mo.VirtualMachine
-
-			var resourceYAML string
-
-			By("Save original VM ExtraConfig")
-
-			Eventually(func(g Gomega) {
-				propCollector := property.DefaultCollector(vCenterClient)
-				g.Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.extraConfig"}, &vmMO)).To(Succeed())
-				g.Expect(vmMO.Config).ToNot(BeNil(), "VM Config should not be nil")
-				ecList := object.OptionValueList(vmMO.Config.ExtraConfig)
-				resourceYAML, _ = ecList.GetString(backupapi.VMResourceYAMLExtraConfigKey)
-				g.Expect(resourceYAML).ToNot(BeEmpty())
-			}, config.GetIntervals("default", "wait-backup-to-complete")...).
-				Should(Succeed(), "Waiting for VM resource to be saved in ExtraConfig")
-
-			// Create EventHistoryCollector for verifying events
-			eventSpec := types.EventFilterSpec{
-				EventTypeId: []string{eventSuccess, eventFailure},
-				Entity: &types.EventFilterSpecByEntity{
-					Entity:    vmMoRef,
-					Recursion: types.EventFilterSpecRecursionOptionSelf,
-				},
-			}
-
-			eventCollector, err := event.NewManager(vCenterClient).CreateCollectorForEvents(ctx, eventSpec)
-			Expect(err).NotTo(HaveOccurred())
-
-			defer func() { _ = eventCollector.Destroy(ctx) }()
-
-			// latestEvents returns any new events of type spec.EventTypeId
-			latestEvents := func() (map[string][]types.EventEx, error) {
-				alarmEvents := make(map[string][]types.EventEx)
-
-				for {
-					events, err := eventCollector.ReadNextEvents(ctx, 10)
-					if err != nil {
-						return nil, err
-					}
-
-					if len(events) == 0 { // no more new events
-						break
-					}
-
-					for i := range events {
-						// spec.EventTypeId filters out other types
-						event := events[i].(*types.EventEx)
-						alarmEvents[event.EventTypeId] = append(alarmEvents[event.EventTypeId], *event)
-
-						// Fields below set by the client PostEvent
-						// calls in vapi/impl/wcp/registervm.go
-						Expect(event.Message).ToNot(BeEmpty())
-						Expect(event.EventTypeId).To(HavePrefix(eventPrefix))
-						// This message set by VC for predefined alarms only, see:
-						//  vpx/vpxd/extensions/VirtualCenter/locale/en/event.vmsg
-						if wcpAlarm.Info.SystemName != "" {
-							Expect(event.FullFormattedMessage).ToNot(BeEmpty())
-						}
-					}
-				}
-
-				return alarmEvents, nil
-			}
-
-			// triggeredAlarm gets the current triggeredAlarmState property and related info
-			triggeredAlarm := func() *alarm.StateInfo {
-				options := alarm.StateInfoOptions{Event: true}
-				alarmStates, err := alarmManager.GetStateInfo(ctx, vmMoRef, options)
-				Expect(err).NotTo(HaveOccurred())
-
-				for _, state := range alarmStates {
-					if alarmMatches(*state.Info) {
-						return &state
-					}
-				}
-
-				return nil
-			}
-
-			// reconfigResourceYAML changes the VM's resource.yaml property to the given value
-			reconfigResourceYAML := func(value any) {
-				vmSpec := types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{Key: backupapi.VMResourceYAMLExtraConfigKey, Value: value},
-					},
-				}
-
-				task, err := vmObj.Reconfigure(ctx, vmSpec)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(task.Wait(ctx)).To(Succeed())
-			}
-
-			By("Checking events before registervm")
-
-			alarmEvents, err := latestEvents()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(alarmEvents).To(BeEmpty())
-			By("Checking triggered alarms before registervm")
-			Expect(triggeredAlarm()).To(BeNil())
-
-			By("Reconfigure VM with invalid " + backupapi.VMResourceYAMLExtraConfigKey)
-			reconfigResourceYAML("invalid-yaml")
-
-			taskInfo, err := vmservice.InvokeRegisterVM(ctx, vmMoID, existingVM.Namespace, clusterProxy, wcpClient)
-
-			By("Verify task state is error")
-			Expect(err).To(HaveOccurred())
-			Expect(taskInfo.Error).NotTo(BeNil())
-			Expect(taskInfo.State).To(Equal(types.TaskInfoStateError))
-
-			By("Verify failure event was emitted after registervm failure")
-			Eventually(func(g Gomega) {
-				alarmEvents, err = latestEvents()
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(alarmEvents).To(HaveLen(1))
-				g.Expect(alarmEvents[eventFailure]).To(HaveLen(1))
-			}, config.GetIntervals("default", "wait-config-map-creation")...).Should(Succeed(), "Timed out waiting for failure event")
-
-			By("Verify alarm was triggered by failure event")
-
-			warningAlarm := triggeredAlarm()
-			Expect(warningAlarm).ToNot(BeNil())
-			Expect(warningAlarm.OverallStatus).To(Equal(types.ManagedEntityStatusYellow))
-			Expect(warningAlarm.Event).ToNot(BeNil())
-			event := warningAlarm.Event.(*types.EventEx)
-			Expect(event).ToNot(BeNil())
-			Expect(event.EventTypeId).To(Equal(eventFailure))
-			Expect(warningAlarm.EventKey).To(Equal(alarmEvents[eventFailure][0].Key))
-
-			By("Reconfigure VM with original ExtraConfig")
-			reconfigResourceYAML(resourceYAML)
-
-			taskInfo, err = vmservice.InvokeRegisterVM(ctx, vmMoID, existingVM.Namespace, clusterProxy, wcpClient)
-
-			By("Verify task state is success")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(taskInfo).ToNot(BeNil())
-			Expect(taskInfo.Error).To(BeNil())
-			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
-
-			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, len(existingVM.Spec.Volumes), clusterProxy, config, svClusterClient, wcpClient)
-
-			By("Verify success event was emitted after successful registervm")
-			Eventually(func(g Gomega) {
-				alarmEvents, err = latestEvents()
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(alarmEvents).To(HaveLen(1))
-				g.Expect(alarmEvents[eventSuccess]).To(HaveLen(1))
-			}, config.GetIntervals("default", "wait-config-map-creation")...).Should(Succeed(), "Timed out waiting for success event")
-			By("Verify triggered alarm was cleared by success event")
-			Expect(triggeredAlarm()).To(BeNil())
-		})
-	})
-
 	// This test stays simulated: the Veeam B&R REST API has no virtual disk
 	// restore operation, so the backuprestore suite cannot cover it (see
 	// research.md in spec 010-veeam-e2e-backup-restore).
@@ -872,11 +302,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			if !incrementalRestoreEnabled {
 				Skip("WCP_VMService_Incremental_Restore FSS is not enabled")
 			}
-
-			asyncSupervisorFSSEnabled, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
-			Expect(err).ToNot(HaveOccurred())
-			extensionCompatConstraintEnabled := utils.IsSupervisorCapabilityEnabled(
-				ctx, svClusterClient, consts.ExtensionCompatConstraintCapabilityName, asyncSupervisorFSSEnabled)
+			extensionCompatConstraintEnabled := config.SupervisorCapabilities[consts.ExtensionCompatConstraintCapabilityName]
 
 			adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -899,14 +325,13 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			// Create a new VM
 			vmNamespace := input.WCPNamespaceName
 			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			vmsvcClusterProxy := input.ClusterProxy.(*common.VMServiceClusterProxy)
 			secretName := vmName + "-cloud-config-data"
 			secret := manifestbuilders.Secret{
 				Namespace: vmNamespace,
 				Name:      secretName,
 			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
+			secretToCreate := manifestbuilders.CloudConfigSecret(secret)
+			Expect(clusterProxy.GetClient().Create(ctx, secretToCreate)).To(Succeed(), "failed to create the Secret with cloud-config data")
 			DeferCleanup(deleteSecretOrIgnore, ctx, svClusterClient, vmNamespace, secretName)
 
 			resources := config.InfraConfig.ManagementClusterConfig.Resources
@@ -914,30 +339,38 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			testutils.AssertCreatePVC(svClusterClient, pvcNameA, input.WCPNamespaceName, resources.StorageClassName)
 			DeferCleanup(deletePVCOrIgnore, ctx, svClusterClient, vmNamespace, pvcNameA)
 
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        vmNamespace,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
+			vmToCreate := &vmopv1a2.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Name: vmName, Namespace: vmNamespace},
+				Spec: vmopv1a2.VirtualMachineSpec{
+					ClassName:    resources.VMClassName,
+					StorageClass: resources.StorageClassName,
+					ImageName:    linuxVMIName,
+					PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+					Bootstrap: &vmopv1a2.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1a2.VirtualMachineBootstrapCloudInitSpec{
+							RawCloudConfig: &vmopv1a2common.SecretKeySelector{Key: "user-data", Name: secretName},
 						},
 					},
+					Volumes: []vmopv1a2.VirtualMachineVolume{{
+						Name: pvcNameA,
+						VirtualMachineVolumeSource: vmopv1a2.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1a2.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvcNameA},
+							},
+						},
+					}},
 				},
-				PowerState: "PoweredOn",
-				PVCNames:   []string{pvcNameA},
 			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(vmsvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
+			Expect(clusterProxy.GetClient().Create(ctx, vmToCreate)).To(Succeed(), "failed to create Linux VM")
 			// Bounded so a broken vSphere-side disk state left behind by an earlier
 			// assertion failure in this spec fails cleanup fast instead of blocking
 			// the rest of the suite for hours.
-			DeferCleanup(deleteRegisteredVMAndPVCs, svClusterClient, clusterProxy, vmNamespace, vmName, vmYaml, NodeTimeout(3*time.Minute))
+			DeferCleanup(vmoperator.CleanupWithDumpOnFailure(
+				func(cleanupCtx context.Context) {
+					deleteRegisteredVMAndPVCs(cleanupCtx, svClusterClient, config, vmNamespace, vmName)
+				},
+				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "vm", vmNamespace, vmName),
+			), NodeTimeout(3*time.Minute))
 			// End create new VM
 
 			// Wait for IP, a valid moID and the PVC attachment.
@@ -956,8 +389,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 			vmObj := object.NewVirtualMachine(vmopvCenterClient, vmMoRef)
 
 			By("Power off the VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, "PoweredOff")
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Add the pause annotation to VM")
 
@@ -1258,73 +690,6 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 
 			// We can't use len(existingVM.Spec.Volumes) here because we are only restoring one disk.
 			vmservice.VerifyPostRegisterVM(ctx, existingVM.Name, existingVM.Namespace, nil, 1, clusterProxy, config, svClusterClient, wcpClient)
-		})
-	})
-
-	// Deprecated: This test simulates a restore (the vSphere VM is kept and only the CR is deleted) instead of performing
-	// one. It is superseded by "Should restore a lost VM as a new VM and register it" in the Veeam-backed
-	// backuprestore suite and will be removed once that suite leaves
-	// quarantine (spec 010-veeam-e2e-backup-restore).
-	Context("RegisterVM - Restore to new", func() {
-		It("Should register VM when no pre-existing VM CR exists", Label("experimental"), func() {
-			if !vmServiceBackupRestoreEnabled {
-				Skip("WCP_VMService_BackupRestore FSS is not enabled")
-			}
-
-			vmName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			secretName := vmName + "-cloud-config-data"
-			secret := manifestbuilders.Secret{
-				Namespace: input.WCPNamespaceName,
-				Name:      secretName,
-			}
-			secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-			Expect(clusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data")
-
-			resources := config.InfraConfig.ManagementClusterConfig.Resources
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				VMClassName:      resources.VMClassName,
-				StorageClassName: resources.StorageClassName,
-				ResourcePolicy:   resources.VMResourcePolicyName,
-				ImageName:        linuxVMIName,
-				Bootstrap: manifestbuilders.Bootstrap{
-					CloudInit: &manifestbuilders.CloudInit{
-						RawCloudConfig: &manifestbuilders.KeySelector{
-							Key:  "user-data",
-							Name: secretName,
-						},
-					},
-				},
-				PowerState: "PoweredOn",
-			}
-			vmYaml := manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create Linux VM:\n%s", string(vmYaml))
-
-			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-			vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName,
-				metav1.Condition{
-					Type:   consts.VMUnmanagedVolumesBackfilledCondition,
-					Status: metav1.ConditionTrue,
-				})
-
-			existingVM, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(existingVM).ToNot(BeNil())
-
-			expectedVolCount := len(existingVM.Spec.Volumes)
-			vmMoID := vmservice.DeleteVMResource(ctx, existingVM.Name, existingVM.Namespace, nil, clusterProxy, config, svClusterClient)
-			taskInfo, err := vmservice.InvokeRegisterVM(ctx, vmMoID, input.WCPNamespaceName, clusterProxy, wcpClient)
-
-			By("Verify task state is success")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(taskInfo).ToNot(BeNil())
-			Expect(taskInfo.Error).To(BeNil())
-			Expect(taskInfo.State).To(Equal(types.TaskInfoStateSuccess))
-
-			vmservice.VerifyPostRegisterVM(ctx, vmName, input.WCPNamespaceName, nil, expectedVolCount, clusterProxy, config, svClusterClient, wcpClient)
-			Expect(clusterProxy.DeleteWithArgs(ctx, vmYaml)).To(Succeed(), "failed to delete virtualmachine")
 		})
 	})
 }

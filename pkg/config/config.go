@@ -213,10 +213,9 @@ type FeatureStates struct {
 	VMAffinityDuringExecution     bool
 	StoragePolicyMutability       bool
 	VMVlanSubinterface            bool
-	TelcoVMServiceAPI             bool
+	VMServiceClasslessVM          bool
 	PerNamespaceNetworkProvider   bool
 	WorkloadIPv6                  bool
-	VirtualMachineConfigPolicy    bool
 	WorkloadNetworkConfiguration  bool
 	ExtensionCompatConstraint     bool
 	VMEviction                    bool

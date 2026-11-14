@@ -28,10 +28,13 @@ func NetPlanCustomization(
 				Macaddress: ptr.To(NormalizeNetplanMac(b.MacAddress)),
 			},
 			SetName: &b.GuestDeviceName,
-			Nameservers: &netplan.Nameserver{
+		}
+
+		if len(b.Nameservers) > 0 || len(b.SearchDomains) > 0 {
+			npEth.Nameservers = &netplan.Nameserver{
 				Addresses: b.Nameservers,
 				Search:    b.SearchDomains,
-			},
+			}
 		}
 
 		if b.MTU > 0 {

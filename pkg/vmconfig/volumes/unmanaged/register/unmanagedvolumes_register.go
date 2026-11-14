@@ -289,7 +289,7 @@ func ensureUnmanagedDisksConfigsAreUpdated(
 
 	logger := pkglog.FromContextOrDefault(ctx).
 		WithName("ensureUnmanagedDisksConfigsAreUpdated")
-	logger.Info(
+	logger.V(4).Info(
 		"Ensuring unmanaged disks have storage policies and new capacities",
 		"disks", info.Disks,
 		"volumes", info.Volumes)
@@ -454,7 +454,7 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 	}
 
 	if len(pbmRefs) > 0 {
-		logger.Info("Querying associated profiles", "pbmObjectRefs", pbmRefs)
+		logger.V(4).Info("Querying associated profiles", "pbmObjectRefs", pbmRefs)
 
 		pbmResults, err := pbmClient.QueryAssociatedProfiles(ctx, pbmRefs)
 		if err != nil {
@@ -462,7 +462,7 @@ func ensureUnmanagedDisksHaveStoragePolicies(
 				"failed to query associated profiles: %w", err)
 		}
 
-		logger.Info("Queried associated profiles", "result", pbmResults)
+		logger.V(4).Info("Queried associated profiles", "result", pbmResults)
 		for _, r := range pbmResults {
 			if lp := len(r.ProfileId); lp > 0 {
 				for i := range info.Disks {
@@ -574,7 +574,7 @@ func registerUnmanagedDisks(
 	info pkgvol.VolumeInfo) (bool, error) {
 
 	logger := pkglog.FromContextOrDefault(ctx).WithName("registerUnmanagedDisks")
-	logger.Info(
+	logger.V(4).Info(
 		"Registering unmanaged disks",
 		"disks", info.Disks,
 		"volumes", info.Volumes)
@@ -594,7 +594,7 @@ func registerUnmanagedDisks(
 			}
 		}
 
-		logger.Info("Phase 1: ensure PVC and claim for unmanaged disk",
+		logger.V(4).Info("Phase 1: ensure PVC and claim for unmanaged disk",
 			"disk", di, "volume", volume, "isFCD", di.FCD)
 
 		pvc, err := ensurePVCForUnmanagedDisk(ctx, k8sClient, vm, pvcName, di)

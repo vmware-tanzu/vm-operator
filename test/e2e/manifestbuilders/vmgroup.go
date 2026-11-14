@@ -16,46 +16,23 @@ import (
 )
 
 type VirtualMachineGroupYaml struct {
-	Namespace                   string               `json:"namespace,omitempty"`
-	Name                        string               `json:"name,omitempty"`
-	GroupName                   string               `json:"groupName,omitempty"`
-	PowerState                  string               `json:"powerState,omitempty"`
-	PowerOffMode                string               `json:"powerOffMode,omitempty"`
-	NextForcePowerStateSyncTime string               `json:"nextForcePowerStateSyncTime,omitempty"`
-	Members                     []vmopv1.GroupMember `json:"members,omitempty"`
-	BootOrder                   []BootOrder          `json:"bootOrder,omitempty"`
+	Namespace string               `json:"namespace,omitempty"`
+	Name      string               `json:"name,omitempty"`
+	GroupName string               `json:"groupName,omitempty"`
+	Members   []vmopv1.GroupMember `json:"members,omitempty"`
+	BootOrder []BootOrder          `json:"bootOrder,omitempty"`
 }
 
 // BootOrder is needed to serialize the bootOrder.PowerOnDelay/PowerOffDelay
 // fields correctly as their pointer types in the VMOP API.
 //
 // PowerOffDelay is only defined on the v1alpha6 (hub) API, so it is only
-// rendered by the v1alpha6 boot-order template
-// (GetVirtualMachineGroupWithBootOrderYamlV1Alpha6); the v1alpha5 template
+// set by VirtualMachineGroupWithBootOrderA6; VirtualMachineGroupWithBootOrderA5
 // ignores it.
 type BootOrder struct {
 	Members       []vmopv1.GroupMember `json:"members,omitempty"`
 	PowerOnDelay  string               `json:"powerOnDelay,omitempty"`
 	PowerOffDelay string               `json:"powerOffDelay,omitempty"`
-}
-
-// GetVirtualMachineGroupYaml returns a v1alpha5 VirtualMachineGroup YAML
-// manifest whose Members form a single boot order group.
-func GetVirtualMachineGroupYaml(vmGroupYaml VirtualMachineGroupYaml) []byte {
-	return ToYAML(VirtualMachineGroupA5(vmGroupYaml))
-}
-
-// GetVirtualMachineGroupWithBootOrderYaml returns a v1alpha5
-// VirtualMachineGroup YAML manifest using the explicit BootOrder.
-func GetVirtualMachineGroupWithBootOrderYaml(vmGroupYaml VirtualMachineGroupYaml) []byte {
-	return ToYAML(must(VirtualMachineGroupWithBootOrderA5(vmGroupYaml)))
-}
-
-// GetVirtualMachineGroupWithBootOrderYamlV1Alpha6 returns a v1alpha6
-// VirtualMachineGroup YAML manifest using the explicit BootOrder. The v1alpha6
-// (hub) API is required to set bootOrder[].powerOffDelay.
-func GetVirtualMachineGroupWithBootOrderYamlV1Alpha6(vmGroupYaml VirtualMachineGroupYaml) []byte {
-	return ToYAML(must(VirtualMachineGroupWithBootOrderA6(vmGroupYaml)))
 }
 
 // VirtualMachineGroupA5 returns a v1alpha5 VirtualMachineGroup whose Members
@@ -95,10 +72,7 @@ func VirtualMachineGroupWithBootOrderA5(vmGroupYaml VirtualMachineGroupYaml) (*v
 			Namespace: vmGroupYaml.Namespace,
 		},
 		Spec: vmopv1a5.VirtualMachineGroupSpec{
-			GroupName:                   vmGroupYaml.GroupName,
-			PowerState:                  vmopv1a5.VirtualMachinePowerState(vmGroupYaml.PowerState),
-			PowerOffMode:                vmopv1a5.VirtualMachinePowerOpMode(vmGroupYaml.PowerOffMode),
-			NextForcePowerStateSyncTime: vmGroupYaml.NextForcePowerStateSyncTime,
+			GroupName: vmGroupYaml.GroupName,
 		},
 	}
 
@@ -127,10 +101,7 @@ func VirtualMachineGroupWithBootOrderA6(vmGroupYaml VirtualMachineGroupYaml) (*v
 			Namespace: vmGroupYaml.Namespace,
 		},
 		Spec: vmopv1.VirtualMachineGroupSpec{
-			GroupName:                   vmGroupYaml.GroupName,
-			PowerState:                  vmopv1.VirtualMachinePowerState(vmGroupYaml.PowerState),
-			PowerOffMode:                vmopv1.VirtualMachinePowerOpMode(vmGroupYaml.PowerOffMode),
-			NextForcePowerStateSyncTime: vmGroupYaml.NextForcePowerStateSyncTime,
+			GroupName: vmGroupYaml.GroupName,
 		},
 	}
 

@@ -64,6 +64,7 @@ const (
 	dummyPausedVMLabelVal          = "dummy-devops"
 	dummyVmiName                   = "vmi-dummy"
 	dummyNamespaceName             = "dummy-vm-namespace-for-webhook-validation"
+	dummyDefaultStorageClassName   = "dummy-default-storage-class"
 	dummyClusterModuleAnnVal       = "dummy-cluster-module"
 	dummyGroupName                 = "dummy-group"
 	dummyPVCName                   = "dummy-pvc"
@@ -241,6 +242,7 @@ func unitTests() {
 		unitTestsValidateUpdate,
 	)
 	controllerTests()
+	nicUnitNumberTests()
 	Describe(
 		"Delete",
 		Label(
@@ -263,6 +265,17 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	vm.Name = "dummy-vm"
 	vm.Namespace = dummyNamespaceName
 
+	defaultSC := builder.DummyStorageClass()
+	defaultSC.Name = dummyDefaultStorageClassName
+
+	// The storage class is required on create
+	vm.Spec.StorageClass = defaultSC.Name
+
+	defaultQuota := builder.DummyResourceQuota(
+		dummyNamespaceName,
+		defaultSC.Name+".storageclass.storage.k8s.io/persistentvolumeclaims")
+	defaultQuota.Name = defaultSC.Name + "-quota"
+
 	var (
 		oldVM  *vmopv1.VirtualMachine
 		oldObj *unstructured.Unstructured
@@ -281,7 +294,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 	az := builder.DummyAvailabilityZone()
 	zone := builder.DummyZone(dummyNamespaceName)
-	initObjects := []client.Object{az, zone}
+	initObjects := []client.Object{az, zone, defaultSC, defaultQuota}
 
 	return &unitValidatingWebhookContext{
 		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, initObjects...),
@@ -369,6 +382,119 @@ func setControllerForPVCWithBusNumber(vm *vmopv1.VirtualMachine, defaultBusNum i
 }
 
 // Validate Create operations.
+// affinityValidationCases exercises every term list through public admission.
+func affinityValidationCases(doTest func(testParams)) {
+	Context("Integrated affinity validation", func() {
+		for _, anti := range []bool{false, true} {
+			for _, bucket := range []string{"preferred", "required", "hard"} {
+				for _, invalid := range []string{
+					"valid", "topology", "operator", "reserved label", "reserved expression",
+					"invalid label key", "invalid label value", "invalid expression key", "invalid expression value",
+					"valid qualified key and empty value",
+				} {
+					It(fmt.Sprintf("validates anti=%t %s %s", anti, bucket, invalid), func() {
+						allowed := strings.HasPrefix(invalid, "valid")
+						doTest(testParams{
+							expectAllowed: allowed,
+							setup: func(ctx *unitValidatingWebhookContext) {
+								pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+									c.Features.TaggingAPI = false
+									c.Features.VMAffinityDuringExecution = true
+								})
+								createRequiredDuringExecutionPolicy(ctx)
+								metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+								term := vmopv1.VMAffinityTerm{TopologyKey: corev1.LabelHostname,
+									LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}}}
+								switch invalid {
+								case "topology":
+									term.TopologyKey = "invalid"
+								case "operator":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "app", Operator: metav1.LabelSelectorOpNotIn, Values: []string{"nginx"}}}
+								case "reserved label":
+									term.LabelSelector.MatchLabels = map[string]string{"vmoperator.vmware.com/test": "value"}
+								case "reserved expression":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "vmoperator.vmware.com/test", Operator: metav1.LabelSelectorOpIn, Values: []string{"value"}}}
+								case "invalid label key":
+									term.LabelSelector.MatchLabels = map[string]string{"bad:key": "nginx"}
+								case "invalid label value":
+									term.LabelSelector.MatchLabels = map[string]string{"app": "bad:value"}
+								case "invalid expression key":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "bad:key", Operator: metav1.LabelSelectorOpIn, Values: []string{"nginx"}}}
+								case "invalid expression value":
+									term.LabelSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: "app", Operator: metav1.LabelSelectorOpIn, Values: []string{"nginx", "bad value"}}}
+								case "valid qualified key and empty value":
+									metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "example.com/app", "")
+									term.LabelSelector = &metav1.LabelSelector{
+										MatchLabels:      map[string]string{"example.com/app": ""},
+										MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "example.com/app", Operator: metav1.LabelSelectorOpIn, Values: []string{""}}},
+									}
+								}
+								ctx.vm.Spec.Affinity = testAffinityTerms(anti, bucket, term)
+							},
+							validate: func(response admission.Response) {
+								if !allowed {
+									Expect(string(response.Result.Reason)).To(ContainSubstring("spec.affinity."))
+									Expect(string(response.Result.Reason)).ToNot(ContainSubstring("updating Affinity is not allowed"))
+								}
+								if strings.HasPrefix(invalid, "invalid") {
+									Expect(string(response.Result.Reason)).To(ContainSubstring("Invalid value:"))
+								}
+							},
+						})
+					})
+				}
+			}
+		}
+	})
+	Context("Legacy affinity selector syntax", func() {
+		It("does not validate label syntax when VMHardAffinityDuringExecution is disabled", func() {
+			doTest(testParams{
+				expectAllowed: true,
+				setup: func(ctx *unitValidatingWebhookContext) {
+					pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+						c.Features.VMHardAffinityDuringExecution = false
+						c.Features.VMGroups = true
+					})
+					ctx.vm.Spec.GroupName = "group"
+					ctx.vm.Spec.Affinity = testAffinityTerms(false, "preferred", vmopv1.VMAffinityTerm{
+						TopologyKey: corev1.LabelTopologyZone,
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"bad:key": "bad value"},
+						},
+					})
+					if ctx.oldVM != nil {
+						// Legacy affinity is immutable, so keep it unchanged on update.
+						ctx.oldVM.Spec.GroupName = ctx.vm.Spec.GroupName
+						ctx.oldVM.Spec.Affinity = ctx.vm.Spec.Affinity.DeepCopy()
+					}
+				},
+			})
+		})
+	})
+}
+
+func testAffinityTerms(anti bool, bucket string, term vmopv1.VMAffinityTerm) *vmopv1.AffinitySpec {
+	var preferred, required, hard []vmopv1.VMAffinityTerm
+	switch bucket {
+	case "preferred":
+		preferred = []vmopv1.VMAffinityTerm{term}
+	case "required":
+		required = []vmopv1.VMAffinityTerm{term}
+	case "hard":
+		hard = []vmopv1.VMAffinityTerm{term}
+	}
+	if anti {
+		return &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+			PreferredDuringSchedulingPreferredDuringExecution: preferred,
+			RequiredDuringSchedulingPreferredDuringExecution:  required,
+			RequiredDuringSchedulingRequiredDuringExecution:   hard}}
+	}
+	return &vmopv1.AffinitySpec{VMAffinity: &vmopv1.VMAffinitySpec{
+		PreferredDuringSchedulingPreferredDuringExecution: preferred,
+		RequiredDuringSchedulingPreferredDuringExecution:  required,
+		RequiredDuringSchedulingRequiredDuringExecution:   hard}}
+}
+
 func unitTestsValidateCreate() {
 
 	var (
@@ -524,6 +650,8 @@ func unitTestsValidateCreate() {
 			args.validate(response)
 		}
 	}
+
+	affinityValidationCases(doTest)
 
 	Context("PVC Volume Controller Fields", func() {
 		DescribeTable("create", doTest,
@@ -1694,6 +1822,25 @@ func unitTestsValidateCreate() {
 	Context("StorageClass", func() {
 
 		DescribeTable("StorageClass create", doTest,
+			Entry("storage class is empty",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.StorageClass = ""
+					},
+					validate: doValidateWithMsg(
+						`spec.storageClass: Required value`),
+				},
+			),
+			Entry("storage class is empty for a privileged user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.vm.Spec.StorageClass = ""
+					},
+					validate: doValidateWithMsg(
+						`spec.storageClass: Required value`),
+				},
+			),
 			Entry("storage class not found",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -1802,6 +1949,23 @@ func unitTestsValidateCreate() {
 		})
 
 		DescribeTable("VolumeAttributesClass create", doTest,
+			Entry("volume attributes class specified without a storage class",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.StorageClass = ""
+
+						volumeAttributesClass := builder.DummyVolumeAttributesClass()
+						Expect(ctx.Client.Create(ctx, volumeAttributesClass)).To(Succeed())
+						ctx.vm.Spec.VolumeAttributesClassName = volumeAttributesClass.Name
+
+						storagePolicyQuota := builder.DummyStoragePolicyQuota(
+							volumeAttributesClass.Name+"-storagepolicyquota", ctx.vm.Namespace, "id42")
+						Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+					},
+					validate: doValidateWithMsg(
+						`spec.storageClass: Required value`),
+				},
+			),
 			Entry("volume attributes class not found",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -4952,7 +5116,9 @@ func unitTestsValidateCreate() {
 										},
 										MatchExpressions: []metav1.LabelSelectorRequirement{
 											{
+												Key:      "foo",
 												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"bar"},
 											},
 										},
 									},
@@ -4965,7 +5131,9 @@ func unitTestsValidateCreate() {
 										},
 										MatchExpressions: []metav1.LabelSelectorRequirement{
 											{
+												Key:      "foo",
 												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"bar"},
 											},
 										},
 									},
@@ -5405,6 +5573,7 @@ type updateArgs struct {
 	changeImageRef              bool
 	changeImageName             bool
 	changeStorageClass          bool
+	emptyStorageClass           bool
 	changeResourcePolicy        bool
 	assignZoneName              bool
 	changeZoneName              bool
@@ -5430,6 +5599,11 @@ func setupOldVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 	ctx.oldVM.Spec.Reserved.ResourcePolicyName = "policy"
 	ctx.oldVM.Spec.InstanceUUID = args.oldInstanceUUID
 	ctx.oldVM.Spec.BiosUUID = args.oldBiosUUID
+
+	if args.emptyStorageClass {
+		// Simulate a VM created before the storage class was required.
+		ctx.oldVM.Spec.StorageClass = ""
+	}
 
 	if args.oldPowerState != "" {
 		ctx.oldVM.Spec.PowerState = args.oldPowerState
@@ -5467,6 +5641,9 @@ func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 	}
 	if args.changeBiosUUID {
 		ctx.vm.Spec.BiosUUID += updateSuffix
+	}
+	if args.emptyStorageClass {
+		ctx.vm.Spec.StorageClass = ""
 	}
 	if args.changeStorageClass {
 		ctx.vm.Spec.StorageClass += updateSuffix
@@ -5521,6 +5698,364 @@ func setupNewVMForUpdate(ctx *unitValidatingWebhookContext, args updateArgs) {
 
 	// Set controllerBusNumber on volumes to simulate mutation webhook
 	setControllerForPVC(ctx.vm)
+}
+
+func unitTestsValidateUpdateAffinityUnchangedTerms(doTest func(testParams)) {
+	Context("Mutable affinity unchanged terms", func() {
+		var (
+			badValueTerm = vmopv1.VMAffinityTerm{
+				TopologyKey: corev1.LabelTopologyZone,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "my db!"},
+				},
+			}
+			goodTerm = vmopv1.VMAffinityTerm{
+				TopologyKey: corev1.LabelTopologyZone,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "nginx"},
+				},
+			}
+		)
+
+		setup := func(ctx *unitValidatingWebhookContext) {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.TaggingAPI = false
+				config.Features.VMHardAffinityDuringExecution = true
+				config.Features.VMAffinityDuringExecution = true
+				config.Features.VMGroups = true
+			})
+			ctx.vm.Spec.GroupName = dummyGroupName
+			ctx.oldVM.Spec.GroupName = dummyGroupName
+		}
+
+		It("allows editing a preferred term when an unchanged required term has an invalid label value", func() {
+			doTest(testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setup(ctx)
+					ctx.oldVM.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{badValueTerm},
+					}}
+					ctx.vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution:  []vmopv1.VMAffinityTerm{badValueTerm},
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{goodTerm},
+					}}
+				},
+				expectAllowed: true,
+			})
+		})
+
+		It("rejects a changed term with an invalid label value", func() {
+			doTest(testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setup(ctx)
+					ctx.oldVM.Spec.Affinity = testAffinityTerms(true, "preferred", goodTerm)
+					ctx.vm.Spec.Affinity = testAffinityTerms(true, "preferred", badValueTerm)
+				},
+				validate: func(response admission.Response) {
+					Expect(string(response.Result.Reason)).To(ContainSubstring("my db!"))
+				},
+			})
+		})
+
+		type listCase struct {
+			anti bool
+			list string
+		}
+		// setList sets one named term list on a fresh affinity spec.
+		setList := func(c listCase, spec *vmopv1.AffinitySpec, terms []vmopv1.VMAffinityTerm) {
+			if c.anti {
+				if spec.VMAntiAffinity == nil {
+					spec.VMAntiAffinity = &vmopv1.VMAntiAffinitySpec{}
+				}
+				switch c.list {
+				case "requiredPreferred":
+					spec.VMAntiAffinity.RequiredDuringSchedulingPreferredDuringExecution = terms
+				case "preferred":
+					spec.VMAntiAffinity.PreferredDuringSchedulingPreferredDuringExecution = terms
+				case "requiredRequired":
+					spec.VMAntiAffinity.RequiredDuringSchedulingRequiredDuringExecution = terms
+				}
+				return
+			}
+			if spec.VMAffinity == nil {
+				spec.VMAffinity = &vmopv1.VMAffinitySpec{}
+			}
+			switch c.list {
+			case "requiredPreferred":
+				spec.VMAffinity.RequiredDuringSchedulingPreferredDuringExecution = terms
+			case "preferred":
+				spec.VMAffinity.PreferredDuringSchedulingPreferredDuringExecution = terms
+			case "requiredRequired":
+				spec.VMAffinity.RequiredDuringSchedulingRequiredDuringExecution = terms
+			}
+		}
+		// other returns a list that is not c.list and needs no namespace policy.
+		other := func(c listCase) listCase {
+			if c.list == "preferred" {
+				return listCase{anti: c.anti, list: "requiredPreferred"}
+			}
+			return listCase{anti: c.anti, list: "preferred"}
+		}
+
+		DescribeTable("per term list",
+			func(c listCase, unchanged bool) {
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setup(ctx)
+						oldAffinity, newAffinity := &vmopv1.AffinitySpec{}, &vmopv1.AffinitySpec{}
+						if unchanged {
+							// The list keeps an invalid value, and an unrelated list changes.
+							setList(c, oldAffinity, []vmopv1.VMAffinityTerm{badValueTerm})
+							setList(c, newAffinity, []vmopv1.VMAffinityTerm{badValueTerm})
+							setList(other(c), newAffinity, []vmopv1.VMAffinityTerm{goodTerm})
+						} else {
+							setList(c, oldAffinity, []vmopv1.VMAffinityTerm{goodTerm})
+							setList(c, newAffinity, []vmopv1.VMAffinityTerm{badValueTerm})
+						}
+						ctx.oldVM.Spec.Affinity = oldAffinity
+						ctx.vm.Spec.Affinity = newAffinity
+					},
+					expectAllowed: unchanged,
+					validate: func(response admission.Response) {
+						if !unchanged {
+							Expect(string(response.Result.Reason)).To(ContainSubstring("my db!"))
+						}
+					},
+				})
+			},
+			Entry("affinity requiredPreferred unchanged is skipped", listCase{false, "requiredPreferred"}, true),
+			Entry("affinity preferred unchanged is skipped", listCase{false, "preferred"}, true),
+			Entry("affinity requiredRequired unchanged is skipped", listCase{false, "requiredRequired"}, true),
+			Entry("anti-affinity requiredPreferred unchanged is skipped", listCase{true, "requiredPreferred"}, true),
+			Entry("anti-affinity preferred unchanged is skipped", listCase{true, "preferred"}, true),
+			Entry("anti-affinity requiredRequired unchanged is skipped", listCase{true, "requiredRequired"}, true),
+			Entry("affinity requiredPreferred changed is validated", listCase{false, "requiredPreferred"}, false),
+			Entry("affinity preferred changed is validated", listCase{false, "preferred"}, false),
+			Entry("affinity requiredRequired changed is validated", listCase{false, "requiredRequired"}, false),
+			Entry("anti-affinity requiredPreferred changed is validated", listCase{true, "requiredPreferred"}, false),
+			Entry("anti-affinity preferred changed is validated", listCase{true, "preferred"}, false),
+			Entry("anti-affinity requiredRequired changed is validated", listCase{true, "requiredRequired"}, false),
+		)
+
+		It("allows editing a preferred term when an unchanged required host term is not allowed for the user", func() {
+			hostTerm := vmopv1.VMAffinityTerm{
+				TopologyKey: corev1.LabelHostname,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "nginx"},
+				},
+			}
+			doTest(testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setup(ctx)
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMAffinityDuringExecution = false
+					})
+					ctx.IsPrivilegedAccount = false
+					ctx.oldVM.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{hostTerm},
+					}}
+					ctx.vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+						RequiredDuringSchedulingPreferredDuringExecution:  []vmopv1.VMAffinityTerm{hostTerm},
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{goodTerm},
+					}}
+				},
+				expectAllowed: true,
+			})
+		})
+	})
+}
+
+func unitTestsValidateUpdateAffinityAuthorization(doTest func(testParams)) {
+	type authorizationCase struct {
+		authorized     bool
+		hardAffinity   bool
+		expectAllowed  bool
+		expectedReason string
+	}
+
+	Context("Mutable affinity authorization", func() {
+		DescribeTableSubtree("rule type", func(antiAffinity bool) {
+			DescribeTable("namespace permission and feature gate", func(tc authorizationCase) {
+				doTest(testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						if tc.authorized {
+							createRequiredDuringExecutionPolicy(ctx)
+						}
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.TaggingAPI = false
+							config.Features.VMHardAffinityDuringExecution = tc.hardAffinity
+							config.Features.VMAffinityDuringExecution = true
+							config.Features.VMGroups = true
+						})
+
+						ctx.vm.Spec.GroupName = dummyGroupName
+						ctx.oldVM.Spec.GroupName = dummyGroupName
+						metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+						ctx.vm.Spec.Affinity = testAffinityTerms(antiAffinity, "hard", vmopv1.VMAffinityTerm{
+							TopologyKey: corev1.LabelHostname,
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "nginx"},
+							},
+						})
+					},
+					expectAllowed: tc.expectAllowed,
+					validate: func(response admission.Response) {
+						if tc.expectedReason != "" {
+							Expect(string(response.Result.Reason)).To(ContainSubstring(tc.expectedReason))
+						}
+					},
+				})
+			},
+				Entry("allows an authorized namespace when hard affinity is enabled", authorizationCase{
+					authorized:    true,
+					hardAffinity:  true,
+					expectAllowed: true,
+				}),
+				Entry("rejects an unauthorized namespace when hard affinity is enabled", authorizationCase{
+					hardAffinity:   true,
+					expectedReason: "requiredDuringSchedulingRequiredDuringExecution",
+				}),
+				Entry("rejects an authorized namespace when hard affinity is disabled", authorizationCase{
+					authorized:     true,
+					expectedReason: "updating Affinity is not allowed",
+				}),
+				Entry("rejects an unauthorized namespace when hard affinity is disabled", authorizationCase{
+					expectedReason: "updating Affinity is not allowed",
+				}),
+			)
+		},
+			Entry("affinity", false),
+			Entry("anti-affinity", true),
+		)
+	})
+}
+
+func unitTestsValidateUpdateAffinityGate(doTest func(testParams)) {
+	type featureCase struct {
+		taggingAPI   bool
+		hardAffinity bool
+	}
+
+	Context("Mutable affinity gate", func() {
+		DescribeTableSubtree("feature flags", func(features featureCase) {
+			for _, powerState := range []vmopv1.VirtualMachinePowerState{
+				vmopv1.VirtualMachinePowerStateOff,
+				vmopv1.VirtualMachinePowerStateOn,
+			} {
+				Context(fmt.Sprintf("VM is powered %s", powerState), func() {
+					term := vmopv1.VMAffinityTerm{
+						TopologyKey: corev1.LabelHostname,
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "nginx"},
+						},
+					}
+					preferred := testAffinityTerms(false, "preferred", term)
+					required := testAffinityTerms(false, "required", term)
+
+					DescribeTable("affinity changes", func(oldAffinity, newAffinity *vmopv1.AffinitySpec) {
+						doTest(testParams{
+							setup: func(ctx *unitValidatingWebhookContext) {
+								pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+									config.Features.TaggingAPI = features.taggingAPI
+									config.Features.VMHardAffinityDuringExecution = features.hardAffinity
+									config.Features.VMAffinityDuringExecution = true
+									config.Features.VMGroups = true
+								})
+
+								ctx.vm.Spec.GroupName = dummyGroupName
+								ctx.oldVM.Spec.GroupName = dummyGroupName
+								ctx.vm.Spec.PowerState = powerState
+								ctx.oldVM.Spec.PowerState = powerState
+								ctx.vm.Status.PowerState = powerState
+								ctx.oldVM.Status.PowerState = powerState
+								metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+								ctx.vm.Spec.Affinity = newAffinity.DeepCopy()
+								ctx.oldVM.Spec.Affinity = oldAffinity.DeepCopy()
+							},
+							expectAllowed: features.hardAffinity,
+						})
+					},
+						Entry("add affinity", nil, preferred),
+						Entry("edit affinity", preferred, required),
+						Entry("clear affinity", preferred, nil),
+						Entry("replace affinity with an empty spec", preferred, &vmopv1.AffinitySpec{}),
+						Entry("replace nil affinity with an empty spec", nil, &vmopv1.AffinitySpec{}),
+					)
+				})
+			}
+		},
+			Entry("tagging disabled, hard affinity disabled", featureCase{}),
+			Entry("tagging disabled, hard affinity enabled", featureCase{
+				hardAffinity: true,
+			}),
+			Entry("tagging enabled, hard affinity disabled", featureCase{
+				taggingAPI: true,
+			}),
+			Entry("tagging enabled, hard affinity enabled", featureCase{
+				taggingAPI:   true,
+				hardAffinity: true,
+			}),
+		)
+	})
+
+	Context("Required during execution term with no namespace policy", func() {
+		var (
+			reqTerm = vmopv1.VMAffinityTerm{
+				TopologyKey: corev1.LabelHostname,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "nginx"},
+				},
+			}
+			prefTerm = func(value string) vmopv1.VMAffinityTerm {
+				return vmopv1.VMAffinityTerm{
+					TopologyKey: corev1.LabelTopologyZone,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"tier": value},
+					},
+				}
+			}
+			build = func(req vmopv1.VMAffinityTerm, pref string) *vmopv1.AffinitySpec {
+				return &vmopv1.AffinitySpec{
+					VMAffinity: &vmopv1.VMAffinitySpec{
+						RequiredDuringSchedulingRequiredDuringExecution:   []vmopv1.VMAffinityTerm{req},
+						PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{prefTerm(pref)},
+					},
+				}
+			}
+			setup = func(newAff, oldAff *vmopv1.AffinitySpec) func(*unitValidatingWebhookContext) {
+				return func(ctx *unitValidatingWebhookContext) {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.VMHardAffinityDuringExecution = true
+						config.Features.VMAffinityDuringExecution = true
+						config.Features.VMGroups = true
+					})
+					ctx.vm.Spec.GroupName = dummyGroupName
+					ctx.oldVM.Spec.GroupName = dummyGroupName
+					metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "app", "nginx")
+					metav1.SetMetaDataLabel(&ctx.vm.ObjectMeta, "tier", "a")
+					ctx.vm.Spec.Affinity = newAff.DeepCopy()
+					ctx.oldVM.Spec.Affinity = oldAff.DeepCopy()
+				}
+			}
+		)
+
+		It("allows editing an unrelated preferred term", func() {
+			doTest(testParams{
+				setup:         setup(build(reqTerm, "b"), build(reqTerm, "a")),
+				expectAllowed: true,
+			})
+		})
+
+		It("rejects changing the required term", func() {
+			changed := reqTerm
+			changed.TopologyKey = corev1.LabelTopologyZone
+			doTest(testParams{
+				setup: setup(build(changed, "a"), build(reqTerm, "a")),
+				validate: doValidateWithMsg(
+					`spec.affinity.vmAffinity.requiredDuringSchedulingRequiredDuringExecution: Forbidden: requiredDuringSchedulingRequiredDuringExecution requires a RequiredDuringExecutionVMPlacementPolicy in the namespace`),
+			})
+		})
+	})
 }
 
 // Validate Update operations.
@@ -5598,6 +6133,8 @@ func unitTestsValidateUpdate() {
 		Entry("should deny instance uuid change", updateArgs{changeInstanceUUID: true, oldInstanceUUID: "uuid"}, false, msg, nil),
 		Entry("should deny bios uuid change", updateArgs{changeBiosUUID: true, oldBiosUUID: "uuid"}, false, msg, nil),
 		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, msg, nil),
+		Entry("should allow update of VM with empty storageClass", updateArgs{emptyStorageClass: true}, true, nil, nil),
+		Entry("should deny setting storageClass on VM with empty storageClass", updateArgs{emptyStorageClass: true, changeStorageClass: true}, false, msg, nil),
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
 
 		Entry("should allow empty instance uuid change", updateArgs{changeInstanceUUID: true}, true, nil, nil),
@@ -5675,6 +6212,8 @@ func unitTestsValidateUpdate() {
 			args.validate(response)
 		}
 	}
+
+	affinityValidationCases(doTest)
 
 	DescribeTable(
 		"spec.class and spec.className update",
@@ -8726,12 +9265,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow spec.advanced vmx field change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow spec.advanced vmx field change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8748,12 +9287,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow spec.advanced slice vmx field change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow spec.advanced slice vmx field change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8770,12 +9309,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("allow spec.advanced.extraConfig change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("allow spec.advanced.extraConfig change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8791,12 +9330,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow interfaces[i].type change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow interfaces[i].type change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8821,12 +9360,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow interfaces[i].vmxnet3 change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow interfaces[i].vmxnet3 change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8857,12 +9396,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow interfaces[i].vnumaNodeID change when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow interfaces[i].vnumaNodeID change when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -8887,12 +9426,12 @@ func unitTestsValidateUpdate() {
 			},
 		),
 
-		Entry("disallow any interface field change (including non-backfilled fields) when TelcoVMServiceAPI and not yet upgraded",
+		Entry("disallow any interface field change (including non-backfilled fields) when VMServiceClasslessVM and not yet upgraded",
 			testParams{
 				setup: func(ctx *unitValidatingWebhookContext) {
 					ctx.IsPrivilegedAccount = false
 					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-						config.Features.TelcoVMServiceAPI = true
+						config.Features.VMServiceClasslessVM = true
 					})
 					ctx.oldVM.Annotations = map[string]string{}
 					ctx.vm.Annotations = map[string]string{}
@@ -9018,6 +9557,9 @@ func unitTestsValidateUpdate() {
 		)
 	})
 
+	unitTestsValidateUpdateAffinityAuthorization(doTest)
+	unitTestsValidateUpdateAffinityUnchangedTerms(doTest)
+	unitTestsValidateUpdateAffinityGate(doTest)
 	Context("Affinity", func() {
 		DescribeTable("Updates", doTest,
 			Entry("Immutable",
@@ -11347,7 +11889,7 @@ func commonCreateAndUpdateValidations(
 		)
 	})
 
-	Context("TelcoVMServiceAPI extraConfig validation", func() {
+	Context("VMServiceClasslessVM extraConfig validation", func() {
 		var (
 			ctx *unitValidatingWebhookContext
 		)
@@ -11360,9 +11902,9 @@ func commonCreateAndUpdateValidations(
 		BeforeEach(func() {
 			ctx = newUnitTestContextForValidatingWebhook(true)
 
-			// Enable TelcoVMServiceAPI feature for all tests in this context.
+			// Enable VMServiceClasslessVM feature for all tests in this context.
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = true
+				config.Features.VMServiceClasslessVM = true
 			})
 
 			bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
@@ -11689,10 +12231,10 @@ func commonCreateAndUpdateValidations(
 
 	})
 
-	// The TelcoVMServiceAPI extraConfig validation context above always uses an
+	// The VMServiceClasslessVM extraConfig validation context above always uses an
 	// update context (oldVM != nil) even when called from unitTestsValidateCreate.
 	// This Context exercises the same validation on the create path (oldVM == nil).
-	Context("TelcoVMServiceAPI extraConfig validation - create path", func() {
+	Context("VMServiceClasslessVM extraConfig validation - create path", func() {
 		var ctx *unitValidatingWebhookContext
 
 		doTest := func(args testParams) {
@@ -11703,7 +12245,7 @@ func commonCreateAndUpdateValidations(
 			ctx = newUnitTestContextForValidatingWebhook(false) // create context: oldVM is nil
 
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = true
+				config.Features.VMServiceClasslessVM = true
 			})
 
 			bypassUpgradeCheck(&ctx.Context, ctx.vm)

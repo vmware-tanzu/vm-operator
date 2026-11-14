@@ -12,17 +12,17 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -48,21 +48,18 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 	)
 
 	var (
-		input                 VMLongevityInput
-		wcpClient             wcp.WorkloadManagementAPI
-		config                *e2eConfig.E2EConfig
-		clusterProxy          *common.VMServiceClusterProxy
-		svClusterConfig       *e2eConfig.ManagementClusterConfig
-		svClusterClient       ctrlclient.Client
-		clusterResources      *e2eConfig.Resources
-		secondNSContext       wcpframework.NamespaceContext
-		vmYaml                []byte
-		vmName                string
-		classReady            metav1.Condition
-		imageReady            metav1.Condition
-		storageReady          metav1.Condition
-		linuxImageDisplayName string
-		linuxVMIName          string
+		input            VMLongevityInput
+		wcpClient        wcp.WorkloadManagementAPI
+		config           *e2eConfig.E2EConfig
+		clusterProxy     wcpframework.WCPClusterProxyInterface
+		svClusterClient  ctrlclient.Client
+		clusterResources *e2eConfig.Resources
+		secondNSContext  wcpframework.NamespaceContext
+		vmName           string
+		classReady       metav1.Condition
+		imageReady       metav1.Condition
+		storageReady     metav1.Condition
+		linuxVMIName     string
 	)
 
 	BeforeEach(func() {
@@ -77,11 +74,11 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 		wcpClient = input.WCPClient
 		config = input.Config
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
-		svClusterConfig = config.InfraConfig.ManagementClusterConfig
+		clusterProxy = input.ClusterProxy
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
 		clusterResources = svClusterConfig.Resources
 		svClusterClient = clusterProxy.GetClient()
-		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
 
@@ -115,11 +112,15 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 
 	When("VM Class is associated with default namespace, not associated with the second namespace", func() {
 		It("VMClass CR should exist in default namespace and not exist in the second namespace", Label("smoke"), func() {
-			vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmClassName)
-			Expect(vmclass).ToNot(BeNil())
-			Expect(err).ToNot(HaveOccurred(), "vmclass should exist in namespace where it's associated with")
+			// WCP syncs the VMClass CR into the namespace asynchronously, so it can
+			// lag the namespace reporting RUNNING.
+			Eventually(func(g Gomega) {
+				vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmClassName)
+				g.Expect(err).ToNot(HaveOccurred(), "vmclass should exist in namespace where it's associated with")
+				g.Expect(vmclass).ToNot(BeNil())
+			}, time.Minute, 5*time.Second).Should(Succeed())
 
-			vmclass, err = utils.GetVirtualMachineClass(ctx, svClusterClient, secondNamespaceName, vmClassName)
+			vmclass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, secondNamespaceName, vmClassName)
 			Expect(vmclass).To(BeNil())
 			Expect(err).To(HaveOccurred(), "vmclass shouldn't exist in namespace where it's not associated with")
 		})
@@ -133,19 +134,19 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			By("Create VirtualMachine")
 
 			vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
-			vmParameters := manifestbuilders.VirtualMachineYaml{
-				Namespace:        input.WCPNamespaceName,
-				Name:             vmName,
-				ImageName:        linuxVMIName,
-				VMClassName:      vmClassName,
-				StorageClassName: clusterResources.StorageClassName,
-				ResourcePolicy:   clusterResources.VMResourcePolicyName,
-				PowerState:       "PoweredOn",
+			vmToCreate := &vmopv1a2.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: input.WCPNamespaceName,
+					Name:      vmName,
+				},
+				Spec: vmopv1a2.VirtualMachineSpec{
+					ImageName:    linuxVMIName,
+					ClassName:    vmClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+				},
 			}
-			vmYaml = manifestbuilders.GetVirtualMachineYamlA2(vmParameters)
-			Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create virtualmachine", string(vmYaml))
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				input.WCPNamespaceName, vmName, false)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		})
 
@@ -207,9 +208,7 @@ func VMLongevitySpec(ctx context.Context, inputGetter func() VMLongevityInput) {
 			}, 30*time.Second, 3*time.Second).Should(BeTrue())
 
 			By("VirtualMachinePrereqReadyCondition on VMs should not change")
-			vmoperator.CheckVirtualMachinesConditionConsistent(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, classReady)
-			vmoperator.CheckVirtualMachinesConditionConsistent(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, imageReady)
-			vmoperator.CheckVirtualMachinesConditionConsistent(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, storageReady)
+			vmoperator.CheckVirtualMachinesConditionConsistent(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, classReady, imageReady, storageReady)
 
 			By("Deleting VMClass in dcli will trigger VMClass CR get deleted in both associated namespace")
 			vmservice.VerifyVMClassDeletion(wcpClient, vmClassName)

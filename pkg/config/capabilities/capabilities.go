@@ -106,11 +106,10 @@ const (
 	// Supervisor capabilities CRD for the VM service supports VLAN Sub-Interfaces.
 	CapabilityKeyVlanSubinterface = "supports_vm_service_vlan_subinterface"
 
-	// CapabilityKeyTelcoVMServiceAPI is the name of the capability key defined
-	// in the Supervisor capabilities CRD for the VM Service's support for
-	// Telco VM advanced properties: spec.advanced first-class fields, extraConfig
-	// fallback, and per-NIC VMXNet3 tuning properties.
-	CapabilityKeyTelcoVMServiceAPI = "supports_telco_vm_service_api"
+	// CapabilityKeyVMServiceClasslessVM is the Supervisor capability for
+	// classless VMs. It jointly gates the Telco VM Service APIs and the
+	// environment-browser pipeline.
+	CapabilityKeyVMServiceClasslessVM = "supports_vm_service_classless_vm"
 
 	// CapabilityKeyPerNamespaceNetworkProvider is the name of the capability key
 	// defined in the Supervisor capabilities CRD for enabling different network
@@ -120,13 +119,6 @@ const (
 	// CapabilityKeyWorkloadIPv6 is the name of the capability key defined in
 	// the Supervisor capabilities CRD for IPv6 support for VM service workloads.
 	CapabilityKeyWorkloadIPv6 = "supports_workload_ipv6"
-
-	// CapabilityKeyVirtualMachineConfigPolicy is the name of the capability key
-	// defined in the Supervisor capabilities CRD. It gates the
-	// VirtualMachineConfigPolicy controllers, webhooks, and associated CRDs
-	// (ConfigTarget, VirtualMachineConfigOptions, VirtualMachineConfigPolicy,
-	// VirtualMachineGuestOptions).
-	CapabilityKeyVirtualMachineConfigPolicy = "supports_vm_service_vm_config_policy"
 
 	// CapabilityKeyWorkloadNetworkConfiguration is the name of the capability
 	// key defined in the Supervisor capabilities CRD for enabling the
@@ -153,10 +145,10 @@ const (
 	// DRS evacuation during cluster load balancing.
 	CapabilityKeyControlledRebalancingPolicy = "supports_infrapolicy_controlled_rebalancing"
 
-	// CapabilityKeyVMNetworkUnitNumbers is the name of the capability key
+	// CapabilityKeyVMServiceNetworkInterfaceUnitNumbers is the name of the capability key
 	// defined in the Supervisor capabilities CRD for the VM Service's support
 	// for VM network interface unit numbers.
-	CapabilityKeyVMNetworkUnitNumbers = "supports_VM_service_network_unit_numbers"
+	CapabilityKeyVMServiceNetworkInterfaceUnitNumbers = "supports_vm_service_network_interface_unit_numbers"
 
 	// CapabilityKeyK8sWorkloadMgmtAPI is the name of the capability key
 	// defined in the Supervisor capabilities CRD for the VirtualMachineReplicaSet
@@ -298,7 +290,6 @@ func updateCapabilitiesFeaturesFromMap(
 	return fs
 }
 
-//nolint:gocyclo
 func updateCapabilitiesFeaturesFromCRD(
 	obj capv1.Capabilities,
 	fs pkgcfg.FeatureStates) pkgcfg.FeatureStates {
@@ -339,14 +330,12 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.StoragePolicyMutability = capStatus.Activated
 		case CapabilityKeyVlanSubinterface:
 			fs.VMVlanSubinterface = capStatus.Activated
-		case CapabilityKeyTelcoVMServiceAPI:
-			fs.TelcoVMServiceAPI = capStatus.Activated
+		case CapabilityKeyVMServiceClasslessVM:
+			fs.VMServiceClasslessVM = capStatus.Activated
 		case CapabilityKeyPerNamespaceNetworkProvider:
 			fs.PerNamespaceNetworkProvider = capStatus.Activated
 		case CapabilityKeyWorkloadIPv6:
 			fs.WorkloadIPv6 = capStatus.Activated
-		case CapabilityKeyVirtualMachineConfigPolicy:
-			fs.VirtualMachineConfigPolicy = capStatus.Activated
 		case CapabilityKeyWorkloadNetworkConfiguration:
 			fs.WorkloadNetworkConfiguration = capStatus.Activated
 		case CapabilityKeyExtensionCompatConstraint:
@@ -355,7 +344,7 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.VMEviction = capStatus.Activated
 		case CapabilityKeyControlledRebalancingPolicy:
 			fs.ControlledRebalancingPolicy = capStatus.Activated
-		case CapabilityKeyVMNetworkUnitNumbers:
+		case CapabilityKeyVMServiceNetworkInterfaceUnitNumbers:
 			fs.VMNetworkUnitNumbers = capStatus.Activated
 		case CapabilityKeyK8sWorkloadMgmtAPI:
 			fs.K8sWorkloadMgmtAPI = capStatus.Activated

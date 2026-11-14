@@ -26,6 +26,10 @@ type E2EConfig struct {
 	// VeeamConfig points the backup/restore suite at a Veeam Backup &
 	// Replication server. The suite is skipped when Server is empty.
 	VeeamConfig *VeeamConfig `json:"veeamConfig,omitempty"`
+
+	// SupervisorCapabilities is the read-only snapshot loaded during suite setup.
+	// It is runtime state and must not be supplied by the configuration file.
+	SupervisorCapabilities map[string]bool `json:"-"`
 }
 
 // VeeamConfig holds the Veeam Backup & Replication connection settings.
@@ -65,7 +69,6 @@ type Resources struct {
 	EncryptedImageDisplayName     string `json:"encryptedImageDisplayName,omitempty"`
 	StorageClassName              string `json:"storageClassName,omitempty"`
 	VMClassName                   string `json:"vmClassName,omitempty"`
-	VMResourcePolicyName          string `json:"vmResourcePolicyName,omitempty"`
 	ContentLibrarySubscriptionURL string `json:"contentLibrarySubscriptionURL,omitempty"`
 }
 

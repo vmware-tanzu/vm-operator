@@ -31,7 +31,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -64,15 +63,15 @@ type VMExtraConfigSpecInput struct {
 // Each It block creates its own VM and cleans up after itself, so all blocks are
 // independently runnable via TEST_FOCUS or LABEL_FILTER.
 //
-// All blocks are skipped when the TelcoVMServiceAPI supervisor capability
-// (supports_telco_vm_service_api) is not enabled on the cluster.
+// All blocks are skipped when the classless VM Supervisor capability
+// (supports_vm_service_classless_vm) is not enabled on the cluster.
 func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpecInput) {
 	const specName = "vm-extraconfig"
 
 	var (
 		input           VMExtraConfigSpecInput
 		config          *e2eConfig.E2EConfig
-		clusterProxy    *common.VMServiceClusterProxy
+		clusterProxy    framework.ClusterProxyInterface
 		svClusterClient ctrlclient.Client
 		vCenterClient   *vim25.Client
 		vmClassName     string
@@ -95,14 +94,10 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			"Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
 
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
-		skipper.SkipUnlessSupervisorCapabilityEnabled(
-			ctx,
-			input.ClusterProxy.(*common.VMServiceClusterProxy),
-			consts.TelcoVMServiceAPICapabilityName,
-		)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
 
 		config = input.Config
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
@@ -156,9 +151,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					},
 				},
 			})
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created in vSphere")
 			vmoperator.WaitForVirtualMachineConditionCreated(
@@ -227,15 +220,13 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					VMXSwapEnabled:                     ptr.To(true),
 				},
 			})
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 
 			By("Flipping VMXSwapEnabled=false (PowerCycle-mode field) while VM is powered on")
 			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
@@ -251,19 +242,15 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			Expect(cond).NotTo(BeNil())
 
 			By("Power-cycling VM via spec to apply the pending change")
-			vmoperator.UpdateVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+			vmoperator.PowerOffVirtualMachineAndWait(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Waiting for ExtraConfigSynced=True once VM is powered off")
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 
 			By("Powering VM back on")
-			vmoperator.UpdateVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
-			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+			vmoperator.PowerOnVirtualMachineAndWait(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Asserting VMXSwap VMX key reflects FALSE after the power cycle")
 			Eventually(func(g Gomega) {
@@ -299,15 +286,13 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					},
 				},
 			})
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 
 			By("Adding HugePages1GEnabled=true (PowerOff-mode) while VM is powered on")
 			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
@@ -329,10 +314,8 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 				"deferred key %s should not appear in status.extraConfig while VM is on", vmxHugePages)
 
 			By("Powering off VM via spec to apply the deferred PowerOff-mode key")
-			vmoperator.UpdateVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+			vmoperator.PowerOffVirtualMachineAndWait(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Waiting for ExtraConfigSynced=True after power-off")
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
@@ -376,19 +359,15 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 				StorageClass: storageClass,
 				Advanced:     advanced,
 			})
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 
 			By("Powering off VM via spec before deletion")
-			vmoperator.UpdateVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+			vmoperator.PowerOffVirtualMachineAndWait(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Deleting VM via Kubernetes API")
 			vmoperator.DeleteVirtualMachine(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
@@ -444,9 +423,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					VMXSwapEnabled:                     ptr.To(true),
 				},
 			})
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -481,7 +458,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 
 			By("Waiting for operator to restore VM to PoweredOn (drift recovery)")
 			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOn")
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
 
 			By("Asserting extraConfig is intact after drift recovery")
 			vm = getExtraConfigVM(ctx, svClusterClient, vmKey)
@@ -516,19 +493,15 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					},
 				},
 			})
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 			condBaseline := waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
 
 			By("Powering off VM cleanly via spec before destroy")
-			vmoperator.UpdateVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+			vmoperator.PowerOffVirtualMachineAndWait(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Recording BiosUUID and UniqueID before the vSphere destroy")
 			originalBiosUUID := waitForBiosUUID(ctx, svClusterClient, config, vmKey)
@@ -610,9 +583,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					PNUMANodeAffinity: []int32{0},
 				},
 			})
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -635,10 +606,8 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 				metav1.ConditionFalse, vmopv1.VirtualMachinePowerCyclePendingReason)
 
 			By("Powering off VM to apply the pending clear")
-			vmoperator.UpdateVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
-			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, "PoweredOff")
+			vmoperator.PowerOffVirtualMachineAndWait(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			By("Waiting for ExtraConfigSynced=True after power-off")
 			waitForExtraConfigSynced(ctx, svClusterClient, config, vmKey, metav1.ConditionTrue, "")
@@ -686,9 +655,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					},
 				},
 			}
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created in vSphere")
 			vmoperator.WaitForVirtualMachineConditionCreated(
@@ -725,9 +692,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 					VMXSwapEnabled: ptr.To(true),
 				},
 			})
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(
 				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
@@ -819,9 +784,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 				ReservationLockedToMax: ptr.To(true),
 			}
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created in vSphere (powered off)")
 			vmoperator.WaitForVirtualMachineConditionCreated(
@@ -940,10 +903,8 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 				metav1.ConditionTrue, "", condResize.LastTransitionTime)
 
 			By("Powering on VM to confirm the vNUMA topology and reservations persist")
-			vmoperator.UpdateVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(
-				ctx, config, svClusterClient, input.WCPNamespaceName, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 
 			verifyCoresPerNumaNode("powered on")
 

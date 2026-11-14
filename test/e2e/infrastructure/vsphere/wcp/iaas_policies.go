@@ -6,10 +6,12 @@ package wcp
 type ComputePolicyCapability string
 
 const (
-	ComputePolicyCapabilityVMHostAffinity     ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_host_affinity"
-	ComputePolicyCapabilityVMHostAntiAffinity ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_host_anti_affinity"
-	AutomaticVMEvictionCapability             ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.host.evacuation.automatic_vm_eviction"
-	BestEffortRestartCapability               ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm.evacuation.best_effort_restart"
+	ComputePolicyCapabilityVMVMAffinity             ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_vm_affinity_v2"
+	ComputePolicyCapabilityVMToVMGroupsAntiAffinity ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm.placement.vm_to_vm_groups_anti_affinity"
+	ComputePolicyCapabilityVMHostAffinity           ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_host_affinity"
+	ComputePolicyCapabilityVMHostAntiAffinity       ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_host_anti_affinity"
+	AutomaticVMEvictionCapability                   ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.host.evacuation.automatic_vm_eviction"
+	BestEffortRestartCapability                     ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm.evacuation.best_effort_restart"
 	// ControlledRebalancingCapability backs the ControlledRebalancingPolicy
 	// CRD. It is gated behind the vCenter FSS LatencySensitiveVmsResourceMgmt,
 	// same as the Supervisor capability that mirrors the CR down
@@ -59,4 +61,27 @@ type TagUsageEntry struct {
 // VMPolicyComplianceStatus is the compliance result for a VM against a compute policy.
 type VMPolicyComplianceStatus struct {
 	Status string `json:"status"`
+}
+
+// ComputePolicyStrictness describes enforcement during placement and execution.
+type ComputePolicyStrictness string
+
+const (
+	ComputePolicyStrictnessPreferredDuringPlacementPreferredDuringExecution ComputePolicyStrictness = "PREFERRED_DURING_PLACEMENT_PREFERRED_DURING_EXECUTION"
+	ComputePolicyStrictnessRequiredDuringPlacementPreferredDuringExecution  ComputePolicyStrictness = "REQUIRED_DURING_PLACEMENT_PREFERRED_DURING_EXECUTION"
+)
+
+// ComputePolicyInfo contains the backend policy fields used to verify affinity.
+type ComputePolicyInfo struct {
+	Capability ComputePolicyCapability `json:"capability"`
+	Strictness ComputePolicyStrictness `json:"strictness"`
+	// Topology is a VMODL enum represented as a dynamic structure by the API.
+	Topology struct {
+		Value string `json:"@enum"`
+	} `json:"topology"`
+	VMSelector struct {
+		Tag struct {
+			ID string `json:"tag_id"`
+		} `json:"tag"`
+	} `json:"vm_selector"`
 }

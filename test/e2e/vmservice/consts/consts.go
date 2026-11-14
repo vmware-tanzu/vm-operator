@@ -33,23 +33,36 @@ const (
 	// when a spec carrying this label will actually run.
 	WindowsSysprepLabel = "windows-sysprep"
 
+	// HardAffinityDuringExecutionLabel decorates the VM-GROUP specs that need
+	// VMHardAffinityDuringExecutionCapabilityName. The VM-GROUP suite checks
+	// the capability for these specs before creating and zone-binding a
+	// temporary namespace, so a Supervisor without it skips them in seconds
+	// instead of minutes.
+	HardAffinityDuringExecutionLabel = "hard-affinity-during-execution"
+
+	// ClasslessVMLabel decorates the VM-GROUP specs that need
+	// VMServiceClasslessVMCapabilityName, ex. the specs that set powerOffDelay,
+	// which the webhook rejects without it. The VM-GROUP suite checks the
+	// capability for these specs before creating and zone-binding a temporary
+	// namespace.
+	ClasslessVMLabel = "classless-vm"
+
 	// VM condition type strings used when waiting on backfill/registration lifecycle.
 	VMUnmanagedVolumesBackfilledCondition = "VirtualMachineUnmanagedVolumesBackfilled"
 	VMUnmanagedVolumesRegisteredCondition = "VirtualMachineUnmanagedVolumesRegistered"
 
-	VMGroupsCapabilityName                   = "supports_VM_service_VM_groups"
-	VirtualMachineSnapshotCapabilityName     = "supports_VM_service_VM_snapshots"
-	VMPlacementPoliciesCapabilityName        = "supports_VM_service_VM_placement_policies"
-	VMAffinityDuringExecutionCapabilityName  = "supports_VM_service_VM_affinity_during_execution"
-	InventoryContentLibraryCapabilityName    = "supports_inventory_content_library"
-	SharedDisksCapabilityName                = "supports_shared_disks_with_VM_service_VMs"
-	AllDisksArePVCapabilityName              = "supports_vm_service_all_disks_are_pvcs"
-	MultiWriterDiskVMotionCapabilityName     = "supports_multiwriter_disk_vmotion"
-	IaaSComputePoliciesCapabilityName        = "supports_iaas_compute_policies"
-	VirtualMachineConfigPolicyCapabilityName = "supports_vm_service_vm_config_policy"
-	TelcoVMServiceAPICapabilityName          = "supports_telco_vm_service_api"
-	WorkloadIPv6CapabilityName               = "supports_workload_ipv6"
-	CSIBackupAPICapabilityName               = "supports_CSI_Backup_API"
+	VMGroupsCapabilityName                  = "supports_VM_service_VM_groups"
+	VirtualMachineSnapshotCapabilityName    = "supports_VM_service_VM_snapshots"
+	VMPlacementPoliciesCapabilityName       = "supports_VM_service_VM_placement_policies"
+	VMAffinityDuringExecutionCapabilityName = "supports_VM_service_VM_affinity_during_execution"
+	InventoryContentLibraryCapabilityName   = "supports_inventory_content_library"
+	SharedDisksCapabilityName               = "supports_shared_disks_with_VM_service_VMs"
+	AllDisksArePVCapabilityName             = "supports_vm_service_all_disks_are_pvcs"
+	MultiWriterDiskVMotionCapabilityName    = "supports_multiwriter_disk_vmotion"
+	IaaSComputePoliciesCapabilityName       = "supports_iaas_compute_policies"
+	VMServiceClasslessVMCapabilityName      = "supports_vm_service_classless_vm"
+	WorkloadIPv6CapabilityName              = "supports_workload_ipv6"
+	CSIBackupAPICapabilityName              = "supports_CSI_Backup_API"
 
 	// VMEvictionCapabilityName gates the AutomaticVMEvictionPolicy and
 	// BestEffortRestartPolicy CRDs; must match

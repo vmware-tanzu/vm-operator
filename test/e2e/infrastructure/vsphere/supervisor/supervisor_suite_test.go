@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Broadcom. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package dcli_test
+package supervisor
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestDcli(t *testing.T) {
+func TestSupervisor(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "DCLI Suite")
+	RunSpecs(t, "Supervisor Suite")
 }

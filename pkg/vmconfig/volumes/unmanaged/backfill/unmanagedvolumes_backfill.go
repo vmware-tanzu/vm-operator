@@ -137,7 +137,7 @@ func updateSpecWithUnmanagedDisks(
 		newVolumes []vmopv1.VirtualMachineVolume
 	)
 
-	logger.Info("Get unmanaged volume info",
+	logger.V(4).Info("Get unmanaged volume info",
 		"vm.spec.volumes", vm.Spec.Volumes, "info", info)
 
 	for _, di := range info.Disks {

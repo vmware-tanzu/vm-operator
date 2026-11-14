@@ -31,9 +31,9 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/kubernetes/test/e2e/framework"
 
@@ -149,7 +149,7 @@ func VerifyVMClassDeletion(wcpClient wcp.WorkloadManagementAPI, vmClassID string
 		var dcliErr wcp.DcliError
 		g.Expect(errors.As(err, &dcliErr)).Should(BeTrue())
 		g.Expect(dcliErr.Response()).To(ContainSubstring(VMClassNotFound))
-	}, 5*time.Minute, 10*time.Second).Should(Succeed(), "failed to delete vmClass ", vmClassID)
+	}, 5*time.Minute, 10*time.Second).Should(Succeed(), "failed to delete vmClass %s", vmClassID)
 }
 
 func VerifyVMClassSpec(actualVMClassSpec wcp.VMClassSpec, expectedVMClassSpec wcp.VMClassSpec) {
@@ -596,7 +596,7 @@ func VerifyVMInZone(ctx context.Context, config *config.E2EConfig, svClusterClie
 		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
 		g.Expect(err).ShouldNot(HaveOccurred())
 		g.Expect(vm.Status.Zone).Should(Equal(zone))
-	}, config.GetIntervals("default", "wait-config-map-creation")...).Should(Succeed(), "Timed out waiting for VirtualMachine %s to be created")
+	}, config.GetIntervals("default", "wait-config-map-creation")...).Should(Succeed(), "Timed out waiting for VirtualMachine %s to be placed in zone %s", vmName, zone)
 }
 
 // CreateLocalContentLibrary Utility function to create a local content library with given name.
@@ -730,13 +730,14 @@ func VerifyLoginAndRunCmdsInVDSSetup(config *config.E2EConfig, vmIP string, cmds
 	By(fmt.Sprintf("Verify that ssh login to VM with vmIP (ipv4): %s succeeds", vmIP))
 
 	httpProxy := os.Getenv(consts.HTTPProxyEnv)
-	Expect(httpProxy).NotTo(BeEmpty(), fmt.Sprintf("%s env var is not set", consts.HTTPProxyEnv))
+	Expect(httpProxy).NotTo(BeEmpty(), "%s env var is not set", consts.HTTPProxyEnv)
 
 	gatewayVMIP := strings.Split(httpProxy, ":")[0]
 
 	gatewayCmdRunner, err := e2essh.NewSSHCommandRunner(gatewayVMIP, consts.SshPort, testbed.GatewayUsername, []ssh.AuthMethod{ssh.Password(testbed.GatewayPassword)})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(gatewayCmdRunner).NotTo(BeNil())
+	defer func() { _ = gatewayCmdRunner.Close() }()
 
 	findTCPForwardingEntity := fmt.Sprintf("line=$(sed -n '/%s/=' %s | tail -1)", consts.AllowTCPForwardingKey, consts.SshdConfig)
 	enableTCPForwarding := fmt.Sprintf("sed -i \"${line}s/no/yes/\" %s", consts.SshdConfig)
@@ -759,6 +760,8 @@ func VerifyLoginAndRunCmdsInVDSSetup(config *config.E2EConfig, vmIP string, cmds
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(cmdRunner).ToNot(BeNil())
 	}, config.GetIntervals("default", "login-retry-timeout")...).Should(Succeed(), "ssh login to VM did not succeed in time.")
+
+	defer func() { _ = cmdRunner.Close() }()
 
 	cmdOutput, err := cmdRunner.RunCommand("ip addr")
 	Expect(err).NotTo(HaveOccurred())
@@ -824,7 +827,7 @@ func WaitForBackupToComplete(
 	ctx context.Context,
 	vmName string,
 	vmNamespace string,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	config *config.E2EConfig,
 	intervalOpts *vmoperator.IntervalOptions,
 ) *vmopv1.VirtualMachine {
@@ -1006,7 +1009,7 @@ func UnregisterPVCVolumes(
 func DeleteVMResource(
 	ctx context.Context,
 	vmName, vmNamespace string,
-	bootstrapResourceYAML []byte,
+	bootstrapResource ctrlclient.Object,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client) string {
@@ -1025,8 +1028,7 @@ func DeleteVMResource(
 	vmoperator.WaitForVMCnsRegisterVolumesRegistered(ctx, config, svClusterClient, vmNamespace, vmName)
 
 	By("Power off the VM")
-	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+	vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 	By("Add the pause annotation to VM")
 
@@ -1070,9 +1072,9 @@ func DeleteVMResource(
 
 	vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, vmNamespace, vmName)
 
-	if bootstrapResourceYAML != nil {
+	if bootstrapResource != nil {
 		By("Delete the bootstrap resource")
-		Expect(clusterProxy.DeleteWithArgs(ctx, bootstrapResourceYAML)).To(Succeed(), "failed to delete VM bootstrap resource")
+		Expect(clusterProxy.GetClient().Delete(ctx, bootstrapResource)).To(Succeed(), "failed to delete VM bootstrap resource")
 	}
 
 	return vmMoID
@@ -1083,7 +1085,7 @@ func DeleteVMResource(
 func InvokeRegisterVM(
 	ctx context.Context,
 	vmMoID, vmNamespace string,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	wcpClient wcp.WorkloadManagementAPI) (*types.TaskInfo, error) {
 	By("Invoke the RegisterVM API")
 
@@ -1107,15 +1109,15 @@ func InvokeRegisterVM(
 func VerifyPostRegisterVM(
 	ctx context.Context,
 	vmName, vmNamespace string,
-	bootstrapResourceYAML []byte,
+	bootstrapResource ctrlclient.Object,
 	expectedRestoredPVCCount int,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client,
 	wcpClient wcp.WorkloadManagementAPI) {
 	By("Verify that the VM has been created in PoweredOff state")
 	vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, vmNamespace, vmName)
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, vmopv1.VirtualMachinePowerStateOff)
 
 	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 	Expect(err).ToNot(HaveOccurred())
@@ -1136,8 +1138,7 @@ func VerifyPostRegisterVM(
 		expectedRestoredPVCCount, actualRestoredPVCCount)
 
 	By("Power on the VM")
-	vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+	vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 	By("Verify that the VM has an IP assigned")
 	vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, vmNamespace, vmName)
@@ -1158,7 +1159,7 @@ func VerifyPostRegisterVM(
 	Eventually(func() bool {
 		vmIP := vmoperator.GetVirtualMachineIP(ctx, svClusterClient, vmNamespace, vmName)
 		return vmIP == newIP
-	}, config.GetIntervals("default", "wait-virtual-machine-vmip")...).Should(BeTrue(), fmt.Sprintf("restored VM doesn't have the new IP from network provider: %s", newIP))
+	}, config.GetIntervals("default", "wait-virtual-machine-vmip")...).Should(BeTrue(), "restored VM doesn't have the new IP from network provider: %s", newIP)
 }
 
 // VerifyRegisterVMOnlyClassicDisk verifies the register VM API with the following steps:
@@ -1173,14 +1174,14 @@ func VerifyPostRegisterVM(
 func VerifyRegisterVMOnlyClassicDisk(
 	ctx context.Context,
 	vmName, vmNamespace string,
-	bootstrapResourceYAML []byte,
+	bootstrapResource ctrlclient.Object,
 	clusterProxy *common.VMServiceClusterProxy,
 	config *config.E2EConfig,
 	svClusterClient ctrlclient.Client,
 	wcpClient wcp.WorkloadManagementAPI) {
 	By("Verifying Register VM...")
 
-	vmMoID := DeleteVMResource(ctx, vmName, vmNamespace, bootstrapResourceYAML, clusterProxy, config, svClusterClient)
+	vmMoID := DeleteVMResource(ctx, vmName, vmNamespace, bootstrapResource, clusterProxy, config, svClusterClient)
 
 	taskInfo, err := InvokeRegisterVM(ctx, vmMoID, vmNamespace, clusterProxy, wcpClient)
 
@@ -1197,7 +1198,7 @@ func VerifyRegisterVMOnlyClassicDisk(
 		ctx,
 		vmName,
 		vmNamespace,
-		bootstrapResourceYAML,
+		bootstrapResource,
 		expectedRestoredPVCCount,
 		clusterProxy,
 		config,
@@ -1233,62 +1234,25 @@ func LabelVM(ctx context.Context, config *config.E2EConfig, clusterProxy *common
 	return nil
 }
 
-// DeployVMWithCloudInit deploys a VM with the default cloud-init config passed.
-func DeployVMWithCloudInit(
-	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
-	e2eConfig *config.E2EConfig,
-	clusterResources *config.Resources,
-	ns, vmName, groupName string,
-	pvcs []manifestbuilders.PVC) {
-	secretName := "cloud-config-data-" + capiutil.RandomString(4)
-	secret := manifestbuilders.Secret{
-		Namespace: ns,
-		Name:      secretName,
-	}
-	secretYaml := manifestbuilders.GetSecretYamlCloudConfig(secret)
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, secretYaml)).To(Succeed(), "failed to create the Secret with cloud-config data", string(secretYaml))
-
-	linuxImageDisplayName := GetDefaultImageDisplayName(clusterResources)
-	linuxVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &e2eConfig.Config, vmSvcClusterProxy.GetClient(), ns, linuxImageDisplayName)
-
-	vmParameters := manifestbuilders.VirtualMachineYaml{
-		Namespace:        ns,
-		Name:             vmName,
-		ImageName:        linuxVMIName,
-		VMClassName:      clusterResources.VMClassName,
-		StorageClassName: clusterResources.StorageClassName,
-		SecretName:       secretName,
-		PVCs:             pvcs,
-	}
-	if groupName != "" {
-		vmParameters.GroupName = groupName
-	}
-
-	vmYaml := manifestbuilders.GetVirtualMachineYamlA5(vmParameters)
-	framework.Logf("Create VirtualMachine:\n%s", string(vmYaml))
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create VM:\n%s", string(vmYaml))
-}
-
 func CreateVMGroup(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	params manifestbuilders.VirtualMachineGroupYaml,
 ) {
-	vmGroupYaml := manifestbuilders.GetVirtualMachineGroupYaml(params)
-	framework.Logf("Create VirtualMachineGroup:\n%s", string(vmGroupYaml))
-	Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmGroupYaml)).To(Succeed())
+	vmGroup := manifestbuilders.VirtualMachineGroupA5(params)
+	framework.Logf("Create VirtualMachineGroup: %s/%s", params.Namespace, params.Name)
+	Expect(vmSvcClusterProxy.GetClient().Create(ctx, vmGroup)).To(Succeed())
 }
 
 func DeleteVMGroup(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	params manifestbuilders.VirtualMachineGroupYaml,
 ) {
-	vmGroupYaml := manifestbuilders.GetVirtualMachineGroupYaml(params)
-	framework.Logf("Delete VirtualMachineGroup:\n%s", string(vmGroupYaml))
-	Expect(vmSvcClusterProxy.Delete(ctx, vmGroupYaml)).To(Succeed())
+	vmGroup := manifestbuilders.VirtualMachineGroupA5(params)
+	framework.Logf("Delete VirtualMachineGroup: %s/%s", params.Namespace, params.Name)
+	Expect(vmSvcClusterProxy.GetClient().Delete(ctx, vmGroup)).To(Succeed())
 
 	Eventually(func() bool {
 		_, err := utils.GetVirtualMachineGroup(ctx, vmSvcClusterProxy.GetClient(), params.Namespace, params.Name)
@@ -1298,19 +1262,18 @@ func DeleteVMGroup(
 
 func CreateVMGroupPub(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	params manifestbuilders.VirtualMachineGroupPublishRequestYaml,
 	errMsg string,
 ) {
-	vmGroupPubYaml := manifestbuilders.GetVirtualMachineGroupPublishRequestYaml(params)
-	framework.Logf("Create VirtualMachineGroupPublishRequest:\n%s", string(vmGroupPubYaml))
+	vmGroupPub := manifestbuilders.VirtualMachineGroupPublishRequestA5(params)
+	framework.Logf("Create VirtualMachineGroupPublishRequest: %s/%s", params.Namespace, params.Name)
 
-	if len(errMsg) == 0 {
-		Expect(vmSvcClusterProxy.CreateWithArgs(ctx, vmGroupPubYaml)).To(Succeed())
+	err := vmSvcClusterProxy.GetClient().Create(ctx, vmGroupPub)
+	if errMsg == "" {
+		Expect(err).To(Succeed())
 	} else {
-		_, stderr, err := vmSvcClusterProxy.CreateRawWithArgs(ctx, vmGroupPubYaml)
-		Expect(err).To(HaveOccurred())
-		Expect(string(stderr)).To(ContainSubstring(errMsg))
+		Expect(err).To(MatchError(ContainSubstring(errMsg)))
 	}
 }
 
@@ -1325,7 +1288,7 @@ func UpdateVMGroupPub(
 
 func CreateVMSnapshot(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	params manifestbuilders.VirtualMachineSnapshotYaml,
 ) {
 	vmSnapshot := &vmopv1.VirtualMachineSnapshot{
@@ -1358,7 +1321,7 @@ func CreateVMSnapshot(
 
 func CreateSnapshotInVC(
 	ctx context.Context,
-	clusterProxy *common.VMServiceClusterProxy,
+	clusterProxy e2eframework.ClusterProxyInterface,
 	vmSnapshotName string,
 	vmName string,
 	vmNamespace string,
@@ -1401,7 +1364,7 @@ func UpdateVMSnapshot(
 
 func RevertVMSnapshot(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
 	currentSnapshot *vmopv1.VirtualMachineSnapshotReference,
@@ -1426,7 +1389,7 @@ func RevertVMSnapshot(
 
 func UpdateVMRestartMode(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
 	restartMode vmopv1.VirtualMachinePowerOpMode,
@@ -1449,7 +1412,7 @@ func UpdateVMRestartMode(
 
 func UpdateVMPowerOffMode(
 	ctx context.Context,
-	vmSvcClusterProxy *common.VMServiceClusterProxy,
+	vmSvcClusterProxy e2eframework.ClusterProxyInterface,
 	vmSvcE2EConfig *config.E2EConfig,
 	vmName, vmNamespace string,
 	powerOffMode vmopv1.VirtualMachinePowerOpMode,
@@ -1769,6 +1732,8 @@ func EnsureVGPUConfiguration(config ESXConfig) error {
 			}
 		}
 
+		_ = cmdRunner.Close()
+
 		// Mark host as configured if all commands succeeded
 		if hostConfigured {
 			vGPUConfiguredHosts[hostIP] = true
@@ -1814,59 +1779,19 @@ func NewESXConfigFromEnv() *ESXConfig {
 	}
 }
 
-// kubeCreateAlreadyExists returns true if kubectl "create" failed only because the object already exists.
-func kubeCreateAlreadyExists(stderr []byte) bool {
-	s := string(stderr)
-	return strings.Contains(s, "AlreadyExists") || strings.Contains(s, "already exists")
-}
-
-// runKubectlCreateWithRetry runs a kubectl create Command, retrying with exponential backoff
-// on transient failures (e.g. a dropped connection to the supervisor API server). Without this,
-// a single blip during SetupClusterRoleBindings aborts SynchronizedBeforeSuite and fails the
-// entire e2e run before a single spec has executed, forcing a full pipeline-level retry instead
-// of a cheap in-process one. Stops retrying as soon as the command succeeds or fails with
-// AlreadyExists, since the caller treats that as a non-fatal, already-satisfied outcome.
-func runKubectlCreateWithRetry(ctx context.Context, cmd *e2eframework.Command) (stderr []byte, err error) {
-	backoff := wait.Backoff{
-		Steps:    5,
-		Duration: 5 * time.Second,
-		Factor:   2,
-		Jitter:   0.1,
-	}
-
-	if pollErr := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
-		_, stderr, err = cmd.Run(ctx)
-		if err == nil || kubeCreateAlreadyExists(stderr) {
-			return true, nil
-		}
-		framework.Logf("kubectl create failed, retrying: %v\nstderr: %s", err, string(stderr))
-		return false, nil
-	}); pollErr != nil && err == nil {
-		// The command never got to run at all (e.g. context canceled before the first attempt).
-		err = pollErr
-	}
-
-	return stderr, err
-}
-
-// SetupClusterRoleBindings creates the necessary cluster role bindings for vm-operator e2e tests.
-// This replaces the Python logic from roles_helper.py that was called by gce2e_prerequisite.py.
-// It SSHes into the supervisor control plane as root to run kubectl with admin.conf, exactly as
-// the Python script did with run_cmd_vc on the supervisor control plane IP.
+// SetupClusterRoleBindings creates the shared cluster roles and bindings for E2E tests.
 func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error {
 	ctx := context.TODO()
-
 	e2eframework.Byf("Setting up cluster role bindings for e2e tests")
-
-	// Get an admin cluster proxy that uses /etc/kubernetes/admin.conf from the control plane VM,
-	// giving the cluster-admin privileges.
 	adminProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get admin cluster proxy: %w", err)
 	}
 	defer adminProxy.Dispose(ctx)
-
-	// Define the custom roles needed for e2e testing (from roles_helper.py)
+	adminClient, err := adminProxy.GetAdminClient()
+	if err != nil {
+		return fmt.Errorf("failed to get admin client for RBAC setup: %w", err)
+	}
 	customRoles := []RBACRole{
 		{
 			Name:     "gce2e-crds",
@@ -1894,155 +1819,70 @@ func SetupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error 
 		},
 	}
 
-	kubeconfigPath := adminProxy.GetKubeconfigPath()
-
-	// 1. Create cluster-admin binding for cluster-administrator@vsphere.local (best effort)
-	clusterAdminArgs := []string{
-		"--kubeconfig", kubeconfigPath,
-		"--insecure-skip-tls-verify",
-		"create", "clusterrolebinding", "cluster-administrator:cluster-admin",
-		"--user", "sso:cluster-administrator@vsphere.local",
-		"--clusterrole", "cluster-admin",
+	// Create the shared cluster-administrator binding on a best-effort basis.
+	clusterAdminBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-administrator:cluster-admin"},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: "cluster-admin"},
+		Subjects:   []rbacv1.Subject{{APIGroup: rbacv1.GroupName, Kind: "User", Name: "sso:cluster-administrator@vsphere.local"}},
 	}
-	clusterAdminCmd := e2eframework.NewCommand(
-		e2eframework.WithCommand("kubectl"),
-		e2eframework.WithArgs(clusterAdminArgs...),
-	)
-
-	_, _, err = clusterAdminCmd.Run(ctx)
-	if err != nil {
-		// This is best effort - may already exist
-		framework.Logf("Info: cluster-admin binding may already exist: %v", err)
+	if err := adminClient.Create(ctx, clusterAdminBinding); err != nil && !apierrors.IsAlreadyExists(err) {
+		framework.Logf("Info: failed to create cluster-admin binding: %v", err)
 	}
 
-	// 2. Create custom cluster roles and bindings for Administrator@vsphere.local
 	for _, role := range customRoles {
-		// Create the cluster role
-		createRoleArgs := []string{
-			"--kubeconfig", kubeconfigPath,
-			"--insecure-skip-tls-verify",
-			"create", "clusterrole", role.Name,
-			"--verb", role.Verbs,
-			"--resource", role.Resource + "." + role.APIGroup,
+		clusterRole := &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: role.Name},
+			Rules:      []rbacv1.PolicyRule{{APIGroups: []string{role.APIGroup}, Resources: []string{role.Resource}, Verbs: strings.Split(role.Verbs, ",")}},
 		}
-		createRoleCmd := e2eframework.NewCommand(
-			e2eframework.WithCommand("kubectl"),
-			e2eframework.WithArgs(createRoleArgs...),
-		)
-
-		stderr, err := runKubectlCreateWithRetry(ctx, createRoleCmd)
-		if err != nil {
-			if kubeCreateAlreadyExists(stderr) {
-				framework.Logf("Info: cluster role %q already exists, skipping create", role.Name)
-			} else {
-				return fmt.Errorf("failed to create cluster role %s: %w\nstderr: %s", role.Name, err, string(stderr))
-			}
+		if err := adminClient.Create(ctx, clusterRole); err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create cluster role %s: %w", role.Name, err)
 		}
-
-		// Create the cluster role binding
-		createBindingArgs := []string{
-			"--kubeconfig", kubeconfigPath,
-			"--insecure-skip-tls-verify",
-			"create", "clusterrolebinding", role.Name,
-			"--user", "sso:Administrator@vsphere.local",
-			"--clusterrole", role.Name,
+		clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: role.Name},
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: role.Name},
+			Subjects:   []rbacv1.Subject{{APIGroup: rbacv1.GroupName, Kind: "User", Name: "sso:Administrator@vsphere.local"}},
 		}
-		createBindingCmd := e2eframework.NewCommand(
-			e2eframework.WithCommand("kubectl"),
-			e2eframework.WithArgs(createBindingArgs...),
-		)
-
-		stderr, err = runKubectlCreateWithRetry(ctx, createBindingCmd)
-		if err != nil {
-			if kubeCreateAlreadyExists(stderr) {
-				framework.Logf("Info: cluster role binding %q already exists, skipping create", role.Name)
-			} else {
-				return fmt.Errorf("failed to create cluster role binding %s: %w\nstderr: %s", role.Name, err, string(stderr))
-			}
+		if err := adminClient.Create(ctx, clusterRoleBinding); err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create cluster role binding %s: %w", role.Name, err)
 		}
 	}
-
 	framework.Logf("Successfully set up cluster role bindings for e2e tests")
-
 	return nil
 }
 
-// CleanupClusterRoleBindings removes the cluster role bindings created by SetupClusterRoleBindings.
-// This can be called in test cleanup to avoid leaving test artifacts behind.
+// CleanupClusterRoleBindings removes the shared E2E roles and bindings on a best-effort basis.
 func CleanupClusterRoleBindings(clusterProxy *common.VMServiceClusterProxy) error {
 	ctx := context.TODO()
-
 	e2eframework.Byf("Cleaning up cluster role bindings for e2e tests")
-
-	// Use admin proxy with /etc/kubernetes/admin.conf for elevated privileges.
 	adminProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get admin cluster proxy: %w", err)
 	}
 	defer adminProxy.Dispose(ctx)
-
-	// Define the same custom roles for cleanup
-	customRoles := []RBACRole{
-		{Name: "gce2e-crds"},
-		{Name: "gce2e-cns-batch-attachments"},
-		{Name: "gce2e-cns-unregister-volumes"},
-		{Name: "gce2e-import-operations"},
-	}
-
-	kubeconfigPath := adminProxy.GetKubeconfigPath()
-
-	// Remove cluster-admin binding (best effort)
-	deleteClusterAdminArgs := []string{
-		"--kubeconfig", kubeconfigPath,
-		"--insecure-skip-tls-verify",
-		"delete", "clusterrolebinding", "cluster-administrator:cluster-admin",
-	}
-	deleteClusterAdminCmd := e2eframework.NewCommand(
-		e2eframework.WithCommand("kubectl"),
-		e2eframework.WithArgs(deleteClusterAdminArgs...),
-	)
-
-	_, _, err = deleteClusterAdminCmd.Run(ctx)
+	adminClient, err := adminProxy.GetAdminClient()
 	if err != nil {
-		framework.Logf("Warning: Failed to delete cluster-admin binding: %v", err)
+		return fmt.Errorf("failed to get admin client for RBAC cleanup: %w", err)
 	}
-
-	// Remove custom cluster roles and bindings
-	for _, role := range customRoles {
-		// Delete the cluster role binding
-		deleteBindingArgs := []string{
-			"--kubeconfig", kubeconfigPath,
-			"--insecure-skip-tls-verify",
-			"delete", "clusterrolebinding", role.Name,
+	clusterAdminBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-administrator:cluster-admin"},
+	}
+	if err := adminClient.Delete(ctx, clusterAdminBinding); err != nil && !apierrors.IsNotFound(err) {
+		framework.Logf("Warning: failed to delete cluster-admin binding: %v", err)
+	}
+	for _, name := range []string{
+		"gce2e-crds",
+		"gce2e-cns-batch-attachments",
+		"gce2e-cns-unregister-volumes",
+		"gce2e-import-operations",
+	} {
+		clusterRoleBinding := &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		if err := adminClient.Delete(ctx, clusterRoleBinding); err != nil && !apierrors.IsNotFound(err) {
+			framework.Logf("Warning: failed to delete cluster role binding %s: %v", name, err)
 		}
-		deleteBindingCmd := e2eframework.NewCommand(
-			e2eframework.WithCommand("kubectl"),
-			e2eframework.WithArgs(deleteBindingArgs...),
-		)
-
-		_, _, err := deleteBindingCmd.Run(ctx)
-		if err != nil {
-			framework.Logf("Warning: Failed to delete cluster role binding %s: %v", role.Name, err)
-		}
-
-		// Delete the cluster role
-		deleteRoleArgs := []string{
-			"--kubeconfig", kubeconfigPath,
-			"--insecure-skip-tls-verify",
-			"delete", "clusterrole", role.Name,
-		}
-		deleteRoleCmd := e2eframework.NewCommand(
-			e2eframework.WithCommand("kubectl"),
-			e2eframework.WithArgs(deleteRoleArgs...),
-		)
-
-		_, _, err = deleteRoleCmd.Run(ctx)
-		if err != nil {
-			framework.Logf("Warning: Failed to delete cluster role %s: %v", role.Name, err)
+		clusterRole := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		if err := adminClient.Delete(ctx, clusterRole); err != nil && !apierrors.IsNotFound(err) {
+			framework.Logf("Warning: failed to delete cluster role %s: %v", name, err)
 		}
 	}
-
-	framework.Logf("Successfully cleaned up cluster role bindings for e2e tests")
-
 	return nil
 }

@@ -21,6 +21,10 @@ const (
 	// VirtualMachineGroupMemberConditionPlacementReady indicates that the
 	// member has a placement decision ready.
 	VirtualMachineGroupMemberConditionPlacementReady = "PlacementReady"
+
+	// VirtualMachineGroupMemberPendingPlacementReason indicates that the member
+	// is awaiting placement, including when a placement attempt has failed.
+	VirtualMachineGroupMemberPendingPlacementReason = "PendingPlacement"
 )
 
 // GroupMember describes a member of a VirtualMachineGroup.
@@ -57,8 +61,16 @@ type VirtualMachineGroupBootOrderGroup struct {
 	// PowerOnDelay is the amount of time to wait before powering on all the
 	// members of this boot order group.
 	//
-	// If omitted, the members will be powered on immediately when the group's
-	// power state changes to PoweredOn.
+	// When powering on, boot order groups are processed in order (first group
+	// first). A boot order group is powered on only after all the members of
+	// the previous boot order group are powered on, and the delay is counted
+	// from that time. Delays are not cumulative across groups.
+	//
+	// The first boot order group is powered on first, without a delay, as
+	// there is no previous boot order group to wait for.
+	//
+	// If omitted, the members will be powered on as soon as the previous boot
+	// order group is powered on.
 	PowerOnDelay *metav1.Duration `json:"powerOnDelay,omitempty"`
 
 	// +optional
@@ -67,10 +79,16 @@ type VirtualMachineGroupBootOrderGroup struct {
 	// members of this boot order group.
 	//
 	// When powering off, boot order groups are processed in reverse order
-	// (last group first). Delays are cumulative across groups.
+	// (last group first). A boot order group is powered off only after all
+	// the members of the group before it in the power-off sequence (the group
+	// with the next higher index) are powered off, and the delay is counted
+	// from that time. Delays are not cumulative across groups.
 	//
-	// If omitted, the members will be powered off immediately when the
-	// group's power state changes to PoweredOff.
+	// The last boot order group is powered off first, without a delay, as
+	// there is no earlier group in the power-off sequence to wait for.
+	//
+	// If omitted, the members will be powered off as soon as the group before
+	// it in the power-off sequence is powered off.
 	PowerOffDelay *metav1.Duration `json:"powerOffDelay,omitempty"`
 }
 
@@ -90,14 +108,17 @@ type VirtualMachineGroupSpec struct {
 	// +optional
 
 	// BootOrder describes the boot sequence for this group members. Each boot
-	// order contains a set of members that will be powered on simultaneously,
-	// with an optional delay before powering on. The orders are processed
-	// sequentially in the order they appear in this list, with delays being
-	// cumulative across orders.
+	// order contains a set of members that will be powered on simultaneously.
+	// The orders are processed sequentially in the order they appear in this
+	// list. Each boot order group is powered on only after the previous boot
+	// order group is powered on, with an optional PowerOnDelay counted from
+	// that time.
 	//
 	// When powering off, the boot order groups are processed in reverse order
-	// (last group first), with an optional PowerOffDelay before powering off
-	// each group. Delays are cumulative across groups.
+	// (last group first). Each boot order group is powered off only after the
+	// group before it in the power-off sequence (the group with the next
+	// higher index) is powered off, with an optional PowerOffDelay counted
+	// from that time.
 	BootOrder []VirtualMachineGroupBootOrderGroup `json:"bootOrder,omitempty"`
 
 	// +optional

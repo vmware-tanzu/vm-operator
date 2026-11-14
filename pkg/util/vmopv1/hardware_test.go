@@ -160,6 +160,49 @@ var _ = Describe("NextAvailableUnitNumber", func() {
 		Entry("IDE controller", vmopv1.VirtualControllerTypeIDE),
 	)
 
+	Context("NIC bus (first unit number offset)", func() {
+		var occupiedSlots sets.Set[int32]
+
+		BeforeEach(func() {
+			occupiedSlots = sets.New[int32]()
+		})
+
+		It("reports the expected NIC bus spec values", func() {
+			bus := vmopv1util.NICBusSpec{}
+			Expect(bus.MaxSlots()).To(Equal(int32(10)))
+			Expect(bus.MaxCount()).To(Equal(int32(1)))
+			Expect(bus.ReservedUnitNumber()).To(Equal(int32(-1)))
+			Expect(bus.FirstUnitNumber()).To(Equal(int32(7)))
+		})
+
+		It("should return the first NIC unit (7) when no slots are occupied", func() {
+			Expect(vmopv1util.NextAvailableUnitNumber(vmopv1util.NICBusSpec{}, occupiedSlots)).To(Equal(int32(7)))
+		})
+
+		It("should treat nil occupied slots as empty", func() {
+			Expect(vmopv1util.NextAvailableUnitNumber(vmopv1util.NICBusSpec{}, nil)).To(Equal(int32(7)))
+		})
+
+		It("should return the next available unit with scattered occupied slots", func() {
+			occupiedSlots.Insert(7, 9, 10)
+			Expect(vmopv1util.NextAvailableUnitNumber(vmopv1util.NICBusSpec{}, occupiedSlots)).To(Equal(int32(8)))
+		})
+
+		It("should return -1 when all NIC units are occupied", func() {
+			for i := vmopv1util.NICUnitNumberFirst; i <= vmopv1util.NICUnitNumberMax; i++ {
+				occupiedSlots.Insert(int32(i))
+			}
+			Expect(vmopv1util.NextAvailableUnitNumber(vmopv1util.NICBusSpec{}, occupiedSlots)).To(Equal(int32(-1)))
+		})
+
+		It("should not treat units outside the NIC band as available", func() {
+			// The scan covers only 7..16: it must never return a unit below
+			// 7 even when the set contains none of them.
+			occupiedSlots.Insert(0, 1, 2, 3, 4, 5, 6)
+			Expect(vmopv1util.NextAvailableUnitNumber(vmopv1util.NICBusSpec{}, occupiedSlots)).To(Equal(int32(7)))
+		})
+	})
+
 	Context("SCSI-specific reserved unit number tests", func() {
 		var (
 			controller    vmopv1.SCSIControllerSpec

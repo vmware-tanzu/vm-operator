@@ -233,7 +233,7 @@ func Install( //nolint:gocyclo
 					obj *unstructured.Unstructured,
 					shouldRemoveFields bool) error {
 
-					if !features.TelcoVMServiceAPI {
+					if !features.VMServiceClasslessVM {
 						if err := removeFields(
 							ctx,
 							k,
@@ -390,7 +390,7 @@ func Install( //nolint:gocyclo
 						}
 					}
 
-					if !features.TelcoVMServiceAPI {
+					if !features.VMServiceClasslessVM {
 						if err := removeFields(
 							ctx,
 							k,
@@ -530,12 +530,11 @@ func Install( //nolint:gocyclo
 		// case "WebConsoleRequest":
 		case "ConfigTarget",
 			"VirtualMachineConfigOptions",
-			"VirtualMachineConfigPolicy",
 			"VirtualMachineGuestOptions":
 			if err := updateOrDeleteUnstructured(
 				ctx,
 				k8sClient,
-				features.VirtualMachineConfigPolicy,
+				features.VMServiceClasslessVM,
 				c,
 				k,
 				nil); err != nil {

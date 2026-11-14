@@ -71,6 +71,11 @@ type Device struct {
 	EthCard vimtypes.BaseVirtualDevice
 	// EthCardKey is EthCard's device key once it exists on the VM.
 	EthCardKey int32
+
+	// UnitNumber is the interface's desired PCI unit number from
+	// spec.network.interfaces[].unitNumber. Nil when unset or when the
+	// VMNetworkUnitNumbers feature is disabled.
+	UnitNumber *int32
 }
 
 // ObjectName returns the name of the network interface CR backing this
@@ -149,7 +154,7 @@ func CreateNetworkDevices(
 		group, err := getNetworkInterfaceAPIGroup(interfaceSpec)
 		if err != nil {
 			errs = append(errs,
-				fmt.Errorf("error getting network APIGroup for %s: %w", interfaceSpec.Name, err))
+				fmt.Errorf("network interface %q: %w", interfaceSpec.Name, err))
 			continue
 		}
 
@@ -204,8 +209,12 @@ func CreateNetworkDevices(
 		if err != nil {
 			// TODO: Update per-interface Status.
 			errs = append(errs,
-				fmt.Errorf("error getting device for interface %s: %w", interfaceSpec.Name, err))
+				fmt.Errorf("interface %q: %w", interfaceSpec.Name, err))
 			continue
+		}
+
+		if pkgcfg.FromContext(ctx).Features.VMNetworkUnitNumbers {
+			dev.UnitNumber = interfaceSpec.UnitNumber
 		}
 
 		devices = append(devices, dev)
@@ -228,13 +237,13 @@ func getNetworkInterfaceAPIGroup(
 	if network == nil || network.APIVersion == "" {
 		// The VM mutation webhook will default in the network type based
 		// on the default network provider for this namespace.
-		return "", pkgerr.NoRequeueErrorf("no network API Version")
+		return "", pkgerr.NoRequeueErrorf("network apiVersion is not set")
 	}
 
 	gv, err := schema.ParseGroupVersion(network.APIVersion)
 	if err != nil {
 		// The VM validation webhook will check for invalid values.
-		return "", pkgerr.NoRequeueErrorf("invalid API Version: %s", network.APIVersion)
+		return "", pkgerr.NoRequeueErrorf("invalid network apiVersion %q", network.APIVersion)
 	}
 
 	return gv.Group, nil
@@ -325,7 +334,7 @@ func getNCPNetworkInterfaceDevice(
 	}
 
 	if vnetIf.Status.ProviderStatus == nil {
-		return dev, pkgerr.NoRequeueNoErr("ready network interface does not have provider status")
+		return dev, pkgerr.NoRequeueNoErr("waiting for network interface status")
 	}
 
 	networkID := vnetIf.Status.ProviderStatus.NsxLogicalSwitchID
@@ -373,7 +382,7 @@ func getVPCSubnetPortDevice(
 
 	networkID := subnetPort.Status.NetworkInterfaceConfig.LogicalSwitchUUID
 	if networkID == "" {
-		return dev, pkgerr.NoRequeueErrorf("ready network interface does not have LogicalSwitchUUID")
+		return dev, pkgerr.NoRequeueErrorf("waiting for logical switch ID to be assigned")
 	}
 
 	backing, err := getNetworkInterfaceBacking(ctx, vimClient, clusterMoRef, networkID, false, true)
@@ -527,6 +536,10 @@ func CreateAndWaitForNetworkInterfaces(
 			continue
 		}
 
+		if pkgcfg.FromContext(vmCtx).Features.VMNetworkUnitNumbers {
+			dev.UnitNumber = interfaceSpec.UnitNumber
+		}
+
 		devices = append(devices, dev)
 	}
 
@@ -549,6 +562,10 @@ func createNetworkDevicesForNamedNetwork(
 			return nil, err
 		}
 
+		if pkgcfg.FromContext(ctx).Features.VMNetworkUnitNumbers {
+			dev.UnitNumber = interfaceSpec.UnitNumber
+		}
+
 		devices = append(devices, dev)
 	}
 
@@ -566,6 +583,10 @@ func createAndWaitNamedNetworkInterfaces(
 		dev, err := createAndWaitNamedNetworkInterface(ctx, finder, interfaceSpec)
 		if err != nil {
 			return nil, fmt.Errorf("named network interface %q error: %w", interfaceSpec.Name, err)
+		}
+
+		if pkgcfg.FromContext(ctx).Features.VMNetworkUnitNumbers {
+			dev.UnitNumber = interfaceSpec.UnitNumber
 		}
 
 		devices = append(devices, dev)
@@ -1219,7 +1240,7 @@ func waitForReadyNCPNetworkInterface(
 	}
 
 	if vnetIf.Status.ProviderStatus == nil {
-		return nil, pkgerr.NoRequeueNoErr("ready network interface does not have provider status")
+		return nil, pkgerr.NoRequeueNoErr("waiting for network interface status")
 	}
 
 	return vnetIf, nil

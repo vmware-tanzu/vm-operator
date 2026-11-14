@@ -151,7 +151,6 @@ func KnownObjectTypes() []client.Object {
 		&infrav1.StoragePolicy{},
 		&vimv1.ConfigTarget{},
 		&vimv1.VirtualMachineConfigOptions{},
-		&vimv1.VirtualMachineConfigPolicy{},
 		&vimv1.VirtualMachineGuestOptions{},
 	}
 }

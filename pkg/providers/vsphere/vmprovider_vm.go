@@ -1290,31 +1290,70 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 	ctx pkgctx.VirtualMachineContext,
 	vcClient *vcclient.Client) (context.Context, error) {
 
-	logger := pkglog.FromContextOrDefault(ctx)
+	if len(ctx.MoVM.RecentTask) == 0 {
+		return ctx.Context, nil
+	}
+
+	objectSet := make([]vimtypes.ObjectSpec, len(ctx.MoVM.RecentTask))
+	for i, ref := range ctx.MoVM.RecentTask {
+		objectSet[i].Obj = ref
+	}
+
+	// Tasks can expire between fetching recentTask and retrieving their info.
+	// Allow missing objects so one expired task does not fail the whole batch.
 	pc := property.DefaultCollector(vcClient.VimClient())
+	res, err := pc.RetrieveProperties(ctx, vimtypes.RetrieveProperties{
+		SpecSet: []vimtypes.PropertyFilterSpec{{
+			PropSet: []vimtypes.PropertySpec{{
+				Type:    "Task",
+				PathSet: []string{"info"},
+			}},
+			ObjectSet:                     objectSet,
+			ReportMissingObjectsInResults: new(true),
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve task info: %w", err)
+	}
 
-	// Check if the VM has any recent tasks.
-	var rt []vimtypes.TaskInfo
-	for _, taskRef := range ctx.MoVM.RecentTask {
-		var t mo.Task
-		if err := pc.RetrieveOne(
-			ctx,
-			taskRef,
-			[]string{"info"},
-			&t); err != nil {
+	logger := pkglog.FromContextOrDefault(ctx)
 
-			// Tasks go away after 10m of completion.
-			if !fault.Is(err, &vimtypes.ManagedObjectNotFound{}) {
-				return nil, fmt.Errorf("failed to retrieve task info: %w", err)
+	// Property collector results need not follow the requested object order.
+	// Preserve recentTask order because consumers may act on the first task.
+	contents := make(map[vimtypes.ManagedObjectReference]vimtypes.ObjectContent, len(res.Returnval))
+	for _, content := range res.Returnval {
+		contents[content.Obj] = content
+	}
+
+	rt := make([]vimtypes.TaskInfo, 0, len(res.Returnval))
+	for _, ref := range ctx.MoVM.RecentTask {
+		content, ok := contents[ref]
+		if !ok {
+			continue
+		}
+
+		task, err := mo.ObjectContentToType(content)
+		if err != nil {
+			if fault.Is(err, &vimtypes.ManagedObjectNotFound{}) {
+				continue
 			}
-		} else {
-			logLevel := 4
-			if t.Info.State == vimtypes.TaskInfoStateRunning ||
-				t.Info.State == vimtypes.TaskInfoStateError {
+			return nil, fmt.Errorf("failed to retrieve task info: %w", err)
+		}
 
-				logLevel = 2
-			}
+		t, ok := task.(mo.Task)
+		if !ok {
+			return nil, fmt.Errorf("failed to retrieve task info for %s: unexpected object type %T", ref, task)
+		}
+		rt = append(rt, t.Info)
 
+		logLevel := 4
+		if t.Info.State == vimtypes.TaskInfoStateRunning ||
+			t.Info.State == vimtypes.TaskInfoStateError {
+
+			logLevel = 2
+		}
+
+		if l := logger.V(logLevel); l.Enabled() {
 			var descMsg string
 			if t.Info.Description != nil {
 				descMsg = t.Info.Description.Message
@@ -1335,7 +1374,7 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				startTime = t.Info.StartTime.String()
 			}
 
-			logger.V(logLevel).Info("VM has task",
+			l.Info("VM has task",
 				"activationId", t.Info.ActivationId,
 				"descriptionId", t.Info.DescriptionId,
 				"description", descMsg,
@@ -1359,7 +1398,6 @@ func (vs *vSphereVMProvider) getRecentTaskInfo(
 				"startTime", startTime,
 				"state", t.Info.State,
 				"task", t.Info.Task)
-			rt = append(rt, t.Info)
 		}
 	}
 
@@ -1808,7 +1846,7 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 			vmCtx.VM,
 			vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
 		) {
-			return fmt.Errorf("VM is not linked to its group")
+			return ErrVMNotLinkedToGroup
 		}
 
 		// Place the VM via its group when it has no zone label, or (with
@@ -1900,13 +1938,13 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
 	) {
 		return pkgerr.NoRequeueError{
-			Message: "VM Group placement is not ready",
+			Message: "waiting for group placement",
 		}
 	}
 
 	placementStatus := memberStatus.Placement
 	if placementStatus == nil {
-		return fmt.Errorf("VM Group placement is empty")
+		return fmt.Errorf("group placement status is empty")
 	}
 
 	// This should be logged once and helpful to debug group placement issues.
@@ -2550,7 +2588,9 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		return err
 	}
 
-	isEnc, err := kubeutil.IsEncryptedStorageProfile(vmCtx, vs.k8sClient, storageProfileID)
+	// The profile ID was read from the VM's StorageClass or VolumeAttributesClass
+	// above, so there is no need to list them again to confirm it exists.
+	isEnc, err := kubeutil.IsEncryptedStoragePolicy(vmCtx, vs.k8sClient, storageProfileID)
 	if err != nil {
 		return err
 	}
@@ -2636,7 +2676,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		createArgs.ImageStatus,
 		minCPUFreq)
 
-	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {
+	features := pkgcfg.FromContext(vmCtx).Features
+	if features.FastDeploy {
 		if err := vs.vmCreateGenConfigSpecImage(vmCtx, createArgs); err != nil {
 			return err
 		}
@@ -2648,7 +2689,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	}
 
 	// Get the encryption class details for the VM.
-	if pkgcfg.FromContext(vmCtx).Features.BringYourOwnEncryptionKey {
+	if features.BringYourOwnEncryptionKey {
 		doCryptoReconcile := true
 		if vmCtx.VM.Spec.Crypto != nil {
 			// If vTPM mode is 'Clone', then we skip the below reconcile.
@@ -2684,7 +2725,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		return err
 	}
 
-	if pkgcfg.FromContext(vmCtx).Features.TelcoVMServiceAPI {
+	if features.VMServiceClasslessVM {
 		if err := vmconfextraconfig.Reconcile(
 			vmCtx,
 			vs.k8sClient,
@@ -2715,6 +2756,9 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		return err
 	}
 
+	if err := virtualmachine.AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &createArgs.ConfigSpec, false); err != nil {
+		return fmt.Errorf("build create affinity config: %w", err)
+	}
 	vmCtx.Logger.V(4).Info("Completed generating config spec for VM create", "ConfigSpec", createArgs.ConfigSpec)
 
 	return nil

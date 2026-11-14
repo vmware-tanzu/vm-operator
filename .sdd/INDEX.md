@@ -31,7 +31,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | # | Slug | Title | Status | Epic |
 |---|------|-------|--------|------|
 | 000 | [sdd](specs/000-sdd/) | VM Operator Specification Driven Development | In Progress | vmop-3820 |
-| 001 | [class-policy-resize](specs/001-class-policy-resize/) | VM Service Class Policy and Resize — Policy + Environment Browser Pipeline | In Progress | vmop-3331 |
+| 001 | [environment-browser](specs/001-environment-browser/) | Environment Browser | In Progress | vmop-3331 |
 | 002 | [vm-extraconfig-reconcile](specs/002-vm-extraconfig-reconcile/) | VM ExtraConfig Reconciliation — E2E Coverage (`spec.md`/`plan.md` pending) | In Progress | vmop-3782 |
 | 003 | [compute-config-reconcile](specs/003-compute-config-reconcile/) | VM Compute Configuration Reconciliation | In Review | vmop-3388 |
 | 004 | [nic-extraconfig-reconcile](specs/004-nic-extraconfig-reconcile/) | NIC ExtraConfig Reconciler — E2E Coverage (`spec.md`/`plan.md` pending) | In Progress | vmop-3782 |
@@ -42,7 +42,10 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 009 | [virtualmachinereplicaset](specs/009-virtualmachinereplicaset/) | `VirtualMachineReplicaSet` Functional Test Coverage (`tds.md`/`test-plan.md` in place of `spec.md`/`plan.md`) | In Progress | vmop-1701 |
 | 010 | [veeam-e2e-backup-restore](specs/010-veeam-e2e-backup-restore/) | Use Veeam for Backup/Restore E2E Tests | In Progress | vmop-4013 |
 | 011 | [snapshot-disk-list](specs/011-snapshot-disk-list/) | Expose Disk List in VirtualMachineSnapshot (CSI Backup API) | In Review | vmop-52730 |
-| 012 | [vmclass-v2](specs/012-vmclass-v2/) | Flex VM Classes (`VirtualMachineClass` v2) — range-based classes, `governs`, zones, `externalID`, reserved profiles; replaces `VirtualMachineConfigPolicy`; design in WIKI page 3118085463 | In Progress | vmop-4034, vmop-4038, vmop-4039, vmop-4040, vmop-4041, vmop-4201, vmop-4312 |
+| 012 | [lifecycle-hooks](specs/012-lifecycle-hooks/) | Blocking Lifecycle Hooks for `VirtualMachine` | Draft | vmop-3377 |
+| 013 | [spq-webhook-watch](specs/013-spq-webhook-watch/) | Consolidate storage quota webhook CA propagation | Draft | vmop-4310 |
+| 014 | [vmgroup-power-ordering](specs/014-vmgroup-power-ordering/) | VM Group Power-On and Power-Off Ordering (stateless staged release; `PowerOnDelay` and `PowerOffDelay` count from completion of the previous group) | Draft | vmop-4060 |
+| 015 | [vmclass-v2](specs/015-vmclass-v2/) | Flex VM Classes (`VirtualMachineClass` v2) — range-based classes, `governs`, zones, `externalID`, reserved profiles; replaces `VirtualMachineConfigPolicy`; design in WIKI page 3118085463 | In Progress | vmop-4034, vmop-4038, vmop-4039, vmop-4040, vmop-4041, vmop-4201, vmop-4312 |
 
 ### Finding the right spec
 

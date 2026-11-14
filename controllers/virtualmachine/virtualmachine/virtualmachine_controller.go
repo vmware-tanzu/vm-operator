@@ -375,7 +375,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 	ctx = vmconfig.Register(ctx, bootoptions.New())
 
-	if pkgcfg.FromContext(ctx).Features.TelcoVMServiceAPI {
+	if pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		ctx = vmconfig.Register(ctx, vmconfextraconfig.New())
 		ctx = vmconfig.Register(ctx, vmconfnetworkextraconfig.New())
 	}
@@ -462,7 +462,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			ctx,
 			vm.Namespace,
 			vm.Spec.StorageClass)
-		if err := patchHelper.Patch(ctx, vm); err != nil {
+		if err := patchHelper.Patch(ctx, vm, patch.WithStatusOptimisticLock{}); err != nil {
 			if reterr == nil {
 				reterr = err
 			}

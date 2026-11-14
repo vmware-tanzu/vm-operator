@@ -7,7 +7,7 @@
 - **Design**: WIKI page 3119061398 — "One Pager: VM Service: Flex VM Classes"; WIKI page 3118085463 — "Design: VM Service: Flex VM Classes" (Kubernetes side, authoritative), with its child pages for the full schema, the vAPI, reserved capacity and the Supervisor models. Summaries and pointers are in [`research.md`](research.md); the API surface is in [`model.md`](model.md).
 - **Plan**: [`plan.md`](plan.md)
 - **Tasks**: [`tasks.md`](tasks.md)
-- **Supersedes**: the `VirtualMachineConfigPolicy` work in spec [`001-class-policy-resize`](../001-class-policy-resize/) (Stories S8, S9.a, S9.b and S11)
+- **Supersedes**: the `VirtualMachineConfigPolicy` work formerly in spec 001 (Stories S8, S9.a, S9.b and S11); spec [`001-environment-browser`](../001-environment-browser/) now covers environment-browser discovery only
 
 ---
 

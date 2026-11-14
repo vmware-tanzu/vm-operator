@@ -15,7 +15,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,7 +29,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -298,24 +296,6 @@ func waitForNICExtraConfigSyncedWithExtraConfigAbsent(
 	time.Sleep(time.Second)
 }
 
-// patchVMPowerState patches key's spec.powerState to state and waits for
-// status.powerState to reach it.
-func patchVMPowerState(
-	ctx context.Context,
-	svClusterClient ctrlclient.Client,
-	config *e2eConfig.E2EConfig,
-	key types.NamespacedName,
-	state vmopv1.VirtualMachinePowerState,
-) {
-	vm := getExtraConfigVM(ctx, svClusterClient, key)
-	vmPatch := vm.DeepCopy()
-	vmPatch.Spec.PowerState = state
-	Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed(),
-		"failed to patch VM %s PowerState=%s", key.Name, state)
-	vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, key.Namespace, key.Name,
-		string(state))
-}
-
 // powerCycleVM powers key off, then back on, waiting for each transition to
 // be observed before proceeding.
 func powerCycleVM(
@@ -324,8 +304,8 @@ func powerCycleVM(
 	config *e2eConfig.E2EConfig,
 	key types.NamespacedName,
 ) {
-	patchVMPowerState(ctx, svClusterClient, config, key, vmopv1.VirtualMachinePowerStateOff)
-	patchVMPowerState(ctx, svClusterClient, config, key, vmopv1.VirtualMachinePowerStateOn)
+	vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, key.Namespace, key.Name)
+	vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, key.Namespace, key.Name)
 }
 
 // VMNICExtraConfigSpec exercises the NIC ExtraConfig feature: live-mode
@@ -338,13 +318,12 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 	var (
 		input            VMNICExtraConfigSpecInput
 		config           *e2eConfig.E2EConfig
-		clusterProxy     *common.VMServiceClusterProxy
+		clusterProxy     framework.ClusterProxyInterface
 		svClusterClient  ctrlclient.Client
 		clusterResources *e2eConfig.Resources
 
-		vmNamespace   string
-		linuxVMIName  string
-		vCenterClient *vim25.Client
+		vmNamespace  string
+		linuxVMIName string
 	)
 
 	BeforeEach(func() {
@@ -360,11 +339,11 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		Expect(input.WCPNamespaceName).ToNot(BeEmpty(),
 			"Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, input.ClusterProxy.(*common.VMServiceClusterProxy), consts.TelcoVMServiceAPICapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
 
 		config = input.Config
 		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 		vmNamespace = input.WCPNamespaceName
 
@@ -376,7 +355,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		)
 		DeferCleanup(cancelPodWatches)
 
-		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+		vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 		DeferCleanup(func() {
 			if vCenterClient != nil {
 				vcenter.LogoutVimClient(vCenterClient)
@@ -391,9 +370,6 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 		Label("core-functional", "experimental"), func() {
 			vmName := "nic-ec-live-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
-
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vmNamespace, vmName, input.SkipCleanup)
 
 			By("Phase 1: creating VM with CoalescingScheme=Disabled")
 
@@ -410,8 +386,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 					},
 				},
 			)
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s", vmName)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmName)
 
@@ -441,9 +416,6 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmName := "nic-ec-pc-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vmNamespace, vmName, input.SkipCleanup)
-
 			By("Creating VM with live-mode baseline CoalescingScheme=Adapt")
 
 			vm := buildNICExtraConfigVM(
@@ -459,14 +431,13 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 					},
 				},
 			)
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s", vmName)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmName)
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKey,
 				"ethernet0.coalescingScheme", "adapt")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName,
-				string(vmopv1.VirtualMachinePowerStateOn))
+				vmopv1.VirtualMachinePowerStateOn)
 
 			By("Phase 3: patching all four powercycle-mode fields to positive values")
 
@@ -535,9 +506,6 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmName := "nic-ec-bag-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vmNamespace, vmName, input.SkipCleanup)
-
 			By("Creating VM with live-mode and powercycle-mode fields")
 
 			udpEnabled := vmopv1.UDPRSSModeEnabled
@@ -561,8 +529,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 					},
 				},
 			)
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s", vmName)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmName)
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKey,
@@ -627,8 +594,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 					// MemoryAdvanced intentionally omitted to trigger the prereq gate.
 				},
 			)
-			Expect(svClusterClient.Create(ctx, vmA)).To(Succeed(),
-				"failed to create VirtualMachine %s", vmNameA)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmA, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmNameA)
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config,
@@ -637,7 +603,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			// validateUPTv2MemoryReservation (webhooks/virtualmachine/validation/
 			// virtualmachine_validator_compute.go) always rejects uptv2Enabled=true
-			// without full memory reservation whenever TelcoVMServiceAPI is
+			// without full memory reservation whenever VMServiceClasslessVM is
 			// enabled — the same feature this suite requires — so the
 			// reconciler-level PrerequisiteNotMet path is unreachable here via
 			// the API server; the patch must fail at admission, deterministically.
@@ -657,8 +623,6 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			vmNameB := "nic-ec-uptv2-" + capiutil.RandomString(5)
 			vmKeyB := types.NamespacedName{Namespace: vmNamespace, Name: vmNameB}
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vmNamespace, vmNameB, input.SkipCleanup)
 
 			vmB := buildNICExtraConfigVM(
 				nicExtraConfigVMOptions{
@@ -675,8 +639,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 					MemoryReservationLockedToMax: ptr.To(true),
 				},
 			)
-			Expect(svClusterClient.Create(ctx, vmB)).To(Succeed(),
-				"failed to create VirtualMachine %s", vmNameB)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmB, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmNameB)
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKeyB,
@@ -734,8 +697,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 					Firmware: string(vmopv1.VirtualMachineBootOptionsFirmwareTypeBIOS),
 				},
 			)
-			Expect(svClusterClient.Create(ctx, vmA)).To(Succeed(),
-				"failed to create VirtualMachine %s", vmNameA)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmA, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmNameA)
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config,
@@ -765,8 +727,6 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			vmNameB := "nic-ec-vnuma-" + capiutil.RandomString(5)
 			vmKeyB := types.NamespacedName{Namespace: vmNamespace, Name: vmNameB}
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vmNamespace, vmNameB, input.SkipCleanup)
 
 			vmB := buildNICExtraConfigVM(
 				nicExtraConfigVMOptions{
@@ -785,14 +745,13 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 					},
 				},
 			)
-			Expect(svClusterClient.Create(ctx, vmB)).To(Succeed(),
-				"failed to create VirtualMachine %s", vmNameB)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmB, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmNameB)
 			waitForNICExtraConfigSyncedWithExtraConfig(ctx, svClusterClient, config, vmKeyB,
 				"ethernet0.coalescingScheme", "adapt")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmNameB,
-				string(vmopv1.VirtualMachinePowerStateOn))
+				vmopv1.VirtualMachinePowerStateOn)
 
 			vmB = getExtraConfigVM(ctx, svClusterClient, vmKeyB)
 			vmBPatch := vmB.DeepCopy()
@@ -805,7 +764,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 
 			By("Powering off to apply the VNUMANodeID assignment")
 
-			patchVMPowerState(ctx, svClusterClient, config, vmKeyB, vmopv1.VirtualMachinePowerStateOff)
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmKeyB.Namespace, vmKeyB.Name)
 
 			waitForNICExtraConfigSynced(ctx, svClusterClient, config, vmKeyB,
 				metav1.ConditionTrue, "")
@@ -849,9 +808,6 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmName := "nic-ec-promotedisks-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vmNamespace, vmName, input.SkipCleanup)
-
 			By("Creating VM with PromoteDisksMode=Online and CoalescingScheme=Disabled")
 
 			vm := buildNICExtraConfigVM(
@@ -868,8 +824,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 					},
 				},
 			)
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s", vmName)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmName)
 
@@ -908,9 +863,6 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 			vmName := "nic-ec-reorder-" + capiutil.RandomString(5)
 			vmKey := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vmNamespace, vmName, input.SkipCleanup)
-
 			By("Creating VM with three NICs: eth0 baseline, eth1 and eth2 with distinct CoalescingScheme values")
 
 			vm := buildNICExtraConfigVM(
@@ -946,8 +898,7 @@ func VMNICExtraConfigSpec(ctx context.Context, inputGetter func() VMNICExtraConf
 					},
 				},
 			)
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s", vmName)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, vmNamespace, vmName)
 

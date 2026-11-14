@@ -168,7 +168,8 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 	It("Packer command to build and deploy a VM from a view only access SSO user", func() {
 		// Create SSO user and associate to the namespace with view only access.
 		randomSSOUserName := fmt.Sprintf("%s-%s", randomSSOUserNameBase, capiutil.RandomString(6))
-		sshCommandRunner, _, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, kubeconfigPath)
+		sshCommandRunner, supervisorClusterIP := testutils.GetHelpersFromKubeconfig(ctx, kubeconfigPath)
+		DeferCleanup(func() { _ = sshCommandRunner.Close() })
 		vCenterAdminCreds := dcli.VCenterUserCredentials{Username: testbed.AdminUsername, Password: testbed.AdminPassword}
 		nonAdminUser := vcenter.NewUser(randomSSOUserName, randomSSOUserPassword).WithAdminCreds(vCenterAdminCreds).WithSSHCommandRunner(sshCommandRunner)
 		kubectlPlugin := testutils.CreateUserAndLogin(nonAdminUser, supervisorClusterIP, "", "")
@@ -217,7 +218,7 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 			packerCmdOpts.TemplateVariables["publish_location_name"] = "non-existing-content-library"
 			cmdOut, err := RunPackerBuildCmd(ctx, packerCmdOpts)
 			Expect(err).To(HaveOccurred())
-			Expect(string(cmdOut)).To(ContainSubstring("not found"), "packer build error: ", err.Error())
+			Expect(string(cmdOut)).To(ContainSubstring("not found"), "packer build error: %s", err.Error())
 		})
 
 		// Create a new content library used for the following packer command runs.
@@ -236,7 +237,7 @@ func PackerSpec(ctx context.Context, inputGetter func() SpecInput) {
 			packerCmdOpts.TemplateVariables["publish_location_name"] = k8sContentLibraryName
 			cmdOut, err := RunPackerBuildCmd(ctx, packerCmdOpts)
 			Expect(err).To(HaveOccurred())
-			Expect(string(cmdOut)).To(ContainSubstring("not writable"), "packer build error: ", err.Error())
+			Expect(string(cmdOut)).To(ContainSubstring("not writable"), "packer build error: %s", err.Error())
 
 			Expect(wcpClient.DisassociateImageRegistryContentLibrariesFromNamespace(input.WCPNamespaceName, publishCLID)).To(Succeed())
 		})

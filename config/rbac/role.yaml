@@ -302,17 +302,6 @@ rules:
   - patch
   - update
 - apiGroups:
-  - vim.vmware.com
-  resources:
-  - virtualmachineconfigpolicies
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - vmoperator.vmware.com
   resources:
   - clustervirtualmachineimages

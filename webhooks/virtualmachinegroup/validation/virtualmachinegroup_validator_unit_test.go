@@ -121,7 +121,7 @@ func unitTestsValidateCreate() {
 		duplicateMember       bool
 		selfReferenced        bool
 		powerOffDelaySet      bool
-		telcoVMServiceAPI     bool
+		vmServiceClasslessVM  bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string) {
@@ -131,9 +131,9 @@ func unitTestsValidateCreate() {
 			ctx.IsPrivilegedAccount = true
 		}
 
-		if args.telcoVMServiceAPI {
+		if args.vmServiceClasslessVM {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = true
+				config.Features.VMServiceClasslessVM = true
 			})
 		}
 
@@ -218,10 +218,10 @@ func unitTestsValidateCreate() {
 			createArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachine/vm-dup\""),
 		Entry("should not work with self reference member or group name",
 			createArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
-		Entry("should not work with powerOffDelay set when TelcoVMServiceAPI is not enabled",
+		Entry("should not work with powerOffDelay set when VMServiceClasslessVM is not enabled",
 			createArgs{powerOffDelaySet: true}, false, powerOffDelayNotSupportedMsg),
-		Entry("should work with powerOffDelay set when TelcoVMServiceAPI is enabled",
-			createArgs{powerOffDelaySet: true, telcoVMServiceAPI: true}, true, ""),
+		Entry("should work with powerOffDelay set when VMServiceClasslessVM is enabled",
+			createArgs{powerOffDelaySet: true, vmServiceClasslessVM: true}, true, ""),
 	)
 }
 
@@ -240,7 +240,7 @@ func unitTestsValidateUpdate() {
 		duplicateMember              bool
 		selfReferenced               bool
 		powerOffDelaySet             bool
-		telcoVMServiceAPI            bool
+		vmServiceClasslessVM         bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string) {
@@ -250,9 +250,9 @@ func unitTestsValidateUpdate() {
 			ctx.IsPrivilegedAccount = true
 		}
 
-		if args.telcoVMServiceAPI {
+		if args.vmServiceClasslessVM {
 			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
-				config.Features.TelcoVMServiceAPI = true
+				config.Features.VMServiceClasslessVM = true
 			})
 		}
 
@@ -357,10 +357,10 @@ func unitTestsValidateUpdate() {
 			updateArgs{duplicateMember: true}, false, "spec.bootOrder[1].members[0]: Duplicate value: \"VirtualMachineGroup/vmg-dup\""),
 		Entry("should not work with self reference member or group name",
 			updateArgs{selfReferenced: true}, false, selfRefMemberOrGroupMsg),
-		Entry("should not work with powerOffDelay set when TelcoVMServiceAPI is not enabled",
+		Entry("should not work with powerOffDelay set when VMServiceClasslessVM is not enabled",
 			updateArgs{powerOffDelaySet: true}, false, powerOffDelayNotSupportedMsg),
-		Entry("should work with powerOffDelay set when TelcoVMServiceAPI is enabled",
-			updateArgs{powerOffDelaySet: true, telcoVMServiceAPI: true}, true, ""),
+		Entry("should work with powerOffDelay set when VMServiceClasslessVM is enabled",
+			updateArgs{powerOffDelaySet: true, vmServiceClasslessVM: true}, true, ""),
 	)
 }
 

@@ -122,7 +122,7 @@ func getPolicyEvaluationResults(
 		}
 	}
 
-	logger.Info("Got PolicyEvaluation criteria info",
+	logger.V(4).Info("Got PolicyEvaluation criteria info",
 		"guestID", guestID,
 		"guestFamily", guestFamily,
 		"imageName", imageName,

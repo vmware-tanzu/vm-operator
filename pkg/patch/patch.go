@@ -131,18 +131,21 @@ func (h *Helper) Patch(ctx context.Context, obj client.Object, opts ...Option) e
 		return err
 	}
 
-	// Issue patches and return errors in an aggregate.
-	return apierrorsutil.NewAggregate([]error{
-		// Patch the conditions first.
-		//
-		// Given that we pass in metadata.resourceVersion to perform a 3-way-merge conflict resolution,
-		// patching conditions first avoids an extra loop if spec or status patch succeeds first
-		// given that causes the resourceVersion to mutate.
-		h.patchStatusConditions(ctx, obj, options.ForceOverwriteConditions, options.OwnedConditions),
+	// A locked status patch must run before this call's other writes can
+	// advance resourceVersion beyond the snapshot captured by NewHelper.
+	// Other callers retain the original conditions/spec/status ordering.
+	if options.StatusOptimisticLock {
+		return apierrorsutil.NewAggregate([]error{
+			h.patchStatus(ctx, obj, options.StatusOptimisticLock),
+			h.patch(ctx, obj),
+			h.patchStatusConditions(ctx, obj, options.ForceOverwriteConditions, options.OwnedConditions),
+		})
+	}
 
-		// Then proceed to patch the rest of the object.
+	return apierrorsutil.NewAggregate([]error{
+		h.patchStatusConditions(ctx, obj, options.ForceOverwriteConditions, options.OwnedConditions),
 		h.patch(ctx, obj),
-		h.patchStatus(ctx, obj),
+		h.patchStatus(ctx, obj, options.StatusOptimisticLock),
 	})
 }
 
@@ -158,8 +161,9 @@ func (h *Helper) patch(ctx context.Context, obj client.Object) error {
 	return h.client.Patch(ctx, afterObject, client.MergeFrom(beforeObject))
 }
 
-// patchStatus issues a patch if the status has changed.
-func (h *Helper) patchStatus(ctx context.Context, obj client.Object) error {
+// patchStatus issues a patch if the status has changed. When optimisticLock
+// is true, a concurrent write causes a conflict instead of a lost update.
+func (h *Helper) patchStatus(ctx context.Context, obj client.Object, optimisticLock bool) error {
 	if !h.shouldPatch("status") {
 		return nil
 	}
@@ -167,7 +171,37 @@ func (h *Helper) patchStatus(ctx context.Context, obj client.Object) error {
 	if err != nil {
 		return err
 	}
-	return h.client.Status().Patch(ctx, afterObject, client.MergeFrom(beforeObject))
+
+	if !optimisticLock {
+		return h.client.Status().Patch(ctx, afterObject, client.MergeFrom(beforeObject))
+	}
+
+	// shouldPatch("status") is computed from the *unstripped* object, so a
+	// change that's entirely within status.conditions (handled separately by
+	// patchStatusConditions, and already excluded from beforeObject/
+	// afterObject above) still lands here with nothing left to send. Skip
+	// the patch in that case: MergeFromWithOptimisticLock embeds
+	// beforeObject's resourceVersion into the patch body regardless of
+	// whether there's any real content, so issuing it anyway would risk a
+	// spurious conflict for what is otherwise a no-op.
+	diff, err := client.MergeFrom(beforeObject).Data(afterObject)
+	if err != nil {
+		return err
+	}
+
+	var diffMap map[string]any
+
+	err = json.Unmarshal(diff, &diffMap)
+	if err != nil {
+		return err
+	}
+
+	if len(diffMap) == 0 {
+		return nil
+	}
+
+	return h.client.Status().Patch(ctx, afterObject,
+		client.MergeFromWithOptions(beforeObject, client.MergeFromWithOptimisticLock{}))
 }
 
 // patchStatusConditions issues a patch if there are any changes to the conditions slice under

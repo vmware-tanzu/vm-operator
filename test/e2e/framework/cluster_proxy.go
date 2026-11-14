@@ -181,12 +181,14 @@ func (p *clusterProxy) Delete(ctx context.Context, resources []byte) error {
 	return KubectlDelete(ctx, p.kubeconfigPath, resources)
 }
 
-// GetRESTConfig retrieves RESTConfig from kubeconfig and if not provided, from default's client config.
+// GetRESTConfig loads the proxy's kubeconfig using the same explicit-path loading
+// rules as kubectl --kubeconfig, including relative certificate and key paths.
+// No context or user override is applied.
 func (p *clusterProxy) GetRESTConfig() *rest.Config {
-	config, err := clientcmd.LoadFromFile(p.kubeconfigPath)
-	Expect(err).ToNot(HaveOccurred(), "Failed to load Kubeconfig file from %q", p.kubeconfigPath)
-
-	restConfig, err := clientcmd.NewDefaultClientConfig(*config, &clientcmd.ConfigOverrides{}).ClientConfig()
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	loadingRules.ExplicitPath = p.kubeconfigPath
+	restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		loadingRules, &clientcmd.ConfigOverrides{}).ClientConfig()
 	Expect(err).ToNot(HaveOccurred(), "Failed to get ClientConfig from %q", p.kubeconfigPath)
 
 	restConfig.UserAgent = "e2e"

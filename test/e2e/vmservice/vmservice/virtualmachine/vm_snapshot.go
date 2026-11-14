@@ -76,7 +76,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 	skipChecks := func() {
 		skipper.SkipUnlessInfraIs(vmSnapshotInput.Config.InfraConfig.InfraName, consts.WCP)
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.VirtualMachineSnapshotCapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(vmSnapshotInput.Config.SupervisorCapabilities, consts.VirtualMachineSnapshotCapabilityName)
 	}
 
 	BeforeEach(func() {
@@ -134,9 +134,9 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 	When("VM doesn't have PVC", func() {
 		BeforeEach(func() {
-			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", nil)
+			createSnapshotVM(ctx, vmSvcE2EConfig, svClusterClient, vmSvcClusterResources, vmSvcNamespace, vmName)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 		})
 
 		It("successfully create, update, revert to, and delete vm snapshots", Label("smoke"), func() {
@@ -389,17 +389,16 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 	When("VM has PVC", func() {
 		BeforeEach(func() {
-			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", []manifestbuilders.PVC{
-				{
+			createSnapshotVM(ctx, vmSvcE2EConfig, svClusterClient, vmSvcClusterResources, vmSvcNamespace, vmName,
+				manifestbuilders.PVC{
 					VolumeName:       "test-vol" + randomString,
 					ClaimName:        "test-claim" + randomString,
 					StorageClassName: vmSvcClusterResources.StorageClassName,
 					RequestSize:      "1Gi",
 					Namespace:        vmSvcNamespace,
-				},
-			})
+				})
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 		})
 
 		It("successfully create, and delete vm snapshots", func() {
@@ -526,7 +525,7 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 				By("Waiting for the imported VM to power on")
 				vmoperator.WaitForVirtualMachinePowerState(
-					ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, importedVMName, "PoweredOn")
+					ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, importedVMName, vmopv1.VirtualMachinePowerStateOn)
 
 				By("Creating a snapshot on the imported brownfield VM")
 				vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
@@ -563,11 +562,11 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 
 	When("CSI Backup API is enabled", Label("experimental"), func() {
 		BeforeEach(func() {
-			skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, vmSvcClusterProxy, consts.CSIBackupAPICapabilityName)
+			skipper.SkipUnlessSupervisorCapabilityEnabled(vmSnapshotInput.Config.SupervisorCapabilities, consts.CSIBackupAPICapabilityName)
 
-			vmservice.DeployVMWithCloudInit(ctx, vmSvcClusterProxy, vmSvcE2EConfig, vmSvcClusterResources, vmSvcNamespace, vmName, "", nil)
+			createSnapshotVM(ctx, vmSvcE2EConfig, svClusterClient, vmSvcClusterResources, vmSvcNamespace, vmName)
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
-			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, "PoweredOn")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 
 			By("Enabling ChangeBlockTracking on the VM")
 			vm := &vmopv1.VirtualMachine{}
@@ -620,4 +619,38 @@ func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput)
 			}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-snapshot-condition")...).Should(Succeed(), "Timed out waiting for snapshot disks to be populated")
 		})
 	})
+}
+
+// createSnapshotVM creates the v1alpha5 VirtualMachine that the snapshot tests
+// take snapshots of, using the default Linux image, and then a PVC for each
+// entry in pvcs. The VM is described on failure and deleted by the cleanup
+// that VMSnapshotSpec registers for vmName, so none is registered here.
+func createSnapshotVM(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	client ctrlclient.Client,
+	clusterResources *e2eConfig.Resources,
+	ns, vmName string,
+	pvcs ...manifestbuilders.PVC) {
+
+	GinkgoHelper()
+
+	imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, client, ns,
+		vmservice.GetDefaultImageDisplayName(clusterResources))
+
+	vm := manifestbuilders.VirtualMachineA5(manifestbuilders.VirtualMachineYaml{
+		Namespace:        ns,
+		Name:             vmName,
+		ImageName:        imageName,
+		VMClassName:      clusterResources.VMClassName,
+		StorageClassName: clusterResources.StorageClassName,
+		PVCs:             pvcs,
+	})
+	claims, err := manifestbuilders.PersistentVolumeClaims(pvcs)
+	Expect(err).NotTo(HaveOccurred(), "failed to build PVCs")
+
+	Expect(client.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s/%s", ns, vmName)
+	for _, claim := range claims {
+		Expect(client.Create(ctx, claim)).To(Succeed(), "failed to create PVC %s/%s", claim.Namespace, claim.Name)
+	}
 }

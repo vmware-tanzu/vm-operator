@@ -211,7 +211,7 @@ var _ = Describe("My Feature", Label("my-feature"), func() {
     When("feature is enabled", func() {
         It("should work correctly", func() {
             // Test implementation
-            Expect(client.Create(ctx, vm)).To(Succeed())
+            vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
             
             Eventually(func(g Gomega) {
                 g.Expect(client.Get(ctx, vmKey, vm)).To(Succeed())
@@ -227,28 +227,54 @@ var _ = Describe("My Feature", Label("my-feature"), func() {
 1. **Use descriptive test names** that explain the scenario
 2. **Apply appropriate labels** for filtering
 3. **Use Eventually/Consistently** for async operations
-4. **Clean up resources** in AfterEach hooks
+4. **Register cleanup when creating resources** with `DeferCleanup` helpers
 5. **Test both positive and negative cases**
 6. **Use manifest builders** for complex objects
 7. **Validate status conditions** and events
 
 ### Helper Libraries
 
+#### Capability checks (`vmservice/skipper`)
+
+Suite setup snapshots capabilities in `config.SupervisorCapabilities`; treat the map as read-only. Use `SkipUnlessSupervisorCapabilityEnabled(config.SupervisorCapabilities, capabilityName)` before expensive setup in `BeforeEach`. Capability changes take effect on the next suite run.
+
 #### VM Operations (`lib/vmoperator`)
+
+Prefer a direct `vmopv1.VirtualMachine` literal for ordinary VM fixtures. Use `CreateVirtualMachine` to create it and immediately register failure diagnostics and deferred cleanup. Pass the same cluster proxy used by the test's kubectl operations: its client loads that proxy's kubeconfig and current context, without overriding the Kubernetes user. When refactoring an existing fixture, preserve its API version using the corresponding versioned Go type.
+
 ```go
-vmoperator.WaitForVirtualMachineCreation(ctx, config, client, vm)
-vmoperator.VerifyVirtualMachinePowerState(ctx, config, client, vm, vmopv1.VirtualMachinePowerStateOn)
+vm := &vmopv1.VirtualMachine{
+    ObjectMeta: metav1.ObjectMeta{
+        Name:      "test-vm",
+        Namespace: namespace,
+    },
+    Spec: vmopv1.VirtualMachineSpec{
+        ClassName:    "best-effort-small",
+        ImageName:    imageName,
+        StorageClass: storageClassName,
+        PowerState:   vmopv1.VirtualMachinePowerStateOn,
+    },
+}
+vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
+vmoperator.WaitForVirtualMachineCreation(ctx, config, clusterProxy.GetClient(), vm.Namespace, vm.Name)
 ```
 
-#### Manifest Builders (`manifestbuilders`)
+Use `PowerOnVirtualMachineAndWait`, `PowerOffVirtualMachineAndWait`, and `SuspendVirtualMachineAndWait` to change an existing VM's power state and wait for its status:
+
 ```go
-vm := manifestbuilders.CreateVMManifest(manifestbuilders.CreateVMParams{
-    VMName:    "test-vm",
-    Namespace: namespace,
-    VMClass:   "best-effort-small",
-    VMImage:   "photon-5.0",
-})
+vmoperator.PowerOffVirtualMachineAndWait(ctx, config, client, namespace, vmName)
+vmoperator.PowerOnVirtualMachineAndWait(ctx, config, client, namespace, vmName)
+vmoperator.SuspendVirtualMachineAndWait(
+    ctx, config, client, namespace, vmName,
+    vmopv1.VirtualMachinePowerOpModeHard,
+)
 ```
+
+`SuspendVirtualMachineAndWait` patches the suspend mode and desired power state together. `UpdateVirtualMachinePowerStateAndWait` accepts a `vmopv1.VirtualMachinePowerState` when only the power state needs to change. Power-state update helpers use optimistic locking and retry conflicts. For other spec or metadata changes, `PatchVirtualMachine(ctx, client, namespace, vmName, func(vm *vmopv1.VirtualMachine) error)` fetches the existing VM and applies the callback's changes as a plain merge patch. Append `ctrlclient.MergeFromWithOptimisticLock{}` after the callback to opt into optimistic locking. It returns errors, including NotFound and conflicts, without creating a VM; callers can retry by invoking it again with the same mutation callback.
+
+#### Manifest Builders (`manifestbuilders`)
+
+Avoid introducing `VirtualMachineYaml` just to rename API fields, and set bootstrap configuration with typed API literals rather than inline YAML. The typed `VirtualMachineA5` constructor builds only the VM; build its PVCs with `PersistentVolumeClaims` and create them separately. Use `manifestbuilders.ToYAML` when a test specifically needs a YAML document, such as a kubectl validation test.
 
 #### Infrastructure Access (`infrastructure/vsphere`)
 ```go

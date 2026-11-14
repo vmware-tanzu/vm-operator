@@ -45,6 +45,10 @@ var _ = BeforeSuite(func() {
 	envTestEnv = &envtest.Environment{
 		BinaryAssetsDirectory: filepath.Join(rootDir, "hack", "tools", "bin", goruntime.GOOS+"_"+goruntime.GOARCH),
 	}
+	// These tests exercise CRD validation, defaulting, and writes, not watch
+	// caching. Disable the watch cache so CRD finalization does not depend on
+	// cache initialization when listing custom resources during cleanup.
+	envTestEnv.ControlPlane.GetAPIServer().Configure().Set("watch-cache", "false")
 
 	cfg, err := envTestEnv.Start()
 	Expect(err).NotTo(HaveOccurred())

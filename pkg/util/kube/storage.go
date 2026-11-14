@@ -288,7 +288,9 @@ func IsEncryptedStorageClass(
 		return false, "", nil
 	}
 
-	ok, err := IsEncryptedStorageProfile(ctx, k8sClient, profileID)
+	// The profile ID was just read from the StorageClass, so there is no need
+	// to list all StorageClasses and VolumeAttributesClasses to find it again.
+	ok, err := IsEncryptedStoragePolicy(ctx, k8sClient, profileID)
 	if err != nil {
 		return false, "", err
 	}
@@ -337,6 +339,19 @@ func IsEncryptedStorageProfile(
 			profileID,
 		)
 	}
+
+	return IsEncryptedStoragePolicy(ctx, k8sClient, profileID)
+}
+
+// IsEncryptedStoragePolicy returns true if the StoragePolicy for the provided
+// profile ID is marked as encrypted. Unlike IsEncryptedStorageProfile, it does
+// not list StorageClasses or VolumeAttributesClasses to confirm that one
+// references the profile ID, so it should only be used when the caller already
+// read the profile ID from such an object.
+func IsEncryptedStoragePolicy(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	profileID string) (bool, error) {
 
 	storagePolicyName := GetStoragePolicyObjectName(profileID)
 	if storagePolicyName == "" {

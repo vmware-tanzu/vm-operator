@@ -9,6 +9,7 @@ package tag
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/cespare/xxhash/v2"
 	. "github.com/onsi/ginkgo/v2"
@@ -29,11 +30,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
 )
 
-// vCenterTagName returns the vCenter tag name for a label key/value pair:
-// "<key>:<value>". Byte-for-byte what
-// pkg/providers/vsphere/virtualmachine.TagName computes; reimplemented
-// here rather than imported so this e2e module does not pick up that
-// package's production dependency graph for two one-line derivations.
+// vCenterTagName returns the unprefixed "<key>:<value>" pair used to derive
+// Tag resource names.
 func vCenterTagName(key, value string) string {
 	return key + ":" + value
 }
@@ -99,7 +97,9 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 		svClusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, svClusterProxy, consts.VMHardAffinityDuringExecutionCapabilityName)
+		if slices.Contains(CurrentSpecReport().Labels(), consts.HardAffinityDuringExecutionLabel) {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMHardAffinityDuringExecutionCapabilityName)
+		}
 
 		var err error
 		adminProxy, err = svClusterProxy.NewAdminClusterProxy(ctx)
@@ -112,7 +112,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 	Context("When a privileged client manages a Tag directly", func() {
 		It("rejects a Tag whose name does not equal the name derived from spec.key and spec.value",
-			Label("core-functional", "experimental"), func() {
+			Label("core-functional", "experimental", consts.HardAffinityDuringExecutionLabel), func() {
 				key, value := randomLabelPair("badname")
 				tagObj := newTag(input.WCPNamespaceName, key, value)
 				tagObj.Name = "tag-does-not-match-derived-name"
@@ -126,7 +126,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 	Context("Verify printer columns of the Tag CRD", func() {
 		It("surfaces the label key and value as default 'kubectl get' columns",
-			Label("core-functional", "experimental"), func() {
+			Label("core-functional", "experimental", consts.HardAffinityDuringExecutionLabel), func() {
 				crd := &apiextensionsv1.CustomResourceDefinition{}
 				Expect(adminClient.Get(ctx, ctrlclient.ObjectKey{Name: "tags.vsphere.policy.vmware.com"}, crd)).To(Succeed())
 

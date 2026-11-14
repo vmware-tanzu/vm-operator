@@ -31,7 +31,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
 	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
@@ -84,7 +83,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 	var (
 		input           VMComputeConfigSpecInput
 		config          *e2eConfig.E2EConfig
-		clusterProxy    *common.VMServiceClusterProxy
+		clusterProxy    framework.ClusterProxyInterface
 		svClusterClient ctrlclient.Client
 		vimClient       *vim25.Client
 		wcpClient       wcp.WorkloadManagementAPI
@@ -106,17 +105,16 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 
 		config = input.Config
-		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		clusterProxy = input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 		vmNamespace = input.WCPNamespaceName
 		storageClass = config.InfraConfig.ManagementClusterConfig.Resources.StorageClassName
 		vmClassName = config.InfraConfig.ManagementClusterConfig.Resources.VMClassName
 		wcpClient = input.WCPClient
+		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
+
 		vimClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
 		DeferCleanup(vcenter.LogoutVimClient, vimClient)
-
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy,
-			consts.TelcoVMServiceAPICapabilityName)
 
 		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
 			ctx,
@@ -148,10 +146,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				nil, nil,
 			)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -241,10 +236,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				nil, nil,
 			)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -308,10 +300,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				nil, nil,
 			)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -345,11 +334,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			Expect(condPending).ToNot(BeNil())
 
 			By("Powering off VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-
-			By("Waiting for VM to reach PoweredOff state")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Waiting for ComputeConfigSynced=True after power-off")
 			waitForComputeConfigSynced(ctx, svClusterClient, config,
@@ -376,9 +361,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "power-off-required field assertions failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("applies changeBlockTracking while VM is powered off",
@@ -388,19 +371,14 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			vm := buildComputeConfigVM(vmName, vmNamespace, vmClassName, linuxVMIName, storageClass,
 				nil, nil, nil)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
 				vmNamespace, vmName)
 
 			By("Powering off VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Patching changeBlockTracking while VM is powered off")
 			latest, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -425,9 +403,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "changeBlockTracking assertions failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("applies iommuEnabled after power-off",
@@ -443,10 +419,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				nil, nil,
 			)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -485,11 +458,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				vmNamespace, vmName)
 
 			By("Powering off VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-
-			By("Waiting for VM to reach PoweredOff state")
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Waiting for ComputeConfigSynced=True after power-off")
 			waitForComputeConfigSynced(ctx, svClusterClient, config,
@@ -510,9 +479,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "iommuEnabled assertion failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("resizes via VMClass and applies spec compute overlay while powered off",
@@ -544,10 +511,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			vm := buildComputeConfigVM(vmName, vmNamespace, classAName, linuxVMIName, storageClass,
 				nil, nil, nil)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -557,9 +521,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			Expect(condInitial).ToNot(BeNil())
 
 			By("Powering off VM before class resize")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Patching class-B + spec overlay (hotAddEnabled + cpuLimitP3)")
 			latest, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -598,9 +560,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "class-resize assertions failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("resizes via VMClass while powered on by cycling power after PowerOffRequired",
@@ -632,10 +592,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			vm := buildComputeConfigVM(vmName, vmNamespace, classAName, linuxVMIName, storageClass,
 				nil, nil, nil)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -653,7 +610,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				"failed to patch className on %s/%s", vmNamespace, vmName)
 
 			By("Powering off VM to allow operator to apply class resize")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, vmopv1.VirtualMachinePowerStateOff)
 
 			By("Waiting for ClassConfigSynced=True after power-off resize")
 			waitForClassConfigSynced(ctx, svClusterClient, config,
@@ -675,9 +632,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "class-resize assertions failed for %s/%s", vmNamespace, vmName)
 
 			By("Restoring power state")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 		})
 
 	It("resizes from guaranteed-xsmall to best-effort-xsmall and clears reservation",
@@ -697,10 +652,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				nil, nil, nil)
 			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off, guaranteed class)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -766,10 +718,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				nil, nil, nil)
 			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off, best-effort class)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -837,10 +786,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			}
 
 			By("Creating VM (first instance)")
-			Expect(svClusterClient.Create(ctx, makeVM())).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vmNamespace, vmName, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, makeVM(), input.SkipCleanup)
 
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
 				vmNamespace, vmName)
@@ -894,10 +840,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				nil, nil,
 			)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -960,7 +903,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 
 			By("Waiting for operator to restore PoweredOn state (drift recovery)")
 			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+				vmNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
 		})
 
 	It("re-applies compute config fields after vSphere VM is destroyed out-of-band",
@@ -986,10 +929,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			)
 			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and ComputeConfigSynced=True (powered-off)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1076,10 +1016,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			)
 			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and ComputeConfigSynced=True (powered-off, hotAddEnabled applied)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1090,9 +1027,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			Expect(condSynced).ToNot(BeNil())
 
 			By("Powering on so VM is running with hotAddEnabled=true live")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Merge-patching spec.resources=null and cpuAdvanced.hotAddEnabled=null")
 			latest, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
@@ -1127,9 +1062,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed())
 
 			By("Powering off to apply hotAddEnabled=false")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOff))
+			vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 			waitForComputeConfigSynced(ctx, svClusterClient, config,
 				types.NamespacedName{Namespace: vmNamespace, Name: vmName},
 				metav1.ConditionTrue, "",
@@ -1172,10 +1105,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				nil, nil,
 			)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1262,10 +1192,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			)
 			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1329,10 +1256,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			vm := buildComputeConfigVM(vmName, vmNamespace, vmClassName, linuxVMIName, storageClass,
 				nil, nil, nil)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1382,10 +1306,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			vm := buildComputeConfigVM(vmName, vmNamespace, vmClassName, linuxVMIName, storageClass,
 				nil, nil, nil)
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1471,10 +1392,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				nil, nil, nil)
 			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1559,9 +1477,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			verifyCoresPerNumaNode("powered off")
 
 			By("Powering on VM to confirm coresPerNumaNode persists across the power cycle")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			verifyCoresPerNumaNode("powered on")
 		})
@@ -1584,10 +1500,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			)
 			vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
-			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(),
-				"failed to create VirtualMachine %s/%s", vmNamespace, vmName)
-			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-				vm.Namespace, vm.Name, input.SkipCleanup)
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
 
 			By("Waiting for VM to be created and condition=True (powered-off with hot-add flags applied)")
 			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
@@ -1632,9 +1545,7 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				metav1.ConditionTrue, "", condInitial.LastTransitionTime)
 
 			By("Powering on VM")
-			vmoperator.UpdateVirtualMachinePowerState(ctx, config, svClusterClient, vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
-			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient,
-				vmNamespace, vmName, string(vmopv1.VirtualMachinePowerStateOn))
+			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, vmNamespace, vmName)
 
 			By("Asserting cpu.total=3 after size override")
 			Eventually(func(g Gomega) {

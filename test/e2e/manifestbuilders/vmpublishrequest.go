@@ -29,18 +29,10 @@ type VirtualMachinePublishRequestTargetLocation struct {
 }
 
 type VirtualMachinePublishRequestYaml struct {
-	Namespace   string                             `json:"namespace,omitempty"`
-	Name        string                             `json:"name,omitempty"`
-	Labels      map[string]string                  `json:"labels,omitempty"`
-	Annotations map[string]string                  `json:"annotations,omitempty"`
-	Source      VirtualMachinePublishRequestSource `json:"source,omitempty"`
-	Target      VirtualMachinePublishRequestTarget `json:"target,omitempty"`
-}
-
-// GetVirtualMachinePublishRequestYaml returns a v1alpha2
-// VirtualMachinePublishRequest YAML manifest.
-func GetVirtualMachinePublishRequestYaml(vmPublishRequestYaml VirtualMachinePublishRequestYaml) []byte {
-	return ToYAML(VirtualMachinePublishRequestA2(vmPublishRequestYaml))
+	Namespace string                             `json:"namespace,omitempty"`
+	Name      string                             `json:"name,omitempty"`
+	Source    VirtualMachinePublishRequestSource `json:"source,omitempty"`
+	Target    VirtualMachinePublishRequestTarget `json:"target,omitempty"`
 }
 
 // VirtualMachinePublishRequestA2 returns the v1alpha2
@@ -49,10 +41,8 @@ func VirtualMachinePublishRequestA2(vmPublishRequestYaml VirtualMachinePublishRe
 	return &vmopv1a2.VirtualMachinePublishRequest{
 		TypeMeta: typeMeta(vmopv1a2.GroupVersion.String(), "VirtualMachinePublishRequest"),
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        vmPublishRequestYaml.Name,
-			Namespace:   vmPublishRequestYaml.Namespace,
-			Labels:      vmPublishRequestYaml.Labels,
-			Annotations: vmPublishRequestYaml.Annotations,
+			Name:      vmPublishRequestYaml.Name,
+			Namespace: vmPublishRequestYaml.Namespace,
 		},
 		Spec: vmopv1a2.VirtualMachinePublishRequestSpec{
 			Source: vmopv1a2.VirtualMachinePublishRequestSource{

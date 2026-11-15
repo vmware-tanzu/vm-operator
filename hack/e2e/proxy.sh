@@ -33,7 +33,7 @@ GATEWAY_VM_PASSWORD="${GATEWAY_VM_PASSWORD:-}"
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password"
 # Isolated testbeds: hop through the jumphost via the ssh_config that
 # setup-testbed-env.sh/isolated.sh wrote (no-op otherwise).
-if [[ -n "${E2E_SSH_CONFIG:-}" ]]; then
+if [[ -n "${E2E_SSH_CONFIG:-}" && -f "${E2E_SSH_CONFIG}" ]]; then
 	SSH_OPTS="-F ${E2E_SSH_CONFIG} ${SSH_OPTS}"
 fi
 

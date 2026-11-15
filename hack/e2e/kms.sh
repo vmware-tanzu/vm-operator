@@ -53,7 +53,7 @@ script_dir="$(dirname "$0")"
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=${SSH_CONNECT_TIMEOUT}"
 # Isolated testbeds: hop through the jumphost via the ssh_config that
 # setup-testbed-env.sh/isolated.sh wrote (no-op otherwise).
-if [ -n "${E2E_SSH_CONFIG:-}" ]; then
+if [ -n "${E2E_SSH_CONFIG:-}" ] && [ -f "${E2E_SSH_CONFIG}" ]; then
   SSH_OPTS="-F ${E2E_SSH_CONFIG} ${SSH_OPTS}"
 fi
 #crt_dir="$script_dir/tools/bin"

@@ -119,9 +119,13 @@ _report_setup_failure() {
         report_callback "Failed" "${_LAST_ERR}"
     fi
     # A failed setup never reaches run-e2e.sh, which would otherwise own the
-    # tunnel teardown, so release the jumphost tunnel here. This is done after
-    # the callback, which may itself be sent through the tunnel.
-    declare -F _iso_stop_tunnel >/dev/null 2>&1 && _iso_stop_tunnel
+    # tunnel teardown, so release the jumphost tunnel here, but only one this
+    # invocation opened: a tunnel inherited from an earlier setup in the same
+    # shell is left alone. This is done after the callback, which may itself
+    # be sent through the tunnel.
+    if [[ "${_ISO_STARTED}" == "true" ]] && declare -F _iso_stop_tunnel >/dev/null 2>&1; then
+        _iso_stop_tunnel
+    fi
     return 0
 }
 
@@ -163,6 +167,19 @@ _export() {
     fi
 }
 
+# Unset a variable and, when running as a subprocess, also emit an eval-safe
+# "unset VAR" line to stdout.
+_unexport() {
+    unset "$1"
+    if [[ "${_SOURCED}" == "false" ]]; then
+        printf 'unset %s\n' "$1"
+    fi
+}
+
+# Whether this invocation opened an isolated-testbed jumphost tunnel. Reset on
+# every run, since a sourced script shares globals with earlier sources.
+_ISO_STARTED=false
+
 # Common SSH options shared across all sshpass/ssh/scp invocations.
 _SSH_OPTS=(
     -o StrictHostKeyChecking=no
@@ -189,7 +206,12 @@ _load_testbed() {
 
     if [[ "${source}" =~ ^https?:// ]]; then
         _log "Fetching testbed data from: ${source}"
-        if ! testbed_data=$(curl -fsSL "${source}" 2>/dev/null); then
+        # A tunnel left by an earlier setup in this shell may still own the
+        # proxy variables (and may be dead); the testbed data host is
+        # reachable directly, so do not route the fetch through it.
+        local -a noproxy=()
+        [[ -n "${E2E_ISOLATED_STATE_DIR:-}" ]] && noproxy=(--noproxy '*')
+        if ! testbed_data=$(curl -fsSL ${noproxy[@]+"${noproxy[@]}"} "${source}" 2>/dev/null); then
             _err "Failed to fetch testbed data from ${source}"
             return 1
         fi
@@ -357,16 +379,20 @@ _export_common_vars() {
     # value below. Detection order: an explicit networking field, then
     # TESTBED_TOPOLOGY, then the presence of any populated NSX section
     # (NSX-T and VPC testbeds deploy NSX; VDS testbeds list the sections
-    # empty or omit them), else "vds". VPC is the "nsx" topology.
-    local networking_type networking_source
-    networking_type=$(jq -r '
+    # empty or omit them), else "vds". VPC is the "nsx" topology. The NSX
+    # sections live in testbed_info (inside deliverable_blob for UTS input);
+    # only non-empty objects or arrays count.
+    local networking_type networking_source nsx_sections
+    nsx_sections=$(jq -r '
+        [.nsxm, .nsxc, .nsxAutoEdge, .nsxmanager, .nsxcontroller, .nsxedge, .nsxpolicy]
+        | map(select((type == "object" or type == "array") and length > 0)) | length
+    ' <<< "${testbed_info}" 2>/dev/null) || nsx_sections=0
+    networking_type=$(jq -r --argjson nsx "${nsx_sections:-0}" '
         .deliverable_blob.networking //
         .networking //
-        (if .TESTBED_TOPOLOGY == "NIMBUS_NSXT" then "nsx"
-         elif ([.nsxm, .nsxc, .nsxAutoEdge, .nsxmanager, .nsxcontroller, .nsxedge, .nsxpolicy]
-               | map(select(. != null and length > 0)) | length) > 0 then "nsx"
-         else "vds" end)
-    ' <<< "${testbed_data}")
+        (if .TESTBED_TOPOLOGY == "NIMBUS_NSXT" or $nsx > 0 then "nsx" else "vds" end)
+    ' <<< "${testbed_data}" 2>/dev/null)
+    [[ -n "${networking_type}" && "${networking_type}" != "null" ]] || networking_type="vds"
     if [[ -n "${NETWORK:-}" ]]; then
         networking_source="caller-supplied NETWORK"
     else
@@ -420,38 +446,73 @@ _ensure_sshpass() {
 }
 
 # ---------------------------------------------------------------------------
-# _setup_isolated_connectivity
+# _reset_isolated_state
+#
+# A later setup in the same shell replaces whatever an earlier one left: its
+# tunnel (if still running) is stopped and the variables it exported (proxy
+# settings, ssh_config, management network) are unset, so this run starts from
+# a clean environment. Runs only after the testbed has loaded and parsed, so a
+# typo'd testbed path never tears down a working tunnel.
+# ---------------------------------------------------------------------------
+_reset_isolated_state() {
+    [[ -n "${E2E_ISOLATED_STATE_DIR:-}" ]] || return 0
+    declare -F _iso_stop_tunnel >/dev/null 2>&1 || return 0
+    _log "Replacing isolated-testbed state left by an earlier setup (${E2E_ISOLATED_STATE_DIR})"
+    _iso_stop_tunnel
+}
+
+# ---------------------------------------------------------------------------
+# _setup_isolated_connectivity <testbed_source>
 #
 # When the testbed is isolated, brings up the jumphost tunnel (see isolated.sh)
 # before anything touches vCenter, and routes every later ssh/scp through it.
 # A no-op on ordinary testbeds. Required: failure stops setup.
-# Reads: testbed_info, vc_url. Sets: mgmt_ip_prefix, mgmt_cidr.
+# Reads: testbed_info, testbed_data, vc_url. Sets: mgmt_ip_prefix, mgmt_cidr,
+# _ISO_STARTED.
 # ---------------------------------------------------------------------------
 _setup_isolated_connectivity() {
+    local -r testbed_source="$1"
     mgmt_ip_prefix="10." mgmt_cidr="10.0.0.0/8"
+    declare -F _iso_is_isolated >/dev/null 2>&1 || return 0
+
     local reason
     case "${E2E_ISOLATED:-}" in
-        true|1)  reason="forced by E2E_ISOLATED=${E2E_ISOLATED}" ;;
-        false|0) reason="forced by E2E_ISOLATED=${E2E_ISOLATED}" ;;
-        *)       reason="vCenter ${vc_url}; isolatedNetworkOptions.networkPrefix \"$(jq -r '(.isolatedNetworkOptions // .testbed_spec.isolatedNetworkOptions // {}).networkPrefix // "none"' <<< "${testbed_info}" 2>/dev/null)\"; jumphost entry in network list: $(jq -r '[(.network // []) | (if type == "object" then [.[]] else . end)[] | select(type == "object" and (.gateway // "") != "" and (.username // "") != "")] | if length > 0 then "yes" else "no" end' <<< "${testbed_info}" 2>/dev/null)"
+        true|1|false|0) reason="forced by E2E_ISOLATED=${E2E_ISOLATED}" ;;
+        *)  local prefix jump=no
+            prefix="$(_iso_network_prefix "${testbed_info}")"
+            [[ -n "${prefix}" ]] || prefix="$(_iso_network_prefix "${testbed_data}")"
+            if [[ -n "$(_iso_jumphost_entry "${testbed_info}")" || -n "$(_iso_jumphost_entry "${testbed_data}")" ]]; then
+                jump=yes
+            fi
+            reason="vCenter ${vc_url}; isolated network prefix \"${prefix:-none}\"; jumphost entry in network list: ${jump}" ;;
     esac
-    if ! _iso_is_isolated "${testbed_info}" && ! _iso_is_isolated "${testbed_data}"; then
+    if ! _iso_is_isolated "${vc_url}" "${testbed_info}" "${testbed_data}"; then
         _log "Testbed is NOT isolated (${reason}); connecting directly"
         return 0
     fi
 
     _log "Testbed is ISOLATED (${reason}); connecting through a jumphost tunnel"
     local iso_jump_ip iso_jump_user iso_jump_password
-    _iso_parse_jumphost "${testbed_info}" || return 1
+    _iso_parse_jumphost "${testbed_info}" "${testbed_data}" || return 1
     _ensure_sshpass
-    _iso_start_tunnel "${vc_url}" || return 1
+
+    # Hosts the runner reaches directly, never through the jumphost.
+    local -a direct_urls=()
+    local u
+    for u in "${TEST_CALLBACK_URL:-}" "${TESTBED_DATA_URL:-}" "${testbed_source}"; do
+        [[ "${u}" =~ ^https?:// ]] && direct_urls+=("${u}")
+    done
+
+    _iso_start_tunnel "${vc_url}" ${direct_urls[@]+"${direct_urls[@]}"} || return 1
+    _ISO_STARTED=true
     _SSH_OPTS+=(-F "${E2E_SSH_CONFIG}")
 
     local net
-    net="$(_iso_mgmt_network "${testbed_info}" "${vc_url}")"
+    net="$(_iso_mgmt_network "${vc_url}" "${testbed_info}" "${testbed_data}")"
     mgmt_ip_prefix="${net%% *}" mgmt_cidr="${net##* }"
     _export E2E_MGMT_IP_PREFIX "${mgmt_ip_prefix}"
     _export E2E_MGMT_CIDR      "${mgmt_cidr}"
+    _log "Isolated management network: ${mgmt_cidr}"
 }
 
 # ---------------------------------------------------------------------------
@@ -750,7 +811,7 @@ _setup_gateway_and_proxy() {
     # IP for direct SSH (port 22) — they do not connect through squid (3128).
     # The runner's subnet is firewalled from 3128 even when squid is healthy,
     # so gating on nc to 3128 would give false negatives.
-    if [[ "${E2E_ISOLATED:-}" == "true" ]]; then
+    if [[ "${_ISO_STARTED}" == "true" ]]; then
         # Isolated: the runner already reaches everything through the jumphost
         # tunnel (ALL_PROXY/NO_PROXY set by isolated.sh), so the gateway is not
         # used as the proxy address. GATEWAY_IP is the SSH identity of the
@@ -778,7 +839,7 @@ _setup_gateway_and_proxy() {
     # mirror (PIP_INDEX_URL) or a dedicated PyKMIP VM exists. Otherwise skip the
     # KMIP provider up front rather than retrying a doomed install.
     local final_kms_mode="full"
-    if [[ "${E2E_ISOLATED:-}" == "true" && -z "${pykmip_ip:-}" && -z "${PIP_INDEX_URL:-}" ]]; then
+    if [[ "${_ISO_STARTED}" == "true" && -z "${pykmip_ip:-}" && -z "${PIP_INDEX_URL:-}" ]]; then
         _warn "Isolated testbed: skipping the gce2e-standard (KMIP) provider; set PIP_INDEX_URL to a PyPI mirror reachable from the gateway VM to enable it"
         final_kms_mode="native-only"
     fi
@@ -866,7 +927,8 @@ EOF
     _parse_vc_credentials              || return
     _parse_pykmip_server
     _export_common_vars
-    _setup_isolated_connectivity       || return
+    _reset_isolated_state
+    _setup_isolated_connectivity "${testbed_source}" || return
     _fetch_supervisor_access "${enable_e2e}" || return
 
     # Export WCP/supervisor under both naming conventions used in the test suite.

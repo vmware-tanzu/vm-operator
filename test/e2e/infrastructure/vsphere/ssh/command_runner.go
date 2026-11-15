@@ -28,8 +28,8 @@ const (
 	sshRetryDuration = time.Minute
 	sshRetryInterval = 5 * time.Second
 
-	// sshHandshakeTimeout bounds the TCP connect and SSH handshake of a single
-	// dial attempt.
+	// sshHandshakeTimeout bounds a single dial attempt: the TCP connect, any
+	// SOCKS5 negotiation, and the SSH handshake.
 	sshHandshakeTimeout = 30 * time.Second
 )
 
@@ -93,7 +93,7 @@ func newSSHDialerWithRetries(hostname string, port int, config *ssh.ClientConfig
 	addr := net.JoinHostPort(hostname, strconv.Itoa(port))
 
 	pollErr := wait.PollUntilContextTimeout(context.Background(), interval, timeout, true, func(context.Context) (bool, error) {
-		newClient, lastErr = dialSSH(addr, config)
+		newClient, lastErr = DialSSH(addr, config)
 		return lastErr == nil, nil
 	})
 	if lastErr != nil {
@@ -106,21 +106,36 @@ func newSSHDialerWithRetries(hostname string, port int, config *ssh.ClientConfig
 	return newClient, nil
 }
 
-// dialSSH opens an SSH connection to addr. The TCP connection honors the
-// ALL_PROXY / NO_PROXY environment variables (via proxy.FromEnvironment), so in
+// DialSSH opens an SSH connection to addr. The TCP connection honors the
+// ALL_PROXY / NO_PROXY environment variables (via proxy.Dial), so in
 // an isolated testbed, where ALL_PROXY=socks5h://127.0.0.1:<port> points at a
 // tunnel through the jumphost, the vCenter and Supervisor become reachable. With
 // no ALL_PROXY set this is a plain direct TCP dial.
-func dialSSH(addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
-	conn, err := proxy.FromEnvironment().Dial("tcp", addr)
+//
+// config.Timeout, when set, bounds the whole attempt: the TCP connect, the
+// SOCKS5 negotiation with the proxy, and the SSH handshake.
+func DialSSH(addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	ctx := context.Background()
+	var deadline time.Time
+	if config.Timeout > 0 {
+		deadline = time.Now().Add(config.Timeout)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+
+	// proxy.Dial uses the ALL_PROXY / NO_PROXY dialer from the environment and
+	// honors ctx for both the direct connect and the SOCKS5 negotiation. The
+	// returned connection is not tied to ctx afterwards.
+	conn, err := proxy.Dial(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
 
-	// Bound the handshake so a proxy that accepts the connection but never
-	// completes it cannot hang the caller forever.
-	if config.Timeout > 0 {
-		_ = conn.SetDeadline(time.Now().Add(config.Timeout))
+	// Bound the handshake so a server or proxy that accepts the connection but
+	// never completes it cannot hang the caller.
+	if !deadline.IsZero() {
+		_ = conn.SetDeadline(deadline)
 	}
 
 	ncc, chans, reqs, err := ssh.NewClientConn(conn, addr, config)

@@ -65,9 +65,18 @@ stop_isolated_tunnel() {
 }
 if [ "${E2E_STOP_TUNNEL:-${TEST_CALLBACK_URL:+true}}" = "true" ]; then
     trap stop_isolated_tunnel EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
 fi
+
+# An interrupt must not skip support-bundle collection or the result callback.
+# Ctrl-C reaches the whole foreground process group, so Ginkgo gets it directly
+# and shuts down gracefully (writing its report and running AfterSuite); these
+# traps only record the signal so the script carries on with the bundle and
+# callback once Ginkgo returns, and then exits with the conventional status
+# (130/143). A trap on a signal sent to this script alone runs when the
+# foreground command finishes.
+E2E_SIGNAL_EXIT=0
+trap 'E2E_SIGNAL_EXIT=130' INT
+trap 'E2E_SIGNAL_EXIT=143' TERM
 
 # parse_json_report reads a Ginkgo JSON report (written by --json-report) and
 # emits a JSON array of per-test results suitable for the subtest_details field
@@ -250,5 +259,8 @@ fi
 report_result "${E2E_EXIT}" "${REPORT_DIR}/report.json"
 
 # 8. Propagate the test suite's own exit code — bundle collection above never
-# affects it.
+# affects it — or the interrupt status if the run was interrupted.
+if [ "${E2E_SIGNAL_EXIT}" -ne 0 ]; then
+    exit "${E2E_SIGNAL_EXIT}"
+fi
 exit "${E2E_EXIT}"

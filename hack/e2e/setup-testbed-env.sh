@@ -354,14 +354,25 @@ _export_common_vars() {
 
     # Honour a NETWORK value the caller already exported (e.g. the UTS
     # pipeline job spec) instead of overwriting it with the auto-detected
-    # value below, which falls back to "vds" whenever the testbed JSON
-    # doesn't carry a recognized topology field.
-    local networking_type
+    # value below. Detection order: an explicit networking field, then
+    # TESTBED_TOPOLOGY, then the presence of any populated NSX section
+    # (NSX-T and VPC testbeds deploy NSX; VDS testbeds list the sections
+    # empty or omit them), else "vds". VPC is the "nsx" topology.
+    local networking_type networking_source
     networking_type=$(jq -r '
         .deliverable_blob.networking //
         .networking //
-        (if .TESTBED_TOPOLOGY == "NIMBUS_NSXT" then "nsx" else "vds" end)
+        (if .TESTBED_TOPOLOGY == "NIMBUS_NSXT" then "nsx"
+         elif ([.nsxm, .nsxc, .nsxAutoEdge, .nsxmanager, .nsxcontroller, .nsxedge, .nsxpolicy]
+               | map(select(. != null and length > 0)) | length) > 0 then "nsx"
+         else "vds" end)
     ' <<< "${testbed_data}")
+    if [[ -n "${NETWORK:-}" ]]; then
+        networking_source="caller-supplied NETWORK"
+    else
+        networking_source="auto-detected from testbed data"
+    fi
+    _log "Networking topology: ${NETWORK:-${networking_type}} (${networking_source})"
     _export NETWORK "${NETWORK:-${networking_type}}"
 
     # Honour values already set in the environment; fall back to safe defaults.

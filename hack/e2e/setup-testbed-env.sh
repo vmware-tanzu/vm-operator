@@ -422,7 +422,7 @@ _setup_isolated_connectivity() {
     case "${E2E_ISOLATED:-}" in
         true|1)  reason="forced by E2E_ISOLATED=${E2E_ISOLATED}" ;;
         false|0) reason="forced by E2E_ISOLATED=${E2E_ISOLATED}" ;;
-        *)       reason="vCenter ${vc_url} vs isolatedNetworkOptions.networkPrefix \"$(jq -r '(.isolatedNetworkOptions // .testbed_spec.isolatedNetworkOptions // {}).networkPrefix // "none"' <<< "${testbed_info}" 2>/dev/null)\"" ;;
+        *)       reason="vCenter ${vc_url}; isolatedNetworkOptions.networkPrefix \"$(jq -r '(.isolatedNetworkOptions // .testbed_spec.isolatedNetworkOptions // {}).networkPrefix // "none"' <<< "${testbed_info}" 2>/dev/null)\"; jumphost entry in network list: $(jq -r '[(.network // []) | (if type == "object" then [.[]] else . end)[] | select(type == "object" and (.gateway // "") != "" and (.username // "") != "")] | if length > 0 then "yes" else "no" end' <<< "${testbed_info}" 2>/dev/null)"
     esac
     if ! _iso_is_isolated "${testbed_info}" && ! _iso_is_isolated "${testbed_data}"; then
         _log "Testbed is NOT isolated (${reason}); connecting directly"

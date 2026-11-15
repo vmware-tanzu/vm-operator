@@ -52,10 +52,16 @@ fi
 # _iso_is_isolated <testbed_info_json>
 #
 # Succeeds when the testbed is isolated. E2E_ISOLATED=true|false wins.
-# Otherwise isolatedNetworkOptions.networkPrefix (top-level or inside
-# testbed_spec) must be present AND the vCenter IP must sit inside that
-# prefix. The options block alone is not enough: Nimbus emits it on ordinary
-# testbeds too, where the VC has a routable address outside the prefix.
+# Otherwise either signal is sufficient:
+#   - isolatedNetworkOptions.networkPrefix (top-level or inside testbed_spec)
+#     is present AND the vCenter IP sits inside that prefix. The options block
+#     alone is not enough: Nimbus emits it on ordinary testbeds too, where the
+#     VC has a routable address outside the prefix.
+#   - the network list holds a jumphost entry (a gateway address plus a
+#     username). Ordinary testbeds have none. Testbed files that come from
+#     vdnet carry no isolatedNetworkOptions, so this is the only signal there.
+# network is an array in some testbed files and an index-keyed object in
+# others; both are accepted.
 _iso_is_isolated() {
     case "${E2E_ISOLATED:-}" in
         true|1)  return 0 ;;
@@ -64,7 +70,10 @@ _iso_is_isolated() {
     jq -e '
         (.isolatedNetworkOptions // .testbed_spec.isolatedNetworkOptions // {}).networkPrefix as $p
         | ((.vc | if type == "array" then .[0] else . end) | if type == "object" then .ip else . end // "") as $vc
-        | ($p != null and ($vc | type) == "string" and ($vc | startswith($p + ".")))
+        | ((.network // []) | if type == "object" then [.[]] else . end
+            | map(select(type == "object" and (.gateway // "") != "" and (.username // "") != ""))
+            | length > 0) as $jump
+        | ($jump or ($p != null and ($vc | type) == "string" and ($vc | startswith($p + "."))))
     ' <<< "$1" >/dev/null 2>&1
 }
 
@@ -86,7 +95,7 @@ _iso_parse_jumphost() {
 
     local entry
     entry=$(jq -c '
-        ((.network // []) | map(select((.gateway // "") != "" and (.username // "") != "")) | .[0]) //
+        ((.network // []) | (if type == "object" then [.[]] else . end) | map(select(type == "object" and (.gateway // "") != "" and (.username // "") != "")) | .[0]) //
         ((.worker // []) | map(select((.gateway // "") != "" and (.username // "") != "")) | .[0]) //
         empty' <<< "${info}" 2>/dev/null)
 
@@ -112,6 +121,14 @@ _iso_parse_jumphost() {
 _iso_mgmt_network() {
     local prefix
     prefix=$(jq -r '(.isolatedNetworkOptions // .testbed_spec.isolatedNetworkOptions // {}).networkPrefix // empty' <<< "$1" 2>/dev/null)
+    if [[ -z "${prefix}" ]]; then
+        # vdnet-style files: the management network entry carries network_prefix
+        # as a CIDR (e.g. "172.21.1.0/24").
+        prefix=$(jq -r '
+            (.network // []) | (if type == "object" then [.[]] else . end)
+            | map(select(type == "object" and .management == "yes" and (.network_prefix // "") != ""))
+            | (.[0].network_prefix // empty) | split("/")[0] | split(".")[0:3] | join(".")' <<< "$1" 2>/dev/null)
+    fi
     [[ -n "${prefix}" ]] || prefix="$(cut -d. -f1-3 <<< "$2")"
     printf '%s. %s.0/24\n' "${prefix}" "${prefix}"
 }

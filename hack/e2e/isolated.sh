@@ -63,7 +63,7 @@ _iso_is_isolated() {
     esac
     jq -e '
         (.isolatedNetworkOptions // .testbed_spec.isolatedNetworkOptions // {}).networkPrefix as $p
-        | (.vc[0].ip // .vc.ip // .vc[0] // "") as $vc
+        | ((.vc | if type == "array" then .[0] else . end) | if type == "object" then .ip else . end // "") as $vc
         | ($p != null and ($vc | type) == "string" and ($vc | startswith($p + ".")))
     ' <<< "$1" >/dev/null 2>&1
 }

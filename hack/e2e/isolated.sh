@@ -51,16 +51,21 @@ fi
 
 # _iso_is_isolated <testbed_info_json>
 #
-# Succeeds when the testbed is isolated. E2E_ISOLATED=true|false wins;
-# otherwise the testbed JSON is inspected for isolatedNetworkOptions, which
-# Nimbus emits (top-level or inside testbed_spec) for isolated testbeds.
+# Succeeds when the testbed is isolated. E2E_ISOLATED=true|false wins.
+# Otherwise isolatedNetworkOptions.networkPrefix (top-level or inside
+# testbed_spec) must be present AND the vCenter IP must sit inside that
+# prefix. The options block alone is not enough: Nimbus emits it on ordinary
+# testbeds too, where the VC has a routable address outside the prefix.
 _iso_is_isolated() {
     case "${E2E_ISOLATED:-}" in
         true|1)  return 0 ;;
         false|0) return 1 ;;
     esac
-    jq -e '(.isolatedNetworkOptions // .testbed_spec.isolatedNetworkOptions) != null' \
-        <<< "$1" >/dev/null 2>&1
+    jq -e '
+        (.isolatedNetworkOptions // .testbed_spec.isolatedNetworkOptions // {}).networkPrefix as $p
+        | (.vc[0].ip // .vc.ip // .vc[0] // "") as $vc
+        | ($p != null and ($vc | type) == "string" and ($vc | startswith($p + ".")))
+    ' <<< "$1" >/dev/null 2>&1
 }
 
 # _iso_parse_jumphost <testbed_info_json>

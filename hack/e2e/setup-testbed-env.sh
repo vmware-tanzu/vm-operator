@@ -418,9 +418,18 @@ _ensure_sshpass() {
 # ---------------------------------------------------------------------------
 _setup_isolated_connectivity() {
     mgmt_ip_prefix="10." mgmt_cidr="10.0.0.0/8"
-    _iso_is_isolated "${testbed_info}" || _iso_is_isolated "${testbed_data}" || return 0
+    local reason
+    case "${E2E_ISOLATED:-}" in
+        true|1)  reason="forced by E2E_ISOLATED=${E2E_ISOLATED}" ;;
+        false|0) reason="forced by E2E_ISOLATED=${E2E_ISOLATED}" ;;
+        *)       reason="vCenter ${vc_url} vs isolatedNetworkOptions.networkPrefix \"$(jq -r '(.isolatedNetworkOptions // .testbed_spec.isolatedNetworkOptions // {}).networkPrefix // "none"' <<< "${testbed_info}" 2>/dev/null)\"" ;;
+    esac
+    if ! _iso_is_isolated "${testbed_info}" && ! _iso_is_isolated "${testbed_data}"; then
+        _log "Testbed is NOT isolated (${reason}); connecting directly"
+        return 0
+    fi
 
-    _log "Isolated testbed detected"
+    _log "Testbed is ISOLATED (${reason}); connecting through a jumphost tunnel"
     local iso_jump_ip iso_jump_user iso_jump_password
     _iso_parse_jumphost "${testbed_info}" || return 1
     _ensure_sshpass

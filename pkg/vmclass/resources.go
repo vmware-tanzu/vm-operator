@@ -31,7 +31,7 @@ func ApplyResourceDefaults(
 	vm, oldVM *vmopv1.VirtualMachine,
 ) (bool, error) {
 	features := pkgcfg.FromContext(ctx).Features
-	if !features.TelcoVMServiceAPI || vm.Spec.ClassName == "" {
+	if !features.VMServiceClasslessVM || vm.Spec.ClassName == "" {
 		return false, nil
 	}
 	if oldVM != nil {

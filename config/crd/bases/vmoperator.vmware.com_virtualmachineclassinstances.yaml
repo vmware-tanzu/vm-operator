@@ -642,8 +642,9 @@ spec:
                     description: Limits describes CPU and memory limits.
                     properties:
                       cpu:
-                        description: CPU is measured in vCPUs, including requests
-                          and limits.
+                        description: |-
+                          CPU is a whole vCPU count for size and cores for requests and limits,
+                          where millicores are allowed.
                         properties:
                           default:
                             anyOf:
@@ -715,8 +716,9 @@ spec:
                     description: Requests describes CPU and memory reservations.
                     properties:
                       cpu:
-                        description: CPU is measured in vCPUs, including requests
-                          and limits.
+                        description: |-
+                          CPU is a whole vCPU count for size and cores for requests and limits,
+                          where millicores are allowed.
                         properties:
                           default:
                             anyOf:
@@ -788,8 +790,9 @@ spec:
                     description: Size describes the guest-visible CPU and memory configuration.
                     properties:
                       cpu:
-                        description: CPU is measured in vCPUs, including requests
-                          and limits.
+                        description: |-
+                          CPU is a whole vCPU count for size and cores for requests and limits,
+                          where millicores are allowed.
                         properties:
                           default:
                             anyOf:

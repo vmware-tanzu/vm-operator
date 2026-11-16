@@ -74,7 +74,8 @@ type VirtualMachineClassHardware struct {
 
 // VirtualMachineClassResourceSpec describes CPU and memory value ranges.
 type VirtualMachineClassResourceSpec struct {
-	// CPU is measured in vCPUs, including requests and limits.
+	// CPU is a whole vCPU count for size and cores for requests and limits,
+	// where millicores are allowed.
 	// +optional
 	CPU *ResourceQuantityRange `json:"cpu,omitempty"`
 

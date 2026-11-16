@@ -371,6 +371,43 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				Expect(restored.Spec.ReservedSlots).To(BeZero())
 			})
 
+			It("converts zero or empty legacy requests and limits to unset ranges and back", func() {
+				spoke := version.newSpoke()
+				Expect(json.Unmarshal([]byte(`{
+					"metadata":{"name":"legacy","namespace":"tenant"},
+					"spec":{
+						"hardware":{"cpus":4,"memory":"4Gi"},
+						"policies":{"resources":{"requests":{"cpu":"0","memory":"1Gi"},"limits":{"cpu":"2"}}}
+					}}`), spoke)).To(Succeed())
+				var hub vmopv1.VirtualMachineClass
+				Expect(spoke.ConvertTo(&hub)).To(Succeed())
+				Expect(hub.Spec.Resources.Requests.CPU).To(BeNil())
+				Expect(hub.Spec.Resources.Requests.Memory.Default.String()).To(Equal("1Gi"))
+				Expect(hub.Spec.Resources.Limits.CPU.Default.String()).To(Equal("2"))
+				Expect(hub.Spec.Resources.Limits.Memory).To(BeNil())
+				Expect(hub.Spec.Resources.Size.CPU).NotTo(BeNil())
+
+				down := version.newSpoke()
+				Expect(down.ConvertFrom(&hub)).To(Succeed())
+				var restored vmopv1.VirtualMachineClass
+				Expect(down.ConvertTo(&restored)).To(Succeed())
+				Expect(apiequality.Semantic.DeepEqual(restored.Spec.Resources, hub.Spec.Resources)).To(BeTrue())
+			})
+
+			It("projects unset requests and limits to zero legacy values", func() {
+				hub := &vmopv1.VirtualMachineClass{Spec: vmopv1.VirtualMachineClassSpec{
+					Resources: vmopv1.VirtualMachineClassResources{
+						Size: vmopv1.FixedClassResourcePair(resource.MustParse("2"), resource.MustParse("2Gi")),
+					},
+				}}
+				spoke := version.newSpoke()
+				Expect(spoke.ConvertFrom(hub)).To(Succeed())
+				var restored vmopv1.VirtualMachineClass
+				Expect(spoke.ConvertTo(&restored)).To(Succeed())
+				Expect(restored.Spec.Resources.Requests).To(Equal(vmopv1.VirtualMachineClassResourceSpec{}))
+				Expect(restored.Spec.Resources.Limits).To(Equal(vmopv1.VirtualMachineClassResourceSpec{}))
+			})
+
 			It("preserves nil, explicit zero and empty list policy values", func() {
 				zero := resource.MustParse("0")
 				empty := []vmopv1.VGPUDevice{}

@@ -89,9 +89,9 @@ func Convert_v1alpha6_VirtualMachineClassResources_To_v1alpha4_VirtualMachineCla
 	return Convert_v1alpha6_VirtualMachineClassResourceSpec_To_v1alpha4_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s)
 }
 
-// Convert_v1alpha4_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec converts legacy allocations to fixed ranges.
+// Convert_v1alpha4_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec converts legacy allocations to fixed ranges, leaving zero or empty values unset.
 func Convert_v1alpha4_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec(in *VirtualMachineResourceSpec, out *vmopv1.VirtualMachineClassResourceSpec, _ apiconversion.Scope) error {
-	*out = vmopv1.FixedClassResourcePair(in.Cpu, in.Memory)
+	*out = vmopv1.LegacyClassAllocationPair(in.Cpu, in.Memory)
 	return nil
 }
 

@@ -484,6 +484,65 @@ const (
 	ExtraConfigKeyLastRestartTime = "vmservice.lastRestartTime"
 )
 
+// IsRestartDue returns true if a restart of the VM would happen: the VM is
+// powered on, desiredLastRestartTime is newer than the last restart recorded in
+// the VM's ExtraConfig, and desiredLastRestartTime is not in the future. The
+// VM's summary.runtime.powerState and config.extraConfig must already be
+// populated in mo.
+func IsRestartDue(
+	ctx context.Context,
+	mo mo.VirtualMachine,
+	desiredLastRestartTime time.Time) (bool, error) {
+
+	var (
+		err                          error
+		currentPowerState            vimtypes.VirtualMachinePowerState
+		currentLastRestartTime       *time.Time
+		currentLastRestartTimeString string
+		log                          = pkglog.FromContextOrDefault(ctx)
+		desiredLastRestartTimeString = desiredLastRestartTime.Format(time.RFC3339Nano)
+	)
+
+	if mo.Config == nil {
+		return false, errors.New("nil vm.config")
+	}
+	currentPowerState = mo.Summary.Runtime.PowerState
+
+	log = log.WithValues(
+		"currentPowerState", currentPowerState,
+		"desiredLastRestartTime", desiredLastRestartTimeString)
+
+	if currentPowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
+		return false, ErrInvalidPowerState{PowerState: currentPowerState}
+	}
+
+	// Find the currentLastRestartTime as recorded in the extra config.
+	currentLastRestartTime, err = GetLastRestartTimeFromExtraConfig(ctx, mo.Config.ExtraConfig)
+	if err != nil {
+		return false, err
+	}
+	if currentLastRestartTime != nil {
+		currentLastRestartTimeString = currentLastRestartTime.Format(time.RFC3339Nano)
+
+		log = log.WithValues("currentLastRestartTime", currentLastRestartTimeString)
+
+		// Do not restart unless desiredLastRestartTime is newer than
+		// currentLastRestartTime.
+		if desiredLastRestartTime.UnixNano() <= currentLastRestartTime.UnixNano() {
+			log.Info("Will not restart VM as desiredLastRestartTime <= currentLastRestartTime")
+			return false, nil
+		}
+	}
+
+	// Do not restart if desiredLastRestartTime is in the future.
+	if desiredLastRestartTime.After(time.Now().UTC()) {
+		log.Info("Will not restart VM as desiredLastRestartTime is in the future")
+		return false, nil
+	}
+
+	return true, nil
+}
+
 func restart(
 	ctx context.Context,
 	client *vim25.Client,
@@ -495,8 +554,6 @@ func restart(
 	var (
 		err                          error
 		currentPowerState            vimtypes.VirtualMachinePowerState
-		currentLastRestartTime       *time.Time
-		currentLastRestartTimeString string
 		propsToFetch                 []string
 		result                       PowerOpResult
 		log                          = pkglog.FromContextOrDefault(ctx)
@@ -531,31 +588,11 @@ func restart(
 		"desiredLastRestartTime", desiredLastRestartTimeString,
 		"desiredPowerOpBehavior", powerOpBehavior.String())
 
-	if currentPowerState != vimtypes.VirtualMachinePowerStatePoweredOn {
-		return 0, ErrInvalidPowerState{PowerState: currentPowerState}
-	}
-
-	// Find the currentLastRestartTime as recorded in the extra config.
-	currentLastRestartTime, err = GetLastRestartTimeFromExtraConfig(ctx, mo.Config.ExtraConfig)
+	due, err := IsRestartDue(ctx, mo, desiredLastRestartTime)
 	if err != nil {
 		return 0, err
 	}
-	if currentLastRestartTime != nil {
-		currentLastRestartTimeString = currentLastRestartTime.Format(time.RFC3339Nano)
-
-		log = log.WithValues("currentLastRestartTime", currentLastRestartTimeString)
-
-		// Do not restart unless desiredLastRestartTime is newer than
-		// currentLastRestartTime.
-		if desiredLastRestartTime.UnixNano() <= currentLastRestartTime.UnixNano() {
-			log.Info("Will not restart VM as desiredLastRestartTime <= currentLastRestartTime")
-			return PowerOpResultNone, nil
-		}
-	}
-
-	// Do not restart if desiredLastRestartTime is in the future.
-	if desiredLastRestartTime.After(time.Now().UTC()) {
-		log.Info("Will not restart VM as desiredLastRestartTime is in the future")
+	if !due {
 		return PowerOpResultNone, nil
 	}
 

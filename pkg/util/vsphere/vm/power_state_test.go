@@ -1090,3 +1090,104 @@ var _ = Describe("WrapHardPowerOpFailure", func() {
 		})
 	})
 })
+
+var _ = Describe("IsRestartDue", func() {
+
+	const (
+		on  = vimtypes.VirtualMachinePowerStatePoweredOn
+		off = vimtypes.VirtualMachinePowerStatePoweredOff
+	)
+
+	var (
+		now     time.Time
+		moVM    mo.VirtualMachine
+		desired time.Time
+	)
+
+	newMoVM := func(
+		powerState vimtypes.VirtualMachinePowerState,
+		lastRestart *time.Time) mo.VirtualMachine {
+
+		m := mo.VirtualMachine{Config: &vimtypes.VirtualMachineConfigInfo{}}
+		m.Summary.Runtime.PowerState = powerState
+		if lastRestart != nil {
+			m.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+				&vimtypes.OptionValue{
+					Key: vmutil.ExtraConfigKeyLastRestartTime,
+					Value: strconv.FormatInt(
+						lastRestart.UnixNano(), 10),
+				},
+			}
+		}
+		return m
+	}
+
+	BeforeEach(func() {
+		now = time.Now().UTC()
+		desired = now.Add(-time.Minute)
+		moVM = newMoVM(on, nil)
+	})
+
+	It("is due when powered on and no restart has been recorded", func() {
+		due, err := vmutil.IsRestartDue(context.Background(), moVM, desired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(due).To(BeTrue())
+	})
+
+	It("is due when desired is newer than the recorded restart", func() {
+		last := desired.Add(-time.Hour)
+		moVM = newMoVM(on, &last)
+		due, err := vmutil.IsRestartDue(context.Background(), moVM, desired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(due).To(BeTrue())
+	})
+
+	It("is not due when desired is older than the recorded restart", func() {
+		last := desired.Add(time.Second)
+		moVM = newMoVM(on, &last)
+		due, err := vmutil.IsRestartDue(context.Background(), moVM, desired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(due).To(BeFalse())
+	})
+
+	It("is not due when desired equals the recorded restart", func() {
+		last := desired
+		moVM = newMoVM(on, &last)
+		due, err := vmutil.IsRestartDue(context.Background(), moVM, desired)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(due).To(BeFalse())
+	})
+
+	It("is not due when desired is in the future", func() {
+		due, err := vmutil.IsRestartDue(
+			context.Background(), moVM, now.Add(time.Hour))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(due).To(BeFalse())
+	})
+
+	It("returns ErrInvalidPowerState when powered off", func() {
+		moVM = newMoVM(off, nil)
+		due, err := vmutil.IsRestartDue(context.Background(), moVM, desired)
+		Expect(err).To(MatchError(vmutil.ErrInvalidPowerState{PowerState: off}))
+		Expect(due).To(BeFalse())
+	})
+
+	It("returns an error when config is nil", func() {
+		moVM.Config = nil
+		due, err := vmutil.IsRestartDue(context.Background(), moVM, desired)
+		Expect(err).To(MatchError("nil vm.config"))
+		Expect(due).To(BeFalse())
+	})
+
+	It("returns an error when the recorded restart cannot be parsed", func() {
+		moVM.Config.ExtraConfig = []vimtypes.BaseOptionValue{
+			&vimtypes.OptionValue{
+				Key:   vmutil.ExtraConfigKeyLastRestartTime,
+				Value: "not-a-number",
+			},
+		}
+		due, err := vmutil.IsRestartDue(context.Background(), moVM, desired)
+		Expect(err).To(HaveOccurred())
+		Expect(due).To(BeFalse())
+	})
+})

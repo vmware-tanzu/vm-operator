@@ -166,7 +166,7 @@ Envtest needs no extra wiring: `test/builder/test_suite.go` loads all of `config
 - **ResourceDelete proceed**: call `ReleaseLifecycleState`, which reads the existing `LifecycleState` itself, then remove the VM finalizers. It is also called with the capability off (§3).
 - **Adoption without a checkpoint**: `ReconcileNormal` and `ReconcileDelete` also call `GetOrCreateLifecycleState` once, after their pause-annotation early returns, so a `LifecycleState` the Lifecycle Operator creates gets VM Operator's finalizer on the reconcile its watch triggers, even when no checkpoint is reached.
 - **Abandon call sites**:
-  - `reconcilePowerState`: one `defer`, registered after the `isVMPaused`/`HasVMRunningTask` returns, calls `AbandonStages(PowerStateChange)` unless a local `powerChangeWanted` is set, merging its error into `retErr`. `powerChangeWanted` is set where `setPowerState` is true, where a restart is due, and at the `CheckAnnotationPowerOn` skip (power-on still wanted). Every later return, including the `On`/`On` ones and any added later, is covered; earlier returns ("cannot decide now") keep the hold. The gates stay direct `ReconcileStage` calls at `if setPowerState` and before `RestartAndWait`.
+  - `reconcilePowerState`: one `defer`, registered after the `isVMPaused`/`HasVMRunningTask` returns, calls `AbandonStages(PowerStateChange)` unless a local `powerChangeWanted` is set or `retErr` is already non-nil; its own error becomes `retErr`. `powerChangeWanted` is set where `setPowerState` is true, where a restart is due, and at the `CheckAnnotationPowerOn` skip (power-on still wanted). Every later return without an error, including the `On`/`On` ones and any added later, is covered; earlier returns ("cannot decide now") and any return with an error, such as an unparsable `nextRestartTime` or an `IsRestartDue` failure, keep the hold, and the next clean reconcile abandons it if the change is still not wanted. The gates call one private provider helper (get-or-create, `ReconcileStage`, `MarkUnknown`) at `if setPowerState` and before `RestartAndWait`.
   - `ReconcileDelete`, before the Delete checkpoint: abandon Create and PowerStateChange.
   - ResourceDelete's final write (the release, or `ReleaseLifecycleState` when ResourceDelete has no hook) also releases any other paused stage, e.g. Delete when the vSphere VM disappeared out of band.
 - **Power reversal** (a different power change requested while one is held): the hold is reused, since the State does not record its direction. Accepted limitation.
@@ -293,11 +293,11 @@ The library is unit-testable on its own, with no cluster and no capability rollo
 - **`PublishStages`** (`pkg/lifecycle/stages_test.go`, fake client): absent → created with exactly the four stages; drifted `spec` → restored; already correct → no write; capability off → zero API calls (call-counting fake).
 - **`StatusChangedPredicate`**: `Create` with the finalizer, `Generic` and spec-only `Update` filtered; `Create` without it, status `Update` and `Delete` pass.
 
-`pkg/providers/vsphere/vmprovider_vm_test.go`:
+`pkg/providers/vsphere/vmprovider_vm_lifecyclehooks_test.go`, registered from the `vmprovider_vm_test.go` index like the other per-topic files:
 
 - **Create**: no hook → creates, no condition; blocked → `ErrHooksBlocked`, no vSphere create, condition blocked; `foundVM != nil`, including a wiped `Status` after revert, never reaches the gate; a failed create after release pauses again.
 - **Delete**: blocked → `ErrHooksBlocked`, `virtualmachine.DeleteVirtualMachine` not called; no entry → unchanged; a failed delete after release pauses again; no vSphere VM → returns `nil` before the gate.
-- **PowerStateChange**: blocked power-on, power-off, suspend and due restart issue no power task while the rest of the update, including snapshot create, still runs; a restart that is not due does not pause; the two directions pause independently; a held power change cancelled by reverting `spec.powerState` is abandoned, and the next request pauses afresh.
+- **PowerStateChange**: blocked power-on, power-off, suspend and due restart issue no power task while the rest of the update, including snapshot create, still runs; a restart that is not due does not pause; the two directions pause independently; a held power change cancelled by reverting `spec.powerState` is abandoned, and the next request pauses afresh; a reconcile that returns an error before deciding, such as an unparsable `nextRestartTime`, keeps the hold.
 
 `controllers/virtualmachine/virtualmachine/*_test.go`:
 

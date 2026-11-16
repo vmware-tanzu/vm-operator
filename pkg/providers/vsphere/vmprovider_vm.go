@@ -46,6 +46,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	ctxop "github.com/vmware-tanzu/vm-operator/pkg/context/operation"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
+	"github.com/vmware-tanzu/vm-operator/pkg/lifecycle"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
@@ -1574,32 +1575,8 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 	}
 
 	// Check if the VM's power state should be delayed by a parent group.
-	if pkgcfg.FromContext(vmCtx).Features.VMGroups &&
-		(vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn ||
-			vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff) {
-		if val := vmCtx.VM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation]; val != "" {
-			when, err := time.Parse(time.RFC3339Nano, val)
-			if err != nil {
-				vmCtx.Logger.Error(err,
-					"Failed to parse apply power state time from annotation",
-					"annotationKey", pkgconst.ApplyPowerStateTimeAnnotation,
-					"annotationValue", val)
-				return err
-			}
-			if when.After(time.Now().UTC()) {
-				// Apply power state time has not yet arrived.
-				// Requeue the request with a delay of the remaining time.
-				vmCtx.Logger.Info(
-					"Skipping power state as the time has not yet arrived",
-					"applyPowerStateTime", when)
-				return pkgerr.RequeueError{
-					After: time.Until(when),
-				}
-			}
-			// Apply power state time has arrived. Remove the stale annotation
-			// and continue the power state change.
-			delete(vmCtx.VM.Annotations, pkgconst.ApplyPowerStateTimeAnnotation)
-		}
+	if err := reconcileApplyPowerStateTime(vmCtx); err != nil {
+		return err
 	}
 
 	if isVMPaused(vmCtx) {
@@ -1608,6 +1585,14 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 	if pkgctx.HasVMRunningTask(vmCtx, false) {
 		return ErrHasTask
 	}
+
+	// Release a held PowerStateChange stage whose power change is no longer
+	// wanted, such as after spec.powerState is reverted. A return with an error
+	// cannot decide yet and keeps the hold.
+	var powerChangeWanted bool
+	defer func() {
+		vs.abandonPowerStateChange(vmCtx, powerChangeWanted, &retErr)
+	}()
 
 	const (
 		hard    = vmopv1.VirtualMachinePowerOpModeHard
@@ -1650,6 +1635,23 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 					vmCtx.VM.Spec.NextRestartTime, time.RFC3339Nano, err)
 			}
 
+			// Only gate the restart when it will happen.
+			due, err := vmutil.IsRestartDue(vmCtx, vmCtx.MoVM, nextRestartTime)
+			if err != nil {
+				return err
+			}
+			if due {
+				powerChangeWanted = true
+
+				// Skip only the restart when blocked.
+				if proceed, err := vs.reconcileLifecycleStage(
+					vmCtx,
+					lifecycle.StagePowerStateChange); err != nil || !proceed {
+
+					return err
+				}
+			}
+
 			result, err := vmutil.RestartAndWait(
 				logr.NewContext(vmCtx, vmCtx.Logger),
 				vcVM.Client(),
@@ -1677,6 +1679,8 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 				vmCtx.Logger.Info(
 					"Skipping poweron due to annotation",
 					"annotationKey", k, "annotationValue", v)
+				// Power-on is still wanted, only deferred by the annotation.
+				powerChangeWanted = true
 				return nil
 			}
 		}
@@ -1702,6 +1706,17 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 	}
 
 	if setPowerState {
+		powerChangeWanted = true
+
+		// Skip only the power operation when blocked so the rest of the
+		// update, including snapshot create, still runs.
+		if proceed, err := vs.reconcileLifecycleStage(
+			vmCtx,
+			lifecycle.StagePowerStateChange); err != nil || !proceed {
+
+			return err
+		}
+
 		err := res.NewVMFromObject(vcVM).SetPowerState(
 			vmCtx,
 			currentPowerState,
@@ -1721,6 +1736,86 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 	}
 
 	return nil
+}
+
+// reconcileApplyPowerStateTime delays a power on or off until the time a parent
+// group set in the apply-power-state-time annotation.
+func reconcileApplyPowerStateTime(vmCtx pkgctx.VirtualMachineContext) error {
+	if pkgcfg.FromContext(vmCtx).Features.VMGroups &&
+		(vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOn ||
+			vmCtx.VM.Spec.PowerState == vmopv1.VirtualMachinePowerStateOff) {
+		if val := vmCtx.VM.Annotations[pkgconst.ApplyPowerStateTimeAnnotation]; val != "" {
+			when, err := time.Parse(time.RFC3339Nano, val)
+			if err != nil {
+				vmCtx.Logger.Error(err,
+					"Failed to parse apply power state time from annotation",
+					"annotationKey", pkgconst.ApplyPowerStateTimeAnnotation,
+					"annotationValue", val)
+				return err
+			}
+			if when.After(time.Now().UTC()) {
+				// Apply power state time has not yet arrived.
+				// Requeue the request with a delay of the remaining time.
+				vmCtx.Logger.Info(
+					"Skipping power state as the time has not yet arrived",
+					"applyPowerStateTime", when)
+				return pkgerr.RequeueError{
+					After: time.Until(when),
+				}
+			}
+			// Apply power state time has arrived. Remove the stale annotation
+			// and continue the power state change.
+			delete(vmCtx.VM.Annotations, pkgconst.ApplyPowerStateTimeAnnotation)
+		}
+	}
+
+	return nil
+}
+
+// abandonPowerStateChange releases a held PowerStateChange stage whose power
+// change is no longer wanted, such as after spec.powerState is reverted. It is a
+// no-op while an error is being returned, since that return may not have decided
+// yet whether a power change is wanted, so the hold is kept. Its own error
+// becomes retErr.
+func (vs *vSphereVMProvider) abandonPowerStateChange(
+	vmCtx pkgctx.VirtualMachineContext,
+	wanted bool,
+	retErr *error) {
+
+	if wanted || *retErr != nil {
+		return
+	}
+
+	*retErr = lifecycle.AbandonStages(
+		vmCtx,
+		vs.k8sClient,
+		vmCtx.VM,
+		lifecycle.StagePowerStateChange)
+}
+
+// reconcileLifecycleStage gets or creates the VM's LifecycleState and evaluates
+// the stage against it. It reports whether the guarded step may proceed. A
+// failure to evaluate is recorded on the LifecycleHookReady condition and
+// returned, so the step stays held and is retried.
+func (vs *vSphereVMProvider) reconcileLifecycleStage(
+	vmCtx pkgctx.VirtualMachineContext,
+	stageName string) (bool, error) {
+
+	state, err := lifecycle.GetOrCreateLifecycleState(
+		vmCtx, vs.k8sClient, vmCtx.VM)
+	if err != nil {
+		lifecycle.MarkUnknown(vmCtx.VM, stageName, err)
+		return false, err
+	}
+
+	result, err := lifecycle.ReconcileStage(
+		vmCtx, vs.k8sClient, vmCtx.VM, state, stageName)
+	if err != nil {
+		lifecycle.MarkUnknown(vmCtx.VM, stageName, err)
+		return false, err
+	}
+
+	return result.Proceed, nil
 }
 
 // SetPowerStateSyncedCondition sets the VirtualMachinePowerStateSynced

@@ -53,18 +53,25 @@ An independently testable slice. With the capability on and a `LifecycleState` b
 - [x] T026 Add unit tests to `virtualmachine_controller_unit_test.go` (`testlabels.Controller`): adoption adds the finalizer; delete removes only VM Operator's finalizer and keeps others; capability off does only the `APIReader` read; error keeps the VM finalizers
 - [x] T027 [P] Add an envtest case (`testlabels.EnvTest`) in the controller's intg test: a `LifecycleState` status change re-queues the owning VM; VM Operator's own `spec` write does not
 
+## PowerStateChange gate (`pkg/providers/vsphere`)
+
+With the capability on and a hook registered for `PowerStateChange`, power-on, power-off, suspend and a due restart are held until the hooks resolve; only the power operation is skipped, so the rest of `updateVirtualMachine`, including snapshot create, still runs. With the capability off, or no hook registered, behavior is unchanged.
+
+- [x] T028 [vmop-3849] Split `vmutil.IsRestartDue` out of `RestartAndWait` (`pkg/util/vsphere/vm/power_state.go`) so `restart()` and the gate share one definition of "due" (VM powered on, `desiredLastRestartTime` newer than the ExtraConfig last restart, not in the future)
+- [x] T029 [P] [vmop-3849] Add `IsRestartDue` unit tests to `pkg/util/vsphere/vm/power_state_test.go`: due, not due (older and equal), future time, powered off, nil config; confirm `RestartAndWait` behavior is unchanged
+- [x] T030 [vmop-3849] `reconcilePowerState`: inside `if setPowerState` and before `SetPowerState`, call the private helper `reconcileLifecycleStage` (get-or-create, `ReconcileStage(PowerStateChange)`, `MarkUnknown` on a non-409 error); blocked returns `nil` (not `ErrHooksBlocked`). The existing VMGroups apply-power-state-time block moves unchanged into `reconcileApplyPowerStateTime` to keep `reconcilePowerState` under the `gocyclo` limit
+- [x] T031 [vmop-3849] `reconcilePowerState`: before `RestartAndWait`, call `IsRestartDue` and run the same helper only when a restart is due; a restart that is not due never pauses
+- [x] T032 [vmop-3849] `reconcilePowerState`: one `defer`, registered after the `isVMPaused` and `HasVMRunningTask` returns, calls `abandonPowerStateChange` (`AbandonStages(PowerStateChange)`) unless the local `powerChangeWanted` is set (at `setPowerState`, when a restart is due, and at the `CheckAnnotationPowerOn` skip) or `retErr` is already non-nil, so an error return keeps the hold; its own error becomes `retErr`
+- [x] T033 [vmop-3849] Add unit tests to `pkg/providers/vsphere/vmprovider_vm_lifecyclehooks_test.go`, registered from the `vmprovider_vm_test.go` index (`testlabels.VCSim`): blocked power-on, power-off, suspend and due restart issue no power task while the rest of the update, including snapshot create, still runs; restart not due does not pause; on, off and restart pause independently; release lets the operation proceed; reverting `spec.powerState` abandons the hold and the next request pauses afresh; early returns and a return with an error, such as an unparsable `nextRestartTime`, keep the hold; capability off is unchanged; `LifecycleHookReady` is `False` with reason `PowerStateChangeStage` while paused
+- [x] T034 [P] [vmop-3849] Add an envtest case (`testlabels.EnvTest`) in the VM controller's intg test: a power state change waits for the `HooksReady` flip and re-pauses on the next change
+- [ ] T035 [P] [vmop-3849] Add E2E coverage in `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`: power-on, power-off and restart are each held until the hook resolves
+
 ## Not in this change set
 
 Tracked for follow-up PRs, derived from `plan.md`'s "Controller / webhook impact" and "Test strategy" sections:
 
-- `vmutil.IsRestartDue` split out of `RestartAndWait`
-  (`pkg/util/vsphere/vm/power_state.go`)
-- Create, PowerStateChange and Delete gate call sites in
-  `pkg/providers/vsphere/vmprovider_vm.go`
-- Create, PowerStateChange, Delete and ResourceDelete stage gates, `AbandonStage`
-  call sites, `ReconcileStage` use in the controller, and Delete event
-  suppression (`hooksBlocked`)
+- Create and Delete gate call sites in `pkg/providers/vsphere/vmprovider_vm.go`
+- Create, Delete and ResourceDelete stage gates, the remaining `AbandonStages` call sites (`ReconcileDelete`), `ReconcileStage` use in the controller, and Delete event suppression (`hooksBlocked`)
 - `initLifecycleStages()` in `main.go` after `initCRDs()`
 - `test/builder/fakelifecycle/` (test-only fake Lifecycle Operator)
-- `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`,
-  including the `vmoperator-stages` startup check (SC-011)
+- `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`, including the `vmoperator-stages` startup check (SC-011)

@@ -9,6 +9,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware/govmomi/vim25/mo"
@@ -16,6 +20,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -83,6 +88,29 @@ func vmMiscTests() {
 			"StorageClassRequired",
 			"StorageClass is required but not specified")
 		Expect(*c).To(conditions.MatchCondition(*expectedCondition))
+	})
+
+	It("returns NoRequeueError when a PVC does not exist", func() {
+		vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
+			Name: "volume1",
+			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "missing-pvc",
+					},
+				},
+			},
+		})
+
+		err := createOrUpdateVM(ctx, vmProvider, vm)
+		Expect(err).To(HaveOccurred())
+		Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+		c := conditions.Get(vm, vmopv1.VirtualMachineConditionStorageReady)
+		Expect(c).ToNot(BeNil())
+		Expect(c.Status).To(Equal(metav1.ConditionFalse))
+		Expect(c.Reason).To(Equal("NotFound"))
 	})
 
 	It("Can be called multiple times", func() {

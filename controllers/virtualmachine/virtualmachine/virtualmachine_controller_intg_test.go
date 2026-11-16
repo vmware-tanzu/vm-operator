@@ -232,6 +232,121 @@ func intgTestsReconcile() {
 					}).Should(BeNumerically(">", before))
 				})
 			})
+
+			// The fake provider stands in for the vSphere provider's
+			// PowerStateChange gate in reconcilePowerState by making the same
+			// library calls, so this exercises the LifecycleState watch and the
+			// pause, wait, release and re-pause cycle against a real API server.
+			It("waits for HooksReady to flip and re-pauses on the next power change", func() {
+				const stage = lifecycle.StagePowerStateChange
+
+				var powerOps int32
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(pctx context.Context, vm *vmopv1.VirtualMachine) error {
+						conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+
+						state, err := lifecycle.GetOrCreateLifecycleState(
+							pctx, ctx.Client, vm)
+						if err != nil {
+							return err
+						}
+						res, err := lifecycle.ReconcileStage(
+							pctx, ctx.Client, vm, state, stage)
+						if err != nil {
+							return err
+						}
+						if res.Proceed {
+							atomic.AddInt32(&powerOps, 1)
+						}
+						return nil
+					},
+				)
+
+				Expect(ctx.Client.Create(ctx, &lifecyclev1.LifecycleSubscribedStages{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vm.Namespace,
+						Name: lifecyclev1.SubscribedStagesName(
+							lifecycle.TargetGroup, lifecycle.TargetKind),
+					},
+					Spec: lifecyclev1.LifecycleSubscribedStagesSpec{
+						Stages: []string{stage},
+					},
+				})).To(Succeed())
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+				waitForVirtualMachineFinalizer(ctx, vmKey)
+				createdVM := getVirtualMachine(ctx, vmKey)
+				Expect(createdVM).ToNot(BeNil())
+
+				stateKey := client.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, createdVM.UID),
+				}
+				stagePaused := func(g Gomega) bool {
+					state := &lifecyclev1.LifecycleState{}
+					g.Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+					for _, s := range state.Spec.Stages {
+						if s.Name == stage {
+							return s.WorkflowPaused
+						}
+					}
+					return false
+				}
+				setHooksReady := func(status *metav1.ConditionStatus) {
+					Eventually(func(g Gomega) {
+						state := &lifecyclev1.LifecycleState{}
+						g.Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+						state.Status.Stages = nil
+						if status != nil {
+							state.Status.Stages = []lifecyclev1.StageStatus{{
+								Name: stage,
+								Conditions: []metav1.Condition{{
+									Type:               lifecycle.HooksReadyConditionType,
+									Status:             *status,
+									Reason:             "AllHooksDone",
+									LastTransitionTime: metav1.Now(),
+								}},
+							}}
+						}
+						g.Expect(ctx.Client.Status().Update(ctx, state)).To(Succeed())
+					}).Should(Succeed())
+				}
+
+				By("the power change pauses and does not run", func() {
+					Eventually(stagePaused).Should(BeTrue())
+					Consistently(func() int32 {
+						return atomic.LoadInt32(&powerOps)
+					}, "2s").Should(BeZero())
+				})
+
+				By("the HooksReady flip wakes the VM and releases the stage", func() {
+					ready := metav1.ConditionTrue
+					setHooksReady(&ready)
+					Eventually(func() int32 {
+						return atomic.LoadInt32(&powerOps)
+					}).Should(Equal(int32(1)))
+					Eventually(stagePaused).Should(BeFalse())
+				})
+
+				By("the next power change pauses afresh", func() {
+					// The Lifecycle Operator clears the resumed stage's entry.
+					setHooksReady(nil)
+
+					Eventually(func(g Gomega) {
+						vm := getVirtualMachine(ctx, vmKey)
+						g.Expect(vm).ToNot(BeNil())
+						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+						g.Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+					}).Should(Succeed())
+
+					Eventually(stagePaused).Should(BeTrue())
+					Consistently(func() int32 {
+						return atomic.LoadInt32(&powerOps)
+					}, "2s").Should(Equal(int32(1)))
+				})
+			})
 		})
 
 		It("Reconciles after VirtualMachine creation", func() {

@@ -21,6 +21,25 @@ func FixedClassResource(value resource.Quantity) *ResourceQuantityRange {
 	return &ResourceQuantityRange{Min: &minimum, Max: &maximum, Default: &def}
 }
 
+// LegacyClassAllocation converts a legacy request or limit into a fixed class
+// range. A zero or empty legacy value means no reservation or limit, so it
+// converts to an unset range rather than a range fixed at zero.
+func LegacyClassAllocation(value resource.Quantity) *ResourceQuantityRange {
+	if value.IsZero() {
+		return nil
+	}
+	return FixedClassResource(value)
+}
+
+// LegacyClassAllocationPair converts legacy CPU and memory requests or limits
+// to class ranges, leaving zero or empty values unset.
+func LegacyClassAllocationPair(cpu, memory resource.Quantity) VirtualMachineClassResourceSpec {
+	return VirtualMachineClassResourceSpec{
+		CPU:    LegacyClassAllocation(cpu),
+		Memory: LegacyClassAllocation(memory),
+	}
+}
+
 // ClassResourceDefault returns a class range's default for an older API.
 func ClassResourceDefault(value *ResourceQuantityRange) resource.Quantity {
 	if value == nil || value.Default == nil {

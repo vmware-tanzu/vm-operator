@@ -275,16 +275,20 @@ const NICUnitNumberBackfillAmbiguous = "NICUnitNumberBackfillAmbiguous"
 // slot — that disagreement is reported by the steady-state hardware condition,
 // not by this one-shot backfill.
 //
-// Interfaces are matched to devices in two passes:
+// Interfaces are matched to devices in three steps:
 //
-//  1. Hodgepodge matching via the network package's provider-dispatched
-//     matcher (network.FindMatchingEthCardForInterfaceSpec), the same
-//     MAC / ExternalID / backing criteria the reconcile-time matching uses
-//     (FindMatchingEthCard / MapEthernetDevicesToSpecIdx). A returned index
-//     is a unique, provider-approved match; the device is claimed even when
-//     the interface's spec unit number is already set, so the zip below
-//     cannot hand that device to a different interface. When the client is
-//     nil, pass 1 is skipped entirely.
+//  0. A numbered interface (spec unit number set) is matched only by its unit
+//     number, to the unclaimed device at exactly that slot. If no device sits
+//     there, the interface is not matched and does not fall back to hodgepodge
+//     matching. The device is claimed either way, so the zip below cannot
+//     hand it to a different interface.
+//
+//  1. Hodgepodge matching for unnumbered interfaces, via the network package's
+//     provider-dispatched matcher (network.FindMatchingEthCardForInterfaceSpec),
+//     the same MAC / ExternalID / backing criteria the reconcile-time matching
+//     uses (FindMatchingEthCard / MapEthernetDevicesToSpecIdx). A returned index
+//     is a unique, provider-approved match among the unclaimed devices. When the
+//     client is nil, this step is skipped entirely.
 //
 //  2. A positional zip of the remaining unmatched spec interfaces against
 //     the remaining unclaimed devices (with an observed unit number), as a
@@ -326,20 +330,38 @@ func NICUnitNumbersFromMoVM(
 		return false
 	}
 
-	// The same ethernet device list the provider-dispatched matcher consumes;
-	// its indices are the ones claimedDevs tracks. collectEthernetDevicesFromMoVM
-	// selects the identical set (IsEthernetCard and SelectByType agree), but a
-	// single list guarantees index alignment between pass 1 and the zip.
+	// The ethernet device list the provider-dispatched matcher consumes; its
+	// indices are the ones claimedDevs tracks. SR-IOV cards are excluded:
+	// they sit outside the NICUnitNumberFirst..NICUnitNumberMax range, so no
+	// unit number is recorded for them and they must not claim a device in
+	// pass 1 or a slot in the zip. A single list guarantees index alignment
+	// between pass 1 and the zip.
 	ethDevs := object.VirtualDeviceList(moVM.Config.Hardware.Device).
-		SelectByType((*vimtypes.VirtualEthernetCard)(nil))
+		Select(func(dev vimtypes.BaseVirtualDevice) bool {
+			if _, ok := dev.(*vimtypes.VirtualSriovEthernetCard); ok {
+				return false
+			}
+			return pkgutil.IsEthernetCard(dev)
+		})
+	if len(ethDevs) == 0 {
+		return false
+	}
 
 	// G7 admissibility guard: unit numbers already claimed in the spec, plus
 	// any recorded by this same pass, are unavailable for recording.
 	occupiedUnits := sets.New[int32]()
+	allNumbered := true
 	for i := range vm.Spec.Network.Interfaces {
 		if u := vm.Spec.Network.Interfaces[i].UnitNumber; u != nil {
 			occupiedUnits.Insert(*u)
+		} else {
+			allNumbered = false
 		}
+	}
+	if allNumbered {
+		// Every interface already has a unit number (spec wins), so neither
+		// pass would record anything.
+		return false
 	}
 
 	var (
@@ -349,9 +371,31 @@ func NICUnitNumbersFromMoVM(
 		zipMatched    []string
 	)
 
-	// Pass 1: provider-dispatched hodgepodge matching. A nil client cannot
-	// resolve provider CRs; skip the pass rather than panic (the zip below
-	// still records observed slots, with its ambiguity event).
+	// Pass 0: a numbered interface is matched only by its unit number, to the
+	// unclaimed device at exactly that slot. If no device sits there, the
+	// interface stays unmatched: it does not fall back to hodgepodge matching,
+	// and the zip never pairs it either.
+	for i := range vm.Spec.Network.Interfaces {
+		iface := &vm.Spec.Network.Interfaces[i]
+		if iface.UnitNumber == nil {
+			continue
+		}
+		for j := range ethDevs {
+			if claimedDevs[j] {
+				continue
+			}
+			if u := ethDevs[j].GetVirtualDevice().UnitNumber; u != nil && *u == *iface.UnitNumber {
+				claimedDevs[j] = true
+				hodgepodgeIdx[i] = true
+				break
+			}
+		}
+	}
+
+	// Pass 1: provider-dispatched hodgepodge matching for unnumbered
+	// interfaces. A nil client cannot resolve provider CRs; skip the pass
+	// rather than panic (the zip below still records observed slots, with
+	// its ambiguity event).
 	if client != nil {
 		vmCtx := pkgctx.NewVirtualMachineContext(ctx, vm)
 
@@ -379,6 +423,11 @@ func NICUnitNumbersFromMoVM(
 		for i := range vm.Spec.Network.Interfaces {
 			iface := &vm.Spec.Network.Interfaces[i]
 
+			// Numbered interfaces were matched in pass 0 and never fall back.
+			if iface.UnitNumber != nil {
+				continue
+			}
+
 			if len(unclaimedDevs) == 0 {
 				break
 			}
@@ -394,10 +443,6 @@ func NICUnitNumbersFromMoVM(
 			hodgepodgeIdx[i] = true
 			rebuildUnclaimed()
 
-			if iface.UnitNumber != nil {
-				continue // spec wins
-			}
-
 			if recordEthDeviceUnitNumber(
 				ctx, iface, ethDevs[devIdx], occupiedUnits) {
 				mutated = true
@@ -412,9 +457,9 @@ func NICUnitNumbersFromMoVM(
 	// by a numbered spec interface (or recorded this pass): the zip must only
 	// pair leftover interfaces with devices that are not already some other
 	// interface's identity, otherwise it G7-skips the write and consumes the
-	// pairing, costing a later valid device its record. Note pass-1 claim is
-	// still by match, not by unit: a uniquely matched physical NIC must be
-	// reserved even when the spec disagrees with it.
+	// pairing, costing a later valid device its record. Pass 0 and pass 1
+	// claims are kept even when the spec disagrees with the device: a device
+	// claimed by a match must be reserved, not handed to the zip.
 	for j := range ethDevs {
 		if claimedDevs[j] {
 			continue

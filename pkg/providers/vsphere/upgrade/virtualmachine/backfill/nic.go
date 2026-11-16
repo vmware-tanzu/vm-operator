@@ -371,26 +371,7 @@ func NICUnitNumbersFromMoVM(
 		zipMatched    []string
 	)
 
-	// Pass 0: a numbered interface is matched only by its unit number, to the
-	// unclaimed device at exactly that slot. If no device sits there, the
-	// interface stays unmatched: it does not fall back to hodgepodge matching,
-	// and the zip never pairs it either.
-	for i := range vm.Spec.Network.Interfaces {
-		iface := &vm.Spec.Network.Interfaces[i]
-		if iface.UnitNumber == nil {
-			continue
-		}
-		for j := range ethDevs {
-			if claimedDevs[j] {
-				continue
-			}
-			if u := ethDevs[j].GetVirtualDevice().UnitNumber; u != nil && *u == *iface.UnitNumber {
-				claimedDevs[j] = true
-				hodgepodgeIdx[i] = true
-				break
-			}
-		}
-	}
+	claimByUnitNumber(vm.Spec.Network.Interfaces, ethDevs, claimedDevs, hodgepodgeIdx)
 
 	// Pass 1: provider-dispatched hodgepodge matching for unnumbered
 	// interfaces. A nil client cannot resolve provider CRs; skip the pass
@@ -508,6 +489,34 @@ func NICUnitNumbersFromMoVM(
 	}
 
 	return mutated
+}
+
+// claimByUnitNumber is pass 0 of NICUnitNumbersFromMoVM. Each numbered
+// interface claims the unclaimed device at exactly its spec unit number, and
+// is marked as matched in matchedIdx. An interface with no device at its unit
+// is left unmatched: it does not fall back to hodgepodge matching, and the zip
+// never pairs it either.
+func claimByUnitNumber(
+	ifaces []vmopv1.VirtualMachineNetworkInterfaceSpec,
+	ethDevs object.VirtualDeviceList,
+	claimedDevs []bool,
+	matchedIdx []bool) {
+
+	for i := range ifaces {
+		if ifaces[i].UnitNumber == nil {
+			continue
+		}
+		for j := range ethDevs {
+			if claimedDevs[j] {
+				continue
+			}
+			if u := ethDevs[j].GetVirtualDevice().UnitNumber; u != nil && *u == *ifaces[i].UnitNumber {
+				claimedDevs[j] = true
+				matchedIdx[i] = true
+				break
+			}
+		}
+	}
 }
 
 // recordEthDeviceUnitNumber records the device's observed unit number onto

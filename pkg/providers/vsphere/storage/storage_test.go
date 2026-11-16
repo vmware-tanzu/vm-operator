@@ -12,12 +12,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/storage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -100,6 +102,8 @@ var _ = Describe("GetVMStorageData", func() {
 			It("returns error", func() {
 				_, err := storage.GetVMStorageData(vmCtx, client)
 				Expect(err).To(MatchError(`persistentvolumeclaims "pvc1" not found`))
+				Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			})
 		})
 

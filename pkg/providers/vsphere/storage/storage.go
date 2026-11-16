@@ -69,6 +69,16 @@ func GetVMStorageData(
 	return data, nil
 }
 
+// noRequeueWrapErr is a NoRequeueError that also wraps the original error.
+type noRequeueWrapErr struct {
+	pkgerr.NoRequeueError
+	err error
+}
+
+func (e noRequeueWrapErr) Unwrap() []error {
+	return []error{e.NoRequeueError, e.err}
+}
+
 func getVMStorageClassNamesAndPVCs(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
@@ -95,7 +105,14 @@ func getVMStorageClassNamesAndPVCs(
 			pvcKey := ctrlclient.ObjectKey{Name: claim.ClaimName, Namespace: vm.Namespace}
 			if err := client.Get(ctx, pvcKey, pvc); err != nil {
 				if apierrors.IsNotFound(err) {
-					err = pkgerr.NoRequeueErrorf("%s", err.Error())
+					// Do not requeue with backoff; the VM controller watches
+					// PVCs and will reconcile the VM when the PVC is created.
+					// The original error is preserved in the chain so callers
+					// can still match on apierrors.IsNotFound.
+					err = noRequeueWrapErr{
+						NoRequeueError: pkgerr.NoRequeueErrorf("%s", err.Error()),
+						err:            err,
+					}
 				}
 				return nil, nil, err
 			}

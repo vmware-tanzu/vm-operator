@@ -41,7 +41,7 @@ var _ = Describe("Class resource admission", Label(testlabels.Mutation, testlabe
 	)
 	BeforeEach(func() {
 		ctx = pkgcfg.NewContextWithDefaultConfig()
-		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.TelcoVMServiceAPI = true })
+		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.VMServiceClasslessVM = true })
 		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.VMResizeCPUMemory = true })
 		scheme := runtime.NewScheme()
 		Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
@@ -115,10 +115,10 @@ var _ = Describe("Class resource admission", Label(testlabels.Mutation, testlabe
 		Expect(calls).To(Equal(1))
 	})
 	It("leaves existing objects untouched with capability or resize disabled", func() {
-		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.TelcoVMServiceAPI = false })
+		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.VMServiceClasslessVM = false })
 		_, err := vmclass.ApplyResourceDefaults(ctx, client, provider, vm, nil)
 		Expect(err).NotTo(HaveOccurred())
-		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.TelcoVMServiceAPI = true })
+		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.VMServiceClasslessVM = true })
 		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) { c.Features.VMResizeCPUMemory = false })
 		oldVM := vm.DeepCopy()
 		oldVM.Spec.ClassName = "other"

@@ -86,13 +86,13 @@ func intgTestsMutating() {
 
 	Context("class resource defaults", func() {
 		BeforeEach(func() {
-			pkgcfg.SetContext(suite, func(c *pkgcfg.Config) { c.Features.TelcoVMServiceAPI = true })
+			pkgcfg.SetContext(suite, func(c *pkgcfg.Config) { c.Features.VMServiceClasslessVM = true })
 			admissionVMProvider.GetVirtualMachineClassResourcesFn = func(_ context.Context, spec vmopv1.VirtualMachineClassSpec) (*vmopv1.VirtualMachineResourcesSpec, error) {
 				return &vmopv1.VirtualMachineResourcesSpec{Size: &vmopv1.VirtualMachineResourceQuantity{CPU: spec.Resources.Size.CPU.Default, Memory: spec.Resources.Size.Memory.Default}}, nil
 			}
 		})
 		AfterEach(func() {
-			pkgcfg.SetContext(suite, func(c *pkgcfg.Config) { c.Features.TelcoVMServiceAPI = false })
+			pkgcfg.SetContext(suite, func(c *pkgcfg.Config) { c.Features.VMServiceClasslessVM = false })
 			admissionVMProvider.GetVirtualMachineClassResourcesFn = nil
 		})
 		It("persists class-owned size through API-server admission", func() {

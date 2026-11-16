@@ -183,7 +183,7 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 	})
 
 	It("Should realize the v1alpha6 VMClass size defaults for a v1alpha6 VirtualMachine", Label("core-functional", "experimental"), func() {
-		skipper.SkipUnlessSupervisorCapabilityEnabled(ctx, clusterProxy, consts.TelcoVMServiceAPICapabilityName)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
 
 		className := fmt.Sprintf("%s-class", vmName)
 		classCPU := resource.MustParse("2")
@@ -211,20 +211,16 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			Expect(svClusterClient.Delete(cleanupCtx, vmClass)).To(Succeed(), "failed to delete v1alpha6 VirtualMachineClass")
 		})
 
-		vmParameters := manifestbuilders.VirtualMachineYaml{
-			Namespace:        input.WCPNamespaceName,
-			Name:             vmName,
-			ImageName:        linuxVMIName,
-			VMClassName:      className,
-			StorageClassName: clusterResources.StorageClassName,
-			ResourcePolicy:   clusterResources.VMResourcePolicyName,
-			PowerState:       "PoweredOff",
+		vm := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{Namespace: input.WCPNamespaceName, Name: vmName},
+			Spec: vmopv1.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    className,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1.VirtualMachinePowerStateOff,
+			},
 		}
-		vmObject, err := manifestbuilders.VirtualMachineA6(vmParameters)
-		Expect(err).NotTo(HaveOccurred())
-		vmYaml := manifestbuilders.ToYAML(vmObject)
-		Expect(clusterProxy.CreateWithArgs(ctx, vmYaml)).To(Succeed(), "failed to create v1alpha6 virtualmachine:\n %s", string(vmYaml))
-		vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(), vmParameters.Namespace, vmParameters.Name, false)
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)

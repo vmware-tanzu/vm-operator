@@ -17,6 +17,7 @@ import (
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
@@ -106,6 +107,13 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 
 			createArgs, err := vs.vmGroupGetVMCreatePrereqs(vmCtx, vcClient)
 			if err != nil {
+				if pkgerr.IsNoRequeueError(err) {
+					// The VirtualMachineGroup controller does not watch the
+					// resources (ex. PVCs) that may cause a prereq to be
+					// NoRequeueError in the VM create path, so convert it to
+					// a regular error to ensure placement is retried.
+					err = errors.New(err.Error())
+				}
 				err := fmt.Errorf("failed to get VM placement prereqs: %w", err)
 				setVMPlacementReadyCondErr(grpPlacement.VMGroup, vm, err)
 				errs = append(errs, err)

@@ -29,6 +29,7 @@ import (
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/placement"
@@ -469,6 +470,24 @@ var _ = Describe(
 				Entry("unknown VM name", "unknown-vm"),
 				Entry("empty VM name", ""),
 			)
+
+			It("should not return a NoRequeueError when a VM's PVC does not exist", func() {
+				vm1.Spec.Volumes = append(vm1.Spec.Volumes, vmopv1.VirtualMachineVolume{
+					Name: "volume1",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "missing-pvc",
+							},
+						},
+					},
+				})
+
+				err := placeGroup()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(`persistentvolumeclaims "missing-pvc" not found`))
+				Expect(pkgerr.IsNoRequeueError(err)).To(BeFalse())
+			})
 
 			It("should remain pending placement and preserve unexpected placement errors", func() {
 				ctx.SimulatorContext().Map.Handler = func(

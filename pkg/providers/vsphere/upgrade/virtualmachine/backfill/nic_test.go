@@ -1203,6 +1203,74 @@ var _ = Describe("NICUnitNumbersFromMoVM", func() {
 			Expect(rec.Events).To(BeEmpty())
 		})
 
+		It("a numbered interface claims the device at its unit, not the first same-network device", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", "", netName, ptr.To(int32(9))),
+							ifaceWithNet("eth1", "", netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))),
+				ethCardWithUnit(4001, mac2, netName, ptr.To(int32(9))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(9))))
+			Expect(vm.Spec.Network.Interfaces[1].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		It("a numbered interface with no device at its unit does not take another device", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWithNet("eth0", "", netName, ptr.To(int32(9))),
+							ifaceWithNet("eth1", "", netName, nil),
+						},
+					},
+				},
+			}
+			moVM = moVMWithEthDevs(
+				ethCardWithUnit(4000, mac1, netName, ptr.To(int32(7))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(9))))
+			Expect(vm.Spec.Network.Interfaces[1].UnitNumber).
+				To(Equal(ptr.To(int32(7))))
+			Expect(rec.Events).To(BeEmpty())
+		})
+
+		It("SR-IOV devices are not zip candidates", func() {
+			vm = &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+							ifaceWith("eth0", "", nil),
+						},
+					},
+				},
+			}
+			sriov := &vimtypes.VirtualSriovEthernetCard{}
+			sriov.Key = 4000
+			sriov.UnitNumber = ptr.To(int32(7))
+			moVM = moVMWithEthDevs(
+				sriov,
+				ethCardWithUnit(4001, mac1, netName, ptr.To(int32(8))))
+
+			Expect(backfill.NICUnitNumbersFromMoVM(ctx, client, vm, moVM)).To(BeTrue())
+			Expect(vm.Spec.Network.Interfaces[0].UnitNumber).
+				To(Equal(ptr.To(int32(8))))
+			Expect(rec.Events).To(HaveLen(1))
+		})
+
 		It("devices with no observed unit number are not zip candidates", func() {
 			vm = &vmopv1.VirtualMachine{
 				Spec: vmopv1.VirtualMachineSpec{

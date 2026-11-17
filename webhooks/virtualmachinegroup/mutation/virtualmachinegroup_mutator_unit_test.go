@@ -137,40 +137,52 @@ func unitTestsMutating() {
 			})
 
 			When("Spec.PowerState is updated in the same second as the previous request", func() {
-				It("Should deny the request", func() {
+				It("Should set the annotation to the start of the next second", func() {
+					prev := time.Now().UTC()
 					oldVMGroup := ctx.vmGroup.DeepCopy()
 					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					oldVMGroup.Annotations = map[string]string{
-						constants.LastUpdatedPowerStateTimeAnnotation: time.Now().UTC().Format(time.RFC3339Nano),
+						constants.LastUpdatedPowerStateTimeAnnotation: prev.Format(time.RFC3339Nano),
 					}
 					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
 					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
-					Expect(result).To(BeFalse())
-					Expect(err).To(MatchError(ContainSubstring("try again after")))
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(BeTrue())
+					updatedTime, err := time.Parse(time.RFC3339Nano,
+						ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation])
+					Expect(err).ToNot(HaveOccurred())
+					Expect(updatedTime).To(Equal(prev.Truncate(time.Second).Add(time.Second)))
 				})
 			})
 
 			When("Spec.PowerState is updated and the previous request is in the future", func() {
-				It("Should deny the request", func() {
+				It("Should set the annotation to the start of the second after it", func() {
+					prev := time.Now().UTC().Add(time.Minute)
 					oldVMGroup := ctx.vmGroup.DeepCopy()
 					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					oldVMGroup.Annotations = map[string]string{
-						constants.LastUpdatedPowerStateTimeAnnotation: time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano),
+						constants.LastUpdatedPowerStateTimeAnnotation: prev.Format(time.RFC3339Nano),
 					}
 					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
-					_, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
-					Expect(err).To(HaveOccurred())
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(BeTrue())
+					updatedTime, err := time.Parse(time.RFC3339Nano,
+						ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation])
+					Expect(err).ToNot(HaveOccurred())
+					Expect(updatedTime).To(Equal(prev.Truncate(time.Second).Add(time.Second)))
 				})
 			})
 
 			When("Spec.PowerState is updated in a later second than the previous request", func() {
 				It("Should set the annotation to the current time", func() {
+					prev := time.Now().UTC().Add(-2 * time.Second)
 					oldVMGroup := ctx.vmGroup.DeepCopy()
 					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					oldVMGroup.Annotations = map[string]string{
-						constants.LastUpdatedPowerStateTimeAnnotation: time.Now().UTC().Add(-2 * time.Second).Format(time.RFC3339Nano),
+						constants.LastUpdatedPowerStateTimeAnnotation: prev.Format(time.RFC3339Nano),
 					}
 					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 
@@ -185,15 +197,23 @@ func unitTestsMutating() {
 			})
 
 			When("Spec.NextForcePowerStateSyncTime is set to 'now' in the same second as the previous request", func() {
-				It("Should deny the request", func() {
+				It("Should set the annotation and the field to the start of the next second", func() {
+					prev := time.Now().UTC()
 					oldVMGroup := ctx.vmGroup.DeepCopy()
 					oldVMGroup.Annotations = map[string]string{
-						constants.LastUpdatedPowerStateTimeAnnotation: time.Now().UTC().Format(time.RFC3339Nano),
+						constants.LastUpdatedPowerStateTimeAnnotation: prev.Format(time.RFC3339Nano),
 					}
 					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = nextForcePowerStateSyncTimeNow
 
 					_, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
-					Expect(err).To(HaveOccurred())
+					Expect(err).ToNot(HaveOccurred())
+					updatedTime, err := time.Parse(time.RFC3339Nano,
+						ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation])
+					Expect(err).ToNot(HaveOccurred())
+					Expect(updatedTime).To(Equal(prev.Truncate(time.Second).Add(time.Second)))
+					syncTime, err := time.Parse(time.RFC3339Nano, ctx.vmGroup.Spec.NextForcePowerStateSyncTime)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(syncTime).To(Equal(updatedTime))
 				})
 			})
 

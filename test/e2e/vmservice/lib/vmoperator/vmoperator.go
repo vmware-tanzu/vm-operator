@@ -245,21 +245,25 @@ func WaitForVirtualMachineIP(
 
 	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
 	Expect(err).ToNot(HaveOccurred())
-	if !meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionStarted) {
-		Fail(fmt.Sprintf("Timed out waiting for disk promotion to complete while waiting for VirtualMachine %s to get an IPv4 address", vmName))
-	}
-
-	By(fmt.Sprintf("VirtualMachine '%s/%s' IP not ready yet; wait for disk promotion in case it's the cause", ns, vmName))
-	promoTimeout, promoPoll := intervalDurations(config.GetIntervals("default", "wait-virtual-machine-disk-promotion"))
-	_ = wait.PollUntilContextTimeout(ctx, promoPoll, promoTimeout, true, func(ctx context.Context) (bool, error) {
-		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
-		if err != nil {
-			e2eframework.Logf("retry due to: %v", err)
-			return false, nil
+	// Synced=True means promotion already completed or was never needed, so
+	// there is nothing to wait for; go straight to the final IP check.
+	if !meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced) {
+		if !meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionStarted) {
+			Fail(fmt.Sprintf("Timed out waiting for disk promotion to complete while waiting for VirtualMachine %s to get an IPv4 address", vmName))
 		}
 
-		return meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced), nil
-	})
+		By(fmt.Sprintf("VirtualMachine '%s/%s' IP not ready yet; wait for disk promotion in case it's the cause", ns, vmName))
+		promoTimeout, promoPoll := intervalDurations(config.GetIntervals("default", "wait-virtual-machine-disk-promotion"))
+		_ = wait.PollUntilContextTimeout(ctx, promoPoll, promoTimeout, true, func(ctx context.Context) (bool, error) {
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
+			if err != nil {
+				e2eframework.Logf("retry due to: %v", err)
+				return false, nil
+			}
+
+			return meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced), nil
+		})
+	}
 
 	By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", ns, vmName))
 	Expect(hasVirtualMachineIP(ctx, svClusterClient, ns, vmName, ipTimeout, ipPoll)).To(BeTrue(),

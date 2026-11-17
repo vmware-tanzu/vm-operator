@@ -136,6 +136,67 @@ func unitTestsMutating() {
 				})
 			})
 
+			When("Spec.PowerState is updated in the same second as the previous request", func() {
+				It("Should deny the request", func() {
+					oldVMGroup := ctx.vmGroup.DeepCopy()
+					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					oldVMGroup.Annotations = map[string]string{
+						constants.LastUpdatedPowerStateTimeAnnotation: time.Now().UTC().Format(time.RFC3339Nano),
+					}
+					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(result).To(BeFalse())
+					Expect(err).To(MatchError(ContainSubstring("try again after")))
+				})
+			})
+
+			When("Spec.PowerState is updated and the previous request is in the future", func() {
+				It("Should deny the request", func() {
+					oldVMGroup := ctx.vmGroup.DeepCopy()
+					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					oldVMGroup.Annotations = map[string]string{
+						constants.LastUpdatedPowerStateTimeAnnotation: time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano),
+					}
+					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+
+					_, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(err).To(HaveOccurred())
+				})
+			})
+
+			When("Spec.PowerState is updated in a later second than the previous request", func() {
+				It("Should set the annotation to the current time", func() {
+					oldVMGroup := ctx.vmGroup.DeepCopy()
+					oldVMGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+					oldVMGroup.Annotations = map[string]string{
+						constants.LastUpdatedPowerStateTimeAnnotation: time.Now().UTC().Add(-2 * time.Second).Format(time.RFC3339Nano),
+					}
+					ctx.vmGroup.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+
+					result, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(BeTrue())
+					updatedTime, err := time.Parse(time.RFC3339Nano,
+						ctx.vmGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation])
+					Expect(err).ToNot(HaveOccurred())
+					Expect(updatedTime).To(BeTemporally("~", time.Now(), time.Second))
+				})
+			})
+
+			When("Spec.NextForcePowerStateSyncTime is set to 'now' in the same second as the previous request", func() {
+				It("Should deny the request", func() {
+					oldVMGroup := ctx.vmGroup.DeepCopy()
+					oldVMGroup.Annotations = map[string]string{
+						constants.LastUpdatedPowerStateTimeAnnotation: time.Now().UTC().Format(time.RFC3339Nano),
+					}
+					ctx.vmGroup.Spec.NextForcePowerStateSyncTime = nextForcePowerStateSyncTimeNow
+
+					_, err := mutation.ProcessPowerState(&ctx.WebhookRequestContext, ctx.vmGroup, oldVMGroup)
+					Expect(err).To(HaveOccurred())
+				})
+			})
+
 			When("Spec.NextForcePowerStateSyncTime is set to 'now'", func() {
 				It("Should add the last-updated-power-state annotation", func() {
 					oldVMGroup := ctx.vmGroup.DeepCopy()

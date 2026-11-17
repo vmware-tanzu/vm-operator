@@ -7,8 +7,10 @@ package vmopv1
 import (
 	"context"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -185,4 +187,19 @@ func isVMInPowerState(
 	return desired == vmopv1.VirtualMachinePowerStateOff &&
 		observed == vmopv1.VirtualMachinePowerStateSuspended &&
 		powerOffMode == vmopv1.VirtualMachinePowerOpModeSoft
+}
+
+// PowerStateRequestCompletionTime returns the time to record in the status of
+// a group when its power state request at requestTime, from the last updated
+// power state time annotation, has completed. It is the start of the second
+// after the request. The status has whole seconds, and a request is pending
+// until the status is after its time. So a reconcile that completes a request
+// with an old view of the group cannot complete a newer one, as the mutating
+// webhook does not accept a request in the same second as the previous one.
+// When the request time is not known, the current time is used.
+func PowerStateRequestCompletionTime(requestTime time.Time) metav1.Time {
+	if requestTime.IsZero() {
+		requestTime = time.Now()
+	}
+	return metav1.NewTime(requestTime.UTC().Truncate(time.Second).Add(time.Second))
 }

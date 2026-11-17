@@ -1862,3 +1862,435 @@ var _ = Describe(
 			})
 		})
 	})
+
+var _ = Describe("Power state requests", Label(testlabels.Controller, testlabels.API), func() {
+	const (
+		ns        = "test-ns"
+		groupName = "root-group"
+		vm1Name   = "vm-1"
+		vm2Name   = "vm-2"
+	)
+
+	var (
+		// t0 is the time of the previous request, and t1 of the next request,
+		// which the mutating webhook only accepts in a later second.
+		t0 = time.Now().UTC().Add(-time.Hour).Truncate(time.Second).Add(941 * time.Millisecond)
+		t1 = t0.Truncate(time.Second).Add(time.Second + 50*time.Millisecond)
+
+		group *vmopv1.VirtualMachineGroup
+		vm1   *vmopv1.VirtualMachine
+		vm2   *vmopv1.VirtualMachine
+
+		// staleGroup, when set, is returned to the reconciler in place of the
+		// group, as from a cache that has not seen the latest updates to the
+		// group yet.
+		staleGroup *vmopv1.VirtualMachineGroup
+		// inReconcile is true while the reconciler runs.
+		inReconcile bool
+		// failGroupStatusPatch fails the patch of the group's status, as when
+		// VM Operator stops after the members were patched.
+		failGroupStatusPatch bool
+
+		ctx        *builder.UnitTestContextForController
+		reconciler *virtualmachinegroup.Reconciler
+	)
+
+	newVM := func(name string, spec, status vmopv1.VirtualMachinePowerState) *vmopv1.VirtualMachine {
+		vm := builder.DummyBasicVirtualMachine(name, ns)
+		vm.Spec.GroupName = groupName
+		vm.Spec.PowerState = spec
+		vm.Status.PowerState = status
+		vm.Status.UniqueID = "unique-" + name
+		return vm
+	}
+
+	setRequest := func(g *vmopv1.VirtualMachineGroup, ps vmopv1.VirtualMachinePowerState, t time.Time) {
+		g.Spec.PowerState = ps
+		g.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
+		if g.Annotations == nil {
+			g.Annotations = map[string]string{}
+		}
+		g.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] = t.Format(time.RFC3339Nano)
+	}
+
+	getGroup := func() *vmopv1.VirtualMachineGroup {
+		GinkgoHelper()
+		g := &vmopv1.VirtualMachineGroup{}
+		Expect(ctx.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: groupName}, g)).To(Succeed())
+		return g
+	}
+
+	getVM := func(name string) *vmopv1.VirtualMachine {
+		GinkgoHelper()
+		vm := &vmopv1.VirtualMachine{}
+		Expect(ctx.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, vm)).To(Succeed())
+		return vm
+	}
+
+	setVMPowerState := func(name string, spec, status vmopv1.VirtualMachinePowerState) {
+		GinkgoHelper()
+		vm := getVM(name)
+		vm.Spec.PowerState = spec
+		Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+		vm.Status.PowerState = status
+		Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
+	}
+
+	// updateGroup applies a change to the group, as a user does.
+	updateGroup := func(mutate func(g *vmopv1.VirtualMachineGroup)) {
+		GinkgoHelper()
+		g := getGroup()
+		mutate(g)
+		Expect(ctx.Client.Update(ctx, g)).To(Succeed())
+	}
+
+	reconcile := func() error {
+		inReconcile = true
+		defer func() { inReconcile = false }()
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: client.ObjectKey{Namespace: ns, Name: groupName},
+		})
+		return err
+	}
+
+	isPending := func() bool {
+		GinkgoHelper()
+		g := getGroup()
+		completed := g.Status.LastUpdatedPowerStateTime
+		if completed == nil {
+			return true
+		}
+		t, err := time.Parse(time.RFC3339Nano, g.Annotations[constants.LastUpdatedPowerStateTimeAnnotation])
+		Expect(err).ToNot(HaveOccurred())
+		return !completed.After(t)
+	}
+
+	BeforeEach(func() {
+		staleGroup = nil
+		failGroupStatusPatch = false
+
+		group = &vmopv1.VirtualMachineGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: groupName, Namespace: ns, Finalizers: []string{finalizer},
+			},
+			Spec: vmopv1.VirtualMachineGroupSpec{
+				BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
+					{Members: []vmopv1.GroupMember{{Name: vm1Name, Kind: virtualMachineKind}}},
+					{Members: []vmopv1.GroupMember{{Name: vm2Name, Kind: virtualMachineKind}}},
+				},
+			},
+		}
+		setRequest(group, vmopv1.VirtualMachinePowerStateOn, t0)
+		// The members are placed, so the reconciler uses the cached group.
+		for _, name := range []string{vm1Name, vm2Name} {
+			ms := vmopv1.VirtualMachineGroupMemberStatus{Name: name, Kind: virtualMachineKind}
+			conditions.MarkTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+			conditions.MarkTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+			group.Status.Members = append(group.Status.Members, ms)
+		}
+		vm1 = newVM(vm1Name, vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn)
+		vm2 = newVM(vm2Name, vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn)
+	})
+
+	JustBeforeEach(func() {
+		ctx = suite.NewUnitTestContextForControllerWithFuncs(interceptor.Funcs{
+			Get: func(
+				ctx context.Context, c client.WithWatch, key client.ObjectKey,
+				obj client.Object, opts ...client.GetOption) error {
+
+				if g, ok := obj.(*vmopv1.VirtualMachineGroup); ok &&
+					inReconcile && staleGroup != nil && key.Name == groupName {
+					// Only the first read of a reconcile is stale. A retry
+					// after a conflict reads the latest group.
+					staleGroup.DeepCopyInto(g)
+					staleGroup = nil
+					return nil
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+			SubResourcePatch: func(
+				ctx context.Context, c client.Client, subResource string, obj client.Object,
+				patch client.Patch, opts ...client.SubResourcePatchOption) error {
+
+				if failGroupStatusPatch && subResource == "status" && obj.GetName() == groupName {
+					if _, ok := obj.(*vmopv1.VirtualMachineGroup); ok {
+						return errors.New("vm operator stopped")
+					}
+				}
+				return c.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+			},
+		}, group, vm1, vm2)
+		DeferCleanup(ctx.AfterEach)
+		reconciler = virtualmachinegroup.NewReconciler(
+			ctx, ctx.Client, ctx.Client, ctx.Logger, ctx.Recorder, providerfake.NewVMProvider())
+	})
+
+	// completeRequest reconciles until the group's current request completes.
+	completeRequest := func() {
+		GinkgoHelper()
+		Expect(reconcile()).To(Succeed())
+		Expect(isPending()).To(BeFalse())
+	}
+
+	When("a power-off is requested right after a power-on completes, and a reconcile sees the old group", func() {
+		It("should not complete the power-off, and release the members on the next reconcile", func() {
+			// The view of the group before the power-on completed.
+			beforeCompletion := getGroup()
+			completeRequest()
+			staleGroup = beforeCompletion
+
+			By("requesting power-off in the same second as the power-on")
+			updateGroup(func(g *vmopv1.VirtualMachineGroup) {
+				setRequest(g, vmopv1.VirtualMachinePowerStateOff, t1)
+			})
+
+			By("reconciling with the old view of the group, which completes the power-on again")
+			Expect(reconcile()).To(Succeed())
+			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+			Expect(getVM(vm2Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+			Expect(isPending()).To(BeTrue(), "the power-off request must stay pending")
+
+			By("reconciling with the latest view of the group")
+			Expect(reconcile()).To(Succeed())
+			Expect(getVM(vm2Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff),
+				"the last boot order group is released first for power-off")
+			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+			Expect(isPending()).To(BeTrue())
+
+			By("powering off vm-2 releases vm-1, and powering off vm-1 completes the request")
+			setVMPowerState(vm2Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+			Expect(reconcile()).To(Succeed())
+			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			setVMPowerState(vm1Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+			completeRequest()
+			Expect(getGroup().Status.LastUpdatedPowerStateTime.Time).To(BeTemporally("==", t1.Truncate(time.Second).Add(time.Second)))
+		})
+	})
+
+	When("a power-off is requested while a power-on is still releasing boot order groups", func() {
+		BeforeEach(func() {
+			vm2 = newVM(vm2Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+		})
+
+		It("should power off every member, including one released by a reconcile with the old group", func() {
+			staleGroup = getGroup()
+			updateGroup(func(g *vmopv1.VirtualMachineGroup) {
+				setRequest(g, vmopv1.VirtualMachinePowerStateOff, t1)
+			})
+
+			By("reconciling with the old view of the group, which releases vm-2 for power-on")
+			Expect(reconcile()).To(Succeed())
+			Expect(getVM(vm2Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+			Expect(isPending()).To(BeTrue())
+
+			By("reconciling with the latest view of the group")
+			Expect(reconcile()).To(Succeed())
+			Expect(getVM(vm2Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			Expect(isPending()).To(BeTrue(), "vm-1 is not powered off yet")
+		})
+	})
+
+	When("VM Operator stops after releasing a boot order group, before the group status is saved", func() {
+		BeforeEach(func() {
+			group.Spec.BootOrder[0].PowerOffDelay = &metav1.Duration{Duration: time.Minute}
+			setRequest(group, vmopv1.VirtualMachinePowerStateOff, t1)
+			vm2 = newVM(vm2Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+		})
+
+		It("should release the boot order group once, and not move its apply power state time", func() {
+			failGroupStatusPatch = true
+			Expect(reconcile()).ToNot(Succeed())
+			released := getVM(vm1Name)
+			Expect(released.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			applyTime := released.Annotations[constants.ApplyPowerStateTimeAnnotation]
+			Expect(applyTime).ToNot(BeEmpty())
+
+			By("restarting")
+			failGroupStatusPatch = false
+			Expect(reconcile()).To(Succeed())
+			Expect(getVM(vm1Name).Annotations[constants.ApplyPowerStateTimeAnnotation]).To(Equal(applyTime))
+			Expect(isPending()).To(BeTrue())
+		})
+	})
+
+	When("VM Operator stops after every member reached the power state, before the group status is saved", func() {
+		BeforeEach(func() {
+			setRequest(group, vmopv1.VirtualMachinePowerStateOff, t1)
+			vm1 = newVM(vm1Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+			vm2 = newVM(vm2Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+		})
+
+		It("should complete the request after the restart", func() {
+			failGroupStatusPatch = true
+			Expect(reconcile()).ToNot(Succeed())
+			Expect(isPending()).To(BeTrue())
+
+			By("restarting")
+			failGroupStatusPatch = false
+			completeRequest()
+			Expect(getGroup().Status.LastUpdatedPowerStateTime.Time).To(BeTemporally("==", t1.Truncate(time.Second).Add(time.Second)))
+		})
+	})
+
+	When("the members show the power state from before the request", func() {
+		BeforeEach(func() {
+			setRequest(group, vmopv1.VirtualMachinePowerStateOff, t1)
+			vm1 = newVM(vm1Name, vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOff)
+			vm2 = newVM(vm2Name, vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOff)
+		})
+
+		It("should release every member and complete the request", func() {
+			completeRequest()
+			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			Expect(getVM(vm2Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+		})
+	})
+
+	When("a member is powered on directly after the request completed", func() {
+		BeforeEach(func() {
+			setRequest(group, vmopv1.VirtualMachinePowerStateOff, t1)
+			vm1 = newVM(vm1Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+			vm2 = newVM(vm2Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+		})
+
+		It("should not power off the member again", func() {
+			completeRequest()
+			setVMPowerState(vm1Name, vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn)
+			Expect(reconcile()).To(Succeed())
+			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+		})
+	})
+
+	When("the request was completed by an earlier version of VM Operator", func() {
+		BeforeEach(func() {
+			// Earlier versions recorded the current time at completion.
+			setRequest(group, vmopv1.VirtualMachinePowerStateOff, t1)
+			group.Status.LastUpdatedPowerStateTime = &metav1.Time{Time: t1.Add(5 * time.Second)}
+			vm2 = newVM(vm2Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+		})
+
+		It("should keep the request completed and not apply the power state again", func() {
+			Expect(reconcile()).To(Succeed())
+			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+			Expect(isPending()).To(BeFalse())
+		})
+	})
+
+	When("the group has no request time annotation", func() {
+		BeforeEach(func() {
+			delete(group.Annotations, constants.LastUpdatedPowerStateTimeAnnotation)
+		})
+
+		It("should complete the request once", func() {
+			Expect(reconcile()).To(Succeed())
+			Expect(getGroup().Status.LastUpdatedPowerStateTime).ToNot(BeNil())
+
+			setVMPowerState(vm1Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+			Expect(reconcile()).To(Succeed())
+			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff),
+				"the completed request is not applied again")
+		})
+	})
+})
+
+var _ = Describe("Power state of a nested group after the request completed", Label(testlabels.Controller, testlabels.API), func() {
+	const (
+		ns        = "test-ns"
+		rootName  = "root-group"
+		childName = "child-group"
+		vmName    = "child-vm"
+	)
+
+	It("should leave a member powered on directly in the child group alone, and not start a new request", func() {
+		requestTime := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+
+		newGroup := func(name, parent string, member vmopv1.GroupMember) *vmopv1.VirtualMachineGroup {
+			g := &vmopv1.VirtualMachineGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name, Namespace: ns, Finalizers: []string{finalizer},
+				},
+				Spec: vmopv1.VirtualMachineGroupSpec{
+					GroupName:    parent,
+					PowerState:   vmopv1.VirtualMachinePowerStateOff,
+					PowerOffMode: vmopv1.VirtualMachinePowerOpModeHard,
+					BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
+						{Members: []vmopv1.GroupMember{member}},
+					},
+				},
+			}
+			g.Annotations = map[string]string{
+				constants.LastUpdatedPowerStateTimeAnnotation: requestTime.Format(time.RFC3339Nano),
+			}
+			return g
+		}
+
+		root := newGroup(rootName, "", vmopv1.GroupMember{Kind: virtualMachineGroupKind, Name: childName})
+		child := newGroup(childName, rootName, vmopv1.GroupMember{Kind: virtualMachineKind, Name: vmName})
+		// The VM is placed, so the reconciler uses the cached group.
+		ms := vmopv1.VirtualMachineGroupMemberStatus{Name: vmName, Kind: virtualMachineKind}
+		conditions.MarkTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionGroupLinked)
+		conditions.MarkTrue(&ms, vmopv1.VirtualMachineGroupMemberConditionPlacementReady)
+		child.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{ms}
+
+		vm := builder.DummyBasicVirtualMachine(vmName, ns)
+		vm.Spec.GroupName = childName
+		vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+		vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOff
+		vm.Status.UniqueID = "unique-" + vmName
+
+		ctx := suite.NewUnitTestContextForController(root, child, vm)
+		DeferCleanup(ctx.AfterEach)
+		reconciler := virtualmachinegroup.NewReconciler(
+			ctx, ctx.Client, ctx.Client, ctx.Logger, ctx.Recorder, providerfake.NewVMProvider())
+
+		reconcile := func(name string) {
+			GinkgoHelper()
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: client.ObjectKey{Namespace: ns, Name: name},
+			})
+			Expect(err).ToNot(HaveOccurred())
+		}
+		getGroup := func(name string) *vmopv1.VirtualMachineGroup {
+			GinkgoHelper()
+			g := &vmopv1.VirtualMachineGroup{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, g)).To(Succeed())
+			return g
+		}
+
+		By("completing the request on both groups")
+		reconcile(rootName)
+		reconcile(childName)
+		reconcile(rootName)
+		for _, name := range []string{rootName, childName} {
+			Expect(getGroup(name).Status.LastUpdatedPowerStateTime).ToNot(BeNil(), name)
+		}
+		annotation := getGroup(childName).Annotations[constants.LastUpdatedPowerStateTimeAnnotation]
+
+		By("powering on the VM directly")
+		got := &vmopv1.VirtualMachine{}
+		Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), got)).To(Succeed())
+		got.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+		Expect(ctx.Client.Update(ctx, got)).To(Succeed())
+		got.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+		Expect(ctx.Client.Status().Update(ctx, got)).To(Succeed())
+
+		By("reconciling both groups again")
+		for range 2 {
+			reconcile(childName)
+			reconcile(rootName)
+		}
+
+		Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), got)).To(Succeed())
+		Expect(got.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+		Expect(getGroup(childName).Annotations[constants.LastUpdatedPowerStateTimeAnnotation]).To(Equal(annotation),
+			"no new request is started on the child group")
+		for _, name := range []string{rootName, childName} {
+			g := getGroup(name)
+			Expect(g.Status.LastUpdatedPowerStateTime.Time).To(BeTemporally(">=", requestTime), name)
+		}
+		for _, ms := range getGroup(childName).Status.Members {
+			Expect(conditions.GetReason(&ms, vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced)).To(Equal("NotSynced"))
+		}
+	})
+})

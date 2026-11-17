@@ -7,6 +7,7 @@ package vmopv1_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -1789,5 +1790,38 @@ var _ = Describe("Group power state completion",
 					})
 				})
 			})
+		})
+	})
+
+var _ = Describe("Group power state request completion time",
+	Label(
+		testlabels.API,
+		testlabels.Group,
+	),
+	func() {
+		// t0 is the time of a request, with fractional seconds.
+		t0 := time.Date(2026, 11, 16, 12, 50, 51, 941000000, time.UTC)
+
+		It("should be the start of the second after the request", func() {
+			Expect(vmopv1util.PowerStateRequestCompletionTime(t0).Time).To(
+				Equal(time.Date(2026, 11, 16, 12, 50, 52, 0, time.UTC)))
+		})
+
+		It("should be after a request in the same second, and not after a request in the next second", func() {
+			completed := vmopv1util.PowerStateRequestCompletionTime(t0)
+			Expect(completed.After(t0)).To(BeTrue())
+			Expect(completed.After(t0.Add(time.Second))).To(BeFalse())
+		})
+
+		It("should be after a request at the start of a second", func() {
+			t := time.Date(2026, 11, 16, 12, 50, 51, 0, time.UTC)
+			Expect(vmopv1util.PowerStateRequestCompletionTime(t).After(t)).To(BeTrue())
+		})
+
+		It("should use the current time when the request time is not known", func() {
+			before := time.Now()
+			completed := vmopv1util.PowerStateRequestCompletionTime(time.Time{})
+			Expect(completed.After(before)).To(BeTrue())
+			Expect(completed.Nanosecond()).To(BeZero())
 		})
 	})

@@ -274,7 +274,7 @@ func (r *Reconciler) reconcileMembers(
 		existingStatuses[key] = ms
 	}
 
-	updatePowerState, _, err := shouldUpdatePowerState(ctx)
+	updatePowerState, requestTime, err := shouldUpdatePowerState(ctx)
 	if err != nil {
 		return err
 	}
@@ -365,9 +365,8 @@ func (r *Reconciler) reconcileMembers(
 			ctx.Logger.Info("All boot order groups reached the group power state",
 				"powerState", ctx.VMGroup.Spec.PowerState)
 		}
-		ctx.VMGroup.Status.LastUpdatedPowerStateTime = &metav1.Time{
-			Time: time.Now().UTC(),
-		}
+		completed := vmopv1util.PowerStateRequestCompletionTime(requestTime)
+		ctx.VMGroup.Status.LastUpdatedPowerStateTime = &completed
 	}
 
 	ctx.VMGroup.Status.Members = memberStatuses
@@ -649,16 +648,23 @@ func (r *Reconciler) reconcileMember(
 			goto patchMember
 		}
 
-		if vmStatusPowerState == ctx.VMGroup.Spec.PowerState {
+		vmSpecMatchGroup := vm.Spec.PowerState == ctx.VMGroup.Spec.PowerState
+		applyPowerState := op.action == memberPowerSync ||
+			op.action == memberPowerRelease
+
+		switch {
+		case vmStatusPowerState == ctx.VMGroup.Spec.PowerState:
 			conditions.MarkTrue(
 				ms,
 				vmopv1.VirtualMachineGroupMemberConditionPowerStateSynced,
 			)
-			goto patchMember
-		}
-
-		vmSpecMatchGroup := vm.Spec.PowerState == ctx.VMGroup.Spec.PowerState
-		switch {
+			// The VM's observed power state matches the group's, but its
+			// desired power state may not, for example when it was released
+			// for an earlier request and has not changed power state yet. Set
+			// its desired power state too, or it changes power state again.
+			if !applyPowerState || vmSpecMatchGroup {
+				goto patchMember
+			}
 		case op.action == memberPowerQueued && !vmSpecMatchGroup:
 			// VM waits for an earlier boot order group to reach the group's
 			// power state.
@@ -830,8 +836,14 @@ func reopenPowerStateRequest(group *vmopv1.VirtualMachineGroup) bool {
 	if group.Annotations == nil {
 		group.Annotations = make(map[string]string)
 	}
+	// The status may be up to a second ahead of now, see
+	// PowerStateRequestCompletionTime. The new request must not be before it.
+	requestTime := time.Now().UTC()
+	if closed.After(requestTime) {
+		requestTime = closed.UTC()
+	}
 	group.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] =
-		time.Now().UTC().Format(time.RFC3339Nano)
+		requestTime.Format(time.RFC3339Nano)
 
 	return true
 }

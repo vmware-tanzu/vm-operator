@@ -46,7 +46,7 @@ The goals below are written for power-off. Unless a goal says otherwise, they ap
 - The `powerOffMode` behavior in the VM provider MUST NOT change: `hard` powers off at once, `trySoft` waits up to the default 5 minutes for a guest shutdown and then powers off hard, `soft` never forces and retries on timeout. In all modes the next boot-order group MUST wait for observed `PoweredOff`.
 - When every boot-order group is complete, the request MUST be closed. After that, members MAY diverge from the group. The group reports `NotSynced` and does not revert them (same as today).
 - A group that is blocked MUST say which member blocks it and why, in the member status.
-- The group MUST NOT store a plan: no stage index, no stage start time. Operation identity is the existing request time (`last-updated-power-state-time` annotation).
+- The group MUST NOT store a plan: no stage index, no stage start time. Operation identity is the existing request time (`last-updated-power-state-time` annotation). A new request MUST be in a later whole second than the previous one, so the mutating webhook denies a power state change or force sync in the same second as the previous request. The annotation keeps its fractional seconds. `Status.LastUpdatedPowerStateTime` records the start of the second after the request that completed, and not the time of the completion. A request is open while the status time is not later than the request time.
 - While a power-on request is pending, the controller MUST release boot-order groups in forward order, one at a time, with the same release and completion rules. `PowerOnDelay` MUST be a fixed wait that starts when the previous boot-order group is observed `PoweredOn`. It MUST NOT be cumulative.
 - The first boot-order group in power-on order (the first list entry) MUST be released at once. Its `PowerOnDelay` has no effect. Today it waits its delay from the request time; this changes.
 - Suspend behavior MUST NOT change: all members are set at once, with no order and no delay.
@@ -100,6 +100,7 @@ Example: power-off with boot-order groups web → api → db. web is off, api is
 
 | Change | Result |
 |--------|--------|
+| `powerState` On → Off before the power-on finishes | New request, in power-off order. Members already released for On get Off even if their observed state is still Off, because the release check uses `spec.powerState`. Every member ends `PoweredOff`. |
 | `powerState` Off → On | New request, in power-on order. db is still on, so it is complete. api gets On; api VMs that are shutting down go off first, then come back on. web waits until every api member is observed `PoweredOn`. |
 | `powerOffMode` `trySoft` → `hard` | api members whose spec differs in mode get `hard` on the next reconcile (mode is updated without a new stamp). db gets `hard` when released. An operation already in the soft wait is not interrupted. |
 | `PowerOffDelay` changes | Applies to members that have not been stamped. A stamp already written is kept. |
@@ -120,6 +121,8 @@ Example: power-off with boot-order groups web → api → db. web is off, api is
 | api-1 never powers off (`soft`, no VMware Tools) | db is never released. Ways out: change the group's mode, flip `powerState`, or remove api-1 from `bootOrder`. Changing api-1's own mode does not help, because the group pushes the group's mode again. |
 | api-1 deleted, or not created yet | Counts as not complete. db is not released, and the request stays open. The member status shows `NotFound`. If the walk moved on and the VM came back powered on, the order would be broken. The group does not create members. When someone creates api-1 with the same name and `groupName`, the group sets it Off. The way out is to remove api-1 from `bootOrder`. |
 | api-1 unlinked (`groupName` changed) | The group cannot push to it. Counts as not complete. The member status says why. |
+| Power state changed while a reconcile reads an old copy of the group | The reconcile can only complete the request it read. The newer request has a later whole second, so it stays open and the next reconcile applies it. |
+| Two power state requests in the same second | The webhook denies the second request. The client retries in a later second, so the second request is never taken as completed by the first. |
 | Controller restarts | Nothing is lost. The next reconcile works out the same step. The stamp and the spec are on the objects. |
 
 ### Limits that stay

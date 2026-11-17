@@ -55,6 +55,22 @@ func newIntgMutatingWebhookContext() *intgMutatingWebhookContext {
 	return ctx
 }
 
+// updateAfterPowerStateRequest applies mutate to the group and updates it. The
+// webhook denies a power state request in the same second as the previous one,
+// so the update is retried until it is accepted.
+func updateAfterPowerStateRequest(
+	ctx *intgMutatingWebhookContext,
+	mutate func(*vmopv1.VirtualMachineGroup)) {
+
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		obj := &vmopv1.VirtualMachineGroup{}
+		g.Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vmGroup), obj)).To(Succeed())
+		mutate(obj)
+		g.Expect(ctx.Client.Update(ctx, obj)).To(Succeed())
+	}, "5s", "200ms").Should(Succeed())
+}
+
 func intgTestsMutating() {
 	var (
 		ctx *intgMutatingWebhookContext
@@ -120,8 +136,9 @@ func intgTestsMutating() {
 				Expect(originalTimestamp).ToNot(BeEmpty())
 
 				// Change power state
-				modified.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
-				Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
+				updateAfterPowerStateRequest(ctx, func(g *vmopv1.VirtualMachineGroup) {
+					g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+				})
 
 				// Get the updated object
 				updated := &vmopv1.VirtualMachineGroup{}
@@ -155,8 +172,9 @@ func intgTestsMutating() {
 				Expect(modified.Annotations).To(HaveKey(constants.ApplyPowerStateTimeAnnotation))
 
 				// Change power state
-				modified.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-				Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
+				updateAfterPowerStateRequest(ctx, func(g *vmopv1.VirtualMachineGroup) {
+					g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				})
 
 				// Get the updated object
 				updated := &vmopv1.VirtualMachineGroup{}
@@ -211,8 +229,9 @@ func intgTestsMutating() {
 				Expect(originalTimestamp).ToNot(BeEmpty())
 
 				// Update with nextForcePowerStateSyncTime set to 'now'
-				modified.Spec.NextForcePowerStateSyncTime = "now"
-				Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
+				updateAfterPowerStateRequest(ctx, func(g *vmopv1.VirtualMachineGroup) {
+					g.Spec.NextForcePowerStateSyncTime = "now"
+				})
 
 				// Get the updated object
 				updated := &vmopv1.VirtualMachineGroup{}

@@ -129,6 +129,9 @@ func (m mutator) vmGroupFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virt
 // 1. The group is created with a non-empty spec.powerState value.
 // 2. The spec.powerState is updated.
 // 3. The spec.nextForcePowerStateSyncTime is set to "now".
+// A request in the same second as the previous one is denied. The status of the
+// group records the completion of a request in whole seconds, so the requests
+// must be in different seconds to tell them apart.
 // It also removes the apply power state change time annotation if the group is
 // being updated directly (not inherited from a parent).
 func ProcessPowerState(
@@ -150,7 +153,8 @@ func ProcessPowerState(
 		shouldUpdateAnnotation bool
 		oldForceSyncVal        = oldVMG.Spec.NextForcePowerStateSyncTime
 		newForceSyncVal        = newVMG.Spec.NextForcePowerStateSyncTime
-		now                    = time.Now().UTC().Format(time.RFC3339Nano)
+		nowTime                = time.Now().UTC()
+		now                    = nowTime.Format(time.RFC3339Nano)
 	)
 
 	switch {
@@ -173,6 +177,10 @@ func ProcessPowerState(
 		newVMG.Spec.PowerState != oldVMG.Spec.PowerState
 
 	if shouldUpdateAnnotation {
+		if err := checkPowerStateRequestTime(oldVMG, nowTime); err != nil {
+			return false, err
+		}
+
 		// Set the last updated power state time annotation.
 		if newVMG.Annotations == nil {
 			newVMG.Annotations = make(map[string]string)
@@ -202,4 +210,27 @@ func ProcessPowerState(
 	}
 
 	return wasMutated, nil
+}
+
+// checkPowerStateRequestTime returns an error if now is in the same second as,
+// or before, the time of the previous power state request on the group.
+func checkPowerStateRequestTime(
+	oldVMG *vmopv1.VirtualMachineGroup, now time.Time) error {
+
+	v := oldVMG.Annotations[constants.LastUpdatedPowerStateTimeAnnotation]
+	if v == "" {
+		return nil
+	}
+	prev, err := time.Parse(time.RFC3339Nano, v)
+	if err != nil {
+		// The validating webhook reports a malformed time.
+		return nil //nolint:nilerr
+	}
+	if next := prev.UTC().Truncate(time.Second).Add(time.Second); now.Before(next) {
+		return fmt.Errorf(
+			"the previous power state request was made at %s, "+
+				"try again after %s",
+			v, next.Format(time.RFC3339))
+	}
+	return nil
 }

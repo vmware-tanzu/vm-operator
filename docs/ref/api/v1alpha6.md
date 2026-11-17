@@ -1896,8 +1896,11 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `members` _[VirtualMachineGroupMemberStatus](#virtualmachinegroupmemberstatus) array_ | Members describes the observed status of group members. |
-| `lastUpdatedPowerStateTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | LastUpdatedPowerStateTime describes the observed time when the power
-state of the group was last updated. |
+| `lastUpdatedPowerStateTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | LastUpdatedPowerStateTime describes the time when the last power state
+request of the group was applied to all its members. It is the start of the
+second after the time of the request, so it is later than that request and
+not later than a request in a later second. A request is applied when this
+time is later than the time of the request. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes any conditions associated with this VM Group.
 
 - The ReadyType condition is True when all of the group members have

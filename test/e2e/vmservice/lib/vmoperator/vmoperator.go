@@ -221,9 +221,13 @@ func hasVirtualMachineIP(
 }
 
 // WaitForVirtualMachineIP checks the VirtualMachine's Status IP. If the
-// first wait times out and disk promotion has started for this VM, that is
-// a plausible cause (promotion can reset guest networking), so it waits for
-// promotion to finish and checks the IP once more.
+// first wait times out, it checks disk promotion state. When promotion has
+// started and is not yet Synced, that is a plausible cause (promotion can
+// reset guest networking), so it waits for promotion to finish and checks the
+// IP once more. The promotion wait is skipped when Synced is already True or
+// PromoteDisksMode is Disabled, since there is nothing to wait for in either
+// case. Synced can be stale for a VM that was promoted earlier and then given
+// a new child disk, until the diskpromo reconciler resets it.
 func WaitForVirtualMachineIP(
 	ctx context.Context,
 	config *config.E2EConfig,
@@ -245,25 +249,34 @@ func WaitForVirtualMachineIP(
 
 	vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
 	Expect(err).ToNot(HaveOccurred())
-	if !meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionStarted) {
-		Fail(fmt.Sprintf("Timed out waiting for disk promotion to complete while waiting for VirtualMachine %s to get an IPv4 address", vmName))
-	}
-
-	By(fmt.Sprintf("VirtualMachine '%s/%s' IP not ready yet; wait for disk promotion in case it's the cause", ns, vmName))
-	promoTimeout, promoPoll := intervalDurations(config.GetIntervals("default", "wait-virtual-machine-disk-promotion"))
-	_ = wait.PollUntilContextTimeout(ctx, promoPoll, promoTimeout, true, func(ctx context.Context) (bool, error) {
-		vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
-		if err != nil {
-			e2eframework.Logf("retry due to: %v", err)
-			return false, nil
+	// Synced=True means promotion already completed or was never needed. For
+	// PromoteDisksMode=Disabled, the diskpromo reconciler removes the Synced
+	// condition, so it never becomes True; skip the wait for those VMs too.
+	// Go straight to the final IP check in both cases.
+	promotionDisabled := vm.Spec.PromoteDisksMode == vmopv1.VirtualMachinePromoteDisksModeDisabled
+	if !promotionDisabled && !meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced) {
+		if !meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionStarted) {
+			Fail(fmt.Sprintf("Timed out waiting for disk promotion to complete while waiting for VirtualMachine %s to get an IPv4 address", vmName))
 		}
 
-		return meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced), nil
-	})
+		By(fmt.Sprintf("VirtualMachine '%s/%s' IP not ready yet; wait for disk promotion in case it's the cause", ns, vmName))
+		promoTimeout, promoPoll := intervalDurations(config.GetIntervals("default", "wait-virtual-machine-disk-promotion"))
+		if err := wait.PollUntilContextTimeout(ctx, promoPoll, promoTimeout, true, func(ctx context.Context) (bool, error) {
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, ns, vmName)
+			if err != nil {
+				e2eframework.Logf("retry due to: %v", err)
+				return false, nil
+			}
+
+			return meta.IsStatusConditionTrue(vm.GetConditions(), vmopv1.VirtualMachineDiskPromotionSynced), nil
+		}); err != nil {
+			e2eframework.Logf("disk promotion did not reach Synced=True for VirtualMachine %s/%s: %v", ns, vmName, err)
+		}
+	}
 
 	By(fmt.Sprintf("Verify that an IP (ipv4) is allocated to the VirtualMachine '%s/%s'", ns, vmName))
 	Expect(hasVirtualMachineIP(ctx, svClusterClient, ns, vmName, ipTimeout, ipPoll)).To(BeTrue(),
-		"Timed out waiting for VirtualMachine %s to get an IPv4 address after waiting for disk promotion to complete", vmName)
+		"Timed out waiting for VirtualMachine %s to get an IPv4 address after checking disk promotion", vmName)
 }
 
 // GetVirtualMachineServiceEndpointsTargetRefNames returns the set of VM names

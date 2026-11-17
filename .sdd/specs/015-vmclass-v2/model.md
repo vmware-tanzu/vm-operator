@@ -181,7 +181,7 @@ The VM API foundation (T108) adds schema and conversion support; the Zone mirror
 
 | Field | Rules |
 |---|---|
-| `status.governingClasses` | Not part of the vmop-4317 API PR: the schema is added to the topology Zone CRD by vcf/tera (T109, `[vmop-TBD]`). Optional string set of class names. Mirror of the classes that govern the zone; written by one controller with an optimistic lock; never read by governance. |
+| `status.governingClasses` | Not part of the vmop-4317 API PR: the schema is added to the topology Zone CRD by vcf/tera (T109, `[vmop-4493]`). Optional string set of class names. Mirror of the classes that govern the zone; written by one controller with an optimistic lock; never read by governance. |
 
 ## Reserved capacity
 

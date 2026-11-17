@@ -379,3 +379,184 @@ func vmPowerStateChangeHookTests() {
 		})
 	})
 }
+
+func vmCreateHookTests() {
+	const stage = lifecycle.StageCreate
+
+	var (
+		parentCtx   context.Context
+		initObjects []client.Object
+		testConfig  builder.VCSimTestConfig
+		ctx         *builder.TestContextForVCSim
+		vmProvider  providers.VirtualMachineProviderInterface
+
+		vm      *vmopv1.VirtualMachine
+		vmClass *vmopv1.VirtualMachineClass
+	)
+
+	BeforeEach(func() {
+		parentCtx = newVMTestParentContext()
+		testConfig = newVMTestConfig()
+
+		vmClass, vm = newVMTestObjects("test-vm")
+		vm.UID = types.UID("create-hook-uid")
+	})
+
+	JustBeforeEach(func() {
+		ctx, vmProvider, _ = setupVMTest(
+			parentCtx, testConfig, vmClass, vm, initObjects...)
+
+		Expect(ctx.Client.Create(ctx, &lifecyclev1.LifecycleSubscribedStages{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: vm.Namespace,
+				Name: lifecyclev1.SubscribedStagesName(
+					lifecycle.TargetGroup, lifecycle.TargetKind),
+			},
+			Spec: lifecyclev1.LifecycleSubscribedStagesSpec{
+				Stages: []string{stage},
+			},
+		})).To(Succeed())
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.LifecycleHooks = true
+		})
+	})
+
+	AfterEach(func() {
+		vmTestAfterEach(ctx, vm)
+
+		vmClass = nil
+		vm = nil
+		ctx = nil
+		initObjects = nil
+		vmProvider = nil
+	})
+
+	getVMState := func() *lifecyclev1.LifecycleState {
+		state := &lifecyclev1.LifecycleState{}
+		ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKey{
+			Namespace: vm.Namespace,
+			Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, vm.UID),
+		}, state)).To(Succeed())
+		return state
+	}
+
+	stagePaused := func() bool {
+		for _, s := range getVMState().Spec.Stages {
+			if s.Name == stage {
+				return s.WorkflowPaused
+			}
+		}
+		Fail("stage " + stage + " not found")
+		return false
+	}
+
+	setHooksReady := func(status metav1.ConditionStatus) {
+		state := getVMState()
+		state.Status.Stages = []lifecyclev1.StageStatus{{
+			Name: stage,
+			Conditions: []metav1.Condition{{
+				Type:               lifecycle.HooksReadyConditionType,
+				Status:             status,
+				Reason:             "AllHooksSucceeded",
+				LastTransitionTime: metav1.Now(),
+			}},
+		}}
+		ExpectWithOffset(1, ctx.Client.Status().Update(ctx, state)).To(Succeed())
+	}
+
+	hookReadyCondition := func() *metav1.Condition {
+		return conditions.Get(vm, vmopv1.VirtualMachineConditionLifecycleHookReady)
+	}
+
+	It("holds the create until the hooks resolve", func() {
+		By("pausing the stage without creating the VM")
+		err := createOrUpdateVM(ctx, vmProvider, vm)
+		Expect(errors.Is(err, lifecycle.ErrHooksBlocked)).To(BeTrue())
+		Expect(vm.Status.UniqueID).To(BeEmpty())
+		Expect(stagePaused()).To(BeTrue())
+		c := hookReadyCondition()
+		Expect(c).ToNot(BeNil())
+		Expect(c.Status).To(Equal(metav1.ConditionFalse))
+		Expect(c.Reason).To(Equal(vmopv1.VirtualMachineLifecycleHookReadyCreateStageReason))
+
+		By("staying held while the hooks are not ready")
+		err = createOrUpdateVM(ctx, vmProvider, vm)
+		Expect(errors.Is(err, lifecycle.ErrHooksBlocked)).To(BeTrue())
+		Expect(vm.Status.UniqueID).To(BeEmpty())
+
+		By("creating the VM once the hooks are ready")
+		setHooksReady(metav1.ConditionTrue)
+		Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+		Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+		Expect(stagePaused()).To(BeFalse())
+		Expect(hookReadyCondition().Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	When("a create prerequisite fails", func() {
+		JustBeforeEach(func() {
+			Expect(ctx.Client.Delete(ctx, vmClass)).To(Succeed())
+		})
+
+		It("does not pause the stage", func() {
+			err := createOrUpdateVM(ctx, vmProvider, vm)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, lifecycle.ErrHooksBlocked)).To(BeFalse())
+			Expect(vm.Status.UniqueID).To(BeEmpty())
+			Expect(hookReadyCondition()).To(BeNil())
+
+			state := &lifecyclev1.LifecycleState{}
+			err = ctx.Client.Get(ctx, client.ObjectKey{
+				Namespace: vm.Namespace,
+				Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, vm.UID),
+			}, state)
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	When("the VM already exists with its status wiped", func() {
+		It("does not reach the gate", func() {
+			By("creating the VM once the hooks are ready")
+			Expect(errors.Is(
+				createOrUpdateVM(ctx, vmProvider, vm),
+				lifecycle.ErrHooksBlocked)).To(BeTrue())
+			setHooksReady(metav1.ConditionTrue)
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+
+			By("updating after the Lifecycle Operator clears the stage")
+			state := getVMState()
+			state.Status.Stages = nil
+			Expect(ctx.Client.Status().Update(ctx, state)).To(Succeed())
+			vm.Status = vmopv1.VirtualMachineStatus{}
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			Expect(stagePaused()).To(BeFalse())
+		})
+	})
+
+	When("the capability is off", func() {
+		JustBeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.LifecycleHooks = false
+			})
+		})
+
+		It("creates without pausing", func() {
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+			Expect(hookReadyCondition()).To(BeNil())
+		})
+	})
+
+	When("no hook is registered for the stage", func() {
+		JustBeforeEach(func() {
+			Expect(ctx.Client.DeleteAllOf(
+				ctx,
+				&lifecyclev1.LifecycleSubscribedStages{},
+				client.InNamespace(vm.Namespace))).To(Succeed())
+		})
+
+		It("creates without pausing", func() {
+			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+			Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+		})
+	})
+}

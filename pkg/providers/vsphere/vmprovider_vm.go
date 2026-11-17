@@ -251,6 +251,10 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 			return nil, err
 		}
 
+		if err := vs.reconcileCreateStage(vmCtx); err != nil {
+			return nil, err
+		}
+
 		if _, err := vs.createVirtualMachine(
 			vmCtx,
 			client,
@@ -295,6 +299,10 @@ func (vs *vSphereVMProvider) createOrUpdateVirtualMachine(
 
 	createArgs, err := vs.getCreateArgs(vmCtx, client)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := vs.reconcileCreateStage(vmCtx); err != nil {
 		return nil, err
 	}
 
@@ -1797,6 +1805,24 @@ func (vs *vSphereVMProvider) abandonPowerStateChange(
 		vs.k8sClient,
 		vmCtx.VM,
 		lifecycle.StagePowerStateChange)
+}
+
+// reconcileCreateStage holds the vSphere create until the Create stage hooks
+// resolve. It runs after the create prerequisites succeed so a transient
+// failure in them does not re-run the hooks, and it keys off getVM, not
+// Status.UniqueID, since snapshot revert wipes the status of an existing VM.
+// It returns lifecycle.ErrHooksBlocked while the create is held.
+func (vs *vSphereVMProvider) reconcileCreateStage(
+	vmCtx pkgctx.VirtualMachineContext) error {
+
+	proceed, err := vs.reconcileLifecycleStage(vmCtx, lifecycle.StageCreate)
+	if err != nil {
+		return err
+	}
+	if !proceed {
+		return lifecycle.ErrHooksBlocked
+	}
+	return nil
 }
 
 // reconcileLifecycleStage gets or creates the VM's LifecycleState and evaluates

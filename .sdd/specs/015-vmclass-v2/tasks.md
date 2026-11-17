@@ -1,6 +1,7 @@
 # Tasks: Flex VM Classes (`VirtualMachineClass` v2)
 
 - **Input**: [`spec.md`](spec.md) + [`plan.md`](plan.md) + [`model.md`](model.md); design in WIKI page 3118085463 and its child pages
+- **Test design**: [tds.md](tds.md); integration/E2E delivery and validation: [test-plan.md](test-plan.md)
 - **Epic**: vmop-4034 (design); one phase per implementation epic below
 - **Format**: `[ID] [P?] [USx] [vmop-NNN] Description — file paths`
 - **E2E**: every story's E2E task ships in the same story and runs in the quarantined capability pipeline (vmop-4314) until enablement (vmop-4337)

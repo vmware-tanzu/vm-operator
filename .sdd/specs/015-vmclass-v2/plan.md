@@ -122,6 +122,8 @@ Tracked in the provider's spec and listed in tasks.md as dependency tasks T910â€
 
 ## Test strategy
 
+The [TDS](tds.md) defines integration and E2E scenarios F01â€“F52 (F07 removed, pending T122). The [test execution plan](test-plan.md) maps them to suites, fixtures, delivery stories and enablement evidence.
+
 - Unit tests with `testlabels` category labels for every webhook rule and the governance package; envtest for every CEL rule and for conversion, including the three-state zone round trip.
 - vcsim for the class controller, the VM reconciler, placement and the environment-browser re-query rule (call counts on the fake provider).
 - E2E ships inside each story, in the quarantined capability pipeline (vmop-4314); the enablement story (vmop-4337) takes it out of quarantine after a full sweep.

@@ -99,7 +99,7 @@ image-build-quicktype: $(QUICKTYPE_IMAGE_RECEIPT)
 
 quicktype: $(QUICKTYPE)
 $(QUICKTYPE): $(QUICK_DIR)/package.json
-	cd $(QUICK_DIR) && npm ci --user quicktype
+	cd $(QUICK_DIR) && npm ci
 
 
 ## --------------------------------------

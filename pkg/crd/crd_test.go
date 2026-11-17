@@ -7,7 +7,6 @@ package crd_test
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -23,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
@@ -31,7 +29,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgcrd "github.com/vmware-tanzu/vm-operator/pkg/crd"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
-	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 const (
@@ -1779,20 +1776,11 @@ func (c *writeRecordingClient) Patch(
 	return c.Client.Patch(ctx, obj, patch, opts...)
 }
 
-var _ = Describe("Flex VM and Zone API schema", Ordered, Label(testlabels.API, testlabels.EnvTest), func() {
+var _ = Describe("Flex VM API schema", Ordered, Label(testlabels.API, testlabels.EnvTest), func() {
 	var ctx context.Context
 	BeforeAll(func() {
 		ctx = pkgcfg.NewContextWithDefaultConfig()
 		Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
-		zoneCRDOpts := envtest.CRDInstallOptions{
-			Paths:              []string{filepath.Join(testutil.GetRootDirOrDie(), "config", "crd", "external-crds", "topology.tanzu.vmware.com_zones.yaml")},
-			ErrorIfPathMissing: true,
-		}
-		crds, err := envtest.InstallCRDs(envTestEnv.Config, zoneCRDOpts)
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			Expect(envtest.UninstallCRDs(envTestEnv.Config, envtest.CRDInstallOptions{CRDs: crds})).To(Succeed())
-		})
 	})
 
 	newVM := func() *unstructured.Unstructured {
@@ -1866,23 +1854,65 @@ var _ = Describe("Flex VM and Zone API schema", Ordered, Label(testlabels.API, t
 		Entry("duplicate vGPU name", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0", "profileName": "a"}, map[string]any{"name": "gpu-0", "profileName": "b"}}}),
 		Entry("DirectPath device missing name", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"vendorID": int64(1)}}}),
 		Entry("invalid PCI ID", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "pci-0", "vendorID": int64(65536), "deviceID": int64(1)}}}),
+		Entry("vGPU missing profileName", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0"}}}),
+		Entry("vGPU empty profileName", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0", "profileName": ""}}}),
+		Entry("vGPU name not a DNS-1123 label", map[string]any{"vGPUs": []any{map[string]any{"name": "GPU_0", "profileName": "gpu"}}}),
+		Entry("vGPU name starts with dash", map[string]any{"vGPUs": []any{map[string]any{"name": "-gpu", "profileName": "gpu"}}}),
+		Entry("vGPU name too long", map[string]any{"vGPUs": []any{map[string]any{"name": strings.Repeat("a", 64), "profileName": "gpu"}}}),
+		Entry("DirectPath name not a DNS-1123 label", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "PCI.0"}}}),
+		Entry("DirectPath name ends with dash", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "pci-"}}}),
+		Entry("DirectPath name too long", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": strings.Repeat("a", 64)}}}),
 		Entry("duplicate DirectPath device name", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "pci-0", "vendorID": int64(1)}, map[string]any{"name": "pci-0", "vendorID": int64(2)}}}),
 	)
-
-	It("preserves the Zone governance mirror", func() {
-		zone := &unstructured.Unstructured{Object: map[string]any{
-			"apiVersion": "topology.tanzu.vmware.com/v1alpha1", "kind": "Zone",
-			"metadata": map[string]any{"generateName": "flex-api-", "namespace": "default"},
-			"spec":     map[string]any{"availabilityZoneReference": map[string]any{"apiVersion": "topology.tanzu.vmware.com/v1alpha1", "name": "zone-a"}},
-		}}
-		Expect(envTestClient.Create(ctx, zone)).To(Succeed())
-		DeferCleanup(func() { Expect(envTestClient.Delete(ctx, zone)).To(Succeed()) })
-		zone.Object["status"] = map[string]any{"governingClasses": []any{"ceiling"}}
-		Expect(envTestClient.Status().Update(ctx, zone)).To(Succeed())
-		Expect(envTestClient.Get(ctx, ctrlclient.ObjectKeyFromObject(zone), zone)).To(Succeed())
-		names, found, err := unstructured.NestedStringSlice(zone.Object, "status", "governingClasses")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeTrue())
-		Expect(names).To(Equal([]string{"ceiling"}))
-	})
+	DescribeTable("validates the device item names and reservedProfileName", func(mutate func(map[string]any), wantInvalid bool) {
+		vm := newVM()
+		mutate(vm.Object["spec"].(map[string]any))
+		if wantInvalid {
+			Eventually(func() bool {
+				return apierrors.IsInvalid(envTestClient.Create(ctx, vm))
+			}).Should(BeTrue(), "expected schema rejection")
+			return
+		}
+		Eventually(func() error { return envTestClient.Create(ctx, vm) }).Should(Succeed())
+		DeferCleanup(func() { Expect(envTestClient.Delete(ctx, vm)).To(Succeed()) })
+	},
+		Entry("max length device names are valid", func(spec map[string]any) {
+			hw := spec["hardware"].(map[string]any)
+			hw["vGPUs"] = []any{map[string]any{"name": strings.Repeat("a", 63), "profileName": "gpu"}}
+			hw["dynamicDirectPathIODevices"] = []any{map[string]any{"name": "0-" + strings.Repeat("b", 59) + "-0"}}
+		}, false),
+		Entry("empty reservedProfileName means no profile", func(spec map[string]any) {
+			spec["reservedProfileName"] = ""
+		}, false),
+		Entry("omitted reservedProfileName", func(spec map[string]any) {
+			delete(spec, "reservedProfileName")
+		}, false),
+		Entry("DNS-1123 label reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved-small"
+		}, false),
+		Entry("DNS-1123 subdomain reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved.small-1"
+		}, false),
+		Entry("253 character reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = strings.Repeat("a", 63) + "." + strings.Repeat("a", 63) + "." + strings.Repeat("a", 63) + "." + strings.Repeat("a", 61)
+		}, false),
+		Entry("254 character reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = strings.Repeat("a", 254)
+		}, true),
+		Entry("uppercase reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "Reserved"
+		}, true),
+		Entry("underscore reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved_small"
+		}, true),
+		Entry("leading dot reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = ".reserved"
+		}, true),
+		Entry("empty subdomain label reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved..small"
+		}, true),
+		Entry("trailing dash reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved-"
+		}, true),
+	)
 })

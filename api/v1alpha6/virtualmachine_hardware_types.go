@@ -622,15 +622,18 @@ type VirtualMachineHardwareStatus struct {
 // VirtualMachineVGPUDevice describes one desired vGPU device.
 type VirtualMachineVGPUDevice struct {
 	// +required
-	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 
-	// Name uniquely identifies the device within the VM's vGPU list.
+	// Name uniquely identifies the device within the VM's vGPU list. It must be
+	// a DNS-1123 label.
 	Name string `json:"name"`
 
-	// +optional
+	// +required
+	// +kubebuilder:validation:MinLength=1
 
 	// ProfileName identifies the vGPU profile in the environment browser.
-	ProfileName string `json:"profileName,omitempty"`
+	ProfileName string `json:"profileName"`
 
 	// +optional
 
@@ -643,10 +646,11 @@ type VirtualMachineVGPUDevice struct {
 // DirectPath I/O device.
 type VirtualMachineDynamicDirectPathIODevice struct {
 	// +required
-	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 
 	// Name uniquely identifies the device within the VM's Dynamic DirectPath
-	// I/O device list.
+	// I/O device list. It must be a DNS-1123 label.
 	Name string `json:"name"`
 
 	// +optional

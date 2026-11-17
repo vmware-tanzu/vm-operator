@@ -823,10 +823,13 @@ const (
 // VirtualMachineSpec defines the desired state of a VirtualMachine.
 type VirtualMachineSpec struct {
 	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$`
 
 	// ReservedProfileName identifies a VirtualMachineReservedProfile in this
 	// namespace. Omission inherits the class or governing class default; an
-	// explicit empty string selects no profile. A selected profile must match
+	// explicit empty string selects no profile. A non-empty value must be a
+	// DNS-1123 subdomain. A selected profile must match
 	// the VM's CPU, memory and passthrough device configuration.
 	ReservedProfileName *string `json:"reservedProfileName,omitempty"`
 

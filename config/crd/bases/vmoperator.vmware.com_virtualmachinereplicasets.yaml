@@ -9929,8 +9929,9 @@ spec:
                                 name:
                                   description: |-
                                     Name uniquely identifies the device within the VM's Dynamic DirectPath
-                                    I/O device list.
-                                  minLength: 1
+                                    I/O device list. It must be a DNS-1123 label.
+                                  maxLength: 63
+                                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                                   type: string
                                 vendorID:
                                   description: VendorID is the PCI vendor ID, matching
@@ -10080,16 +10081,20 @@ spec:
                                     device.
                                   type: boolean
                                 name:
-                                  description: Name uniquely identifies the device
-                                    within the VM's vGPU list.
-                                  minLength: 1
+                                  description: |-
+                                    Name uniquely identifies the device within the VM's vGPU list. It must be
+                                    a DNS-1123 label.
+                                  maxLength: 63
+                                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                                   type: string
                                 profileName:
                                   description: ProfileName identifies the vGPU profile
                                     in the environment browser.
+                                  minLength: 1
                                   type: string
                               required:
                               - name
+                              - profileName
                               type: object
                             type: array
                             x-kubernetes-list-map-keys:
@@ -11071,8 +11076,11 @@ spec:
                         description: |-
                           ReservedProfileName identifies a VirtualMachineReservedProfile in this
                           namespace. Omission inherits the class or governing class default; an
-                          explicit empty string selects no profile. A selected profile must match
+                          explicit empty string selects no profile. A non-empty value must be a
+                          DNS-1123 subdomain. A selected profile must match
                           the VM's CPU, memory and passthrough device configuration.
+                        maxLength: 253
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                         type: string
                       resources:
                         description: |-

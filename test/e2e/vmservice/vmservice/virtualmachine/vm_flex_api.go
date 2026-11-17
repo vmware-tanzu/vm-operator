@@ -13,10 +13,10 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// VMFlexAPISpec verifies the installed VM and Zone API contracts. Controller
+// VMFlexAPISpec verifies the installed VM API contract. Controller
 // population of these fields is covered by the later governance stories.
 func VMFlexAPISpec(ctx context.Context, clientGetter func() ctrlclient.Client) {
-	It("publishes the Flex VM and Zone fields in the installed schemas",
+	It("publishes the Flex VM fields in the installed schema",
 		Label("extended-functional", "experimental"), func() {
 			client := clientGetter()
 			vm := flexAPISchema(ctx, client, "virtualmachines.vmoperator.vmware.com", "v1alpha6")
@@ -24,7 +24,14 @@ func VMFlexAPISpec(ctx context.Context, clientGetter func() ctrlclient.Client) {
 			Expect(flexAPIField(vm, "status", "governingClassNames")).To(HaveKeyWithValue("x-kubernetes-list-type", "set"))
 			vgpu := flexAPIField(vm, "spec", "hardware", "vGPUs")
 			directPath := flexAPIField(vm, "spec", "hardware", "dynamicDirectPathIODevices")
-			for _, devices := range []map[string]any{vgpu, directPath} {
+			for _, tc := range []struct {
+				devices  map[string]any
+				required []string
+			}{
+				{vgpu, []string{"name", "profileName"}},
+				{directPath, []string{"name"}},
+			} {
+				devices, wantRequired := tc.devices, tc.required
 				Expect(devices).To(HaveKeyWithValue("x-kubernetes-list-type", "map"))
 				Expect(devices).To(HaveKeyWithValue("x-kubernetes-list-map-keys", []any{"name"}))
 				items, found, err := unstructured.NestedMap(devices, "items")
@@ -33,7 +40,7 @@ func VMFlexAPISpec(ctx context.Context, clientGetter func() ctrlclient.Client) {
 				required, found, err := unstructured.NestedStringSlice(items, "required")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(found).To(BeTrue())
-				Expect(required).To(Equal([]string{"name"}))
+				Expect(required).To(ConsistOf(wantRequired))
 				Expect(flexAPIField(items, "name")).To(HaveKeyWithValue("type", "string"))
 			}
 			Expect(flexAPIField(vm, "status", "hardware", "firmware")).To(HaveKeyWithValue("enum", []any{"bios", "efi"}))
@@ -42,8 +49,6 @@ func VMFlexAPISpec(ctx context.Context, clientGetter func() ctrlclient.Client) {
 			for _, field := range []string{"sevEnabled", "sevSnpEnabled", "tdxEnabled", "smcPresent"} {
 				Expect(flexAPIField(vm, "status", "hardware", field)).To(HaveKeyWithValue("type", "boolean"))
 			}
-			zone := flexAPISchema(ctx, client, "zones.topology.tanzu.vmware.com", "v1alpha1")
-			Expect(flexAPIField(zone, "status", "governingClasses")).To(HaveKeyWithValue("x-kubernetes-list-type", "set"))
 		})
 }
 

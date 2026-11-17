@@ -24,7 +24,6 @@ import (
 
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	"github.com/vmware-tanzu/vm-operator/pkg/config/capabilities"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
@@ -103,7 +102,6 @@ func VMClassSchemaUpgradeSpec(ctx context.Context, inputGetter func() VMClassSch
 		client = proxy.GetClient()
 		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
 		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
-		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, capabilities.CapabilityKeyImmutableClasses)
 	})
 
 	It("prepares a legacy VMClass and powered-on VM for the operator upgrade", Label("core-functional", "experimental"), func() {

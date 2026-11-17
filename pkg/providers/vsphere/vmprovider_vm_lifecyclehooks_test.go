@@ -32,6 +32,79 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+// hookStageHelper reads and drives the LifecycleState of a VM for one stage,
+// standing in for the Lifecycle Operator. The context and VM are fetched
+// through getters because the specs assign them after the helper is built.
+type hookStageHelper struct {
+	getCtx func() *builder.TestContextForVCSim
+	getVM  func() *vmopv1.VirtualMachine
+	stage  string
+}
+
+// subscribe lists the stage in the namespace's LifecycleSubscribedStages.
+func (h hookStageHelper) subscribe() {
+	ctx, vm := h.getCtx(), h.getVM()
+	ExpectWithOffset(1, ctx.Client.Create(ctx, &lifecyclev1.LifecycleSubscribedStages{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: vm.Namespace,
+			Name: lifecyclev1.SubscribedStagesName(
+				lifecycle.TargetGroup, lifecycle.TargetKind),
+		},
+		Spec: lifecyclev1.LifecycleSubscribedStagesSpec{
+			Stages: []string{h.stage},
+		},
+	})).To(Succeed())
+}
+
+func (h hookStageHelper) state() *lifecyclev1.LifecycleState {
+	ctx, vm := h.getCtx(), h.getVM()
+	state := &lifecyclev1.LifecycleState{}
+	ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, vm.UID),
+	}, state)).To(Succeed())
+	return state
+}
+
+func (h hookStageHelper) stageSpec() lifecyclev1.StageSpec {
+	for _, s := range h.state().Spec.Stages {
+		if s.Name == h.stage {
+			return s
+		}
+	}
+	Fail("stage " + h.stage + " not found")
+	return lifecyclev1.StageSpec{}
+}
+
+func (h hookStageHelper) paused() bool  { return h.stageSpec().WorkflowPaused }
+func (h hookStageHelper) resumed() bool { return h.stageSpec().WorkflowResumed }
+
+// setHooksReady simulates the Lifecycle Operator reporting the hooks'
+// outcome. A nil status clears the stage's entry, as the Lifecycle Operator
+// does once a stage has been resumed.
+func (h hookStageHelper) setHooksReady(status *metav1.ConditionStatus) {
+	ctx := h.getCtx()
+	state := h.state()
+	state.Status.Stages = nil
+	if status != nil {
+		state.Status.Stages = []lifecyclev1.StageStatus{{
+			Name: h.stage,
+			Conditions: []metav1.Condition{{
+				Type:               lifecycle.HooksReadyConditionType,
+				Status:             *status,
+				Reason:             "AllHooksSucceeded",
+				LastTransitionTime: metav1.Now(),
+			}},
+		}}
+	}
+	ExpectWithOffset(1, ctx.Client.Status().Update(ctx, state)).To(Succeed())
+}
+
+func (h hookStageHelper) hookReadyCondition() *metav1.Condition {
+	return conditions.Get(
+		h.getVM(), vmopv1.VirtualMachineConditionLifecycleHookReady)
+}
+
 func vmPowerStateChangeHookTests() {
 	const stage = lifecycle.StagePowerStateChange
 
@@ -48,6 +121,12 @@ func vmPowerStateChangeHookTests() {
 		vcVM    *object.VirtualMachine
 		moVM    mo.VirtualMachine
 	)
+
+	h := hookStageHelper{
+		getCtx: func() *builder.TestContextForVCSim { return ctx },
+		getVM:  func() *vmopv1.VirtualMachine { return vm },
+		stage:  stage,
+	}
 
 	BeforeEach(func() {
 		parentCtx = newVMTestParentContext()
@@ -72,16 +151,7 @@ func vmPowerStateChangeHookTests() {
 		Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 		Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 
-		Expect(ctx.Client.Create(ctx, &lifecyclev1.LifecycleSubscribedStages{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: vm.Namespace,
-				Name: lifecyclev1.SubscribedStagesName(
-					lifecycle.TargetGroup, lifecycle.TargetKind),
-			},
-			Spec: lifecyclev1.LifecycleSubscribedStagesSpec{
-				Stages: []string{stage},
-			},
-		})).To(Succeed())
+		h.subscribe()
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.Features.LifecycleHooks = true
 		})
@@ -100,58 +170,10 @@ func vmPowerStateChangeHookTests() {
 		nsInfo = builder.WorkloadNamespaceInfo{}
 	})
 
-	getVMState := func() *lifecyclev1.LifecycleState {
-		state := &lifecyclev1.LifecycleState{}
-		ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKey{
-			Namespace: vm.Namespace,
-			Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, vm.UID),
-		}, state)).To(Succeed())
-		return state
-	}
-
-	stagePaused := func() bool {
-		for _, s := range getVMState().Spec.Stages {
-			if s.Name == stage {
-				return s.WorkflowPaused
-			}
-		}
-		Fail("stage " + stage + " not found")
-		return false
-	}
-
-	stageResumed := func() bool {
-		for _, s := range getVMState().Spec.Stages {
-			if s.Name == stage {
-				return s.WorkflowResumed
-			}
-		}
-		Fail("stage " + stage + " not found")
-		return false
-	}
-
-	// setHooksReady simulates the Lifecycle Operator reporting the hooks'
-	// outcome. A nil status clears the stage's entry, as the Lifecycle Operator
-	// does once a stage has been resumed.
-	setHooksReady := func(status *metav1.ConditionStatus) {
-		state := getVMState()
-		state.Status.Stages = nil
-		if status != nil {
-			state.Status.Stages = []lifecyclev1.StageStatus{{
-				Name: stage,
-				Conditions: []metav1.Condition{{
-					Type:               lifecycle.HooksReadyConditionType,
-					Status:             *status,
-					Reason:             "AllHooksSucceeded",
-					LastTransitionTime: metav1.Now(),
-				}},
-			}}
-		}
-		ExpectWithOffset(1, ctx.Client.Status().Update(ctx, state)).To(Succeed())
-	}
-
-	hookReadyCondition := func() *metav1.Condition {
-		return conditions.Get(vm, vmopv1.VirtualMachineConditionLifecycleHookReady)
-	}
+	stagePaused := h.paused
+	stageResumed := h.resumed
+	setHooksReady := h.setHooksReady
+	hookReadyCondition := h.hookReadyCondition
 
 	expectVCPowerState := func(expected vimtypes.VirtualMachinePowerState) {
 		ExpectWithOffset(1, vcVM.Properties(
@@ -394,6 +416,12 @@ func vmCreateHookTests() {
 		vmClass *vmopv1.VirtualMachineClass
 	)
 
+	h := hookStageHelper{
+		getCtx: func() *builder.TestContextForVCSim { return ctx },
+		getVM:  func() *vmopv1.VirtualMachine { return vm },
+		stage:  stage,
+	}
+
 	BeforeEach(func() {
 		parentCtx = newVMTestParentContext()
 		testConfig = newVMTestConfig()
@@ -406,16 +434,7 @@ func vmCreateHookTests() {
 		ctx, vmProvider, _ = setupVMTest(
 			parentCtx, testConfig, vmClass, vm, initObjects...)
 
-		Expect(ctx.Client.Create(ctx, &lifecyclev1.LifecycleSubscribedStages{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: vm.Namespace,
-				Name: lifecyclev1.SubscribedStagesName(
-					lifecycle.TargetGroup, lifecycle.TargetKind),
-			},
-			Spec: lifecyclev1.LifecycleSubscribedStagesSpec{
-				Stages: []string{stage},
-			},
-		})).To(Succeed())
+		h.subscribe()
 		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
 			config.Features.LifecycleHooks = true
 		})
@@ -431,42 +450,9 @@ func vmCreateHookTests() {
 		vmProvider = nil
 	})
 
-	getVMState := func() *lifecyclev1.LifecycleState {
-		state := &lifecyclev1.LifecycleState{}
-		ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKey{
-			Namespace: vm.Namespace,
-			Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, vm.UID),
-		}, state)).To(Succeed())
-		return state
-	}
-
-	stagePaused := func() bool {
-		for _, s := range getVMState().Spec.Stages {
-			if s.Name == stage {
-				return s.WorkflowPaused
-			}
-		}
-		Fail("stage " + stage + " not found")
-		return false
-	}
-
-	setHooksReady := func(status metav1.ConditionStatus) {
-		state := getVMState()
-		state.Status.Stages = []lifecyclev1.StageStatus{{
-			Name: stage,
-			Conditions: []metav1.Condition{{
-				Type:               lifecycle.HooksReadyConditionType,
-				Status:             status,
-				Reason:             "AllHooksSucceeded",
-				LastTransitionTime: metav1.Now(),
-			}},
-		}}
-		ExpectWithOffset(1, ctx.Client.Status().Update(ctx, state)).To(Succeed())
-	}
-
-	hookReadyCondition := func() *metav1.Condition {
-		return conditions.Get(vm, vmopv1.VirtualMachineConditionLifecycleHookReady)
-	}
+	stagePaused := h.paused
+	hookReadyCondition := h.hookReadyCondition
+	setHooksReady := func(status metav1.ConditionStatus) { h.setHooksReady(&status) }
 
 	It("holds the create until the hooks resolve", func() {
 		By("pausing the stage without creating the VM")
@@ -523,7 +509,7 @@ func vmCreateHookTests() {
 			Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
 
 			By("updating after the Lifecycle Operator clears the stage")
-			state := getVMState()
+			state := h.state()
 			state.Status.Stages = nil
 			Expect(ctx.Client.Status().Update(ctx, state)).To(Succeed())
 			vm.Status = vmopv1.VirtualMachineStatus{}

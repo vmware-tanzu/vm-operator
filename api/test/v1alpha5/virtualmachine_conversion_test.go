@@ -741,14 +741,19 @@ func TestVirtualMachineConversion(t *testing.T) {
 
 func TestVirtualMachineFlexAPIRoundTrip(t *testing.T) {
 	for _, profile := range []*string{nil, ptr.To(""), ptr.To("reserved-small")} {
-		for name, spoke := range map[string]ctrlconversion.Convertible{
-			"v1alpha1": &vmopv1a1.VirtualMachine{},
-			"v1alpha2": &vmopv1a2.VirtualMachine{},
-			"v1alpha3": &vmopv1a3.VirtualMachine{},
-			"v1alpha4": &vmopv1a4.VirtualMachine{},
-			"v1alpha5": &vmopv1a5.VirtualMachine{},
+		profileName := "nil"
+		if profile != nil {
+			profileName = "value-" + *profile
+		}
+		for name, newSpoke := range map[string]func() ctrlconversion.Convertible{
+			"v1alpha1": func() ctrlconversion.Convertible { return &vmopv1a1.VirtualMachine{} },
+			"v1alpha2": func() ctrlconversion.Convertible { return &vmopv1a2.VirtualMachine{} },
+			"v1alpha3": func() ctrlconversion.Convertible { return &vmopv1a3.VirtualMachine{} },
+			"v1alpha4": func() ctrlconversion.Convertible { return &vmopv1a4.VirtualMachine{} },
+			"v1alpha5": func() ctrlconversion.Convertible { return &vmopv1a5.VirtualMachine{} },
 		} {
-			t.Run(name, func(t *testing.T) {
+			t.Run(name+"/reservedProfileName="+profileName, func(t *testing.T) {
+				spoke := newSpoke()
 				g := NewWithT(t)
 				original := &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
@@ -781,9 +786,10 @@ func TestVirtualMachineFlexAPIRoundTrip(t *testing.T) {
 				// Exercise the actual wire format, including the conversion annotation.
 				wire, err := json.Marshal(spoke)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(json.Unmarshal(wire, spoke)).To(Succeed())
+				fromWire := newSpoke()
+				g.Expect(json.Unmarshal(wire, fromWire)).To(Succeed())
 				restored := &vmopv1.VirtualMachine{}
-				g.Expect(spoke.ConvertTo(restored)).To(Succeed())
+				g.Expect(fromWire.ConvertTo(restored)).To(Succeed())
 				g.Expect(restored.Spec.ReservedProfileName).To(Equal(profile))
 				g.Expect(restored.Spec.Hardware.VGPUs).To(Equal(original.Spec.Hardware.VGPUs))
 				g.Expect(restored.Spec.Hardware.DynamicDirectPathIODevices).To(Equal(original.Spec.Hardware.DynamicDirectPathIODevices))
@@ -826,4 +832,52 @@ func TestVirtualMachineFlexAPIDeepCopy(t *testing.T) {
 	wire, err = json.Marshal(original.Spec)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(string(wire)).NotTo(ContainSubstring("reservedProfileName"))
+}
+
+func TestVirtualMachineReplicaSetFlexAPIRoundTrip(t *testing.T) {
+	for _, profile := range []*string{nil, ptr.To(""), ptr.To("reserved-small")} {
+		profileName := "nil"
+		if profile != nil {
+			profileName = "value-" + *profile
+		}
+		for name, newSpoke := range map[string]func() ctrlconversion.Convertible{
+			"v1alpha3": func() ctrlconversion.Convertible { return &vmopv1a3.VirtualMachineReplicaSet{} },
+			"v1alpha4": func() ctrlconversion.Convertible { return &vmopv1a4.VirtualMachineReplicaSet{} },
+			"v1alpha5": func() ctrlconversion.Convertible { return &vmopv1a5.VirtualMachineReplicaSet{} },
+		} {
+			t.Run(name+"/reservedProfileName="+profileName, func(t *testing.T) {
+				g := NewWithT(t)
+				original := &vmopv1.VirtualMachineReplicaSet{
+					Spec: vmopv1.VirtualMachineReplicaSetSpec{
+						Template: vmopv1.VirtualMachineTemplateSpec{
+							Spec: vmopv1.VirtualMachineSpec{
+								ReservedProfileName: profile,
+								Hardware: &vmopv1.VirtualMachineHardwareSpec{
+									VGPUs: []vmopv1.VirtualMachineVGPUDevice{
+										{Name: "gpu-0", ProfileName: "gpu-small", EnableUVM: ptr.To(false)},
+									},
+									DynamicDirectPathIODevices: []vmopv1.VirtualMachineDynamicDirectPathIODevice{
+										{Name: "pci-0", VendorID: ptr.To[int64](4318), DeviceID: ptr.To[int64](0), CustomLabel: "device"},
+									},
+								},
+							},
+						},
+					},
+				}
+				spoke := newSpoke()
+				g.Expect(spoke.ConvertFrom(original)).To(Succeed())
+				wire, err := json.Marshal(spoke)
+				g.Expect(err).NotTo(HaveOccurred())
+				fromWire := newSpoke()
+				g.Expect(json.Unmarshal(wire, fromWire)).To(Succeed())
+				restored := &vmopv1.VirtualMachineReplicaSet{}
+				g.Expect(fromWire.ConvertTo(restored)).To(Succeed())
+				tmpl := restored.Spec.Template.Spec
+				g.Expect(tmpl.ReservedProfileName).To(Equal(profile))
+				g.Expect(tmpl.Hardware).NotTo(BeNil())
+				g.Expect(tmpl.Hardware.VGPUs).To(Equal(original.Spec.Template.Spec.Hardware.VGPUs))
+				g.Expect(tmpl.Hardware.DynamicDirectPathIODevices).To(Equal(original.Spec.Template.Spec.Hardware.DynamicDirectPathIODevices))
+			})
+		}
+	}
 }

@@ -225,6 +225,18 @@ func KubectlDescribeWithNamespacedName(ctx context.Context, kubeconfigPath, reso
 	return applyCmd.Run(ctx)
 }
 
+// KubectlDescribeWithNamespacedNames runs a single `kubectl describe` for all
+// the given names of one resource type in a namespace.
+func KubectlDescribeWithNamespacedNames(ctx context.Context, kubeconfigPath, resource, ns string, names ...string) ([]byte, []byte, error) {
+	aargs := append([]string{"--kubeconfig", kubeconfigPath, "describe", resource, "-n", ns}, names...)
+	applyCmd := NewCommand(
+		WithCommand("kubectl"),
+		WithArgs(aargs...),
+	)
+
+	return applyCmd.Run(ctx)
+}
+
 // Command wraps Command with specific functionality.
 // This differentiates itself from the standard library by always collecting stdout and stderr.
 // Command improves the UX of Command for our specific use case.

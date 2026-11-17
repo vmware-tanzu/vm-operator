@@ -153,7 +153,7 @@ Blocked on a vSphere and govmomi release with the vmx-23 fields. Not a gate for 
 
 - [ ] T203 [US2] [vmop-4323] Class controller: per-zone `WithinGovernance` and `Governing`, re-checked on every reconcile — `controllers/virtualmachineclass`
 - [ ] T204 [US2] [vmop-4323] Zone mirror controller: `Zone.status.governingClasses` from classes; optimistic-lock patch, skip unchanged writes; never read by governance. Depends on T109 — `controllers/infra/zone`
-- [ ] T205 [US4] [vmop-4323] Re-base the `ClassInstance` hash onto typed fields — `controllers/virtualmachineclass`
+- [ ] T205 [US4] [vmop-4323] Re-base the `ClassInstance` hash onto typed fields. Superseded by T122: the instance hash is removed with the immutable VM classes code rather than re-based — `controllers/virtualmachineclass`
 - [ ] T205a [US2] [vmop-4323] E2E: narrowing a governing class marks a selectable class `WithinGovernance=False`
 
 ---
@@ -213,7 +213,7 @@ Depends on the provider's reserved profile publication (T910).
 
 - [ ] T408 [US10] [vmop-4334] VM validating webhook: `reservedProfileName` must be in the class's (or governing class's) `allowed`; after defaulting, every VM with a selected profile must match the `VirtualMachineReservedProfile` shape (T008), naming the field and the profile; a resize past the profile is rejected; inline edits on a class-backed VM are rejected; a set value can't change to another while powered on, unset-to-set by vm-operator is allowed; a class change of a reserved VM only while powered off (per T018) — `webhooks/virtualmachine/validation`
 - [ ] T409 [US10] [vmop-4334] Write the extraConfig profile ID from `spec.reservedProfileName`, falling back to the class's `reservedProfileName` (not the removed `reservedProfileID`) while the VM field is unset, and remove the key when the field is empty (fixes the stale `resourcepool.vmResourceProfileId` after moving to an unreserved class). Runs after T110 — `pkg/providers/vsphere/virtualmachine/configspec.go`
-- [ ] T411 [US10] [vmop-4334] Move the class controller's `ReservedProfileID` reader (including the `ClassInstance` hash `Reserved` bool) to `reservedProfileName`, since v1alpha6 has no `reservedProfileID` — `controllers/virtualmachineclass/virtualmachineclass_controller.go`
+- [ ] T411 [US10] [vmop-4334] Move the class controller's `ReservedProfileID` reader (including the `ClassInstance` hash `Reserved` bool) to `reservedProfileName`, since v1alpha6 has no `reservedProfileID`. The `ClassInstance` hash part is superseded by T122 — `controllers/virtualmachineclass/virtualmachineclass_controller.go`
 - [ ] T410 [US10] [vmop-4334] E2E: a VM of a reserved class keeps its reservation after upgrade; a VM whose shape differs from its profile is rejected; a VM moved to an unreserved class loses the profile ID
 
 ---

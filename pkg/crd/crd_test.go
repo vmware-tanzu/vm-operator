@@ -1779,16 +1779,20 @@ func (c *writeRecordingClient) Patch(
 	return c.Client.Patch(ctx, obj, patch, opts...)
 }
 
-var _ = Describe("Flex VM and Zone API schema", Label(testlabels.API, testlabels.EnvTest), func() {
+var _ = Describe("Flex VM and Zone API schema", Ordered, Label(testlabels.API, testlabels.EnvTest), func() {
 	var ctx context.Context
-	BeforeEach(func() {
+	BeforeAll(func() {
 		ctx = pkgcfg.NewContextWithDefaultConfig()
 		Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
-		_, err := envtest.InstallCRDs(envTestEnv.Config, envtest.CRDInstallOptions{
+		zoneCRDOpts := envtest.CRDInstallOptions{
 			Paths:              []string{filepath.Join(testutil.GetRootDirOrDie(), "config", "crd", "external-crds", "topology.tanzu.vmware.com_zones.yaml")},
 			ErrorIfPathMissing: true,
-		})
+		}
+		crds, err := envtest.InstallCRDs(envTestEnv.Config, zoneCRDOpts)
 		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			Expect(envtest.UninstallCRDs(envTestEnv.Config, envtest.CRDInstallOptions{CRDs: crds})).To(Succeed())
+		})
 	})
 
 	newVM := func() *unstructured.Unstructured {
@@ -1828,7 +1832,7 @@ var _ = Describe("Flex VM and Zone API schema", Label(testlabels.API, testlabels
 		expectedSpec := vm.Object["spec"]
 		hardware := map[string]any{
 			"firmware": "efi", "sevEnabled": false, "sevSnpEnabled": true, "tdxEnabled": false, "smcPresent": true,
-			"cpu":                        map[string]any{"hotRemoveEnabled": false},
+			"cpu": map[string]any{"hotRemoveEnabled": false},
 		}
 		status := map[string]any{
 			"governingClassNames": []any{"ceiling"}, "changeBlockTracking": false, "hardware": hardware,
@@ -1853,8 +1857,9 @@ var _ = Describe("Flex VM and Zone API schema", Label(testlabels.API, testlabels
 	DescribeTable("rejects invalid device lists", func(hardware map[string]any) {
 		vm := newVM()
 		Expect(unstructured.SetNestedMap(vm.Object, hardware, "spec", "hardware")).To(Succeed())
-		err := envTestClient.Create(ctx, vm)
-		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected schema rejection, got %v", err)
+		Eventually(func() bool {
+			return apierrors.IsInvalid(envTestClient.Create(ctx, vm))
+		}).Should(BeTrue(), "expected schema rejection")
 	},
 		Entry("vGPU missing name", map[string]any{"vGPUs": []any{map[string]any{"profileName": "gpu"}}}),
 		Entry("vGPU empty name", map[string]any{"vGPUs": []any{map[string]any{"name": "", "profileName": "gpu"}}}),

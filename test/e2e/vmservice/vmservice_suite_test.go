@@ -160,6 +160,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err := vmservice.SetupClusterRoleBindings(vmsvcClusterProxy)
 	Expect(err).ToNot(HaveOccurred(), "failed to setup cluster role bindings")
 
+	ctx := context.TODO()
+	By("Loading Supervisor capabilities for this suite")
+	config.SupervisorCapabilities, err = common.LoadSupervisorCapabilities(ctx, vmsvcClusterProxy)
+	Expect(err).NotTo(HaveOccurred(), "failed to load Supervisor capabilities")
+
 	if phase := os.Getenv("VMCLASS_UPGRADE_PHASE"); phase != "" {
 		// The staged upgrade runs against a baseline that serves only v1alpha5.
 		// Its durable namespace and content library are prepared by the runner;
@@ -171,11 +176,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Expect(err).NotTo(HaveOccurred(), "the persistent upgrade namespace must already exist")
 		return []byte(strings.Join([]string{artifactFolder, kubeconfigPath, configFilePath}, ","))
 	}
-
-	ctx := context.TODO()
-	By("Loading Supervisor capabilities for this suite")
-	config.SupervisorCapabilities, err = common.LoadSupervisorCapabilities(ctx, vmsvcClusterProxy)
-	Expect(err).NotTo(HaveOccurred(), "failed to load Supervisor capabilities")
 
 	By("Creating a new WCP namespace associated with the default storage class, VM class, and vmservice content library")
 

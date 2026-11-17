@@ -98,18 +98,7 @@ Before the first test, the suite registers the testbed vCenter with Veeam by its
 make test-e2e TEST_FOCUS="VM-HARDWARE"
 ```
 
-**Exercise a real VMClass schema upgrade**: run the prepare phase against the
-old operator, upgrade that same testbed with the external deployment runner,
-then run verify against the candidate operator. Both invocations must use the
-same existing supervisor namespace and unique run ID. The test stores fixture
-identity and the baseline VM's vCenter MOID in a ConfigMap in that namespace;
-prepare intentionally leaves its VM and classes running. The verify phase
-removes the fixture only after every check succeeds, and retains it on failure
-for diagnosis. The test does not perform the operator upgrade itself.
-The runner must prepare that namespace's configured storage class and content
-library association, with the configured Photon image fully downloaded. Staged
-upgrade setup uses baseline-compatible APIs and skips the common warmup VMs;
-it neither creates nor deletes the persistent namespace.
+**Exercise a real VMClass schema upgrade**: run the prepare phase against the old operator, upgrade that same testbed with the external deployment runner, then run verify against the candidate operator. Both invocations must use the same existing supervisor namespace and unique run ID. The test stores fixture identity and the baseline VM's vCenter MOID in a ConfigMap in that namespace; prepare intentionally leaves its VM and classes running. The verify phase removes the fixture only after every check succeeds, and retains it on failure for diagnosis. The test does not perform the operator upgrade itself. The runner must prepare that namespace's configured storage class and content library association, with the configured Photon image fully downloaded. Staged upgrade setup uses baseline-compatible APIs and skips the common warmup VMs; it neither creates nor deletes the persistent namespace.
 
 ```bash
 E2E_NAMESPACE=<existing-namespace> VMCLASS_UPGRADE_RUN_ID=<unique-dns-label> VMCLASS_UPGRADE_PHASE=prepare \
@@ -121,12 +110,7 @@ E2E_NAMESPACE=<existing-namespace> VMCLASS_UPGRADE_RUN_ID=<same-unique-dns-label
   make test-e2e TEST_FOCUS="verifies the legacy VMClass and powered-on VM after the operator upgrade" LABEL_FILTER="core-functional && experimental"
 ```
 
-The run ID must be a DNS label no longer than 31 characters. The prepare
-invocation uses v1alpha5 VM creation and VMClass API reads, along with the
-baseline-compatible DCLI class provisioning path. Verify checks the converted
-v1alpha6 VMClass resource defaults, the identity,
-and vSphere compute settings of the existing powered-on VM against its saved
-baseline, and a new v1alpha6 VM created from the upgraded legacy class.
+The run ID must be a DNS label no longer than 31 characters. The prepare invocation uses v1alpha5 VM creation and VMClass API reads, along with the baseline-compatible DCLI class provisioning path. Verify checks the converted v1alpha6 VMClass resource defaults, the identity, and vSphere compute settings of the existing powered-on VM against its saved baseline, and a new v1alpha6 VM created from the upgraded legacy class.
 
 Precompiled `./e2e-tests`: pass `-e2e.*` and `--ginkgo.*` in one contiguous argument list (as `make test-e2e-prebuilt` does). Do **not** put `--` between them; otherwise `--ginkgo.focus`, `--ginkgo.label-filter`, etc. are ignored and nearly all specs still run.
 

@@ -293,7 +293,7 @@ func VIAdminRegisterVMSpec(ctx context.Context, inputGetter func() VIAdminRegist
 	// This test stays simulated: the Veeam B&R REST API has no virtual disk
 	// restore operation, so the backuprestore suite cannot cover it (see
 	// research.md in spec 010-veeam-e2e-backup-restore).
-	Context("Restore disk only", func() {
+	Context("Restore disk only", Label("extended-functional"), func() {
 		It("Should register restored disk", func() {
 			if !vmServiceBackupRestoreEnabled {
 				Skip("WCP_VMService_BackupRestore FSS is not enabled")

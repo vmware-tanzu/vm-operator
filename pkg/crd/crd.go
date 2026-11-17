@@ -270,7 +270,17 @@ func Install( //nolint:gocyclo
 				features.K8sWorkloadMgmtAPI,
 				c,
 				k,
-				nil); err != nil {
+				func(kind string, obj *unstructured.Unstructured, shouldRemoveFields bool) error {
+					if features.BringYourOwnNetworkInterface {
+						return nil
+					}
+					if err := removeFields(ctx, k, obj, shouldRemoveFields,
+						specFieldPath("template", "spec", "network", "interfaces", "[]", "externalRef")); err != nil {
+						return err
+					}
+					return removeValidationRules(ctx, k, obj, shouldRemoveFields,
+						specCELPath("template", "spec", "network", "interfaces", "[]"), "externalRef")
+				}); err != nil {
 
 				return err
 			}
@@ -424,6 +434,17 @@ func Install( //nolint:gocyclo
 							"vmxnet3",
 						); err != nil {
 
+							return err
+						}
+					}
+
+					if !features.BringYourOwnNetworkInterface {
+						if err := removeFields(ctx, k, obj, shouldRemoveFields,
+							specFieldPath("network", "interfaces", "[]", "externalRef")); err != nil {
+							return err
+						}
+						if err := removeValidationRules(ctx, k, obj, shouldRemoveFields,
+							specCELPath("network", "interfaces", "[]"), "externalRef"); err != nil {
 							return err
 						}
 					}

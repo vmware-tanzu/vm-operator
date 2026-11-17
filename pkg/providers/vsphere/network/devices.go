@@ -158,6 +158,10 @@ func findMatchingEthCardForInterfaceSpec(
 		}
 	}
 
+	if interfaceSpec.ExternalRef != nil {
+		return findMatchingEthCardExternal(vmCtx, client, interfaceSpec, ethCards)
+	}
+
 	matchingIdx := -1
 
 	// For this interface spec, try to find the Ethernet card that it most likely
@@ -215,6 +219,39 @@ func findMatchingEthCardVDS(
 	macAddress := interfaceSpec.MACAddr
 
 	return findMatchingEthCardNetOpNetIf(netIf, ethCards, macAddress)
+}
+
+func findMatchingEthCardExternal(
+	vmCtx pkgctx.VirtualMachineContext,
+	client ctrlclient.Client,
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	ethCards object.VirtualDeviceList) int {
+
+	group, err := getNetworkInterfaceAPIGroup(interfaceSpec)
+	if err != nil {
+		return -1
+	}
+
+	obj, err := newExternalNetworkInterfaceObject(group)
+	if err != nil {
+		return -1
+	}
+
+	key := ctrlclient.ObjectKey{Namespace: vmCtx.VM.Namespace, Name: interfaceSpec.ExternalRef.Name}
+	if err := client.Get(vmCtx, key, obj); err != nil {
+		return -1
+	}
+
+	switch netIf := obj.(type) {
+	case *netopv1alpha1.NetworkInterface:
+		return findMatchingEthCardNetOpNetIf(netIf, ethCards, interfaceSpec.MACAddr)
+	case *ncpv1alpha1.VirtualNetworkInterface:
+		return findMatchingEthCardNCPNetIf(netIf, ethCards)
+	case *vpcv1alpha1.SubnetPort:
+		return findMatchingEthCardVPCSubnetPort(netIf, ethCards)
+	}
+
+	return -1
 }
 
 func findMatchingEthCardNetOpNetIf(

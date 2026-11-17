@@ -29,6 +29,9 @@ type VirtualMachineNetworkRouteSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.vmxnet3) || self.type == 'VMXNet3'",message="vmxnet3 tuning fields require interface type VMXNet3"
 // +kubebuilder:validation:XValidation:rule="!has(self.ipamModes) || self.ipamModes.all(m, m == 'IPv4' || m == 'IPv6')",message="each ipamModes entry must be IPv4 or IPv6"
 // +kubebuilder:validation:XValidation:rule="(!has(oldSelf.ipamModes) && !has(self.ipamModes)) || (has(oldSelf.ipamModes) && has(self.ipamModes) && self.ipamModes == oldSelf.ipamModes)",message="ipamModes cannot be changed after creation"
+// +kubebuilder:validation:XValidation:rule="!has(self.externalRef) || !has(self.network)",message="network and externalRef are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="!has(self.externalRef) || (size(self.externalRef.apiVersion) > 0 && size(self.externalRef.kind) > 0 && size(self.externalRef.name) > 0)",message="externalRef requires apiVersion, kind, and name"
+// +kubebuilder:validation:XValidation:rule="!has(self.externalRef) || !has(self.macAddr)",message="macAddr and externalRef are mutually exclusive"
 
 // VirtualMachineNetworkInterfaceSpec describes the desired state of a VM's
 // network interface.
@@ -52,6 +55,13 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// If no network is provided, then this interface will be connected to the
 	// Namespace's default network.
 	Network *vmopv1common.PartialObjectRef `json:"network,omitempty"`
+
+	// +optional
+
+	// ExternalRef identifies a pre-created network interface in the VM namespace.
+	// VM Operator uses the resource without taking lifecycle ownership.
+	// ExternalRef is mutually exclusive with Network and MACAddr.
+	ExternalRef *vmopv1common.LocalObjectRef `json:"externalRef,omitempty"`
 
 	// +optional
 	// +kubebuilder:validation:Pattern=^\w\w+$

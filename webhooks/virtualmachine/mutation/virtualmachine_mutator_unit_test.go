@@ -308,6 +308,37 @@ func unitTestsMutating() {
 						}
 					})
 				})
+
+				DescribeTable("VM Network.Interfaces has an interface with an ExternalRef",
+					func(apiVersion, kind string) {
+						externalRef := &vmopv1common.LocalObjectRef{
+							APIVersion: apiVersion,
+							Kind:       kind,
+							Name:       "my-interface",
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:        "eth0",
+									ExternalRef: externalRef,
+								},
+								{
+									Name: "eth1",
+								},
+							},
+						}
+
+						Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+						Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(2))
+
+						Expect(ctx.vm.Spec.Network.Interfaces[0].ExternalRef).To(Equal(externalRef))
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Network).To(BeNil())
+						assertExpectedNetworkInterface("eth1", expectedNetworkRef, ctx.vm.Spec.Network.Interfaces[1])
+					},
+					Entry("VDS NetworkInterface", "netoperator.vmware.com/v1alpha1", "NetworkInterface"),
+					Entry("NSX-T VirtualNetworkInterface", "vmware.com/v1alpha1", "VirtualNetworkInterface"),
+					Entry("VPC SubnetPort", "crd.nsx.vmware.com/v1alpha1", "SubnetPort"),
+				)
 			},
 
 			Entry("name legacy", pkgcfg.NetworkProviderTypeNamed, false),
@@ -492,6 +523,37 @@ func unitTestsMutating() {
 						}
 					})
 				})
+
+				DescribeTable("VM Network.Interfaces has an interface with an ExternalRef",
+					func(apiVersion, kind string) {
+						externalRef := &vmopv1common.LocalObjectRef{
+							APIVersion: apiVersion,
+							Kind:       kind,
+							Name:       "my-interface",
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:        "eth0",
+									ExternalRef: externalRef,
+								},
+								{
+									Name: "eth1",
+								},
+							},
+						}
+
+						Expect(mutation.SetDefaultNetworkOnUpdate(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+						Expect(ctx.vm.Spec.Network.Interfaces).To(HaveLen(2))
+
+						Expect(ctx.vm.Spec.Network.Interfaces[0].ExternalRef).To(Equal(externalRef))
+						Expect(ctx.vm.Spec.Network.Interfaces[0].Network).To(BeNil())
+						assertExpectedNetworkInterface("eth1", expectedNetworkRef, ctx.vm.Spec.Network.Interfaces[1])
+					},
+					Entry("VDS NetworkInterface", "netoperator.vmware.com/v1alpha1", "NetworkInterface"),
+					Entry("NSX-T VirtualNetworkInterface", "vmware.com/v1alpha1", "VirtualNetworkInterface"),
+					Entry("VPC SubnetPort", "crd.nsx.vmware.com/v1alpha1", "SubnetPort"),
+				)
 			},
 
 			Entry("name legacy", pkgcfg.NetworkProviderTypeNamed, false),

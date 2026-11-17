@@ -2608,6 +2608,9 @@ connected.
 
 If no network is provided, then this interface will be connected to the
 Namespace's default network. |
+| `externalRef` _[LocalObjectRef](#localobjectref)_ | ExternalRef identifies a pre-created network interface in the VM namespace.
+VM Operator uses the resource without taking lifecycle ownership.
+ExternalRef is mutually exclusive with Network and MACAddr. |
 | `guestDeviceName` _string_ | GuestDeviceName is used to rename the device inside the guest when the
 bootstrap provider is Cloud-Init. Please note it is up to the user to
 ensure the provided device name does not conflict with any other devices

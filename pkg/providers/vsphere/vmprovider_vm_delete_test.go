@@ -14,12 +14,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware/govmomi/simulator"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	netopv1alpha1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
@@ -153,6 +157,36 @@ func vmDeleteTests() {
 		Expect(errors.As(err, &noRequeueErr)).To(BeTrue())
 		Expect(noRequeueErr.Message).To(Equal(constants.VMPausedByAdminError))
 		Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+	})
+
+	When("the VM has an external network interface", func() {
+		BeforeEach(func() {
+			pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+				config.Features.BringYourOwnNetworkInterface = true
+			})
+		})
+
+		It("releases the external network interface", func() {
+			obj := &netopv1alpha1.NetworkInterface{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-external",
+					Namespace: vm.Namespace,
+					Labels: map[string]string{
+						pkgconst.NetworkInterfaceVMNameLabel: vm.Name,
+					},
+					Annotations: map[string]string{
+						pkgconst.ExternalNetworkInterfaceAnnotation: "true",
+					},
+				},
+			}
+			Expect(ctx.Client.Create(ctx, obj)).To(Succeed())
+
+			Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
+			Expect(obj.Labels).ToNot(HaveKey(pkgconst.NetworkInterfaceVMNameLabel))
+			Expect(obj.Annotations).ToNot(HaveKey(pkgconst.ExternalNetworkInterfaceAnnotation))
+		})
 	})
 
 	Context("Fast Deploy is enabled", func() {

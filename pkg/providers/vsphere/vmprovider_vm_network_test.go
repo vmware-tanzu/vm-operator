@@ -34,6 +34,7 @@ import (
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -496,6 +497,7 @@ func vmNetworkTests() {
 			BeforeEach(func() {
 				pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
 					config.Features.PerNamespaceNetworkProvider = true
+					config.Features.BringYourOwnNetworkInterface = true
 				})
 			})
 
@@ -615,6 +617,110 @@ func vmNetworkTests() {
 
 							np0.assertEthernetCard(ctx, l[0], vm.Spec.Network.Interfaces[0], 0)
 							np1.assertEthernetCard(ctx, l[1], vm.Spec.Network.Interfaces[1], 1)
+						})
+					})
+
+					It("uses, then releases, pre-created external network interfaces", func() {
+						// The same name is used for both CRs: only their type differs.
+						const externalName = "my-external-interface"
+
+						externalRef := func(np fakeNetworkProvider) *vmopv1common.LocalObjectRef {
+							tm, _ := np.newInterfaceObject()
+							return &vmopv1common.LocalObjectRef{
+								APIVersion: tm.APIVersion,
+								Kind:       tm.Kind,
+								Name:       externalName,
+							}
+						}
+
+						vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:        interfaceName0,
+									ExternalRef: externalRef(np0),
+								},
+								{
+									Name:        interfaceName1,
+									ExternalRef: externalRef(np1),
+								},
+							},
+						}
+
+						getInterface := func(np fakeNetworkProvider) client.Object {
+							_, obj := np.newInterfaceObject()
+							ExpectWithOffset(1, ctx.Client.Get(
+								ctx,
+								client.ObjectKey{Namespace: vm.Namespace, Name: externalName},
+								obj)).To(Succeed())
+							return obj
+						}
+
+						assertAssociated := func(obj client.Object, interfaceName string) {
+							ExpectWithOffset(1, obj.GetOwnerReferences()).To(BeEmpty())
+							ExpectWithOffset(1, obj.GetLabels()).To(HaveKeyWithValue(pkgconst.NetworkInterfaceVMNameLabel, vm.Name))
+							ExpectWithOffset(1, obj.GetLabels()).To(HaveKeyWithValue(network.VMInterfaceNameLabel, interfaceName))
+							ExpectWithOffset(1, obj.GetAnnotations()).To(HaveKey(pkgconst.ExternalNetworkInterfaceAnnotation))
+						}
+
+						assertReleased := func(obj client.Object) {
+							ExpectWithOffset(1, obj.GetLabels()).ToNot(HaveKey(pkgconst.NetworkInterfaceVMNameLabel))
+							ExpectWithOffset(1, obj.GetLabels()).ToNot(HaveKey(network.VMInterfaceNameLabel))
+							ExpectWithOffset(1, obj.GetAnnotations()).ToNot(HaveKey(pkgconst.ExternalNetworkInterfaceAnnotation))
+							ExpectWithOffset(1, obj.GetAnnotations()).ToNot(HaveKey(pkgconst.VPCAttachmentRef))
+						}
+
+						By("simulate the pre-created external interfaces being ready", func() {
+							np0.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[0], 0)
+							np1.simulateInterfaceReconcile(ctx, vm, vm.Spec.Network.Interfaces[1], 1)
+						})
+
+						By("create VM powered off with both NICs configured", func() {
+							vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						})
+
+						Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+						vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+
+						By("NICs are backed by the external interfaces", func() {
+							devList, err := vcVM.Device(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
+							Expect(l).To(HaveLen(2))
+
+							sort.Slice(l, func(i, j int) bool {
+								return l[i].GetVirtualDevice().Key < l[j].GetVirtualDevice().Key
+							})
+
+							np0.assertEthernetCard(ctx, l[0], vm.Spec.Network.Interfaces[0], 0)
+							np1.assertEthernetCard(ctx, l[1], vm.Spec.Network.Interfaces[1], 1)
+						})
+
+						By("external interfaces are associated with the VM", func() {
+							assertAssociated(getInterface(np0), interfaceName0)
+							assertAssociated(getInterface(np1), interfaceName1)
+						})
+
+						By("remove the np1 interface and power off the VM", func() {
+							vm.Spec.Network.Interfaces = vm.Spec.Network.Interfaces[:1]
+							vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+							Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+						})
+
+						By("np1 NIC is removed and its external interface is released, not deleted", func() {
+							devList, err := vcVM.Device(ctx)
+							Expect(err).ToNot(HaveOccurred())
+							l := devList.SelectByType(&vimtypes.VirtualEthernetCard{})
+							Expect(l).To(HaveLen(1))
+							np0.assertEthernetCard(ctx, l[0], vm.Spec.Network.Interfaces[0], 0)
+
+							assertAssociated(getInterface(np0), interfaceName0)
+							assertReleased(getInterface(np1))
+						})
+
+						By("delete the VM releases the remaining external interface", func() {
+							Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+							assertReleased(getInterface(np0))
 						})
 					})
 
@@ -1223,6 +1329,10 @@ type fakeNetworkProvider interface {
 	simulateInterfaceReconcile(ctx *builder.TestContextForVCSim, vm *vmopv1.VirtualMachine, interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec, networkIdx int)
 	assertEthernetCard(ctx *builder.TestContextForVCSim, dev vimtypes.BaseVirtualDevice, interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec, networkIdx int)
 	assertNetworkInterfacesDNE(ctx *builder.TestContextForVCSim, vm *vmopv1.VirtualMachine, networkName, interfaceName string)
+
+	// newInterfaceObject returns the TypeMeta and an empty object of the
+	// provider's network interface CR type for use as an external ref.
+	newInterfaceObject() (metav1.TypeMeta, client.Object)
 }
 
 func fakeNPForType(providerType pkgcfg.NetworkProviderType) fakeNetworkProvider {
@@ -1237,6 +1347,15 @@ func fakeNPForType(providerType pkgcfg.NetworkProviderType) fakeNetworkProvider 
 		Fail(fmt.Sprintf("unknown network provider type: %v", providerType))
 	}
 	return nil
+}
+
+// interfaceNetworkName returns the name of the interface's network or, for an
+// external interface, the name of its network interface CR.
+func interfaceNetworkName(interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) string {
+	if ref := interfaceSpec.ExternalRef; ref != nil {
+		return ref.Name
+	}
+	return interfaceSpec.Network.Name
 }
 
 func extID(networkName, interfaceName string) string {
@@ -1263,23 +1382,38 @@ func (vdsNetworkProvider) getTypeMeta() metav1.TypeMeta {
 	}
 }
 
+func (vdsNetworkProvider) newInterfaceObject() (metav1.TypeMeta, client.Object) {
+	return metav1.TypeMeta{
+		APIVersion: netopv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "NetworkInterface",
+	}, &netopv1alpha1.NetworkInterface{}
+}
+
 func (v vdsNetworkProvider) simulateInterfaceReconcile(
 	ctx *builder.TestContextForVCSim,
 	vm *vmopv1.VirtualMachine,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	networkIdx int) {
 
-	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	interfaceName := interfaceSpec.Name
 	ifaceIdx := idxFromInterfaceName(interfaceName)
 
+	var networkName string
 	netInterface := &netopv1alpha1.NetworkInterface{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
-			Namespace: vm.Namespace,
-		},
+		ObjectMeta: metav1.ObjectMeta{Namespace: vm.Namespace},
 	}
-	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
-	Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
+	if ref := interfaceSpec.ExternalRef; ref != nil {
+		// The user creates the external interface CR.
+		networkName = ref.Name
+		netInterface.Name = ref.Name
+		netInterface.Spec.NetworkName = networkName
+		Expect(ctx.Client.Create(ctx, netInterface)).To(Succeed())
+	} else {
+		networkName = interfaceSpec.Network.Name
+		netInterface.Name = network.NetOPCRName(vm.Name, networkName, interfaceName, false)
+		Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+		Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
+	}
 
 	netInterface.Status.NetworkID = ctx.GetNetwork(networkIdx).Backing.Reference().Value
 	netInterface.Status.ExternalID = extID(networkName, interfaceName)
@@ -1307,7 +1441,7 @@ func (v vdsNetworkProvider) assertEthernetCard(
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	networkIdx int) {
 
-	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	interfaceName, networkName := interfaceSpec.Name, interfaceNetworkName(interfaceSpec)
 
 	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 	if v.isStandardPG {
@@ -1353,23 +1487,38 @@ func (nsxtNetworkProvider) getTypeMeta() metav1.TypeMeta {
 	}
 }
 
+func (nsxtNetworkProvider) newInterfaceObject() (metav1.TypeMeta, client.Object) {
+	return metav1.TypeMeta{
+		APIVersion: ncpv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "VirtualNetworkInterface",
+	}, &ncpv1alpha1.VirtualNetworkInterface{}
+}
+
 func (n nsxtNetworkProvider) simulateInterfaceReconcile(
 	ctx *builder.TestContextForVCSim,
 	vm *vmopv1.VirtualMachine,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	networkIdx int) {
 
-	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	interfaceName := interfaceSpec.Name
 	ifaceIdx := idxFromInterfaceName(interfaceName)
 
+	var networkName string
 	netInterface := &ncpv1alpha1.VirtualNetworkInterface{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      network.NCPCRName(vm.Name, networkName, interfaceName, false),
-			Namespace: vm.Namespace,
-		},
+		ObjectMeta: metav1.ObjectMeta{Namespace: vm.Namespace},
 	}
-	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
-	Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
+	if ref := interfaceSpec.ExternalRef; ref != nil {
+		// The user creates the external interface CR.
+		networkName = ref.Name
+		netInterface.Name = ref.Name
+		netInterface.Spec.VirtualNetwork = networkName
+		Expect(ctx.Client.Create(ctx, netInterface)).To(Succeed())
+	} else {
+		networkName = interfaceSpec.Network.Name
+		netInterface.Name = network.NCPCRName(vm.Name, networkName, interfaceName, false)
+		Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+		Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
+	}
 
 	netInterface.Status.InterfaceID = extID(networkName, interfaceName)
 	netInterface.Status.MacAddress = fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)
@@ -1398,7 +1547,7 @@ func (n nsxtNetworkProvider) assertEthernetCard(
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	networkIdx int) {
 
-	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	interfaceName, networkName := interfaceSpec.Name, interfaceNetworkName(interfaceSpec)
 	ifaceIdx := idxFromInterfaceName(interfaceName)
 
 	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
@@ -1434,24 +1583,39 @@ func (vpcNetworkProvider) getTypeMeta() metav1.TypeMeta {
 	}
 }
 
+func (vpcNetworkProvider) newInterfaceObject() (metav1.TypeMeta, client.Object) {
+	return metav1.TypeMeta{
+		APIVersion: vpcv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "SubnetPort",
+	}, &vpcv1alpha1.SubnetPort{}
+}
+
 func (v vpcNetworkProvider) simulateInterfaceReconcile(
 	ctx *builder.TestContextForVCSim,
 	vm *vmopv1.VirtualMachine,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	networkIdx int) {
 
-	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	interfaceName := interfaceSpec.Name
 	ifaceIdx := idxFromInterfaceName(interfaceName)
 
+	var networkName string
 	subnetPort := &vpcv1alpha1.SubnetPort{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
-			Namespace: vm.Namespace,
-		},
+		ObjectMeta: metav1.ObjectMeta{Namespace: vm.Namespace},
 	}
-	Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
-	Expect(subnetPort.Spec.SubnetSet).To(BeEmpty())
-	Expect(subnetPort.Spec.Subnet).To(Equal(networkName))
+	if ref := interfaceSpec.ExternalRef; ref != nil {
+		// The user creates the external interface CR.
+		networkName = ref.Name
+		subnetPort.Name = ref.Name
+		subnetPort.Spec.Subnet = networkName
+		Expect(ctx.Client.Create(ctx, subnetPort)).To(Succeed())
+	} else {
+		networkName = interfaceSpec.Network.Name
+		subnetPort.Name = network.VPCCRName(vm.Name, networkName, interfaceName)
+		Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+		Expect(subnetPort.Spec.SubnetSet).To(BeEmpty())
+		Expect(subnetPort.Spec.Subnet).To(Equal(networkName))
+	}
 
 	subnetPort.Status.Attachment.ID = extID(networkName, interfaceName)
 	subnetPort.Status.NetworkInterfaceConfig.MACAddress = fmt.Sprintf("01-23-45-67-89-%02X", ifaceIdx)
@@ -1477,7 +1641,7 @@ func (v vpcNetworkProvider) assertEthernetCard(
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	networkIdx int) {
 
-	interfaceName, networkName := interfaceSpec.Name, interfaceSpec.Network.Name
+	interfaceName, networkName := interfaceSpec.Name, interfaceNetworkName(interfaceSpec)
 	ifaceIdx := idxFromInterfaceName(interfaceName)
 
 	ethCard := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()

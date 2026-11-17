@@ -211,6 +211,23 @@ func restore_v1alpha6_VirtualMachineNetworkVLANs(dst, src *vmopv1.VirtualMachine
 	dst.Spec.Network.VLANs = src.Spec.Network.VLANs
 }
 
+func restore_v1alpha6_VirtualMachineHardwareDevices(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Hardware == nil {
+		return
+	}
+	if len(src.Spec.Hardware.VGPUs) == 0 &&
+		len(src.Spec.Hardware.DynamicDirectPathIODevices) == 0 {
+
+		return
+	}
+	hw := src.Spec.Hardware.DeepCopy()
+	if dst.Spec.Hardware == nil {
+		dst.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+	}
+	dst.Spec.Hardware.VGPUs = hw.VGPUs
+	dst.Spec.Hardware.DynamicDirectPathIODevices = hw.DynamicDirectPathIODevices
+}
+
 func restore_v1alpha6_VirtualMachineResources(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Resources = src.Spec.Resources
 }
@@ -281,17 +298,7 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineAffinityRequiredDuringExecution(dst, restored)
 
-	if restored.Spec.Hardware != nil {
-		if len(restored.Spec.Hardware.VGPUs) > 0 ||
-			len(restored.Spec.Hardware.DynamicDirectPathIODevices) > 0 {
-
-			if dst.Spec.Hardware == nil {
-				dst.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
-			}
-			dst.Spec.Hardware.VGPUs = restored.Spec.Hardware.DeepCopy().VGPUs
-			dst.Spec.Hardware.DynamicDirectPathIODevices = restored.Spec.Hardware.DeepCopy().DynamicDirectPathIODevices
-		}
-	}
+	restore_v1alpha6_VirtualMachineHardwareDevices(dst, restored)
 
 	// END RESTORE
 

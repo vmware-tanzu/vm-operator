@@ -3223,7 +3223,8 @@ func Convert_v1alpha5_VirtualMachineHardwareSpec_To_v1alpha6_VirtualMachineHardw
 }
 
 func autoConvert_v1alpha6_VirtualMachineHardwareSpec_To_v1alpha5_VirtualMachineHardwareSpec(in *v1alpha6.VirtualMachineHardwareSpec, out *VirtualMachineHardwareSpec, s conversion.Scope) error {
-	// WARNING: in.Devices requires manual conversion: does not exist in peer-type
+	// WARNING: in.VGPUs requires manual conversion: does not exist in peer-type
+	// WARNING: in.DynamicDirectPathIODevices requires manual conversion: does not exist in peer-type
 	out.Cdrom = *(*[]VirtualMachineCdromSpec)(unsafe.Pointer(&in.Cdrom))
 	out.IDEControllers = *(*[]IDEControllerSpec)(unsafe.Pointer(&in.IDEControllers))
 	out.NVMEControllers = *(*[]NVMEControllerSpec)(unsafe.Pointer(&in.NVMEControllers))
@@ -3267,7 +3268,6 @@ func autoConvert_v1alpha6_VirtualMachineHardwareStatus_To_v1alpha5_VirtualMachin
 	// WARNING: in.SEVSNPEnabled requires manual conversion: does not exist in peer-type
 	// WARNING: in.TDXEnabled requires manual conversion: does not exist in peer-type
 	// WARNING: in.SMCPresent requires manual conversion: does not exist in peer-type
-	// WARNING: in.DynamicDirectPathIODevices requires manual conversion: does not exist in peer-type
 	out.Controllers = *(*[]VirtualControllerStatus)(unsafe.Pointer(&in.Controllers))
 	if in.CPU != nil {
 		in, out := &in.CPU, &out.CPU

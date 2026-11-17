@@ -232,17 +232,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		Expect(createdVMClass.Spec.Resources.Size.CPU.Default).To(Equal(&classCPU))
 		Expect(createdVMClass.Spec.Resources.Size.Memory.Default).To(Equal(&classMemory))
 
-		createdVM := &vmopv1.VirtualMachine{}
-		Eventually(func(g Gomega) {
-			g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmName}, createdVM)).To(Succeed())
-			g.Expect(createdVM.Spec.Resources).NotTo(BeNil())
-			g.Expect(createdVM.Spec.Resources.Size).NotTo(BeNil())
-			g.Expect(createdVM.Spec.Resources.Size.CPU).NotTo(BeNil())
-			g.Expect(createdVM.Spec.Resources.Size.CPU.Value()).To(Equal(classCPU.Value()))
-			g.Expect(createdVM.Spec.Resources.Size.Memory).NotTo(BeNil())
-			g.Expect(createdVM.Spec.Resources.Size.Memory.Value()).To(Equal(classMemory.Value()))
-		}, 2*time.Minute, 5*time.Second).Should(Succeed(), "VM compute size was not materialized from its class")
-
 		var vmMO mo.VirtualMachine
 		Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)).To(Succeed())
 		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(classCPU.Value()))

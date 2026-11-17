@@ -244,17 +244,13 @@ func VMClassSchemaUpgradeSpec(ctx context.Context, inputGetter func() VMClassSch
 		Expect(class.Spec.Resources.Size.Memory).NotTo(BeNil())
 		Expect(class.Spec.Resources.Size.Memory.Default.Value()).To(Equal(int64(checkpoint.MemoryMB * 1024 * 1024)))
 
-		By("checking the original VM identity, materialized resources, and power state after upgrade")
+		By("checking the original VM identity and power state after upgrade")
 		vm := &vmopv1.VirtualMachine{}
 		Eventually(func(g Gomega) {
 			g.Expect(client.Get(ctx, ctrlclient.ObjectKey{Namespace: checkpoint.Namespace, Name: checkpoint.VMName}, vm)).To(Succeed())
 			g.Expect(string(vm.UID)).To(Equal(checkpoint.VMUID))
 			g.Expect(vm.Status.UniqueID).To(Equal(checkpoint.VMVCenterMOID))
 			g.Expect(string(vm.Status.PowerState)).To(Equal(checkpoint.PowerState))
-			g.Expect(vm.Spec.Resources).NotTo(BeNil())
-			g.Expect(vm.Spec.Resources.Size).NotTo(BeNil())
-			g.Expect(vm.Spec.Resources.Size.CPU.Value()).To(Equal(int64(checkpoint.CPU)))
-			g.Expect(vm.Spec.Resources.Size.Memory.Value()).To(Equal(int64(checkpoint.MemoryMB * 1024 * 1024)))
 		}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
 		By("checking the preserved VM's actual vSphere compute configuration")

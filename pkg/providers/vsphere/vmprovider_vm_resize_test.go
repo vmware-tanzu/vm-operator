@@ -236,6 +236,30 @@ func vmResizeTests() {
 				assertExpectedResizedClassFields(vm, newVMClass)
 			})
 
+			It("Ignores class devices when the class has no ConfigSpec", func() {
+				newVMClass := builder.DummyVirtualMachineClassGenName()
+				newVMClass.Namespace = nsInfo.Namespace
+				newVMClass.Spec.ConfigSpec = nil
+				newVMClass.Spec.Resources.Size.CPU = resourceRange(resource.MustParse("4"))
+				newVMClass.Spec.Resources.Size.Memory = resourceRange(resource.MustParse("1024Mi"))
+				newVMClass.Spec.Resources.Requests = vmopv1.VirtualMachineClassResourceSpec{}
+				newVMClass.Spec.Resources.Limits = vmopv1.VirtualMachineClassResourceSpec{}
+				newVMClass.Spec.Hardware.Devices.VGPUDevices = []vmopv1.VGPUDevice{{ProfileName: "test-profile"}}
+				Expect(ctx.Client.Create(ctx, newVMClass)).To(Succeed())
+				vm.Spec.ClassName = newVMClass.Name
+
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(4))
+				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(1024))
+				for _, d := range o.Config.Hardware.Device {
+					Expect(d).ToNot(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthrough{}), "class devices must not be added on resize")
+				}
+			})
+
 			Context("CPU/Memory Reservations", func() {
 
 				Context("No reservations", func() {

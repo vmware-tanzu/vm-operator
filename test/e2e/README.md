@@ -124,7 +124,7 @@ E2E_NAMESPACE=<existing-namespace> VMCLASS_UPGRADE_RUN_ID=<same-unique-dns-label
 The run ID must be a DNS label no longer than 31 characters. The prepare
 invocation uses v1alpha5 VM creation and VMClass API reads, along with the
 baseline-compatible DCLI class provisioning path. Verify checks the converted
-v1alpha6 VMClass resource defaults, the identity, materialized spec,
+v1alpha6 VMClass resource defaults, the identity,
 and vSphere compute settings of the existing powered-on VM against its saved
 baseline, and a new v1alpha6 VM created from the upgraded legacy class.
 

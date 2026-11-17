@@ -233,6 +233,114 @@ func intgTestsReconcile() {
 				})
 			})
 
+			// The fake provider stands in for the vSphere provider's Create
+			// gate in CreateOrUpdateVirtualMachine by making the same library
+			// calls, so this exercises holding the create until the Create
+			// stage's HooksReady flips against a real API server.
+			It("does not create the VM until the Create HooksReady flips", func() {
+				const stage = lifecycle.StageCreate
+
+				var creates int32
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(pctx context.Context, vm *vmopv1.VirtualMachine) error {
+						state, err := lifecycle.GetOrCreateLifecycleState(
+							pctx, ctx.Client, vm)
+						if err != nil {
+							return err
+						}
+						res, err := lifecycle.ReconcileStage(
+							pctx, ctx.Client, vm, state, stage)
+						if err != nil {
+							return err
+						}
+						if !res.Proceed {
+							return lifecycle.ErrHooksBlocked
+						}
+						atomic.AddInt32(&creates, 1)
+						conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+						return nil
+					},
+				)
+
+				Expect(ctx.Client.Create(ctx, &lifecyclev1.LifecycleSubscribedStages{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vm.Namespace,
+						Name: lifecyclev1.SubscribedStagesName(
+							lifecycle.TargetGroup, lifecycle.TargetKind),
+					},
+					Spec: lifecyclev1.LifecycleSubscribedStagesSpec{
+						Stages: []string{
+							lifecycle.StageCreate,
+							lifecycle.StagePowerStateChange,
+							lifecycle.StageDelete,
+						},
+					},
+				})).To(Succeed())
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+				waitForVirtualMachineFinalizer(ctx, vmKey)
+				createdVM := getVirtualMachine(ctx, vmKey)
+				Expect(createdVM).ToNot(BeNil())
+
+				stateKey := client.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, createdVM.UID),
+				}
+
+				By("creating the LifecycleState with Create paused", func() {
+					Eventually(func(g Gomega) {
+						state := &lifecyclev1.LifecycleState{}
+						g.Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+						byName := map[string]lifecyclev1.StageSpec{}
+						for _, s := range state.Spec.Stages {
+							byName[s.Name] = s
+						}
+						g.Expect(byName).To(HaveKey(lifecycle.StageCreate))
+						g.Expect(byName[lifecycle.StageCreate].WorkflowPaused).To(BeTrue())
+
+						// The other subscribed stages, including Delete, are
+						// carried but untouched at the Create checkpoint.
+						for _, n := range []string{
+							lifecycle.StagePowerStateChange,
+							lifecycle.StageDelete,
+						} {
+							g.Expect(byName).To(HaveKey(n))
+							g.Expect(byName[n].WorkflowPaused).To(BeFalse())
+							g.Expect(byName[n].WorkflowResumed).To(BeFalse())
+						}
+					}).Should(Succeed())
+				})
+
+				By("holding the create while the hooks are not ready", func() {
+					Consistently(func() int32 {
+						return atomic.LoadInt32(&creates)
+					}, "2s").Should(BeZero())
+				})
+
+				By("creating once HooksReady flips", func() {
+					Eventually(func(g Gomega) {
+						state := &lifecyclev1.LifecycleState{}
+						g.Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+						state.Status.Stages = []lifecyclev1.StageStatus{{
+							Name: stage,
+							Conditions: []metav1.Condition{{
+								Type:               lifecycle.HooksReadyConditionType,
+								Status:             metav1.ConditionTrue,
+								Reason:             "AllHooksDone",
+								LastTransitionTime: metav1.Now(),
+							}},
+						}}
+						g.Expect(ctx.Client.Status().Update(ctx, state)).To(Succeed())
+					}).Should(Succeed())
+
+					Eventually(func() int32 {
+						return atomic.LoadInt32(&creates)
+					}).Should(BeNumerically(">", 0))
+				})
+			})
+
 			// The fake provider stands in for the vSphere provider's
 			// PowerStateChange gate in reconcilePowerState by making the same
 			// library calls, so this exercises the LifecycleState watch and the

@@ -66,12 +66,21 @@ With the capability on and a hook registered for `PowerStateChange`, power-on, p
 - [x] T034 [P] [vmop-3849] Add an envtest case (`testlabels.EnvTest`) in the VM controller's intg test: a power state change waits for the `HooksReady` flip and re-pauses on the next change
 - [ ] T035 [P] [vmop-3849] Add E2E coverage in `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`: power-on, power-off and restart are each held until the hook resolves
 
+## Create gate (`pkg/providers/vsphere`)
+
+With the capability on and a hook registered for `Create`, VM creation in vCenter is held until the hooks resolve, for both the blocking and the async create paths. With the capability off, or no hook registered, behavior is unchanged.
+
+- [x] T036 [vmop-3565] `createOrUpdateVirtualMachine`: after `getVM` returns `foundVM == nil` and `getCreateArgs` succeeds, and before the vSphere create (the blocking `createVirtualMachine` call, or the async goroutine start), call the private helper `reconcileLifecycleStage` with `lifecycle.StageCreate`; blocked returns `lifecycle.ErrHooksBlocked`, which the controller emits as `CreatePending`, not `CreateFailure`. Gating after the prerequisites keeps a transient network, policy or image cache failure from re-running the hooks. Key off `getVM`, not `Status.UniqueID`, because snapshot revert wipes `Status` for an existing VM
+- [x] T037 [vmop-3565] Add unit tests to `pkg/providers/vsphere/vmprovider_vm_test.go` (`testlabels.VCSim`): no hook creates; blocked returns `ErrHooksBlocked` and issues no vSphere create; `LifecycleHookReady` is `False` with reason `CreateStage` while paused and `True` after release; `foundVM != nil`, including wiped `Status` after revert, never reaches the gate; a `getCreateArgs` failure does not pause; a failed vSphere create after release pauses again; capability off is unchanged
+- [x] T038 [P] [vmop-3565] Add envtest cases (`testlabels.EnvTest`) in the VM controller's intg test: the VM is not created before the Create `HooksReady` flip; the `LifecycleState` is created with every subscribed stage at `(false, false)`; a `LifecycleState` carrying `Delete` is created at the Create checkpoint
+- [ ] T039 [P] [vmop-3565] Add E2E coverage in `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`: a VM with a Create hook stays uncreated with `LifecycleHookReady=False` until the hook resolves, then is created with no other trigger; with no hooks, behavior is unchanged
+
 ## Not in this change set
 
 Tracked for follow-up PRs, derived from `plan.md`'s "Controller / webhook impact" and "Test strategy" sections:
 
-- Create and Delete gate call sites in `pkg/providers/vsphere/vmprovider_vm.go`
-- Create, Delete and ResourceDelete stage gates, the remaining `AbandonStages` call sites (`ReconcileDelete`), `ReconcileStage` use in the controller, and Delete event suppression (`hooksBlocked`)
+- Delete gate call site in `pkg/providers/vsphere/vmprovider_vm.go`
+- Delete and ResourceDelete stage gates, the remaining `AbandonStages` call sites (`ReconcileDelete`), `ReconcileStage` use in the controller, and Delete event suppression (`hooksBlocked`)
 - `initLifecycleStages()` in `main.go` after `initCRDs()`
 - `test/builder/fakelifecycle/` (test-only fake Lifecycle Operator)
 - `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`, including the `vmoperator-stages` startup check (SC-011)

@@ -179,7 +179,8 @@ PARTIAL_FILE="${OUTPUT_DIR}/wcp-support-bundle.partial.tar"
 # ---------------------------------------------------------------------------
 try_collect_bundle() {
     local trigger_url="$1" token_field="$2"
-    local response http_code body url token dl_tmp dl_http_code dl_rc
+    local response http_code body url token dl_tmp dl_hdr dl_meta dl_size
+    local dl_http_code dl_rc dl_length transfer_complete
 
     response=$(curl -sk -w '\n%{http_code}' --max-time 30 -X POST \
         -H "vmware-api-session-id: ${VC_SESSION}" "${trigger_url}")
@@ -200,12 +201,18 @@ try_collect_bundle() {
 
     _log "Downloading WCP support bundle from ${url}..."
     dl_tmp="$(mktemp "${OUTPUT_DIR}/wcp-support-bundle.XXXXXX.tar")"
-    dl_http_code=$(curl -sk -w '%{http_code}' \
+    dl_hdr="$(mktemp "${OUTPUT_DIR}/wcp-support-bundle.XXXXXX.hdr")"
+    dl_meta=$(curl -sk -w '%{http_code} %{size_download}' \
         --max-time "${SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS}" -X POST \
         -H 'Content-Type: application/json' \
         -d "{\"wcp-support-bundle-token\": \"${token}\"}" \
+        -D "${dl_hdr}" \
         "${url}" -o "${dl_tmp}")
     dl_rc=$?
+    read -r dl_http_code dl_size <<< "${dl_meta}"
+    # The last Content-Length header wins if redirects produced several.
+    dl_length=$(tr -d '\r' < "${dl_hdr}" | awk 'tolower($1) == "content-length:" {v = $2} END {print v}')
+    rm -f "${dl_hdr}"
 
     if [[ ! -s "${dl_tmp}" ]]; then
         rm -f "${dl_tmp}"
@@ -217,9 +224,17 @@ try_collect_bundle() {
         return 1
     fi
 
-    # Only a complete transfer that reads back as a tar counts as success.
-    if (( dl_rc != 0 )) || ! tar -tf "${dl_tmp}" >/dev/null 2>&1; then
-        _warn "Support bundle from ${url} is incomplete (curl exit ${dl_rc}, HTTP ${dl_http_code}); keeping partial copy at ${PARTIAL_FILE}"
+    # A transfer is complete when curl exits cleanly, or when it received
+    # every byte the server declared via Content-Length (curl can report a
+    # late reset even after the full body arrived). Without a Content-Length,
+    # only a clean exit proves completeness. A readable tar is still required.
+    transfer_complete=0
+    if (( dl_rc == 0 )) || { [[ -n "${dl_length}" ]] && (( dl_size == dl_length )); }; then
+        transfer_complete=1
+    fi
+
+    if (( transfer_complete == 0 )) || ! tar -tf "${dl_tmp}" >/dev/null 2>&1; then
+        _warn "Support bundle from ${url} is incomplete (curl exit ${dl_rc}, HTTP ${dl_http_code}, ${dl_size} of ${dl_length:-unknown} bytes); keeping partial copy at ${PARTIAL_FILE}"
         mv -f "${dl_tmp}" "${PARTIAL_FILE}"
         chmod 644 "${PARTIAL_FILE}"
         return 2
@@ -227,6 +242,8 @@ try_collect_bundle() {
 
     mv "${dl_tmp}" "${OUT_FILE}"
     chmod 644 "${OUT_FILE}"
+    # A complete bundle supersedes any partial kept by an earlier attempt.
+    rm -f "${PARTIAL_FILE}"
     return 0
 }
 

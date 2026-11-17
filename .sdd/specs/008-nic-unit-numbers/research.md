@@ -102,7 +102,7 @@ The existing `NICConfigFromMoVM` function (VMServiceClasslessVM gate) already us
 - **The Telco gate is one-shot.** `ReconcileSchemaUpgrade` runs `NICConfigFromMoVM` only when the VM's feature-version annotation lacks `FeatureVersionTelcoVMServiceAPI`, then stamps the bit. Any VM already stamped with the Telco bit would never re-run it, so a backfill living there would never execute for those VMs. Only a new bit re-triggers the upgrade pass for already-upgraded VMs (`ActivatedFeatureVersion` grows, `IsOrSuperset` fails, the pass re-runs).
 - `VMServiceClasslessVM` may be disabled while `VMNetworkUnitNumbers` is enabled; the two flags are orthogonal.
 - The VMServiceClasslessVM step uses positional zip (with a `TODO(BV)` for real matching).
-- The unit-number backfill must match spec interfaces to VC devices using the existing hodgepodge (since `unitNumber` is not yet on the spec during the first pass), then write the observed `VirtualDevice.UnitNumber` back. For devices the hodgepodge cannot uniquely match, it falls back to positional zip so every interface still receives its observed value.
+- The unit-number backfill matches unnumbered spec interfaces to VC devices using the existing hodgepodge (since `unitNumber` is not yet on the spec during the first pass), then writes the observed `VirtualDevice.UnitNumber` back. For unnumbered interfaces the hodgepodge cannot uniquely match, it falls back to positional zip so every such interface still receives its observed value. Interfaces that already carry a unit number are matched by that unit only, with no hodgepodge fallback (amended 2026-11-16; see `plan.md`, "Schema upgrade — brownfield backfill" steps 2–4).
 - After the unit-number backfill completes, the `NICConfigFromMoVM` positional zip can be upgraded to use unit-number-based matching (resolves the `TODO(BV)`).
 
 ## FeatureVersion bitmask
@@ -308,7 +308,7 @@ VC:   ethCards[0] = vmxnet3, UnitNumber=7
 
 ### Brownfield backfill failure modes
 
-If the hodgepodge cannot uniquely match a spec interface to a VC device (e.g., two NICs on the same portgroup with generated MACs), `NICUnitNumbersFromMoVM` falls back to a positional zip for the otherwise-unmatched (spec interface, VC device) pairs, so every interface still receives an observed unit number. The zip is only applied to the leftovers after hodgepodge matching has claimed everything it can uniquely identify. The mutator's `IsObjectUpgraded` gate means the backfill never races webhook-assigned values: for a VM that has not been upgraded, the only spec values the backfill can encounter are explicit user values, which win.
+If the hodgepodge cannot uniquely match an unnumbered spec interface to a VC device (e.g., two NICs on the same portgroup with generated MACs), `NICUnitNumbersFromMoVM` falls back to a positional zip for the otherwise-unmatched (spec interface, VC device) pairs, so every unnumbered interface still receives an observed unit number. The zip is only applied to the leftovers after unit-number matching and hodgepodge matching have claimed everything they can uniquely identify. A numbered interface with no device at its unit is left unmatched and is not zipped (amended 2026-11-16). The mutator's `IsObjectUpgraded` gate means the backfill never races webhook-assigned values: for a VM that has not been upgraded, the only spec values the backfill can encounter are explicit user values, which win.
 
 ## Unit-number allocation on the PCI bus is static per device class
 

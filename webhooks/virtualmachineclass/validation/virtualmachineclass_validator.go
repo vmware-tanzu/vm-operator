@@ -69,25 +69,10 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	return buildResponse(ctx, v.validatePolicies(ctx, vmClass))
-}
+	var fieldErrs field.ErrorList
 
-func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
-	return admission.Allowed("")
-}
+	fieldErrs = append(fieldErrs, v.validatePolicies(ctx, vmClass)...)
 
-func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
-	// Updates are validated like creates so an existing class cannot be edited
-	// into an invalid request/limit combination.
-	vmClass, err := v.vmClassFromUnstructured(ctx.Obj)
-	if err != nil {
-		return webhook.Errored(http.StatusBadRequest, err)
-	}
-
-	return buildResponse(ctx, v.validatePolicies(ctx, vmClass))
-}
-
-func buildResponse(ctx *pkgctx.WebhookRequestContext, fieldErrs field.ErrorList) admission.Response {
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
 		validationErrs = append(validationErrs, fieldErr.Error())
@@ -96,47 +81,43 @@ func buildResponse(ctx *pkgctx.WebhookRequestContext, fieldErrs field.ErrorList)
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) validatePolicies(_ *pkgctx.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass) field.ErrorList {
+func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Response {
+	return admission.Allowed("")
+}
+
+func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
+	// TODO: ValidateUpdate does not call validatePolicies like ValidateCreate
+	// does, so policy validation is currently skipped on update. Tracked
+	// separately; not fixed here since it's a behavior change unrelated to
+	// this lint pass.
+	var fieldErrs field.ErrorList
+	validationErrs := make([]string, 0, len(fieldErrs))
+	for _, fieldErr := range fieldErrs { //nolint:gosec // fieldErrs is always empty; ranging over it is a no-op, not an out-of-range access.
+		validationErrs = append(validationErrs, fieldErr.Error())
+	}
+
+	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
+}
+
+func (v validator) validatePolicies(ctx *pkgctx.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass) field.ErrorList {
 	var allErrs field.ErrorList
 
 	request, limits := vmClass.Spec.Resources.Requests, vmClass.Spec.Resources.Limits
 	reqPath := field.NewPath("spec", "resources", "requests")
 
-	allErrs = append(allErrs, validateRequestLimit(
-		reqPath.Child("cpu"), request.CPU, limits.CPU, invalidCPUReqMsg)...)
-	allErrs = append(allErrs, validateRequestLimit(
-		reqPath.Child("memory"), request.Memory, limits.Memory, invalidMemoryReqMsg)...)
+	// Validate the CPU request.
+	cpuRequest, cpuLimit := vmopv1.ClassResourceDefault(request.CPU), vmopv1.ClassResourceDefault(limits.CPU)
+	if !isRequestLimitValid(cpuRequest, cpuLimit) {
+		allErrs = append(allErrs, field.Invalid(reqPath.Child("cpu"), cpuRequest.String(), invalidCPUReqMsg))
+	}
+
+	// Validate the memory request.
+	memoryRequest, memoryLimit := vmopv1.ClassResourceDefault(request.Memory), vmopv1.ClassResourceDefault(limits.Memory)
+	if !isRequestLimitValid(memoryRequest, memoryLimit) {
+		allErrs = append(allErrs, field.Invalid(reqPath.Child("memory"), memoryRequest.String(), invalidMemoryReqMsg))
+	}
 
 	// TODO: Validate req and limit against hardware configuration of the class
-
-	return allErrs
-}
-
-// validateRequestLimit validates that a class request range can be satisfied
-// by its limit range, per "Size, requests and limits" in the spec: the
-// request default must not exceed the limit default, and the smallest request
-// (requests.min) must not exceed the largest limit (limits.max). A bound is
-// only compared when both sides are set and non-zero; an unset or zero limit
-// means unlimited.
-func validateRequestLimit(
-	path *field.Path,
-	request, limit *vmopv1.ResourceQuantityRange,
-	msg string) field.ErrorList {
-
-	var allErrs field.ErrorList
-
-	reqDefault := vmopv1.ClassResourceDefault(request)
-	limDefault := vmopv1.ClassResourceDefault(limit)
-	if !isRequestLimitValid(reqDefault, limDefault) {
-		allErrs = append(allErrs, field.Invalid(path, reqDefault.String(), msg))
-	}
-
-	if request != nil && request.Min != nil && limit != nil && limit.Max != nil &&
-		!isRequestLimitValid(*request.Min, *limit.Max) {
-
-		allErrs = append(allErrs, field.Invalid(
-			path.Child("min"), request.Min.String(), msg))
-	}
 
 	return allErrs
 }

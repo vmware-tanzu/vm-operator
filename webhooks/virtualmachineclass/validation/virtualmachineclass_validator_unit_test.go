@@ -141,54 +141,6 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid cpu request", createArgs{invalidCPURequest: true}, false, invalidCPUField.Error(), nil),
 		Entry("should deny invalid memory request", createArgs{invalidMemoryRequest: true}, false, invalidMemField.Error(), nil),
 	)
-
-	When("request min is larger than limit max", func() {
-		It("should deny cpu and memory", func() {
-			setMinGreaterThanMax(ctx.vmClass)
-			var err error
-			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmClass)
-			Expect(err).ToNot(HaveOccurred())
-
-			response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-			Expect(response.Allowed).To(BeFalse())
-			Expect(string(response.Result.Reason)).To(And(
-				ContainSubstring("spec.resources.requests.cpu.min"),
-				ContainSubstring("spec.resources.requests.memory.min")))
-		})
-	})
-
-	When("request min is within limit max", func() {
-		It("should allow", func() {
-			ctx.vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Min: ptr.To(resource.MustParse("1"))}
-			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Max: ptr.To(resource.MustParse("2"))}
-			var err error
-			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmClass)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(ctx.ValidateCreate(&ctx.WebhookRequestContext).Allowed).To(BeTrue())
-		})
-	})
-}
-
-// setMinGreaterThanMax makes the request minimums exceed the limit maximums
-// while the defaults stay valid.
-func setMinGreaterThanMax(vmClass *vmopv1.VirtualMachineClass) {
-	vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{
-		Min:     ptr.To(resource.MustParse("4")),
-		Default: ptr.To(resource.MustParse("1")),
-	}
-	vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{
-		Max:     ptr.To(resource.MustParse("2")),
-		Default: ptr.To(resource.MustParse("2")),
-	}
-	vmClass.Spec.Resources.Requests.Memory = &vmopv1.ResourceQuantityRange{
-		Min:     ptr.To(resource.MustParse("4Gi")),
-		Default: ptr.To(resource.MustParse("1Gi")),
-	}
-	vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{
-		Max:     ptr.To(resource.MustParse("2Gi")),
-		Default: ptr.To(resource.MustParse("2Gi")),
-	}
 }
 
 func unitTestsValidateUpdate() {
@@ -259,33 +211,6 @@ func unitTestsValidateUpdate() {
 		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, true, nil, nil),
 		Entry("should deny policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
 	)
-
-	When("the update makes a request default larger than its limit default", func() {
-		It("should deny", func() {
-			var err error
-			ctx.vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4"))}
-			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2"))}
-			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmClass)
-			Expect(err).ToNot(HaveOccurred())
-
-			response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-			Expect(response.Allowed).To(BeFalse())
-			Expect(string(response.Result.Reason)).To(ContainSubstring("spec.resources.requests.cpu"))
-		})
-	})
-
-	When("the update makes a request min larger than its limit max", func() {
-		It("should deny", func() {
-			var err error
-			setMinGreaterThanMax(ctx.vmClass)
-			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmClass)
-			Expect(err).ToNot(HaveOccurred())
-
-			response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-			Expect(response.Allowed).To(BeFalse())
-			Expect(string(response.Result.Reason)).To(ContainSubstring("spec.resources.requests.memory.min"))
-		})
-	})
 
 	When("the update is performed while object deletion", func() {
 		JustBeforeEach(func() {

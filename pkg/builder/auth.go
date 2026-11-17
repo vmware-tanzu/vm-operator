@@ -43,7 +43,7 @@ func IsPrivilegedAccount(
 	ctx *pkgctx.WebhookContext,
 	userInfo authv1.UserInfo) bool {
 
-	if ctx != nil {
+	if ctx != nil && ctx.Logger.V(6).Enabled() {
 		ctx.Logger.V(6).Info("Checking if account is privileged",
 			"Webhook Name", ctx.Name,
 			"Username", userInfo.Username,

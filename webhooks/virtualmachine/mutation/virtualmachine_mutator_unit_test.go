@@ -139,7 +139,7 @@ func unitTestsMutating() {
 
 						configMap := &corev1.ConfigMap{
 							ObjectMeta: metav1.ObjectMeta{
-								Namespace: ctx.Namespace,
+								Namespace: ctx.WebhookContext.Namespace,
 								Name:      config.ProviderConfigMapName,
 							},
 							Data: map[string]string{"Network": vmNetworkName},
@@ -387,7 +387,7 @@ func unitTestsMutating() {
 						Expect(enableCapability).To(BeFalse())
 						configMap := &corev1.ConfigMap{
 							ObjectMeta: metav1.ObjectMeta{
-								Namespace: ctx.Namespace,
+								Namespace: ctx.WebhookContext.Namespace,
 								Name:      config.ProviderConfigMapName,
 							},
 							Data: map[string]string{"Network": vmNetworkName},

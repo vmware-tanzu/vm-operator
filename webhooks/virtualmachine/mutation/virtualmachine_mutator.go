@@ -665,7 +665,7 @@ func getProviderConfigMap(ctx *pkgctx.WebhookRequestContext, c ctrlclient.Client
 		ctx,
 		ctrlclient.ObjectKey{
 			Name:      config.ProviderConfigMapName,
-			Namespace: ctx.Namespace,
+			Namespace: ctx.WebhookContext.Namespace,
 		},
 		&obj); err != nil {
 		return "", err

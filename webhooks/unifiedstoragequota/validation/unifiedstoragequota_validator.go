@@ -5,6 +5,7 @@
 package validation
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/go-logr/logr"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -75,7 +77,7 @@ type LegacyCapacityResponse struct {
 }
 
 type WebhookHandler interface {
-	Handle(req admission.Request) CapacityResponse
+	Handle(ctx context.Context, req admission.Request) CapacityResponse
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 	WriteResponse(w http.ResponseWriter, response CapacityResponse)
 }
@@ -138,7 +140,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr ctrlmgr.Manager) err
 	return nil
 }
 
-func (h *VMRequestedCapacityHandler) Handle(req admission.Request) CapacityResponse {
+func (h *VMRequestedCapacityHandler) Handle(ctx context.Context, req admission.Request) CapacityResponse {
 	var (
 		obj, oldObj   *unstructured.Unstructured
 		handleRequest func(ctx *pkgctx.WebhookRequestContext) CapacityResponse
@@ -152,6 +154,10 @@ func (h *VMRequestedCapacityHandler) Handle(req admission.Request) CapacityRespo
 					fmt.Errorf("failed to decode raw Request.Object: %w", err),
 				)}
 		}
+	}
+
+	if obj == nil {
+		return CapacityResponse{Response: webhook.Allowed(string(req.Operation))}
 	}
 
 	if _, ok := obj.GetAnnotations()[pkgconst.SkipValidationAnnotationKey]; ok {
@@ -175,18 +181,13 @@ func (h *VMRequestedCapacityHandler) Handle(req admission.Request) CapacityRespo
 		handleRequest = h.HandleUpdate
 	}
 
-	if obj == nil {
-		return CapacityResponse{Response: webhook.Allowed(string(req.Operation))}
-	}
-
-	webhookRequestContext := &pkgctx.WebhookRequestContext{
-		WebhookContext: h.WebhookContext,
-		Op:             req.Operation,
-		Obj:            obj,
-		OldObj:         oldObj,
-		UserInfo:       req.UserInfo,
-		Logger:         h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
-	}
+	webhookRequestContext, cancel := builder.NewWebhookRequestContext(
+		ctx,
+		h.WebhookContext,
+		req,
+		obj,
+		oldObj)
+	defer cancel()
 
 	return handleRequest(webhookRequestContext)
 }
@@ -436,7 +437,7 @@ func (h *VMRequestedCapacityHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	}
 	h.WebhookContext.Logger.V(4).Info("received request")
 
-	h.WriteResponse(w, h.Handle(req))
+	h.WriteResponse(w, h.Handle(r.Context(), req))
 }
 
 var admissionScheme = runtime.NewScheme()
@@ -497,7 +498,7 @@ func (h *VMRequestedCapacityHandler) WriteResponse(w http.ResponseWriter, respon
 	}
 }
 
-func (h *VMSnapshotRequestedCapacityHandler) Handle(req admission.Request) CapacityResponse {
+func (h *VMSnapshotRequestedCapacityHandler) Handle(ctx context.Context, req admission.Request) CapacityResponse {
 	if req.Operation != v1.Create {
 		return CapacityResponse{Response: webhook.Allowed(string(req.Operation))}
 	}
@@ -517,13 +518,13 @@ func (h *VMSnapshotRequestedCapacityHandler) Handle(req admission.Request) Capac
 		return CapacityResponse{Response: webhook.Allowed(builder.SkipValidationAllowed)}
 	}
 
-	webhookRequestContext := &pkgctx.WebhookRequestContext{
-		WebhookContext: h.WebhookContext,
-		Op:             req.Operation,
-		Obj:            obj,
-		UserInfo:       req.UserInfo,
-		Logger:         h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
-	}
+	webhookRequestContext, cancel := builder.NewWebhookRequestContext(
+		ctx,
+		h.WebhookContext,
+		req,
+		obj,
+		nil)
+	defer cancel()
 
 	return h.HandleCreate(webhookRequestContext)
 
@@ -631,7 +632,7 @@ func serveHTTP(w http.ResponseWriter, r *http.Request, h WebhookHandler, logger 
 
 	logger.V(4).Info("received request")
 
-	h.WriteResponse(w, h.Handle(req))
+	h.WriteResponse(w, h.Handle(r.Context(), req))
 }
 
 func (h *VMSnapshotRequestedCapacityHandler) WriteResponse(w http.ResponseWriter, response CapacityResponse) {

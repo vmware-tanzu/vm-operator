@@ -841,8 +841,8 @@ func TestVirtualMachineReplicaSetFlexAPIRoundTrip(t *testing.T) {
 			profileName = "value-" + *profile
 		}
 		for name, newSpoke := range map[string]func() ctrlconversion.Convertible{
-			"v1alpha3": func() ctrlconversion.Convertible { return &vmopv1a3.VirtualMachineReplicaSet{} },
-			"v1alpha4": func() ctrlconversion.Convertible { return &vmopv1a4.VirtualMachineReplicaSet{} },
+			"v1alpha3": func() ctrlconversion.Convertible { return &vmopv1a3.VirtualMachineReplicaSet{} }, //nolint:staticcheck // Deprecated spokes are still served.
+			"v1alpha4": func() ctrlconversion.Convertible { return &vmopv1a4.VirtualMachineReplicaSet{} }, //nolint:staticcheck // Deprecated spokes are still served.
 			"v1alpha5": func() ctrlconversion.Convertible { return &vmopv1a5.VirtualMachineReplicaSet{} },
 		} {
 			t.Run(name+"/reservedProfileName="+profileName, func(t *testing.T) {

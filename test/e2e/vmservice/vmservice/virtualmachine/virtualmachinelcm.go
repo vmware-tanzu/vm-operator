@@ -207,6 +207,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			},
 		}
 		Expect(svClusterClient.Create(ctx, vmClass)).To(Succeed(), "failed to create v1alpha6 VirtualMachineClass")
+		// DeferCleanup nodes run last-in-first-out, so the VM cleanup that
+		// CreateVirtualMachine registers below deletes the VM and waits for it
+		// to be gone before this node deletes the class.
 		DeferCleanup(func(cleanupCtx context.Context) {
 			Expect(svClusterClient.Delete(cleanupCtx, vmClass)).To(Succeed(), "failed to delete v1alpha6 VirtualMachineClass")
 		})

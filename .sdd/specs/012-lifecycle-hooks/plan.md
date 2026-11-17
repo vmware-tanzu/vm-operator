@@ -152,14 +152,15 @@ Envtest needs no extra wiring: `test/builder/test_suite.go` loads all of `config
 
 | Stage | Where | When blocked |
 |---|---|---|
-| Create | `createOrUpdateVirtualMachine`, after `getVM` returns `foundVM == nil`, before `ctxop.MarkCreate` | return `lifecycle.ErrHooksBlocked` |
+| Create | `createOrUpdateVirtualMachine`, after `getVM` returns `foundVM == nil` and `getCreateArgs` succeeds, before the vSphere create (`createVirtualMachine`, or the goroutine start for an async create) | return `lifecycle.ErrHooksBlocked` |
 | PowerStateChange | `reconcilePowerState`, inside `if setPowerState` before `SetPowerState`, and before `RestartAndWait` when a restart is due | return `nil` — skip only the power op |
 | Delete | `DeleteVirtualMachine`, before `virtualmachine.DeleteVirtualMachine` | return `lifecycle.ErrHooksBlocked` |
 | ResourceDelete | `ReconcileDelete`, before `controllerutil.RemoveFinalizer` | return `nil` — VM finalizer kept |
 
 - **`state`**: every call site gets it from `GetOrCreateLifecycleState`. The controller and provider each fetch their own copy from the cache, so a write in `ReconcileDelete` before the Delete checkpoint (adoption, abandon) makes the provider's pause fail with a `409` once; the next pass completes it. Never early, one extra reconcile.
 - **`ErrHooksBlocked`** is `pkgerr.NoRequeueNoErr("waiting for lifecycle hooks")`, matched with `errors.Is`.
-- **Create keys off `getVM`, not `Status.UniqueID`**: snapshot revert wipes `Status` for a VM that still exists, and `getVM` still finds it via `Spec.InstanceUUID`. Placing the gate before `MarkCreate` keeps the controller from emitting `CreateFailure` (its catch-all case drops `NoRequeueNoErr`).
+- **Create keys off `getVM`, not `Status.UniqueID`**: snapshot revert wipes `Status` for a VM that still exists, and `getVM` still finds it via `Spec.InstanceUUID`.
+- **Create gates after `getCreateArgs`**: the hooks fire only once the create can actually run. Prerequisites such as the network interface, image cache, policy and placement fail transiently; a gate before them would pause again on every retry, because a released stage's status entry is cleared and the next reach is a new hold. A failure in the vSphere create itself still re-pauses (below). The gate follows `ctxop.MarkCreate`, so a blocked create is emitted by the controller as `CreatePending` (a `NoRequeueError` on create), not `CreateFailure`.
 - **PowerStateChange returns `nil`, not `ErrHooksBlocked`**: `updateVirtualMachine` stops at a `NoRequeueError` from the power step, which would skip snapshot create (G2).
 - **Restart**: `RestartAndWait`'s due check (`spec.nextRestartTime` newer than the last restart recorded in ExtraConfig, and not in the future) is split out as `vmutil.IsRestartDue`, so the gate runs only when a restart will happen.
 - **Delete events**: `ReconcileDelete` sets a local `hooksBlocked` flag when the provider returns `ErrHooksBlocked` or the ResourceDelete gate blocks, and its deferred `EmitEvent(ctx.VM, "Delete", ...)` emits nothing while it is set. Other delete errors still emit `DeleteFailure`; each VM gets one `DeleteSuccess`. Not `filterNoRequeueErr`: it would turn existing `DeleteFailure` warnings into `DeleteSuccess`.
@@ -295,7 +296,7 @@ The library is unit-testable on its own, with no cluster and no capability rollo
 
 `pkg/providers/vsphere/vmprovider_vm_lifecyclehooks_test.go`, registered from the `vmprovider_vm_test.go` index like the other per-topic files:
 
-- **Create**: no hook → creates, no condition; blocked → `ErrHooksBlocked`, no vSphere create, condition blocked; `foundVM != nil`, including a wiped `Status` after revert, never reaches the gate; a failed create after release pauses again.
+- **Create**: no hook → creates, no condition; blocked → `ErrHooksBlocked`, no vSphere create, condition blocked; `foundVM != nil`, including a wiped `Status` after revert, never reaches the gate; a `getCreateArgs` failure never pauses, and the stage pauses once its prerequisites succeed; a failed vSphere create after release pauses again.
 - **Delete**: blocked → `ErrHooksBlocked`, `virtualmachine.DeleteVirtualMachine` not called; no entry → unchanged; a failed delete after release pauses again; no vSphere VM → returns `nil` before the gate.
 - **PowerStateChange**: blocked power-on, power-off, suspend and due restart issue no power task while the rest of the update, including snapshot create, still runs; a restart that is not due does not pause; the two directions pause independently; a held power change cancelled by reverting `spec.powerState` is abandoned, and the next request pauses afresh; a reconcile that returns an error before deciding, such as an unparsable `nextRestartTime`, keeps the hold.
 

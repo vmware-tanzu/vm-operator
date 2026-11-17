@@ -2787,7 +2787,7 @@ func hasCPUResourceDefaults(resources vmopv1.VirtualMachineClassResources) bool 
 		resources.Requests.CPU,
 		resources.Limits.CPU,
 	} {
-		if valueRange != nil && valueRange.Default != nil && !valueRange.Default.IsZero() {
+		if vmopv1.ClassResourceNonZeroDefault(valueRange) != nil {
 			return true
 		}
 	}

@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"k8s.io/apimachinery/pkg/api/resource"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -37,10 +36,10 @@ func CreateConfigSpec(
 		configSpec.Annotation = constants.VCVMAnnotation
 	}
 	// Explicit size defaults take precedence over values in the config spec.
-	if q := quantityDefault(vmClassSpec.Resources.Size.CPU); q != nil {
+	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.Resources.Size.CPU); q != nil {
 		configSpec.NumCPUs = int32(q.Value()) //nolint:gosec // validated as an int32 vCPU count
 	}
-	if q := quantityDefault(vmClassSpec.Resources.Size.Memory); q != nil {
+	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.Resources.Size.Memory); q != nil {
 		configSpec.MemoryMB = MemoryQuantityToMb(*q)
 	}
 	configSpec.ManagedBy = &vimtypes.ManagedByInfo{
@@ -117,9 +116,9 @@ func CreateConfigSpec(
 	// Populate the CPU reservation and limits in the ConfigSpec if VAPI fields specify any.
 	// VM Class VAPI does not support Limits, so they will never be non nil.
 	// TODO: Remove limits: issues/56
-	requestsCPU := quantityDefault(vmClassSpec.Resources.Requests.CPU)
-	limitsCPU := quantityDefault(vmClassSpec.Resources.Limits.CPU)
-	if nonZero(requestsCPU) || nonZero(limitsCPU) {
+	requestsCPU := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Requests.CPU)
+	limitsCPU := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Limits.CPU)
+	if requestsCPU != nil || limitsCPU != nil {
 		// TODO: Always override?
 		configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
 			Shares: &vimtypes.SharesInfo{
@@ -127,11 +126,11 @@ func CreateConfigSpec(
 			},
 		}
 
-		if nonZero(requestsCPU) {
+		if requestsCPU != nil {
 			rsv := CPUQuantityToMhz(*requestsCPU, minFreq)
 			configSpec.CpuAllocation.Reservation = &rsv
 		}
-		if nonZero(limitsCPU) {
+		if limitsCPU != nil {
 			lim := CPUQuantityToMhz(*limitsCPU, minFreq)
 			configSpec.CpuAllocation.Limit = &lim
 		} else {
@@ -143,9 +142,9 @@ func CreateConfigSpec(
 
 	// Populate the memory reservation and limits in the ConfigSpec if VAPI fields specify any.
 	// TODO: Remove limits: issues/56
-	requestsMemory := quantityDefault(vmClassSpec.Resources.Requests.Memory)
-	limitsMemory := quantityDefault(vmClassSpec.Resources.Limits.Memory)
-	if nonZero(requestsMemory) || nonZero(limitsMemory) {
+	requestsMemory := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Requests.Memory)
+	limitsMemory := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Limits.Memory)
+	if requestsMemory != nil || limitsMemory != nil {
 		// TODO: Always override?
 		configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
 			Shares: &vimtypes.SharesInfo{
@@ -153,11 +152,11 @@ func CreateConfigSpec(
 			},
 		}
 
-		if nonZero(requestsMemory) {
+		if requestsMemory != nil {
 			rsv := MemoryQuantityToMb(*requestsMemory)
 			configSpec.MemoryAllocation.Reservation = &rsv
 		}
-		if nonZero(limitsMemory) {
+		if limitsMemory != nil {
 			lim := MemoryQuantityToMb(*limitsMemory)
 			configSpec.MemoryAllocation.Limit = &lim
 		} else {
@@ -168,17 +167,6 @@ func CreateConfigSpec(
 	}
 
 	return configSpec
-}
-
-func quantityDefault(r *vmopv1.ResourceQuantityRange) *resource.Quantity {
-	if r == nil || r.Default == nil {
-		return nil
-	}
-	return r.Default
-}
-
-func nonZero(q *resource.Quantity) bool {
-	return q != nil && !q.IsZero()
 }
 
 // CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for

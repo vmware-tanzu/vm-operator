@@ -48,6 +48,25 @@ func ClassResourceDefault(value *ResourceQuantityRange) resource.Quantity {
 	return value.Default.DeepCopy()
 }
 
+// ClassResourceDefaultOrNil returns a pointer to a copy of a class range's
+// default, or nil when the range or its default is unset.
+func ClassResourceDefaultOrNil(value *ResourceQuantityRange) *resource.Quantity {
+	if value == nil || value.Default == nil {
+		return nil
+	}
+	q := value.Default.DeepCopy()
+	return &q
+}
+
+// ClassResourceNonZeroDefault returns a pointer to a copy of a class range's
+// default, or nil when the range or its default is unset or zero.
+func ClassResourceNonZeroDefault(value *ResourceQuantityRange) *resource.Quantity {
+	if q := ClassResourceDefaultOrNil(value); q != nil && !q.IsZero() {
+		return q
+	}
+	return nil
+}
+
 // FixedClassResourcePair converts legacy CPU and memory quantities to fixed
 // ranges with independent copies of their bounds and defaults.
 func FixedClassResourcePair(cpu, memory resource.Quantity) VirtualMachineClassResourceSpec {
@@ -121,15 +140,20 @@ func RestoreClassInstanceConversionData[S any](
 }
 
 // PreserveClassConversionData preserves policies missing from an older API and
-// copies metadata before adding the conversion annotation.
+// copies metadata before adding the conversion annotation. Only the resources
+// that restore reads are stored, which keeps the annotation small.
 func PreserveClassConversionData(in *VirtualMachineClass, outMeta *metav1.ObjectMeta) error {
-	return preserveClassData(in, &in.ObjectMeta, outMeta, "VMClass")
+	data := &VirtualMachineClass{}
+	data.Spec.Resources = in.Spec.Resources
+	return preserveClassData(data, &in.ObjectMeta, outMeta, "VMClass")
 }
 
-// PreserveClassInstanceConversionData preserves the immutable class snapshot
-// for an older API without modifying the source metadata.
+// PreserveClassInstanceConversionData preserves the resources of the immutable
+// class snapshot for an older API without modifying the source metadata.
 func PreserveClassInstanceConversionData(in *VirtualMachineClassInstance, outMeta *metav1.ObjectMeta) error {
-	return preserveClassData(in, &in.ObjectMeta, outMeta, "VMClassInstance")
+	data := &VirtualMachineClassInstance{}
+	data.Spec.Resources = in.Spec.Resources
+	return preserveClassData(data, &in.ObjectMeta, outMeta, "VMClassInstance")
 }
 
 func preserveClassData(in metav1.Object, inMeta, outMeta *metav1.ObjectMeta, kind string) error {

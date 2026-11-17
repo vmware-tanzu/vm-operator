@@ -342,6 +342,18 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				Expect(hub.Annotations).NotTo(HaveKey(utilconversion.AnnotationKey))
 			})
 
+			It("stores only the resources in the conversion annotation", func() {
+				hub := classWithPolicies()
+				spoke := version.newSpoke()
+				Expect(spoke.ConvertFrom(hub)).To(Succeed())
+				var data map[string]map[string]json.RawMessage
+				Expect(json.Unmarshal([]byte(spoke.(metav1.Object).GetAnnotations()[utilconversion.AnnotationKey]), &data)).To(Succeed())
+				Expect(data).To(HaveKey("spec"))
+				Expect(data["spec"]).To(HaveKey("resources"))
+				Expect(data["spec"]).NotTo(HaveKey("reservedProfileID"))
+				Expect(spoke.(metav1.Object).GetAnnotations()[utilconversion.AnnotationKey]).NotTo(ContainSubstring("gpu-a"))
+			})
+
 			It("copies metadata before preserving class policies", func() {
 				hub := classWithPolicies()
 				hub.Annotations = map[string]string{"user": "keep"}
@@ -478,6 +490,18 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				spoke.(metav1.Object).GetAnnotations()["user"] = "changed"
 				Expect(hub).To(Equal(beforeHub))
 			})
+			It("stores only the resources in the conversion annotation", func() {
+				hub := &vmopv1.VirtualMachineClassInstance{
+					Spec: vmopv1.VirtualMachineClassInstanceSpec{VirtualMachineClassSpec: classWithPolicies().Spec},
+				}
+				spoke := version.newSpoke()
+				Expect(spoke.ConvertFrom(hub)).To(Succeed())
+				var data map[string]map[string]json.RawMessage
+				Expect(json.Unmarshal([]byte(spoke.(metav1.Object).GetAnnotations()[utilconversion.AnnotationKey]), &data)).To(Succeed())
+				Expect(data["spec"]).To(HaveKey("resources"))
+				Expect(data["spec"]).NotTo(HaveKey("reservedProfileID"))
+				Expect(spoke.(metav1.Object).GetAnnotations()[utilconversion.AnnotationKey]).NotTo(ContainSubstring("gpu-a"))
+			})
 			It("returns malformed annotations without changing source metadata", func() {
 				spoke := version.newSpoke()
 				spoke.(metav1.Object).SetAnnotations(map[string]string{utilconversion.AnnotationKey: "{", "user": "keep"})
@@ -565,3 +589,29 @@ func classWithPolicies() *vmopv1.VirtualMachineClass {
 		},
 	}
 }
+
+var _ = Describe("VMClass default helpers", Label("api"), func() {
+	four, zero := resource.MustParse("4"), resource.MustParse("0")
+
+	It("returns nil for an unset range or default", func() {
+		Expect(vmopv1.ClassResourceDefaultOrNil(nil)).To(BeNil())
+		Expect(vmopv1.ClassResourceDefaultOrNil(&vmopv1.ResourceQuantityRange{})).To(BeNil())
+		Expect(vmopv1.ClassResourceNonZeroDefault(nil)).To(BeNil())
+		Expect(vmopv1.ClassResourceNonZeroDefault(&vmopv1.ResourceQuantityRange{})).To(BeNil())
+	})
+
+	It("returns an independent copy of a set default", func() {
+		r := &vmopv1.ResourceQuantityRange{Default: &four}
+		q := vmopv1.ClassResourceDefaultOrNil(r)
+		Expect(q).NotTo(BeNil())
+		Expect(q.Cmp(four)).To(BeZero())
+		Expect(q).NotTo(BeIdenticalTo(r.Default))
+		Expect(vmopv1.ClassResourceNonZeroDefault(r)).NotTo(BeNil())
+	})
+
+	It("distinguishes a zero default", func() {
+		r := &vmopv1.ResourceQuantityRange{Default: &zero}
+		Expect(vmopv1.ClassResourceDefaultOrNil(r)).NotTo(BeNil())
+		Expect(vmopv1.ClassResourceNonZeroDefault(r)).To(BeNil())
+	})
+})

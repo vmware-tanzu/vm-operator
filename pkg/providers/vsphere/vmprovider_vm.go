@@ -3375,9 +3375,13 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		updateArgs.MinCPUFreq = freq
 	}
 
-	configSpec, err := virtualmachine.ClassConfigSpecFromClassSpec(vmCtx, &updateArgs.VMClass.Spec)
-	if err != nil {
-		return nil, err
+	var configSpec vimtypes.VirtualMachineConfigSpec
+	if rawConfigSpec := updateArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
+		vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
+		if err != nil {
+			return nil, err
+		}
+		configSpec = vmClassConfigSpec
 	}
 
 	updateArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
@@ -3437,9 +3441,13 @@ func (vs *vSphereVMProvider) vmResizeGetArgs(
 			minCPUFreq = freq
 		}
 
-		configSpec, err := virtualmachine.ClassConfigSpecFromClassSpec(vmCtx, &resizeArgs.VMClass.Spec)
-		if err != nil {
-			return nil, err
+		var configSpec vimtypes.VirtualMachineConfigSpec
+		if rawConfigSpec := resizeArgs.VMClass.Spec.ConfigSpec; len(rawConfigSpec) > 0 {
+			vmClassConfigSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
+			if err != nil {
+				return nil, err
+			}
+			configSpec = vmClassConfigSpec
 		}
 
 		resizeArgs.ConfigSpec = virtualmachine.CreateConfigSpec(

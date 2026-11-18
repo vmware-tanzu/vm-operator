@@ -46,6 +46,38 @@ if [ -f "${_SCRIPT_DIR}/callback.sh" ]; then
     source "${_SCRIPT_DIR}/callback.sh"
 fi
 
+# Isolated testbeds keep a jumphost tunnel open for the whole run (opened by
+# setup-testbed-env.sh, owned by E2E_ISOLATED_STATE_DIR). It must outlive the
+# tests and support-bundle collection. The pipeline (TEST_CALLBACK_URL set, one
+# run per container) owns the tunnel and releases it on exit or interrupt. A
+# local developer who sourced the setup script may run several make targets (or
+# several at once) against one tunnel, so teardown is opt-in there: set
+# E2E_STOP_TUNNEL=true, or run "hack/e2e/isolated.sh stop" when finished.
+# Inert (no state dir) on ordinary testbeds.
+if [ -f "${_SCRIPT_DIR}/isolated.sh" ]; then
+    # shellcheck source=./isolated.sh
+    source "${_SCRIPT_DIR}/isolated.sh"
+fi
+stop_isolated_tunnel() {
+    if declare -F _iso_stop_tunnel >/dev/null 2>&1; then
+        _iso_stop_tunnel || true
+    fi
+}
+if [ "${E2E_STOP_TUNNEL:-${TEST_CALLBACK_URL:+true}}" = "true" ]; then
+    trap stop_isolated_tunnel EXIT
+fi
+
+# An interrupt must not skip support-bundle collection or the result callback.
+# Ctrl-C reaches the whole foreground process group, so Ginkgo gets it directly
+# and shuts down gracefully (writing its report and running AfterSuite); these
+# traps only record the signal so the script carries on with the bundle and
+# callback once Ginkgo returns, and then exits with the conventional status
+# (130/143). A trap on a signal sent to this script alone runs when the
+# foreground command finishes.
+E2E_SIGNAL_EXIT=0
+trap 'E2E_SIGNAL_EXIT=130' INT
+trap 'E2E_SIGNAL_EXIT=143' TERM
+
 # parse_json_report reads a Ginkgo JSON report (written by --json-report) and
 # emits a JSON array of per-test results suitable for the subtest_details field
 # of a test callback payload. Each element has "testcasename" and "result".
@@ -227,5 +259,8 @@ fi
 report_result "${E2E_EXIT}" "${REPORT_DIR}/report.json"
 
 # 8. Propagate the test suite's own exit code — bundle collection above never
-# affects it.
+# affects it — or the interrupt status if the run was interrupted.
+if [ "${E2E_SIGNAL_EXIT}" -ne 0 ]; then
+    exit "${E2E_SIGNAL_EXIT}"
+fi
 exit "${E2E_EXIT}"

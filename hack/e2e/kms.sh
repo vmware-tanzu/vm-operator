@@ -51,6 +51,11 @@ script_dir="$(dirname "$0")"
 # -T: no PTY (avoids "Too many authentication failures" from the SSH agent)
 # PubkeyAuthentication=no: force password auth, don't offer agent keys
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=${SSH_CONNECT_TIMEOUT}"
+# Isolated testbeds: hop through the jumphost via the ssh_config that
+# setup-testbed-env.sh/isolated.sh wrote (no-op otherwise).
+if [ -n "${E2E_SSH_CONFIG:-}" ] && [ -f "${E2E_SSH_CONFIG}" ]; then
+  SSH_OPTS="-F ${E2E_SSH_CONFIG} ${SSH_OPTS}"
+fi
 #crt_dir="$script_dir/tools/bin"
 crt_dir=$(mktemp -d)
 
@@ -72,8 +77,9 @@ find_gateway_ip() {
   if command -v grepcidr >/dev/null 2>&1; then
     govc vm.ip -a -v4 "$vm" 2>/dev/null | tr ',' '\n' | grepcidr "$mgmtCidr" || true
   else
-    # Fallback: get first non-link-local 10.x IP (management network uses 10.0.0.0/8).
-    govc vm.ip -a -v4 "$vm" 2>/dev/null | tr ',' '\n' | grep -v "^169\.254\." | grep "^10\." | head -n1 || true
+    # Fallback: get first non-link-local IP on the management network, which
+    # is 10.x unless E2E_MGMT_IP_PREFIX says otherwise (isolated testbeds).
+    govc vm.ip -a -v4 "$vm" 2>/dev/null | tr ',' '\n' | grep -v "^169\.254\." | grep "^$(printf '%s' "${E2E_MGMT_IP_PREFIX:-10.}" | sed 's/\./\\./g')" | head -n1 || true
   fi
 }
 

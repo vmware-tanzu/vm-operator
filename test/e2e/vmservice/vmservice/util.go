@@ -729,10 +729,8 @@ func VerifyLoginAndRunCmdsInNSXSetup(ctx context.Context, config *config.E2EConf
 func VerifyLoginAndRunCmdsInVDSSetup(config *config.E2EConfig, vmIP string, cmds []string, expectedOutput []string) {
 	By(fmt.Sprintf("Verify that ssh login to VM with vmIP (ipv4): %s succeeds", vmIP))
 
-	httpProxy := os.Getenv(consts.HTTPProxyEnv)
-	Expect(httpProxy).NotTo(BeEmpty(), "%s env var is not set", consts.HTTPProxyEnv)
-
-	gatewayVMIP := strings.Split(httpProxy, ":")[0]
+	gatewayVMIP, err := e2essh.GetGatewayHost()
+	Expect(err).NotTo(HaveOccurred(), "failed to determine the gateway VM address")
 
 	gatewayCmdRunner, err := e2essh.NewSSHCommandRunner(gatewayVMIP, consts.SshPort, testbed.GatewayUsername, []ssh.AuthMethod{ssh.Password(testbed.GatewayPassword)})
 	Expect(err).NotTo(HaveOccurred())

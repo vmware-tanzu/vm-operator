@@ -47,6 +47,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 014 | [vmgroup-power-ordering](specs/014-vmgroup-power-ordering/) | VM Group Power-On and Power-Off Ordering (stateless staged release; `PowerOnDelay` and `PowerOffDelay` count from completion of the previous group) | Draft | vmop-4060 |
 | 015 | [vmclass-v2](specs/015-vmclass-v2/) | Flex VM Classes (`VirtualMachineClass` v2) — range-based classes, `governs`, zones, `externalID`, reserved profiles; replaces `VirtualMachineConfigPolicy`; design in WIKI page 3118085463 | In Progress | vmop-4034, vmop-4038, vmop-4039, vmop-4040, vmop-4041, vmop-4201, vmop-4312 |
 | 016 | [byo-network-interface](specs/016-byo-network-interface/) | Bring Your Own Network Interface CR | In Progress | vmop-2530 |
+| 017 | [e2e-isolated-testbeds](specs/017-e2e-isolated-testbeds/) | E2E Support for Isolated Testbeds | In Progress | vmop-4430 |
 
 ### Finding the right spec
 

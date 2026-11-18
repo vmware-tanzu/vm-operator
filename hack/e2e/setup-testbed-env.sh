@@ -103,6 +103,13 @@ if [[ -n "${_CALLBACK_SCRIPT_DIR}" ]]; then
     source "${_CALLBACK_SCRIPT_DIR}/callback.sh"
 fi
 
+# Isolated testbed connectivity (jumphost discovery, SOCKS/SSH tunnel). Sourced
+# unconditionally but inert unless the testbed is isolated.
+if [[ -n "${_CALLBACK_SCRIPT_DIR}" && -f "${_CALLBACK_SCRIPT_DIR}/isolated.sh" ]]; then
+    # shellcheck source=./isolated.sh
+    source "${_CALLBACK_SCRIPT_DIR}/isolated.sh"
+fi
+
 # _report_setup_failure reports the most recent _err message as a "Failed"
 # callback. Setup failures happen before run-e2e.sh ever runs (the two are
 # chained with "&&" in the E2E container's entrypoint), so without this the
@@ -111,6 +118,15 @@ _report_setup_failure() {
     if declare -F report_callback >/dev/null 2>&1; then
         report_callback "Failed" "${_LAST_ERR}"
     fi
+    # A failed setup never reaches run-e2e.sh, which would otherwise own the
+    # tunnel teardown, so release the jumphost tunnel here, but only one this
+    # invocation opened: a tunnel inherited from an earlier setup in the same
+    # shell is left alone. This is done after the callback, which may itself
+    # be sent through the tunnel.
+    if [[ "${_ISO_STARTED}" == "true" ]] && declare -F _iso_stop_tunnel >/dev/null 2>&1; then
+        _iso_stop_tunnel
+    fi
+    return 0
 }
 
 # _retry_with_backoff <max_attempts> <initial_delay_seconds> <description> <cmd> [args...]
@@ -151,6 +167,19 @@ _export() {
     fi
 }
 
+# Unset a variable and, when running as a subprocess, also emit an eval-safe
+# "unset VAR" line to stdout.
+_unexport() {
+    unset "$1"
+    if [[ "${_SOURCED}" == "false" ]]; then
+        printf 'unset %s\n' "$1"
+    fi
+}
+
+# Whether this invocation opened an isolated-testbed jumphost tunnel. Reset on
+# every run, since a sourced script shares globals with earlier sources.
+_ISO_STARTED=false
+
 # Common SSH options shared across all sshpass/ssh/scp invocations.
 _SSH_OPTS=(
     -o StrictHostKeyChecking=no
@@ -177,7 +206,12 @@ _load_testbed() {
 
     if [[ "${source}" =~ ^https?:// ]]; then
         _log "Fetching testbed data from: ${source}"
-        if ! testbed_data=$(curl -fsSL "${source}" 2>/dev/null); then
+        # A tunnel left by an earlier setup in this shell may still own the
+        # proxy variables (and may be dead); the testbed data host is
+        # reachable directly, so do not route the fetch through it.
+        local -a noproxy=()
+        [[ -n "${E2E_ISOLATED_STATE_DIR:-}" ]] && noproxy=(--noproxy '*')
+        if ! testbed_data=$(curl -fsSL ${noproxy[@]+"${noproxy[@]}"} "${source}" 2>/dev/null); then
             _err "Failed to fetch testbed data from ${source}"
             return 1
         fi
@@ -342,14 +376,29 @@ _export_common_vars() {
 
     # Honour a NETWORK value the caller already exported (e.g. the UTS
     # pipeline job spec) instead of overwriting it with the auto-detected
-    # value below, which falls back to "vds" whenever the testbed JSON
-    # doesn't carry a recognized topology field.
-    local networking_type
-    networking_type=$(jq -r '
+    # value below. Detection order: an explicit networking field, then
+    # TESTBED_TOPOLOGY, then the presence of any populated NSX section
+    # (NSX-T and VPC testbeds deploy NSX; VDS testbeds list the sections
+    # empty or omit them), else "vds". VPC is the "nsx" topology. The NSX
+    # sections live in testbed_info (inside deliverable_blob for UTS input);
+    # only non-empty objects or arrays count.
+    local networking_type networking_source nsx_sections
+    nsx_sections=$(jq -r '
+        [.nsxm, .nsxc, .nsxAutoEdge, .nsxmanager, .nsxcontroller, .nsxedge, .nsxpolicy]
+        | map(select((type == "object" or type == "array") and length > 0)) | length
+    ' <<< "${testbed_info}" 2>/dev/null) || nsx_sections=0
+    networking_type=$(jq -r --argjson nsx "${nsx_sections:-0}" '
         .deliverable_blob.networking //
         .networking //
-        (if .TESTBED_TOPOLOGY == "NIMBUS_NSXT" then "nsx" else "vds" end)
-    ' <<< "${testbed_data}")
+        (if .TESTBED_TOPOLOGY == "NIMBUS_NSXT" or $nsx > 0 then "nsx" else "vds" end)
+    ' <<< "${testbed_data}" 2>/dev/null)
+    [[ -n "${networking_type}" && "${networking_type}" != "null" ]] || networking_type="vds"
+    if [[ -n "${NETWORK:-}" ]]; then
+        networking_source="caller-supplied NETWORK"
+    else
+        networking_source="auto-detected from testbed data"
+    fi
+    _log "Networking topology: ${NETWORK:-${networking_type}} (${networking_source})"
     _export NETWORK "${NETWORK:-${networking_type}}"
 
     # Honour values already set in the environment; fall back to safe defaults.
@@ -379,6 +428,94 @@ _decrypt_wcp_credentials() {
 }
 
 # ---------------------------------------------------------------------------
+# _ensure_sshpass
+#
+# Installs sshpass when missing. Must run before the first SSH connection,
+# including the isolated-testbed jumphost tunnel.
+# ---------------------------------------------------------------------------
+_ensure_sshpass() {
+    command -v sshpass >/dev/null 2>&1 && return 0
+    _log "sshpass not found — attempting to install..."
+    if command -v apt-get >/dev/null 2>&1; then
+        { apt-get update -qq && apt-get install -y -qq sshpass; } >&2
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y -q sshpass >&2
+    else
+        _warn "sshpass unavailable and no recognised package manager found; SSH-based setup may fail"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# _reset_isolated_state
+#
+# A later setup in the same shell replaces whatever an earlier one left: its
+# tunnel (if still running) is stopped and the variables it exported (proxy
+# settings, ssh_config, management network) are unset, so this run starts from
+# a clean environment. Runs only after the testbed has loaded and parsed, so a
+# typo'd testbed path never tears down a working tunnel.
+# ---------------------------------------------------------------------------
+_reset_isolated_state() {
+    [[ -n "${E2E_ISOLATED_STATE_DIR:-}" ]] || return 0
+    declare -F _iso_stop_tunnel >/dev/null 2>&1 || return 0
+    _log "Replacing isolated-testbed state left by an earlier setup (${E2E_ISOLATED_STATE_DIR})"
+    _iso_stop_tunnel
+}
+
+# ---------------------------------------------------------------------------
+# _setup_isolated_connectivity <testbed_source>
+#
+# When the testbed is isolated, brings up the jumphost tunnel (see isolated.sh)
+# before anything touches vCenter, and routes every later ssh/scp through it.
+# A no-op on ordinary testbeds. Required: failure stops setup.
+# Reads: testbed_info, testbed_data, vc_url. Sets: mgmt_ip_prefix, mgmt_cidr,
+# _ISO_STARTED.
+# ---------------------------------------------------------------------------
+_setup_isolated_connectivity() {
+    local -r testbed_source="$1"
+    mgmt_ip_prefix="10." mgmt_cidr="10.0.0.0/8"
+    declare -F _iso_is_isolated >/dev/null 2>&1 || return 0
+
+    local reason
+    case "${E2E_ISOLATED:-}" in
+        true|1|false|0) reason="forced by E2E_ISOLATED=${E2E_ISOLATED}" ;;
+        *)  local prefix jump=no
+            prefix="$(_iso_network_prefix "${testbed_info}")"
+            [[ -n "${prefix}" ]] || prefix="$(_iso_network_prefix "${testbed_data}")"
+            if [[ -n "$(_iso_jumphost_entry "${testbed_info}")" || -n "$(_iso_jumphost_entry "${testbed_data}")" ]]; then
+                jump=yes
+            fi
+            reason="vCenter ${vc_url}; isolated network prefix \"${prefix:-none}\"; jumphost entry in network list: ${jump}" ;;
+    esac
+    if ! _iso_is_isolated "${vc_url}" "${testbed_info}" "${testbed_data}"; then
+        _log "Testbed is NOT isolated (${reason}); connecting directly"
+        return 0
+    fi
+
+    _log "Testbed is ISOLATED (${reason}); connecting through a jumphost tunnel"
+    local iso_jump_ip iso_jump_user iso_jump_password
+    _iso_parse_jumphost "${testbed_info}" "${testbed_data}" || return 1
+    _ensure_sshpass
+
+    # Hosts the runner reaches directly, never through the jumphost.
+    local -a direct_urls=()
+    local u
+    for u in "${TEST_CALLBACK_URL:-}" "${TESTBED_DATA_URL:-}" "${testbed_source}"; do
+        [[ "${u}" =~ ^https?:// ]] && direct_urls+=("${u}")
+    done
+
+    _iso_start_tunnel "${vc_url}" ${direct_urls[@]+"${direct_urls[@]}"} || return 1
+    _ISO_STARTED=true
+    _SSH_OPTS+=(-F "${E2E_SSH_CONFIG}")
+
+    local net
+    net="$(_iso_mgmt_network "${vc_url}" "${testbed_info}" "${testbed_data}")"
+    mgmt_ip_prefix="${net%% *}" mgmt_cidr="${net##* }"
+    _export E2E_MGMT_IP_PREFIX "${mgmt_ip_prefix}"
+    _export E2E_MGMT_CIDR      "${mgmt_cidr}"
+    _log "Isolated management network: ${mgmt_cidr}"
+}
+
+# ---------------------------------------------------------------------------
 # _fetch_supervisor_access <enable_e2e>
 #
 # SSHes to vCenter to run decryptK8Pwd.py, downloads the supervisor kubeconfig,
@@ -391,16 +528,7 @@ _fetch_supervisor_access() {
 
     _log "Retrieving WCP/Supervisor cluster credentials..."
 
-    if ! command -v sshpass >/dev/null 2>&1; then
-        _log "sshpass not found — attempting to install..."
-        if command -v apt-get >/dev/null 2>&1; then
-            { apt-get update -qq && apt-get install -y -qq sshpass; } >&2
-        elif command -v yum >/dev/null 2>&1; then
-            yum install -y -q sshpass >&2
-        else
-            _warn "sshpass unavailable and no recognised package manager found; WCP credential extraction may fail"
-        fi
-    fi
+    _ensure_sshpass
 
     local wcp_raw=""
     if ! _retry_with_backoff "${_DECRYPT_RETRY_ATTEMPTS}" "${_DECRYPT_RETRY_INITIAL_DELAY}" \
@@ -604,7 +732,8 @@ _setup_kms_providers() {
 # ---------------------------------------------------------------------------
 _setup_gateway_and_proxy() {
     local -r script_dir="$1"
-    local -r mgmt_cidr='10.0.0.0/8'
+    # mgmt_cidr / mgmt_ip_prefix come from _main (dynamic scoping): 10.0.0.0/8
+    # normally, the isolated network's /24 on an isolated testbed.
 
     if ! command -v govc >/dev/null 2>&1; then
         _warn "Skipping gateway/proxy and KMS setup: govc not found in PATH"
@@ -633,7 +762,7 @@ _setup_gateway_and_proxy() {
     local gateway_ip
     gateway_ip=$(GOVC_USERNAME="${vc_vim_username}" GOVC_PASSWORD="${vc_vim_password}" \
         "${script_dir}/proxy.sh" gateway "${vc_url}" "${mgmt_cidr}" 2>&1 \
-        | grep "^10\." | head -1 || true)
+        | grep "^${mgmt_ip_prefix//./\\.}" | grep -E "^[0-9.]+$" | head -1 || true)
 
     if [[ -z "${gateway_ip:-}" || "${gateway_ip}" == "null" ]]; then
         _warn "Could not find gateway VM (may not be a VDS testbed)"
@@ -682,17 +811,39 @@ _setup_gateway_and_proxy() {
     # IP for direct SSH (port 22) — they do not connect through squid (3128).
     # The runner's subnet is firewalled from 3128 even when squid is healthy,
     # so gating on nc to 3128 would give false negatives.
-    local no_proxy_val="localhost,127.0.0.1,${vc_url},${SUPERVISOR_CLUSTER_IP:-}"
-    _export HTTP_PROXY          "${gateway_ip}:3128"
-    _export HTTPS_PROXY         "${gateway_ip}:3128"
-    _export NO_PROXY            "${no_proxy_val}"
-    _export no_proxy            "${no_proxy_val}"
+    if [[ "${_ISO_STARTED}" == "true" ]]; then
+        # Isolated: the runner already reaches everything through the jumphost
+        # tunnel (ALL_PROXY/NO_PROXY set by isolated.sh), so the gateway is not
+        # used as the proxy address. GATEWAY_IP is the SSH identity of the
+        # external gateway VM (guest access).
+        # HTTP clients need an HTTP CONNECT proxy for Kubernetes streaming
+        # (exec/attach/port-forward), which SOCKS cannot carry. Reuse the Squid
+        # just installed on the gateway via a forward on the tunnel.
+        if ! _iso_add_http_proxy "${gateway_ip}" 3128 "${vc_url}"; then
+            _warn "Isolated: kubectl exec/attach/port-forward will NOT work (HTTP(S)_PROXY stays ${HTTPS_PROXY:-unset}); REST calls still do"
+        fi
+    else
+        local no_proxy_val="localhost,127.0.0.1,${vc_url},${SUPERVISOR_CLUSTER_IP:-}"
+        _export HTTP_PROXY          "${gateway_ip}:3128"
+        _export HTTPS_PROXY         "${gateway_ip}:3128"
+        _export NO_PROXY            "${no_proxy_val}"
+        _export no_proxy            "${no_proxy_val}"
+        _log "✓ HTTP_PROXY=${gateway_ip}:3128  NO_PROXY=${no_proxy_val}"
+    fi
     _export GATEWAY_IP          "${gateway_ip}"
     _export GATEWAY_VM_USERNAME "${GATEWAY_VM_USERNAME:-root}"
     _export GATEWAY_VM_PASSWORD "${_gw_password}"
-    _log "✓ HTTP_PROXY=${gateway_ip}:3128  NO_PROXY=${no_proxy_val}"
 
-    _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "${_gw_password}" "full"
+    # An isolated testbed's gateway VM has no general internet access, so
+    # installing PyKMIP on it only works when pip is pointed at a reachable
+    # mirror (PIP_INDEX_URL) or a dedicated PyKMIP VM exists. Otherwise skip the
+    # KMIP provider up front rather than retrying a doomed install.
+    local final_kms_mode="full"
+    if [[ "${_ISO_STARTED}" == "true" && -z "${pykmip_ip:-}" && -z "${PIP_INDEX_URL:-}" ]]; then
+        _warn "Isolated testbed: skipping the gce2e-standard (KMIP) provider; set PIP_INDEX_URL to a PyPI mirror reachable from the gateway VM to enable it"
+        final_kms_mode="native-only"
+    fi
+    _setup_kms_providers "${script_dir}" "${govc_url}" "${mgmt_cidr}" "${_gw_password}" "${final_kms_mode}"
 }
 
 # ---------------------------------------------------------------------------
@@ -769,12 +920,15 @@ EOF
     local vc_url="" vc_root_password="" vc_root_old_password=""
     local vc_root_username="" vc_vim_username="" vc_vim_password=""
     local wcp_ip="" wcp_ip_primary="" wcp_password=""
+    local mgmt_ip_prefix="10." mgmt_cidr="10.0.0.0/8"
     local pykmip_ip="" pykmip_username="" pykmip_password=""
 
     _load_testbed "${testbed_source}"  || return
     _parse_vc_credentials              || return
     _parse_pykmip_server
     _export_common_vars
+    _reset_isolated_state
+    _setup_isolated_connectivity "${testbed_source}" || return
     _fetch_supervisor_access "${enable_e2e}" || return
 
     # Export WCP/supervisor under both naming conventions used in the test suite.

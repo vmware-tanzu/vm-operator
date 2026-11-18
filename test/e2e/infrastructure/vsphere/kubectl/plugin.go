@@ -124,6 +124,7 @@ func (k *KubectlPlugin) Login() error {
 		"KUBECONFIG=" + k.kubeconfigPath,
 		"HTTP_PROXY=" + os.Getenv("HTTP_PROXY"),
 		"HTTPS_PROXY=" + os.Getenv("HTTPS_PROXY"),
+		"ALL_PROXY=" + os.Getenv("ALL_PROXY"),
 		"NO_PROXY=" + noProxy,
 		"no_proxy=" + noProxy,
 		"PATH=" + filepath.Dir(kubectlPath),

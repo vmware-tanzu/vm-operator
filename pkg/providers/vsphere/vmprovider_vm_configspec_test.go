@@ -165,7 +165,14 @@ func vmConfigSpecTests() {
 			manager := tags.NewManager(ctx.RestClient)
 			category, err := manager.CreateCategory(ctx, &tags.Category{Name: vm.Namespace, Cardinality: "MULTIPLE", AssociableTypes: []string{"VirtualMachine"}})
 			Expect(err).NotTo(HaveOccurred())
-			for _, name := range expected {
+			// The schema upgrade of this new VM detaches the legacy bare
+			// key:value tag, and vcsim returns NotFound when removing a tag
+			// that does not exist, so make sure it exists.
+			tagsToCreate := expected
+			if mutable {
+				tagsToCreate = append([]string{"app:nginx"}, expected...)
+			}
+			for _, name := range tagsToCreate {
 				_, err := manager.CreateTag(ctx, &tags.Tag{Name: name, CategoryID: category})
 				Expect(err).NotTo(HaveOccurred())
 			}

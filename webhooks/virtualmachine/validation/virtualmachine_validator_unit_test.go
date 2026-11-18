@@ -6731,6 +6731,45 @@ func unitTestsValidateUpdate() {
 					expectAllowed: true,
 				},
 			),
+			Entry("should disallow adding the affinity tags upgrade pending annotation by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+						ctx.vm.Annotations[pkgconst.AffinityTagsUpgradePendingAnnotationKey] = "true"
+					},
+					validate: doValidateWithMsg(field.Forbidden(annotationPath.Key(pkgconst.AffinityTagsUpgradePendingAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error()),
+				},
+			),
+			Entry("should disallow changing the affinity tags upgrade pending annotation by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+						ctx.oldVM.Annotations[pkgconst.AffinityTagsUpgradePendingAnnotationKey] = "true"
+						ctx.vm.Annotations[pkgconst.AffinityTagsUpgradePendingAnnotationKey] = "false"
+					},
+					validate: doValidateWithMsg(field.Forbidden(annotationPath.Key(pkgconst.AffinityTagsUpgradePendingAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error()),
+				},
+			),
+			Entry("should disallow removing the affinity tags upgrade pending annotation by SSO user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						bypassUpgradeCheck(&ctx.Context, ctx.vm, ctx.oldVM)
+						ctx.oldVM.Annotations[pkgconst.AffinityTagsUpgradePendingAnnotationKey] = "true"
+						delete(ctx.vm.Annotations, pkgconst.AffinityTagsUpgradePendingAnnotationKey)
+					},
+					validate: doValidateWithMsg(field.Forbidden(annotationPath.Key(pkgconst.AffinityTagsUpgradePendingAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error()),
+				},
+			),
+			Entry("should allow changing the affinity tags upgrade pending annotation by service user",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.IsPrivilegedAccount = true
+						ctx.oldVM.Annotations[pkgconst.AffinityTagsUpgradePendingAnnotationKey] = "true"
+						delete(ctx.vm.Annotations, pkgconst.AffinityTagsUpgradePendingAnnotationKey)
+					},
+					expectAllowed: true,
+				},
+			),
 			Entry("should allow removing admin-only annotations by service user",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

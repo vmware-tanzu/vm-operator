@@ -1498,13 +1498,40 @@ func reconcileAffinity(
 	ctx context.Context,
 	vm *vmopv1.VirtualMachine,
 	moVM mo.VirtualMachine,
-	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+	configSpec *vimtypes.VirtualMachineConfigSpec) (bool, error) {
 
 	if paused.ByAdmin(moVM) || paused.ByDevOps(vm) {
-		return nil
+		return false, nil
 	}
 
-	return virtualmachine.UpdateConfigSpecAffinity(ctx, vm, moVM.Config, configSpec)
+	_, upgrade := vm.Annotations[pkgconst.AffinityTagsUpgradePendingAnnotationKey]
+	if upgrade {
+		removeLegacyAffinityTags(ctx, vm, configSpec)
+	}
+
+	return upgrade, virtualmachine.UpdateConfigSpecAffinity(
+		ctx, vm, moVM.Config, configSpec)
+}
+
+// removeLegacyAffinityTags adds an operation to the config spec to detach each
+// legacy bare key:value affinity tag from the VM. Removing a tag that does not
+// exist or is not attached is a no-op in vCenter.
+func removeLegacyAffinityTags(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine,
+	configSpec *vimtypes.VirtualMachineConfigSpec) {
+
+	for _, name := range virtualmachine.LegacyAffinityTagNames(ctx, vm) {
+		configSpec.TagSpecs = append(configSpec.TagSpecs, vimtypes.TagSpec{
+			ArrayUpdateSpec: vimtypes.ArrayUpdateSpec{
+				Operation: vimtypes.ArrayUpdateOperationRemove,
+			},
+			Id: vimtypes.TagId{NameId: &vimtypes.TagIdNameId{
+				Tag:      name,
+				Category: vm.Namespace,
+			}},
+		})
+	}
 }
 
 func doReconfigure(
@@ -1626,8 +1653,12 @@ func doReconfigure(
 		}
 	}
 
+	var affinityTagsUpgraded bool
 	if features.VMHardAffinityDuringExecution {
-		if err := reconcileAffinity(ctx, vm, moVM, &configSpec); err != nil {
+		var err error
+		affinityTagsUpgraded, err = reconcileAffinity(
+			ctx, vm, moVM, &configSpec)
+		if err != nil {
 			return err
 		}
 	}
@@ -1658,6 +1689,9 @@ func doReconfigure(
 
 	var defaultConfigSpec vimtypes.VirtualMachineConfigSpec
 	if apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
+		if affinityTagsUpgraded {
+			delete(vm.Annotations, pkgconst.AffinityTagsUpgradePendingAnnotationKey)
+		}
 		return nil
 	}
 
@@ -1668,6 +1702,10 @@ func doReconfigure(
 
 	if err != nil {
 		return err
+	}
+
+	if affinityTagsUpgraded {
+		delete(vm.Annotations, pkgconst.AffinityTagsUpgradePendingAnnotationKey)
 	}
 
 	return ErrReconfigure

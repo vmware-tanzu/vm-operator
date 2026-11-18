@@ -63,6 +63,16 @@ const (
 	// object has this annotation with a value that matches the expected value.
 	UpgradedToFeatureVersionAnnotationKey = upgradedToPrefix + "feature-version"
 
+	// AffinityTagsUpgradePendingAnnotationKey is set on VirtualMachine objects
+	// by the schema upgrade when the VM was created before affinity tags were
+	// tracked by an ownership receipt and may therefore still have legacy bare
+	// key:value affinity tags attached. It is removed once the next
+	// successful reconfigure has detached those tags.
+	//
+	// Please note, a validation webhook denies changes to this annotation from
+	// unprivileged users.
+	AffinityTagsUpgradePendingAnnotationKey = "vmoperator.vmware.com/affinity-tags-upgrade-pending"
+
 	// MinSupportedHWVersionForPVC is the supported virtual hardware version for
 	// persistent volumes.
 	MinSupportedHWVersionForPVC = vimtypes.VMX15

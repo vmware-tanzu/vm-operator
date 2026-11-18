@@ -133,6 +133,10 @@ const (
 	// FeatureVersionNICUnitNumbers refers to the VMNetworkUnitNumbers
 	// capability.
 	FeatureVersionNICUnitNumbers // 16
+
+	// FeatureVersionAffinityTags refers to the VMHardAffinityDuringExecution
+	// capability and the upgrade of legacy bare affinity tags.
+	FeatureVersionAffinityTags // 32
 )
 
 const (
@@ -144,7 +148,8 @@ const (
 		FeatureVersionVMSharedDisks |
 		FeatureVersionAllDisksArePVCs |
 		FeatureVersionTelcoVMServiceAPI |
-		FeatureVersionNICUnitNumbers // 31
+		FeatureVersionNICUnitNumbers |
+		FeatureVersionAffinityTags // 63
 )
 
 // FeatureVersions returns all possible, valid FeatureVersion elements.
@@ -155,6 +160,7 @@ func FeatureVersions() []FeatureVersion {
 		FeatureVersionAllDisksArePVCs,
 		FeatureVersionTelcoVMServiceAPI,
 		FeatureVersionNICUnitNumbers,
+		FeatureVersionAffinityTags,
 	}
 }
 
@@ -245,6 +251,9 @@ func ActivatedFeatureVersion(ctx context.Context) FeatureVersion {
 	}
 	if f.VMNetworkUnitNumbers {
 		v.Set(FeatureVersionNICUnitNumbers)
+	}
+	if f.VMHardAffinityDuringExecution {
+		v.Set(FeatureVersionAffinityTags)
 	}
 	return v
 }

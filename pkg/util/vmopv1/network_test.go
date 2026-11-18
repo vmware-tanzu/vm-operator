@@ -145,6 +145,64 @@ var _ = Describe("ValidateHostAndDomainName", func() {
 			field.Invalid(fieldHostName, a16, vmopv1util.ErrInvalidHostNameWindows),
 		),
 		Entry(
+			"host name is all digits on Windows (determined by sysprep)",
+			vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: vmName,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						HostName: "12345",
+					},
+					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+						Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+					},
+				},
+			},
+			field.Invalid(fieldHostName, "12345", vmopv1util.ErrInvalidHostNameWindowsDigits),
+		),
+		Entry(
+			"host name is all digits on Windows (determined by guest ID)",
+			vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: vmName,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						HostName: "12345",
+					},
+					GuestID: "windows2022srvNext_64Guest",
+				},
+			},
+			field.Invalid(fieldHostName, "12345", vmopv1util.ErrInvalidHostNameWindowsDigits),
+		),
+		Entry(
+			"vm name is all digits on Windows",
+			vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "12345",
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					GuestID: "windows2022srvNext_64Guest",
+				},
+			},
+			field.Invalid(fieldMetadataName, "12345", vmopv1util.ErrInvalidHostNameWindowsDigits),
+		),
+		Entry(
+			"host name is all digits on a non-Windows guest",
+			vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: vmName,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					Network: &vmopv1.VirtualMachineNetworkSpec{
+						HostName: "12345",
+					},
+				},
+			},
+			nil,
+		),
+		Entry(
 			"host name exceeds 63 characters",
 			vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{

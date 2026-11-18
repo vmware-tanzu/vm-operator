@@ -129,6 +129,10 @@ func (m mutator) vmGroupFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virt
 // 1. The group is created with a non-empty spec.powerState value.
 // 2. The spec.powerState is updated.
 // 3. The spec.nextForcePowerStateSyncTime is set to "now".
+// A request in the same second as the previous one gets the start of the next
+// second as its time. The status of the group records the completion of a
+// request in whole seconds, so the requests must be in different seconds to
+// tell them apart.
 // It also removes the apply power state change time annotation if the group is
 // being updated directly (not inherited from a parent).
 func ProcessPowerState(
@@ -150,7 +154,8 @@ func ProcessPowerState(
 		shouldUpdateAnnotation bool
 		oldForceSyncVal        = oldVMG.Spec.NextForcePowerStateSyncTime
 		newForceSyncVal        = newVMG.Spec.NextForcePowerStateSyncTime
-		now                    = time.Now().UTC().Format(time.RFC3339Nano)
+		nowTime                = time.Now().UTC()
+		now                    = nowTime.Format(time.RFC3339Nano)
 	)
 
 	switch {
@@ -177,7 +182,14 @@ func ProcessPowerState(
 		if newVMG.Annotations == nil {
 			newVMG.Annotations = make(map[string]string)
 		}
-		newVMG.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] = now
+		requestTime := powerStateRequestTime(oldVMG, nowTime).
+			Format(time.RFC3339Nano)
+		newVMG.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] =
+			requestTime
+		if shouldForceSync {
+			// Keep the force sync time equal to the request time.
+			newVMG.Spec.NextForcePowerStateSyncTime = requestTime
+		}
 		wasMutated = true
 	}
 
@@ -202,4 +214,27 @@ func ProcessPowerState(
 	}
 
 	return wasMutated, nil
+}
+
+// powerStateRequestTime returns the time of a new power state request on the
+// group. It is now, unless now is in the same second as the previous request.
+// Then it is the start of the next second, so that the request is later than
+// the completion of the previous request, see
+// vmopv1util.PowerStateRequestCompletionTime.
+func powerStateRequestTime(
+	oldVMG *vmopv1.VirtualMachineGroup, now time.Time) time.Time {
+
+	v := oldVMG.Annotations[constants.LastUpdatedPowerStateTimeAnnotation]
+	if v == "" {
+		return now
+	}
+	prev, err := time.Parse(time.RFC3339Nano, v)
+	if err != nil {
+		// The validating webhook reports a malformed time.
+		return now
+	}
+	if next := prev.UTC().Truncate(time.Second).Add(time.Second); now.Before(next) {
+		return next
+	}
+	return now
 }

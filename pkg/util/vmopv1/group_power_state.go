@@ -7,8 +7,10 @@ package vmopv1
 import (
 	"context"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -185,4 +187,18 @@ func isVMInPowerState(
 	return desired == vmopv1.VirtualMachinePowerStateOff &&
 		observed == vmopv1.VirtualMachinePowerStateSuspended &&
 		powerOffMode == vmopv1.VirtualMachinePowerOpModeSoft
+}
+
+// PowerStateRequestCompletionTime returns the time to write to the status
+// when the request at requestTime is done. This is the start of the second
+// after the request (trunc(time) + 1s). A request is open until the status is
+// later than its request time. The status has whole seconds. The mutating
+// webhook moves each new request to a later second than the previous request.
+// As a result, a stale reconcile cannot close a newer request. If requestTime
+// is zero, the function uses the current time.
+func PowerStateRequestCompletionTime(requestTime time.Time) metav1.Time {
+	if requestTime.IsZero() {
+		requestTime = time.Now()
+	}
+	return metav1.NewTime(requestTime.UTC().Truncate(time.Second).Add(time.Second))
 }

@@ -344,6 +344,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			By("Verifying VirtualMachineGroup has Ready condition set to true after power off")
 			vmoperator.WaitOnVirtualMachineGroupCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName, readyTrueCondition)
 
+			By("Waiting for the power off request to be closed")
+			waitForGroupRequestClosed(ctx, svClusterClient, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName})
+
 			By("Changing VM1 spec.powerState directly to PoweredOn")
 
 			vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name)
@@ -470,6 +473,101 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			expectDelayIgnored(vm1OnTime.Sub(since), 0, vm1PowerOnDelay, "vm1 on after the request")
 			expectGap(vm2OnTime.Sub(vm1OnTime), vm2PowerOnDelay, "vm2 on after vm1")
 			expectGap(vm3OnTime.Sub(vm2OnTime), vm3PowerOnDelay, "vm3 on after vm2")
+		})
+
+		It("Should power off a member released for power-on when the group is powered off before it powers on", func() {
+			// vm2 is released for power-on with a delay, so for this time its
+			// desired power state is on and its observed power state is off.
+			const vm2PowerOnDelay = time.Minute
+
+			vmMemberNames = []string{vm1Name, vm2Name}
+
+			By("Creating a VirtualMachineGroup with 2 boot order groups")
+
+			vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA6(manifestbuilders.VirtualMachineGroupYaml{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmgRootName,
+				BootOrder: []manifestbuilders.BootOrder{
+					{Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm1Name}}},
+					{
+						Members:      []vmopv1.GroupMember{{Kind: vmKind, Name: vm2Name}},
+						PowerOnDelay: vm2PowerOnDelay.String(),
+					},
+				},
+			})
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			rootGroup = vmgRoot
+			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
+
+			By("Creating powered off VMs with spec.groupName pointing to the VirtualMachineGroup")
+
+			for _, vmName := range vmMemberNames {
+				vm := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: input.WCPNamespaceName,
+						Name:      vmName,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						GroupName:    vmgRootName,
+						ImageName:    linuxVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOff,
+					},
+				}
+				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s", vm.Name)
+				deferDeleteVM(svClusterClient, vm)
+			}
+
+			groupLinkedTrueCondition := metav1.Condition{
+				Type:   vmopv1.VirtualMachineGroupMemberConditionGroupLinked,
+				Status: metav1.ConditionTrue,
+			}
+			for _, vmName := range vmMemberNames {
+				vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+				vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, groupLinkedTrueCondition)
+			}
+
+			By("Setting VirtualMachineGroup spec.powerState to PoweredOn")
+
+			groupKey := ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: vmgRootName}
+			patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			}, "failed to update VirtualMachineGroup power state")
+
+			By("Waiting for vm2 to be released for power-on while it is still off")
+
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm1Name, "PoweredOn")
+			Eventually(func(g Gomega) {
+				vm2, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+				g.Expect(vm2.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			}, "2m", "1s").Should(Succeed(), "vm2 was not released for power-on")
+
+			By("Setting VirtualMachineGroup spec.powerState to PoweredOff before vm2 powers on")
+
+			patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				g.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
+			}, "failed to update VirtualMachineGroup power state")
+
+			By("Verifying the group sets the desired power state of vm2 to PoweredOff")
+
+			Eventually(func(g Gomega) {
+				vm2, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			}, "1m", "1s").Should(Succeed(), "the group did not set vm2 to PoweredOff")
+
+			By("Verifying every VM powers off, and vm2 does not power on after its delay")
+
+			waitForPowerStates(ctx, svClusterClient, input.WCPNamespaceName, vmMemberNames, vmopv1.VirtualMachinePowerStateOff, 3*time.Minute)
+			Consistently(func(g Gomega) {
+				vm2, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm2.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			}, vm2PowerOnDelay+30*time.Second, "5s").Should(Succeed(), "vm2 powered on after the group was powered off")
 		})
 	})
 
@@ -1062,6 +1160,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			vmoperator.WaitOnVirtualMachineGroupCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName,
 				metav1.Condition{Type: vmopv1.ReadyConditionType, Status: metav1.ConditionTrue})
+			waitForGroupRequestClosed(ctx, svClusterClient, groupKey)
 
 			By("Powering on vm1 directly after the request is closed")
 
@@ -1084,6 +1183,91 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(vm1.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
 			}, 30*time.Second, "5s").Should(Succeed(), "the group powered off vm1 after the request was closed")
+		})
+
+		// This test sets powerOnDelay, which the webhook rejects unless the
+		// classless VM capability is enabled.
+		It("Should power off a later boot order group first while an earlier one is powering on, and then the earlier one", Label(consts.ClasslessVMLabel), func() {
+			// vm2 is released for power-on with a delay, so for this time its
+			// desired power state is on and its observed power state is off,
+			// while vm3, which is after it in boot order, stays on.
+			const vm2PowerOnDelay = time.Minute
+
+			vmMemberNames = []string{vm1Name, vm2Name, vm3Name}
+			createPoweredOnVMs(ctx, config, svClusterClient, vmTemplate, vmMemberNames)
+
+			By("Creating a VirtualMachineGroup with 3 boot order groups")
+
+			vmgRoot, err := manifestbuilders.VirtualMachineGroupWithBootOrderA6(manifestbuilders.VirtualMachineGroupYaml{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmgRootName,
+				BootOrder: []manifestbuilders.BootOrder{
+					{Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm1Name}}},
+					{
+						Members:      []vmopv1.GroupMember{{Kind: vmKind, Name: vm2Name}},
+						PowerOnDelay: vm2PowerOnDelay.String(),
+					},
+					{Members: []vmopv1.GroupMember{{Kind: vmKind, Name: vm3Name}}},
+				},
+			})
+			Expect(err).NotTo(HaveOccurred(), "failed to build VirtualMachineGroup")
+			rootGroup = vmgRoot
+			Expect(svClusterClient.Create(ctx, vmgRoot)).To(Succeed(), "failed to create VirtualMachineGroup")
+
+			linkVMsToGroup(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName, vmMemberNames)
+
+			By("Setting VirtualMachineGroup spec.powerState to PoweredOn, which all VMs already are")
+
+			patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+			}, "failed to update VirtualMachineGroup power state")
+			vmoperator.WaitOnVirtualMachineGroupCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName,
+				metav1.Condition{Type: vmopv1.ReadyConditionType, Status: metav1.ConditionTrue})
+			waitForGroupRequestClosed(ctx, svClusterClient, groupKey)
+
+			By("Powering off vm2 directly after the request is closed")
+
+			vm2, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)
+			Expect(err).NotTo(HaveOccurred())
+			vm2Patch := vm2.DeepCopy()
+			vm2Patch.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			vm2Patch.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
+			Expect(svClusterClient.Patch(ctx, vm2Patch, ctrlclient.MergeFrom(vm2))).To(Succeed(), "failed to power off vm2")
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vm2Name, "PoweredOff")
+
+			By("Forcing a power state sync, which releases vm2 for power-on with a delay")
+
+			patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+				g.Spec.NextForcePowerStateSyncTime = "now"
+			}, "failed to update VirtualMachineGroup force sync time")
+			Eventually(func(g Gomega) {
+				vm2, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vm2Name)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(vm2.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+				g.Expect(vm2.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+			}, "1m", "1s").Should(Succeed(), "vm2 was not released for power-on")
+
+			By("Setting VirtualMachineGroup spec.powerState to PoweredOff while vm2 waits to power on")
+
+			verifyOrder := watchReleaseOrder(ctx, svClusterClient, input.WCPNamespaceName,
+				[][]string{{vm3Name}, {vm2Name}, {vm1Name}}, vmopv1.VirtualMachinePowerStateOff)
+			patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
+				g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				g.Spec.PowerOffMode = vmopv1.VirtualMachinePowerOpModeHard
+			}, "failed to update VirtualMachineGroup power state")
+
+			By("Verifying every VM powers off in reverse boot order, and none powers on after the delay")
+
+			waitForPowerStates(ctx, svClusterClient, input.WCPNamespaceName, vmMemberNames, vmopv1.VirtualMachinePowerStateOff, 3*time.Minute)
+			verifyOrder()
+			Consistently(func(g Gomega) {
+				for _, name := range vmMemberNames {
+					vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, name)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(vm.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff), name)
+					g.Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff), name)
+				}
+			}, vm2PowerOnDelay+30*time.Second, "5s").Should(Succeed(), "a VM powered on after the group was powered off")
 		})
 
 		It("Should hold later boot order groups while a member blocks the walk, and continue when it is fixed", func() {
@@ -1425,6 +1609,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			vmoperator.WaitOnVirtualMachineGroupCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName,
 				metav1.Condition{Type: vmopv1.ReadyConditionType, Status: metav1.ConditionTrue})
+			waitForGroupRequestClosed(ctx, svClusterClient, groupKey)
 
 			By("Powering off vm1 directly after the request is closed")
 
@@ -1632,6 +1817,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				// be closed by it, and then the walk does not start.
 				vmoperator.WaitOnVirtualMachineGroupCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmgRootName,
 					metav1.Condition{Type: vmopv1.ReadyConditionType, Status: metav1.ConditionTrue})
+				waitForGroupRequestClosed(ctx, svClusterClient, groupKey)
 				patchVMGroup(ctx, svClusterClient, groupKey, &vmopv1.VirtualMachineGroup{}, func(g *vmopv1.VirtualMachineGroup) {
 					g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
 				}, "failed to update VirtualMachineGroup power state")
@@ -1657,7 +1843,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				// A guest shutdown wait that is already running is not
 				// interrupted, so the Hard power off can wait for it to time
 				// out first.
-				waitForPowerStates(ctx, svClusterClient, input.WCPNamespaceName, []string{vm2Name}, vmopv1.VirtualMachinePowerStateOff, softTimeout+2*time.Minute)
+				waitForPowerStates(ctx, svClusterClient, input.WCPNamespaceName, []string{vm2Name}, vmopv1.VirtualMachinePowerStateOff, softTimeout+3*time.Minute)
 				vmPowerChangeTime(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, vm2Name, since, vmopv1.VirtualMachinePowerStateOff)
 			})
 
@@ -4435,8 +4621,39 @@ func suspendVM(
 	vmoperator.WaitForVirtualMachinePowerState(ctx, config, c, namespace, name, "Suspended")
 }
 
-// powerOnGroupInOrder sets the group to PoweredOn and verifies the VMs, given
-// in boot order, are powered on in that order.
+// waitForGroupRequestClosed waits for the last power state request of the
+// group to be closed. A request is closed when the status time is after the
+// time of the request, the same test the controller uses. While a request is
+// open, the controller sets the desired power state of a member back to the
+// group's, so a test must not change a member directly until it is closed.
+// The group being Ready, or its members being in the power state, does not
+// mean the request is closed, as the controller closes it in a later reconcile.
+func waitForGroupRequestClosed(
+	ctx context.Context,
+	c ctrlclient.Client,
+	key ctrlclient.ObjectKey) {
+
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		group, err := utils.GetVirtualMachineGroup(ctx, c, key.Namespace, key.Name)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		v := group.Annotations[pkgconst.LastUpdatedPowerStateTimeAnnotation]
+		g.Expect(v).ToNot(BeEmpty(), "the group has no power state request")
+		requestTime, err := time.Parse(time.RFC3339Nano, v)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		closed := group.Status.LastUpdatedPowerStateTime
+		g.Expect(closed).ToNot(BeNil(), "the power state request is not closed")
+		g.Expect(closed.After(requestTime)).To(BeTrue(),
+			"the power state request at %s is not closed, the status is %s", v, closed)
+	}, 2*time.Minute, "1s").Should(Succeed(), "the power state request of %s was not closed", key.Name)
+}
+
+// powerOnGroupInOrder sets the group to PoweredOn, verifies the VMs, given in
+// boot order, are powered on in that order, and waits for the request to be
+// closed, so that the caller can change a member directly.
 func powerOnGroupInOrder(
 	ctx context.Context,
 	c ctrlclient.Client,
@@ -4449,6 +4666,7 @@ func powerOnGroupInOrder(
 		g.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 	}, "failed to update VirtualMachineGroup power state")
 	verifyReleaseOrder(ctx, c, key.Namespace, names, vmopv1.VirtualMachinePowerStateOn, 3*time.Minute)
+	waitForGroupRequestClosed(ctx, c, key)
 }
 
 // groupMemberPowerStateSynced returns the PowerStateSynced condition of a

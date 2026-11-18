@@ -283,8 +283,10 @@ type VirtualMachineGroupStatus struct {
 
 	// +optional
 
-	// LastUpdatedPowerStateTime describes the observed time when the power
-	// state of the group was last updated.
+	// LastUpdatedPowerStateTime shows that the group applied its last power
+	// state request to all of its members. The group sets it to the start of
+	// the second after the time of the request (trunc(time) + 1s). A request
+	// is open until this time is later than the time of the request.
 	LastUpdatedPowerStateTime *metav1.Time `json:"lastUpdatedPowerStateTime,omitempty"`
 
 	// +optional

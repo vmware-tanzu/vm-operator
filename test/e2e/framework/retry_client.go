@@ -45,6 +45,8 @@ var RetryableTransientErrSubstrings = []string{
 	"connection refused",
 	"connection reset by peer",
 	"i/o timeout",
+	"operation timed out",
+	"connection timed out",
 	"tls handshake timeout",
 	"unexpected eof",
 	"broken pipe",

@@ -40,6 +40,16 @@ key authentication to the jumphost must already be configured and its host
 key already trusted, since ProxyJump does not inherit this script's
 StrictHostKeyChecking/UserKnownHostsFile options for the jump hop itself.
 
+Isolated testbeds (vCenter and Supervisor only reachable through a perimeter
+jumphost) are detected automatically from the testbedInfo.json given with -T,
+using the same logic as the E2E harness (hack/e2e/isolated.sh). The jumphost
+address and credentials are read from the testbed file, a password-authenticated
+SSH tunnel is opened for the duration of the script, and every ssh/scp call
+is routed through it. This requires sshpass. Set E2E_ISOLATED=true|false to
+force detection on or off, and E2E_JUMPHOST_IP, E2E_JUMPHOST_USERNAME, and
+E2E_JUMPHOST_PASSWORD to override the jumphost found in the testbed file. An
+explicit -J argument takes precedence over automatic detection.
+
 FLAGS:
   -s Supervisor CP IPs
   -S Supervisor CP ssh password
@@ -72,7 +82,9 @@ VC_SSH_USERNAME="root"
 VC_SSH_PASSWORD=
 
 TESTBED_INFO=
+TESTBED_JSON=
 SV_CLUSTER=
+ISO_STARTED=false
 
 DEPLOY_CRD_PATTERN=
 LOCAL_DEPLOYMENT_YAML="artifacts/local-deployment.yaml"
@@ -92,6 +104,40 @@ function error() {
 
 function fatal() {
     error "${@}" && exit 1
+}
+
+function cleanup() {
+    if [[ $ISO_STARTED == true ]] && declare -F _iso_stop_tunnel >/dev/null 2>&1 ; then
+        _iso_stop_tunnel || true
+    fi
+}
+
+# Sets up the jumphost tunnel when the testbed in TESTBED_JSON is isolated.
+function setup_isolated_connectivity() {
+    local script_dir iso_jump_ip iso_jump_user iso_jump_password
+
+    script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    # shellcheck source=./e2e/isolated.sh
+    source "$script_dir/e2e/isolated.sh"
+
+    if ! _iso_is_isolated "$VC_IP" "$TESTBED_JSON" ; then
+        log "Testbed is not isolated; connecting directly"
+        return 0
+    fi
+
+    log "Testbed is isolated; connecting through a jumphost tunnel"
+    command -v sshpass >/dev/null 2>&1 || fatal "sshpass required for isolated testbeds"
+
+    _iso_parse_jumphost "$TESTBED_JSON" || exit 1
+
+    # Install the cleanup trap before the tunnel exists so that an interrupt
+    # during startup cannot leak it.
+    ISO_STARTED=true
+    trap cleanup EXIT
+    _iso_start_tunnel "$VC_IP" || exit 1
+
+    # The tunnel's ssh_config hops through the already-authenticated master.
+    COMMON_SSH_OPTS+=("-F" "$E2E_SSH_CONFIG")
 }
 
 function glob_to_regex() {
@@ -178,6 +224,8 @@ function process_testbedInfoJson() {
         fatal "Empty testbedInfo.json?"
     fi
 
+    TESTBED_JSON=$tbInfo
+
     vc=$(jq '.vc[0]?' <<< "$tbInfo")
     # FFS: there are different formats.
     if [[ -n $vc ]] ; then
@@ -185,7 +233,7 @@ function process_testbedInfoJson() {
         VC_IP=$(jq -r .ip <<< "$vc")
         #VC_USERNAME=$(jq -r .vimUsername <<< "$vc")
         #VC_PASSWORD=$(jq -r .vimPassword <<< "$vc")
-        VC_SSH_USERNAME=$(jq -r .username <<<" $vc")
+        VC_SSH_USERNAME=$(jq -r .username <<< "$vc")
         VC_SSH_PASSWORD=$(jq -r .password <<< "$vc")
     else
         # NSX-T
@@ -347,6 +395,10 @@ if [[ -z $SV_IPS_CSL ]] ; then
         fi
 
         process_testbedInfoJson "$TESTBED_INFO"
+    fi
+
+    if [[ -n $TESTBED_JSON && -z $JUMPHOST ]] ; then
+        setup_isolated_connectivity
     fi
 
     sv_get_vip_and_password

@@ -19,7 +19,7 @@ How to use this template:
 
 **What does this PR do, and why is it needed?**
 
-<!-- 2-5 sentences, written for a reviewer who has not seen your spec, chat or branch: the problem or goal, the change at a conceptual level, and the effect a user or operator sees. Describe behavior, not files; the diff already lists files. -->
+<!-- 2-5 sentences, written for a reviewer who has not seen your spec, chat or branch: the problem or goal, the change at a conceptual level, why this approach, and the effect a user or operator sees. Mention known limitations or downsides. Describe behavior, not files; the diff already lists files. The description must stand on its own: a reader should not need to follow links (many readers cannot open internal tickets or wiki pages). For a ⚠️ PR, start with what breaks and what users must do. -->
 
 **Which issue(s) is/are addressed by this PR?**
 
@@ -45,12 +45,15 @@ Not verified: what was not run or only reasoned about (e.g. E2E on a Supervisor,
 
 **AI usage disclosure**
 
-<!-- "NO", or "YES" and how AI was used (tool, what it wrote) and what a human reviewed or ran personally. An AI agent must not claim a human review that did not happen. -->
+<!--
+"NO", or "YES" and how AI was used (tool, what it wrote) and what a human reviewed or ran personally.
+If you are an AI agent: remind the author that they are responsible for every change in this PR, and do not claim a human review that did not happen.
+-->
 
-**Please add a release note if necessary**:
+**Does this PR introduce a user-facing change?**
 
 <!--
-    1. Enter your extended release note in the below block. If the PR requires
+    1. If yes, enter your extended release note in the below block. If the PR requires
        additional action from users switching to the new release, please include
        the string "action required".
     2. If a release note is not required, please write "NONE".

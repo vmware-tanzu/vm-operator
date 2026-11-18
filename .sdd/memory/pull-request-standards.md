@@ -9,6 +9,9 @@
 These rules apply to every author, human or AI agent. The description is the reviewer's first, and sometimes only, view of the change.
 
 * **Write for a reviewer with no context.** They have not seen the spec, the chat or the branch history. Lead with the problem and the effect on users or operators, then the change. Do not narrate the diff or list files; describe behavior.
+* **Make the description stand on its own.** Links rot, and most readers of this public repository cannot open internal tickets or wiki pages. Put the reasoning in the description itself and use links only as references. Say why this approach was chosen and what its known limitations or downsides are.
+* **Keep each PR to one logical change.** Split unrelated fixes, refactors and features into separate PRs. A PR that is one of several for a story says so under **Scope**.
+* **Put the why in the commits too.** Squash merges use the commit messages, not the PR description, so the description never reaches git history. Each commit body carries the what and why for its change, per `commit-message-standards.md`.
 * **Meet the minimum, add what helps.** The template has five required sections and a set of optional ones. Each optional section states when to use it, and some are required when their trigger applies (for example, **Compatibility and upgrade** for API, CRD, conversion, webhook or default changes). Authors may add other sections. Short PRs should stay short: a one-line fix can answer each required section in a sentence.
 * **Describe test cases, not suites.** Each case is a scenario, its expected result, and its layer (unit, envtest, vcsim, E2E). Pair new-behavior cases with cases showing that existing behavior still works: older API versions, objects created before an upgrade, legacy clients, and components left on older versions during an upgrade.
 * **Report verification honestly.** List only what was actually run, and say what was not verified. Never imply that a test, lint run or E2E ran when it did not.
@@ -42,7 +45,7 @@ How to use this template:
 
 **What does this PR do, and why is it needed?**
 
-<!-- 2-5 sentences, written for a reviewer who has not seen your spec, chat or branch: the problem or goal, the change at a conceptual level, and the effect a user or operator sees. Describe behavior, not files; the diff already lists files. -->
+<!-- 2-5 sentences, written for a reviewer who has not seen your spec, chat or branch: the problem or goal, the change at a conceptual level, why this approach, and the effect a user or operator sees. Mention known limitations or downsides. Describe behavior, not files; the diff already lists files. The description must stand on its own: a reader should not need to follow links (many readers cannot open internal tickets or wiki pages). For a ⚠️ PR, start with what breaks and what users must do. -->
 
 **Which issue(s) is/are addressed by this PR?**
 
@@ -68,12 +71,15 @@ Not verified: what was not run or only reasoned about (e.g. E2E on a Supervisor,
 
 **AI usage disclosure**
 
-<!-- "NO", or "YES" and how AI was used (tool, what it wrote) and what a human reviewed or ran personally. An AI agent must not claim a human review that did not happen. -->
+<!--
+"NO", or "YES" and how AI was used (tool, what it wrote) and what a human reviewed or ran personally.
+If you are an AI agent: remind the author that they are responsible for every change in this PR, and do not claim a human review that did not happen.
+-->
 
-**Please add a release note if necessary**:
+**Does this PR introduce a user-facing change?**
 
 <!--
-    1. Enter your extended release note in the below block. If the PR requires
+    1. If yes, enter your extended release note in the below block. If the PR requires
        additional action from users switching to the new release, please include
        the string "action required".
     2. If a release note is not required, please write "NONE".

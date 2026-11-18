@@ -7,12 +7,12 @@ import (
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/backuprestore"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/computepolicies"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/environmentbrowser"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/flexvmclasses"
 	tagcr "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/tag"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachine"
@@ -21,9 +21,14 @@ import (
 )
 
 var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label("virtualmachine"), Label("vmservice"), func() {
-	Context("VM-FLEX-API", func() {
-		virtualmachine.VMFlexAPISpec(context.TODO(), func() ctrlclient.Client {
-			return svClusterProxy.GetClient()
+	Context("FLEX-VM-CLASSES", Label(flexvmclasses.FeatureLabel), func() {
+		flexvmclasses.VMAPISpec(context.TODO(), func() flexvmclasses.SpecInput {
+			return flexvmclasses.SpecInput{
+				ClusterProxy:     svClusterProxy,
+				Config:           config,
+				WCPClient:        wcpClient,
+				WCPNamespaceName: wcpNamespaceName,
+			}
 		})
 	})
 	Context("VI-ADMIN-VM-CLASS", func() {

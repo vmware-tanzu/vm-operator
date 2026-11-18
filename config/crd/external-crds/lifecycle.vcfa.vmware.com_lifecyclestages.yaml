@@ -1,0 +1,126 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: lifecyclestages.lifecycle.vcfa.vmware.com
+spec:
+  group: lifecycle.vcfa.vmware.com
+  names:
+    kind: LifecycleStages
+    listKind: LifecycleStagesList
+    plural: lifecyclestages
+    singular: lifecyclestages
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - description: Target group
+      jsonPath: .spec.target.group
+      name: Group
+      type: string
+    - description: Target kind
+      jsonPath: .spec.target.kind
+      name: Kind
+      type: string
+    - description: Time since creation
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          LifecycleStages is the Schema for the lifecyclestages API.
+
+          It is the cluster-scoped catalog of the stages one target (group, kind)
+          exposes to the lifecycle framework. The operator that owns the target
+          publishes it; the lifecycle framework reads it to validate LifecycleHooks and
+          to build LifecycleStates.
+
+          VM Operator writes the instance for VirtualMachine on startup.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: LifecycleStagesSpec is the declared set of stages for one
+              target.
+            properties:
+              stages:
+                description: Stages lists the stages the target exposes, in no particular
+                  order.
+                items:
+                  description: LifecycleStageDefinition declares one stage a target
+                    exposes.
+                  properties:
+                    blocking:
+                      description: Blocking indicates whether the target waits for
+                        the stage's hooks.
+                      type: boolean
+                    conditionName:
+                      description: |-
+                        ConditionName is the condition on the target that reflects the stage's
+                        hook status.
+                      type: string
+                    description:
+                      description: Description is a human-readable summary of what
+                        the stage pauses before.
+                      type: string
+                    eventName:
+                      description: |-
+                        EventName is the Event the target emits after the stage's action, if
+                        any.
+                      type: string
+                    name:
+                      description: |-
+                        Name is the stage name referenced by LifecycleHook.spec.stage and
+                        LifecycleState.spec.stages[].name.
+                      minLength: 1
+                      type: string
+                    type:
+                      description: Type is how often the stage is reached for one
+                        target, ex. Reentrant.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              target:
+                description: LifecycleStagesTarget identifies the (group, kind) the
+                  stages belong to.
+                properties:
+                  group:
+                    type: string
+                  kind:
+                    type: string
+                required:
+                - group
+                - kind
+                type: object
+            required:
+            - stages
+            - target
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

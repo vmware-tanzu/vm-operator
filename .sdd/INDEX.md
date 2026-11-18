@@ -20,7 +20,7 @@ These apply to all work in this repo. Read them before making or reviewing any c
 | [e2e-sync-with-changes.md](memory/e2e-sync-with-changes.md) | When E2E coverage is mandatory and what must ship together |
 | [sdd-standards.md](memory/sdd-standards.md) | SDD workflow: when it applies, required artifacts, task format, ticket tagging |
 | [commit-message-standards.md](memory/commit-message-standards.md) | Imperative mood, 50-char subject, 72-char body wrap |
-| [pull-request-standards.md](memory/pull-request-standards.md) | Emoji prefix, release notes block, issue links, PR template |
+| [pull-request-standards.md](memory/pull-request-standards.md) | Emoji prefix, authoring rules for humans and AI agents, required and optional PR template sections |
 
 ---
 

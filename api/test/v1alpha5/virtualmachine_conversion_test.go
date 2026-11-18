@@ -770,9 +770,7 @@ func TestVirtualMachineFlexAPIRoundTrip(t *testing.T) {
 						},
 					},
 					Status: vmopv1.VirtualMachineStatus{
-						GoverningClassNames: []string{"governing-class"},
 						ChangeBlockTracking: ptr.To(false),
-						Conditions:          []metav1.Condition{{Type: vmopv1.VirtualMachineConditionGovernanceCompliant, Status: metav1.ConditionFalse, Reason: vmopv1.VirtualMachineNoGoverningClassReason}},
 						Hardware: &vmopv1.VirtualMachineHardwareStatus{
 							Firmware:   vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
 							SEVEnabled: ptr.To(false), SEVSNPEnabled: ptr.To(true), TDXEnabled: ptr.To(false), SMCPresent: ptr.To(true),
@@ -806,7 +804,7 @@ func TestVirtualMachineFlexAPIDeepCopy(t *testing.T) {
 			VGPUs:                      []vmopv1.VirtualMachineVGPUDevice{{Name: "gpu-0", ProfileName: "gpu", EnableUVM: ptr.To(false)}},
 			DynamicDirectPathIODevices: []vmopv1.VirtualMachineDynamicDirectPathIODevice{{Name: "pci-0", VendorID: ptr.To[int64](1)}},
 		}},
-		Status: vmopv1.VirtualMachineStatus{GoverningClassNames: []string{"ceiling"}, Hardware: &vmopv1.VirtualMachineHardwareStatus{
+		Status: vmopv1.VirtualMachineStatus{Hardware: &vmopv1.VirtualMachineHardwareStatus{
 			SEVEnabled: ptr.To(false), CPU: &vmopv1.VirtualMachineCPUAllocationStatus{HotRemoveEnabled: ptr.To(false)},
 		}},
 	}
@@ -815,14 +813,12 @@ func TestVirtualMachineFlexAPIDeepCopy(t *testing.T) {
 	copied.Spec.Hardware.VGPUs[0].ProfileName = "changed"
 	*copied.Spec.Hardware.VGPUs[0].EnableUVM = true
 	*copied.Spec.Hardware.DynamicDirectPathIODevices[0].VendorID = 2
-	copied.Status.GoverningClassNames[0] = "changed"
 	*copied.Status.Hardware.SEVEnabled = true
 	*copied.Status.Hardware.CPU.HotRemoveEnabled = true
 	g.Expect(*original.Spec.ReservedProfileName).To(BeEmpty())
 	g.Expect(original.Spec.Hardware.VGPUs[0].ProfileName).To(Equal("gpu"))
 	g.Expect(*original.Spec.Hardware.VGPUs[0].EnableUVM).To(BeFalse())
 	g.Expect(*original.Spec.Hardware.DynamicDirectPathIODevices[0].VendorID).To(Equal(int64(1)))
-	g.Expect(original.Status.GoverningClassNames).To(Equal([]string{"ceiling"}))
 	g.Expect(*original.Status.Hardware.SEVEnabled).To(BeFalse())
 	g.Expect(*original.Status.Hardware.CPU.HotRemoveEnabled).To(BeFalse())
 	wire, err := json.Marshal(original.Spec)

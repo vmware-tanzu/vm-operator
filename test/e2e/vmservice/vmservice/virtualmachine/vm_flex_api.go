@@ -14,14 +14,13 @@ import (
 )
 
 // VMFlexAPISpec verifies the installed VM API contract. Controller
-// population of these fields is covered by the later governance stories.
+// population of these fields is covered by later stories.
 func VMFlexAPISpec(ctx context.Context, clientGetter func() ctrlclient.Client) {
 	It("publishes the Flex VM fields in the installed schema",
 		Label("extended-functional", "experimental"), func() {
 			client := clientGetter()
 			vm := flexAPISchema(ctx, client, "virtualmachines.vmoperator.vmware.com", "v1alpha6")
 			Expect(flexAPIField(vm, "spec", "reservedProfileName")).To(HaveKeyWithValue("type", "string"))
-			Expect(flexAPIField(vm, "status", "governingClassNames")).To(HaveKeyWithValue("x-kubernetes-list-type", "set"))
 			vgpu := flexAPIField(vm, "spec", "hardware", "vGPUs")
 			directPath := flexAPIField(vm, "spec", "hardware", "dynamicDirectPathIODevices")
 			for _, tc := range []struct {

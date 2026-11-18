@@ -23,7 +23,6 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -1823,8 +1822,7 @@ var _ = Describe("Flex VM API schema", Ordered, Label(testlabels.API, testlabels
 			"cpu": map[string]any{"hotRemoveEnabled": false},
 		}
 		status := map[string]any{
-			"governingClassNames": []any{"ceiling"}, "changeBlockTracking": false, "hardware": hardware,
-			"conditions": []any{map[string]any{"type": vmopv1.VirtualMachineConditionGovernanceCompliant, "status": "False", "reason": vmopv1.VirtualMachineNoGoverningClassReason, "message": "No class governs this zone", "lastTransitionTime": "2026-10-29T00:00:00Z"}},
+			"changeBlockTracking": false, "hardware": hardware,
 		}
 		vm.Object["status"] = status
 		Expect(envTestClient.Status().Update(ctx, vm)).To(Succeed())

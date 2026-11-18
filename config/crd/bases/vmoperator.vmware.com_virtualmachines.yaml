@@ -16802,10 +16802,10 @@ spec:
               reservedProfileName:
                 description: |-
                   ReservedProfileName identifies a VirtualMachineReservedProfile in this
-                  namespace. Omission inherits the class or governing class default; an
-                  explicit empty string selects no profile. A non-empty value must be a
-                  DNS-1123 subdomain. A selected profile must match
-                  the VM's CPU, memory and passthrough device configuration.
+                  namespace. Omission inherits the class default; an explicit empty string
+                  selects no profile. A non-empty value must be a DNS-1123 subdomain. A
+                  selected profile must match the VM's CPU, memory and passthrough device
+                  configuration.
                 maxLength: 253
                 pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                 type: string
@@ -17421,15 +17421,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - key
                 x-kubernetes-list-type: map
-              governingClassNames:
-                description: |-
-                  GoverningClassNames lists the names of the VirtualMachineClasses in this
-                  namespace that govern the VM's zone. It is computed from the classes,
-                  independently of the class selected by spec.className.
-                items:
-                  type: string
-                type: array
-                x-kubernetes-list-type: set
               guest:
                 description: Guest describes the observed state of the VM's guest.
                 properties:

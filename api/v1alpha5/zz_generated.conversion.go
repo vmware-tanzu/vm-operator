@@ -5230,7 +5230,6 @@ func Convert_v1alpha5_VirtualMachineStatus_To_v1alpha6_VirtualMachineStatus(in *
 }
 
 func autoConvert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(in *v1alpha6.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
-	// WARNING: in.GoverningClassNames requires manual conversion: does not exist in peer-type
 	out.Class = (*v1alpha5common.LocalObjectRef)(unsafe.Pointer(in.Class))
 	out.NodeName = in.NodeName
 	out.PowerState = VirtualMachinePowerState(in.PowerState)

@@ -11075,10 +11075,10 @@ spec:
                       reservedProfileName:
                         description: |-
                           ReservedProfileName identifies a VirtualMachineReservedProfile in this
-                          namespace. Omission inherits the class or governing class default; an
-                          explicit empty string selects no profile. A non-empty value must be a
-                          DNS-1123 subdomain. A selected profile must match
-                          the VM's CPU, memory and passthrough device configuration.
+                          namespace. Omission inherits the class default; an explicit empty string
+                          selects no profile. A non-empty value must be a DNS-1123 subdomain. A
+                          selected profile must match the VM's CPU, memory and passthrough device
+                          configuration.
                         maxLength: 253
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                         type: string

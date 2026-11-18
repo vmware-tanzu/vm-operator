@@ -12,6 +12,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/computepolicies"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/environmentbrowser"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/flexvmclasses"
 	tagcr "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/tag"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachine"
@@ -111,17 +112,6 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					SkipCleanup:      skipCleanup,
 					WCPNamespaceName: wcpNamespaceName,
 					LinuxVMName:      linuxVMName,
-				}
-			})
-		})
-
-		Context("VM-CLASS-SCHEMA-UPGRADE", func() {
-			virtualmachine.VMClassSchemaUpgradeSpec(context.TODO(), func() virtualmachine.VMClassSchemaUpgradeInput {
-				return virtualmachine.VMClassSchemaUpgradeInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPClient:        wcpClient,
-					WCPNamespaceName: wcpNamespaceName,
 				}
 			})
 		})
@@ -275,6 +265,19 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			})
+		})
+
+		Context("FLEX-VM-CLASSES", Label(flexvmclasses.FeatureLabel), func() {
+			input := func() flexvmclasses.SpecInput {
+				return flexvmclasses.SpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					WCPClient:        wcpClient,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			}
+			flexvmclasses.ClassResourcesSpec(context.TODO(), input)
+			flexvmclasses.UpgradeSpec(context.TODO(), input)
 		})
 
 		Context("ENVIRONMENT-BROWSER", func() {

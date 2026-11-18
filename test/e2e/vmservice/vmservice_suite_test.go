@@ -165,7 +165,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	config.SupervisorCapabilities, err = common.LoadSupervisorCapabilities(ctx, vmsvcClusterProxy)
 	Expect(err).NotTo(HaveOccurred(), "failed to load Supervisor capabilities")
 
-	if phase := os.Getenv("VMCLASS_UPGRADE_PHASE"); phase != "" {
+	if phase := os.Getenv("FLEX_UPGRADE_PHASE"); phase != "" {
 		// The staged upgrade runs against a baseline that serves only v1alpha5.
 		// Its durable namespace and content library are prepared by the runner;
 		// common setup below uses candidate APIs and creates disposable warmup VMs.

@@ -98,19 +98,29 @@ Before the first test, the suite registers the testbed vCenter with Veeam by its
 make test-e2e TEST_FOCUS="VM-HARDWARE"
 ```
 
-**Exercise a real VMClass schema upgrade**: run the prepare phase against the old operator, upgrade that same testbed with the external deployment runner, then run verify against the candidate operator. Both invocations must use the same existing supervisor namespace and unique run ID. The test stores fixture identity and the baseline VM's vCenter MOID in a ConfigMap in that namespace; prepare intentionally leaves its VM and classes running. The verify phase removes the fixture only after every check succeeds, and retains it on failure for diagnosis. The test does not perform the operator upgrade itself. The runner must prepare that namespace's configured storage class and content library association, with the configured Photon image fully downloaded. Staged upgrade setup uses baseline-compatible APIs and skips the common warmup VMs; it neither creates nor deletes the persistent namespace.
+#### Flex VM Classes
+
+The `flex-vm-classes` label selects every Flex VM Classes spec (`vmservice/vmservice/flexvmclasses/`, `Context("FLEX-VM-CLASSES")`; spec `.sdd/specs/015-vmclass-v2/`). The specs are `experimental`, so select them explicitly:
 
 ```bash
-E2E_NAMESPACE=<existing-namespace> VMCLASS_UPGRADE_RUN_ID=<unique-dns-label> VMCLASS_UPGRADE_PHASE=prepare \
-  make test-e2e TEST_FOCUS="prepares a legacy VMClass and powered-on VM for the operator upgrade" LABEL_FILTER="core-functional && experimental"
+make test-e2e LABEL_FILTER="flex-vm-classes && experimental"
+```
+
+Each spec pairs new behavior with coverage of the existing behavior it must not break: classes created through the VI admin API, the v1alpha5 API, older API writers, and objects created before an operator upgrade. New Flex VM Classes stories should add their specs to this package and keep that pairing.
+
+**Exercise a real operator upgrade**: the staged upgrade specs (`UpgradeSpec`) create legacy fixtures against the old operator, then verify them against the candidate operator. Run the prepare phase against the old operator, upgrade that same testbed with the external deployment runner, then run verify against the candidate operator. Both invocations must use the same existing supervisor namespace and unique run ID. Each fixture is a legacy class created through the VI admin API (a best-effort class and a guaranteed class with CPU and memory reservations; later stories add cases) with a powered-on v1alpha5 VM. The prepare phase stores the fixture identities, the VMs' vCenter MOIDs and their realized hardware and allocations in a ConfigMap in that namespace, and intentionally leaves the VMs and classes running. The verify phase removes the fixtures only after every check succeeds, and retains them on failure for diagnosis. The specs do not perform the operator upgrade themselves. The runner must prepare that namespace's configured storage class and content library association, with the configured Photon image fully downloaded. Staged upgrade setup uses baseline-compatible APIs and skips the common warmup VMs; it neither creates nor deletes the persistent namespace.
+
+```bash
+E2E_NAMESPACE=<existing-namespace> FLEX_UPGRADE_RUN_ID=<unique-dns-label> FLEX_UPGRADE_PHASE=prepare \
+  make test-e2e TEST_FOCUS="prepares legacy Flex VM Classes fixtures for an operator upgrade" LABEL_FILTER="flex-vm-classes && experimental"
 
 # Upgrade the operator on the same testbed here.
 
-E2E_NAMESPACE=<existing-namespace> VMCLASS_UPGRADE_RUN_ID=<same-unique-dns-label> VMCLASS_UPGRADE_PHASE=verify \
-  make test-e2e TEST_FOCUS="verifies the legacy VMClass and powered-on VM after the operator upgrade" LABEL_FILTER="core-functional && experimental"
+E2E_NAMESPACE=<existing-namespace> FLEX_UPGRADE_RUN_ID=<same-unique-dns-label> FLEX_UPGRADE_PHASE=verify \
+  make test-e2e TEST_FOCUS="verifies legacy Flex VM Classes fixtures after an operator upgrade" LABEL_FILTER="flex-vm-classes && experimental"
 ```
 
-The run ID must be a DNS label no longer than 31 characters. The prepare invocation uses v1alpha5 VM creation and VMClass API reads, along with the baseline-compatible DCLI class provisioning path. Verify checks the converted v1alpha6 VMClass resource defaults, the identity, and vSphere compute settings of the existing powered-on VM against its saved baseline, and a new v1alpha6 VM created from the upgraded legacy class.
+The run ID must be a DNS label no longer than 31 characters. The prepare invocation uses v1alpha5 VM creation and VMClass API reads, along with the baseline-compatible VI admin class provisioning path. For every case, verify checks that the class UID is unchanged, the converted v1alpha6 `spec.resources`, that the v1alpha5 view still returns the original legacy fields, that the existing VM's UID, MOID, power state, hardware and allocations are unchanged, that a new v1alpha6 VM from the class realizes the same values, and that an edit through the VI admin API after the upgrade (as a not-yet-upgraded vCenter would make) is reflected in the v1alpha6 view. When the staged upgrade phase variable is set, the other Flex VM Classes specs skip themselves.
 
 Precompiled `./e2e-tests`: pass `-e2e.*` and `--ginkgo.*` in one contiguous argument list (as `make test-e2e-prebuilt` does). Do **not** put `--` between them; otherwise `--ginkgo.focus`, `--ginkgo.label-filter`, etc. are ignored and nearly all specs still run.
 
@@ -150,6 +160,7 @@ Tests are organized using Ginkgo labels for easy filtering:
 - `experimental` - Excluded from all CI targets; requires infrastructure unavailable in the standard `vds_standard_medium` testbed (e.g. encryption-capable storage)
 - `backup-restore` - Backup/restore tests that need an external backup server. Run only by `make e2e-backup-restore` (and the matching CI suite); excluded from the smoke, core, and extended targets. While these tests also carry `experimental`, the `backup-restore` filter still selects them so they can be validated in their own suite.
 - `veeam` - The `backup-restore` tests that use Veeam Backup & Replication. They run in order and share one Veeam connection and vCenter registration.
+- `flex-vm-classes` - The Flex VM Classes specs. Each new-behavior check is paired with an existing-behavior (regression) check. Run them with `make test-e2e LABEL_FILTER="flex-vm-classes && experimental"`.
 - `boot-disk-capacity` - The tests for `spec.advanced.bootDiskCapacity`. Run them with `make test-e2e LABEL_FILTER="boot-disk-capacity"`.
 
 ## Configuration
@@ -174,8 +185,8 @@ The primary configuration is in `vmservice/config/wcp.yaml`:
 | `VEEAM_USERNAME` / `VEEAM_PASSWORD` | Veeam B&R credentials | Unset | ❌ |
 | `VEEAM_REPOSITORY` | Name of the backup repository the tests' jobs write to | First repository | ❌ |
 | `E2E_RUN_ID` | ID folded into the names of Veeam jobs (`vmop-e2e-<run-id>-<vm>`) so runs sharing a server don't collide | Random | ❌ |
-| `VMCLASS_UPGRADE_PHASE` | `prepare` creates the baseline fixture; `verify` checks it after the external operator upgrade | Unset | ❌ |
-| `VMCLASS_UPGRADE_RUN_ID` | Unique DNS label used for fixture names and the cross-run checkpoint; must be identical in both phases | Unset | ❌ |
+| `FLEX_UPGRADE_PHASE` | `prepare` creates the legacy Flex VM Classes fixtures; `verify` checks them after the external operator upgrade | Unset | ❌ |
+| `FLEX_UPGRADE_RUN_ID` | Unique DNS label used for fixture names and the cross-run checkpoint; must be identical in both phases | Unset | ❌ |
 
 #### Namespace Management
 

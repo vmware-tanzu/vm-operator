@@ -22,7 +22,6 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	capiutil "sigs.k8s.io/cluster-api/util"
@@ -180,65 +179,6 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		hw := vmMO.Config.Hardware
 		Expect(hw.NumCPU).To(BeEquivalentTo(classCPU))
 		Expect(hw.MemoryMB).To(BeEquivalentTo(classMemory / 1024 / 1024))
-	})
-
-	It("Should realize the v1alpha6 VMClass size defaults for a v1alpha6 VirtualMachine", Label("core-functional", "experimental"), func() {
-		skipper.SkipUnlessSupervisorCapabilityEnabled(config.SupervisorCapabilities, consts.VMServiceClasslessVMCapabilityName)
-
-		className := fmt.Sprintf("%s-class", vmName)
-		classCPU := resource.MustParse("2")
-		classMemory := resource.MustParse("2Gi")
-		vmClass := &vmopv1.VirtualMachineClass{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: vmopv1.GroupVersion.String(),
-				Kind:       "VirtualMachineClass",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: input.WCPNamespaceName,
-				Name:      className,
-			},
-			Spec: vmopv1.VirtualMachineClassSpec{
-				Resources: vmopv1.VirtualMachineClassResources{
-					Size: vmopv1.VirtualMachineClassResourceSpec{
-						CPU:    &vmopv1.ResourceQuantityRange{Default: &classCPU},
-						Memory: &vmopv1.ResourceQuantityRange{Default: &classMemory},
-					},
-				},
-			},
-		}
-		Expect(svClusterClient.Create(ctx, vmClass)).To(Succeed(), "failed to create v1alpha6 VirtualMachineClass")
-		// DeferCleanup nodes run last-in-first-out, so the VM cleanup that
-		// CreateVirtualMachine registers below deletes the VM and waits for it
-		// to be gone before this node deletes the class.
-		DeferCleanup(func(cleanupCtx context.Context) {
-			Expect(svClusterClient.Delete(cleanupCtx, vmClass)).To(Succeed(), "failed to delete v1alpha6 VirtualMachineClass")
-		})
-
-		vm := &vmopv1.VirtualMachine{
-			ObjectMeta: metav1.ObjectMeta{Namespace: input.WCPNamespaceName, Name: vmName},
-			Spec: vmopv1.VirtualMachineSpec{
-				ImageName:    linuxVMIName,
-				ClassName:    className,
-				StorageClass: clusterResources.StorageClassName,
-				PowerState:   vmopv1.VirtualMachinePowerStateOff,
-			},
-		}
-		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, false)
-
-		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
-		createdVMClass := &vmopv1.VirtualMachineClass{}
-		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: input.WCPNamespaceName, Name: className}, createdVMClass)).To(Succeed())
-		Expect(createdVMClass.Spec.Resources.Size.CPU).NotTo(BeNil())
-		Expect(createdVMClass.Spec.Resources.Size.Memory).NotTo(BeNil())
-		Expect(createdVMClass.Spec.Resources.Size.CPU.Default).To(Equal(&classCPU))
-		Expect(createdVMClass.Spec.Resources.Size.Memory.Default).To(Equal(&classMemory))
-
-		var vmMO mo.VirtualMachine
-		Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)).To(Succeed())
-		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(classCPU.Value()))
-		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(classMemory.Value() / 1024 / 1024))
 	})
 
 	It("Should resize powered off VirtualMachine", func() {

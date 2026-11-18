@@ -61,7 +61,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 - [ ] T101 [P] [US12] [vmop-4314] A CI pipeline that runs the Flex VM Classes E2E suites with the capability enabled, quarantined until vmop-4337 — `test/e2e`, CI config
 - [ ] T101a [P] [US12] [vmop-4315] Upgrade-compat unit tests: golden v1alpha5 classes captured from 9.1 convert to v1alpha6, and the provider's ConfigSpec for them matches 9.1 output exactly; a fresh v1alpha5 write without the conversion annotation lands on top of an existing v1alpha6 class without losing its ranges — `api/test/v1alpha5`, `pkg/providers/vsphere/virtualmachine`
-- [ ] T101b [US12] [vmop-4315] Extend the `VMCLASS_UPGRADE_PHASE` verify phase, on an old (9.1) VC after a Supervisor-only upgrade: edit a class through the VC API (wcpsvc writes v1alpha1 via read-then-write `CreateOrUpdate`); check the VM resize and a new VM get the same CPU, memory and reservations as on 9.1; check an untouched v1alpha6 range survives the write. Rerun the phase after the VC upgrade — `test/e2e`
+- [ ] T101b [US12] [vmop-4315] Extend the `FLEX_UPGRADE_PHASE` verify phase (`test/e2e/vmservice/vmservice/flexvmclasses/upgrade.go`), on an old (9.1) VC after a Supervisor-only upgrade: edit a class through the VC API (wcpsvc writes v1alpha1 via read-then-write `CreateOrUpdate`); check the VM resize and a new VM get the same CPU, memory and reservations as on 9.1; check an untouched v1alpha6 range survives the write. Rerun the phase after the VC upgrade — `test/e2e`
 - [ ] T101c [US12] [vmop-4315] A UTS lane that does a Supervisor-only upgrade from a 9.1.0 build and runs the T101b verify phase — UTS config, CI config
 
 ### Incremental schema PRs (vmop-4315)

@@ -1843,7 +1843,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				// A guest shutdown wait that is already running is not
 				// interrupted, so the Hard power off can wait for it to time
 				// out first.
-				waitForPowerStates(ctx, svClusterClient, input.WCPNamespaceName, []string{vm2Name}, vmopv1.VirtualMachinePowerStateOff, softTimeout+2*time.Minute)
+				waitForPowerStates(ctx, svClusterClient, input.WCPNamespaceName, []string{vm2Name}, vmopv1.VirtualMachinePowerStateOff, softTimeout+3*time.Minute)
 				vmPowerChangeTime(ctx, vCenterClient, svClusterClient, input.WCPNamespaceName, vm2Name, since, vmopv1.VirtualMachinePowerStateOff)
 			})
 

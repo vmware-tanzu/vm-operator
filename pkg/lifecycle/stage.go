@@ -71,7 +71,7 @@ const (
 
 	// lifecycleStateFinalizer is VM Operator's finalizer on a LifecycleState. It
 	// is removed only after the ResourceDelete stage resolves.
-	lifecycleStateFinalizer = "lifecycle.vcfa.vmware.com/vm-operator-state"
+	lifecycleStateFinalizer = "vmoperator.vmware.com/lifecyclestate"
 
 	conditionType = vmopv1.VirtualMachineConditionLifecycleHookReady
 )

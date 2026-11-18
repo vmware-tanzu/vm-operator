@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	finalizer = "lifecycle.vcfa.vmware.com/vm-operator-state"
+	finalizer = "vmoperator.vmware.com/lifecyclestate"
 	otherFin  = "other.example.com/keep"
 	ns        = "ns"
 	vmName    = "vm1"

@@ -203,7 +203,7 @@ Envtest needs no extra wiring: `test/builder/test_suite.go` loads all of `config
 - Capability off: one `Get` through `apiReader` (no informer is started); `NotFound` or `meta.IsNoMatchError` → no-op. Without this, a `LifecycleState` created while the capability was on would block VM and namespace deletion.
 - Never deletes the `LifecycleState`; GC or the namespace controller does.
 
-**Constant**: `lifecycleStateFinalizer` = `lifecycle.vcfa.vmware.com/vm-operator-state`.
+**Constant**: `lifecycleStateFinalizer` = `vmoperator.vmware.com/lifecyclestate`.
 
 ### 4. Watch
 

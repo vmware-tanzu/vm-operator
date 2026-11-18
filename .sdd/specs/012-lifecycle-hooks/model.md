@@ -223,7 +223,7 @@ metadata:
     lifecycle.vcfa.vmware.com/target-group: vmoperator.vmware.com
     lifecycle.vcfa.vmware.com/target-kind: VirtualMachine
   finalizers:
-  - lifecycle.vcfa.vmware.com/vm-operator-state
+  - vmoperator.vmware.com/lifecyclestate
   ownerReferences:
   - apiVersion: vmoperator.vmware.com/v1alpha6
     kind: VirtualMachine

@@ -1644,10 +1644,13 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 				powerChangeWanted = true
 
 				// Skip only the restart when blocked.
-				if proceed, err := vs.reconcileLifecycleStage(
+				if err := vs.reconcileLifecycleStage(
 					vmCtx,
-					lifecycle.StagePowerStateChange); err != nil || !proceed {
+					lifecycle.StagePowerStateChange); err != nil {
 
+					if lifecycle.IsHooksBlocked(err) {
+						return nil
+					}
 					return err
 				}
 			}
@@ -1710,10 +1713,13 @@ func (vs *vSphereVMProvider) reconcilePowerState(
 
 		// Skip only the power operation when blocked so the rest of the
 		// update, including snapshot create, still runs.
-		if proceed, err := vs.reconcileLifecycleStage(
+		if err := vs.reconcileLifecycleStage(
 			vmCtx,
-			lifecycle.StagePowerStateChange); err != nil || !proceed {
+			lifecycle.StagePowerStateChange); err != nil {
 
+			if lifecycle.IsHooksBlocked(err) {
+				return nil
+			}
 			return err
 		}
 
@@ -1794,28 +1800,32 @@ func (vs *vSphereVMProvider) abandonPowerStateChange(
 }
 
 // reconcileLifecycleStage gets or creates the VM's LifecycleState and evaluates
-// the stage against it. It reports whether the guarded step may proceed. A
-// failure to evaluate is recorded on the LifecycleHookReady condition and
-// returned, so the step stays held and is retried.
+// the stage against it. It returns lifecycle.ErrHooksBlocked while the stage is
+// held, so callers that must stop return it as is. A failure to evaluate is
+// recorded on the LifecycleHookReady condition and returned, so the step stays
+// held and is retried.
 func (vs *vSphereVMProvider) reconcileLifecycleStage(
 	vmCtx pkgctx.VirtualMachineContext,
-	stageName string) (bool, error) {
+	stageName string) error {
 
 	state, err := lifecycle.GetOrCreateLifecycleState(
 		vmCtx, vs.k8sClient, vmCtx.VM)
 	if err != nil {
 		lifecycle.MarkUnknown(vmCtx.VM, stageName, err)
-		return false, err
+		return err
 	}
 
 	result, err := lifecycle.ReconcileStage(
 		vmCtx, vs.k8sClient, vmCtx.VM, state, stageName)
 	if err != nil {
 		lifecycle.MarkUnknown(vmCtx.VM, stageName, err)
-		return false, err
+		return err
 	}
 
-	return result.Proceed, nil
+	if !result.Proceed {
+		return lifecycle.ErrHooksBlocked
+	}
+	return nil
 }
 
 // SetPowerStateSyncedCondition sets the VirtualMachinePowerStateSynced

@@ -49,6 +49,7 @@ var RetryableTransientErrSubstrings = []string{
 	"connection timed out",
 	"tls handshake timeout",
 	"unexpected eof",
+	": eof",
 	"broken pipe",
 	"http2: server sent goaway",
 	"http2: client connection lost",

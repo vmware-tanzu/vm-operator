@@ -1,0 +1,1009 @@
+// Copyright (c) 2020-2025 Broadcom. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package virtualmachine
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/crypto"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	capiutil "sigs.k8s.io/cluster-api/util"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	byokv1 "github.com/vmware-tanzu/vm-operator/external/byok/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/testutils"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
+	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
+	vmserviceutils "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/utils"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
+)
+
+type VMEncryptionInput struct {
+	ClusterProxy   wcpframework.WCPClusterProxyInterface
+	Config         *e2eConfig.E2EConfig
+	WCPClient      wcp.WorkloadManagementAPI
+	ArtifactFolder string
+}
+
+func VMEncryptionSpec(ctx context.Context, inputGetter func() VMEncryptionInput) {
+	const (
+		specName = "vm-encryption"
+
+		// standardKeyProviderID requires an external KMIP server (set up via hack/e2e/kms.sh).
+		// nativeKeyProviderID is registered automatically by BeforeEach if not pre-configured.
+		standardKeyProviderID = "gce2e-standard"
+		nativeKeyProviderID   = "gce2e-native"
+	)
+
+	var (
+		wcpClient        wcp.WorkloadManagementAPI
+		config           *e2eConfig.E2EConfig
+		clusterProxy     *common.VMServiceClusterProxy
+		svClusterClient  ctrlclient.Client
+		vCenterClient    *vim25.Client
+		cryptoManager    *crypto.ManagerKmip
+		clusterResources *e2eConfig.Resources
+		tmpNamespaceName string
+		vmName           string
+		vmiName          string
+		byokFSSEnabled   bool
+	)
+
+	BeforeEach(func() {
+		input := inputGetter()
+		Expect(input.Config).ToNot(BeNil(), "Invalid argument. input.E2EConfig can't be nil when calling %s spec", specName)
+		Expect(input.Config.InfraConfig).ToNot(BeNil(), "Invalid argument. input.E2EConfig.InfraConfig can't be nil when calling %s spec", specName)
+		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
+		skipper.SkipIfNetworkTopologyIsNSX(input.Config)
+
+		Expect(input.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.SVClusterProxy can't be nil when calling %s spec", specName)
+		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
+
+		wcpClient = input.WCPClient
+		config = input.Config
+		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		svClusterConfig := config.InfraConfig.ManagementClusterConfig
+		clusterResources = svClusterConfig.Resources
+		svClusterClient = clusterProxy.GetClient()
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
+		DeferCleanup(cancelPodWatches)
+
+		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+		DeferCleanup(func(context.Context) {
+			vcenter.LogoutVimClient(vCenterClient)
+		})
+
+		cryptoManager = crypto.NewManagerKmip(vCenterClient)
+		defaultKeyProviderID, err := cryptoManager.GetDefaultKmsClusterID(ctx, nil, true)
+		Expect(err).NotTo(HaveOccurred(), "failed to get default Key Provider ID")
+
+		By("Ensure native key provider exists (create via WCP if not pre-configured)")
+		// Remove the native key provider if this test registered it.
+		cleanupNativeKeyProvider, err := vcenter.EnsureNativeKeyProvider(ctx, vCenterClient, wcpClient, nativeKeyProviderID)
+		Expect(err).NotTo(HaveOccurred(), "failed to ensure native key provider %q", nativeKeyProviderID)
+		DeferCleanup(cleanupNativeKeyProvider)
+		DeferCleanup(func(ctx context.Context) {
+			if defaultKeyProviderID != "" {
+				_ = cryptoManager.SetDefaultKmsClusterId(ctx, defaultKeyProviderID, nil)
+			}
+		})
+
+		byokFSSEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSBYOK"))
+
+		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
+
+		vmName = fmt.Sprintf("%s-vm-%s", specName, capiutil.RandomString(4))
+
+		By("Create a new namespace")
+
+		vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+		clIDs := []string{vmserviceCLID}
+		vmClassNames := []string{clusterResources.VMClassName}
+		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
+
+		tmpNamespaceName = fmt.Sprintf("%s-ns-%s", specName, capiutil.RandomString(4))
+		tmpNamespaceCtx, err := clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
+		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace %s", tmpNamespaceName)
+		DeferCleanup(func() {
+			if tmpNamespaceCtx.GetNamespace() != nil {
+				tmpNamespaceName := tmpNamespaceCtx.GetNamespace().Name
+				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
+				wcp.WaitForNamespaceDeleted(wcpClient, tmpNamespaceName)
+			}
+		})
+
+		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
+
+		vmiName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+
+		By(utils.E2EEncryptionStorageProfileName + " should exist")
+		Expect(utils.EnsureE2EEncryptionStorageInNamespace(ctx, vCenterClient,
+			wcpClient, svClusterClient, *config,
+			tmpNamespaceName, clusterResources.StorageClassName)).
+			To(Succeed(), "failed to ensure encryption storage in namespace %s",
+				tmpNamespaceName)
+	})
+
+	It("Should verify boot disk storage policy matches VM spec.storageClass for an encrypted VM", Label("experimental"), func() {
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
+
+		By("Create VM using encryption storage policy")
+		vmToCreate := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    "best-effort-small",
+				StorageClass: utils.E2EEncryptionStorageClassName,
+				PowerState:   vmopv1.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+		By("Verifying boot disk storage policy matches spec.storageClass for encrypted VM")
+		vmoperator.EventuallyBootDiskStoragePolicyMatchesVMStorageClass(ctx, config, vCenterClient, svClusterClient, tmpNamespaceName, vmName)
+	})
+
+	It("Create an Encrypted VirtualMachine using encryption storage policy", Label("smoke", "experimental"), func() {
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
+
+		By("Create VM using encryption storage policy")
+
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    "best-effort-small",
+				StorageClass: utils.E2EEncryptionStorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+		if byokFSSEnabled {
+			waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
+		}
+	})
+
+	It("Create an Encrypted VirtualMachine using VM Class configured with vTPM", func() {
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
+
+		By("Create VM Class with vTPM and ensure namespace has access")
+
+		createSpecE2eTestBestEffortSmallVTPM := vmservice.CreateSpecE2eVMClassVTPMConfigSpec()
+		DeferCleanup(func() {
+			if createSpecE2eTestBestEffortSmallVTPM.ID != "" {
+				vmservice.VerifyVMClassDeletion(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID)
+			}
+		})
+		vmservice.VerifyVMClassCreate(wcpClient, createSpecE2eTestBestEffortSmallVTPM, createSpecE2eTestBestEffortSmallVTPM)
+		vmservice.EnsureVMClassAccess(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID, tmpNamespaceName)
+
+		By("Create VM using vTPM class")
+
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:   tmpNamespaceName,
+				Name:        vmName,
+				Annotations: map[string]string{"vmoperator.vmware.com/firmware": "efi"},
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    createSpecE2eTestBestEffortSmallVTPM.ID,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+		if byokFSSEnabled {
+			waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
+		}
+	})
+
+	It("Create an Encrypted VirtualMachine using vTPM and encryption class", func() {
+		if !byokFSSEnabled {
+			Skip("BYOK FSS is not enabled")
+		}
+
+		// See VCFCON-2837
+		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
+
+		By("Create Encryption Class")
+
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nativeKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: nativeKeyProviderID,
+			},
+		}
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider) // TODO: should not need to have a default provider set
+
+		By("Create VM Class with vTPM and ensure namespace has access")
+
+		createSpecE2eTestBestEffortSmallVTPM := vmservice.CreateSpecE2eVMClassVTPMConfigSpec()
+		DeferCleanup(func() {
+			if createSpecE2eTestBestEffortSmallVTPM.ID != "" {
+				vmservice.VerifyVMClassDeletion(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID)
+			}
+		})
+		vmservice.VerifyVMClassCreate(wcpClient, createSpecE2eTestBestEffortSmallVTPM, createSpecE2eTestBestEffortSmallVTPM)
+		vmservice.EnsureVMClassAccess(wcpClient, createSpecE2eTestBestEffortSmallVTPM.ID, tmpNamespaceName)
+
+		By("Create VM using vTPM class")
+
+		// NOTE: This VM is intentionally not encrypted with the EncryptionClass
+		// above. Before the Go templates were removed, this test passed
+		// Crypto{EncryptionClassName: class.Name} to the old GetVirtualMachineYamlA2,
+		// but the v1alpha2 template (and later the typed A2 builder) never
+		// rendered spec.crypto, so the setting was silently ignored. Only the
+		// v1alpha3 template emitted it. The VM has always been created without
+		// spec.crypto, so keep it that way unless the intent is to change what
+		// this test covers.
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:   tmpNamespaceName,
+				Name:        vmName,
+				Annotations: map[string]string{"vmoperator.vmware.com/firmware": "efi"},
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    createSpecE2eTestBestEffortSmallVTPM.ID,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
+		waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
+	})
+
+	It("Create an Encrypted VirtualMachine using encryption class", Label("experimental"), func() {
+		if !byokFSSEnabled {
+			Skip("BYOK FSS is not enabled")
+		}
+
+		// See VCFCON-2837
+		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
+
+		By("Create Encryption Class")
+
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
+		}
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider) // Required when using encryption storage policy
+
+		By("Create VM using invalid encryption class name")
+
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    "best-effort-small",
+				StorageClass: utils.E2EEncryptionStorageClassName,
+				PowerState:   vmopv1a3.VirtualMachinePowerStateOn,
+				Crypto: &vmopv1a3.VirtualMachineCryptoSpec{
+					EncryptionClassName:   "invalid",
+					UseDefaultKeyProvider: ptr.To(false),
+				},
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+		waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "EncryptionClassNotFound")
+
+		By("Update VM using valid encryption class name")
+
+		vmBeforePatch := vmToCreate.DeepCopy()
+		vmToCreate.Spec.Crypto.EncryptionClassName = class.Name
+		Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(vmBeforePatch))).To(Succeed(), "failed to update VirtualMachine encryption class")
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
+	})
+
+	It("Create an Encrypted VirtualMachine using an encryption key id", Label("experimental"), FlakeAttempts(3), func() {
+		if !byokFSSEnabled {
+			Skip("BYOK FSS is not enabled")
+		}
+
+		// See VCFCON-2837
+		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
+
+		By("Create Encryption Class with invalid key")
+
+		keyID, err := cryptoManager.GenerateKey(ctx, standardKeyProviderID)
+		Expect(err).ToNot(HaveOccurred())
+
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+				KeyID:       keyID + "-invalid",
+			},
+		}
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider)
+
+		By("Create PVC using encryption class")
+
+		pvcName := vmName + "-pvc"
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: pvcName}, pvc)).To(Succeed())
+
+		pvc.Annotations["csi.vsphere.encryption-class"] = class.Name
+		Expect(svClusterClient.Update(ctx, pvc)).To(Succeed())
+
+		By("Create VM using encryption class with invalid key")
+
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    "best-effort-small",
+				StorageClass: utils.E2EEncryptionStorageClassName,
+				PowerState:   vmopv1a3.VirtualMachinePowerStateOn,
+				Volumes: []vmopv1a3.VirtualMachineVolume{
+					{
+						Name: pvcName,
+						VirtualMachineVolumeSource: vmopv1a3.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1a3.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pvcName,
+								},
+							},
+						},
+					},
+				},
+				Crypto: &vmopv1a3.VirtualMachineCryptoSpec{
+					EncryptionClassName:   class.Name,
+					UseDefaultKeyProvider: ptr.To(false),
+				},
+			},
+		}
+
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+		waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "EncryptionClassInvalid")
+
+		By("Update encryption class using valid key")
+
+		base := class.DeepCopy()
+		class.Spec.KeyID = keyID
+		Expect(adminClient.Patch(ctx, class, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update EncryptionClass")
+
+		By("Expect VM to be created using updated encryption class key")
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
+		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
+		Expect(cryptoStatus.KeyID).To(Equal(class.Spec.KeyID))
+	})
+
+	It("Encrypt VM config and classic disks using encryption storage policy", func() {
+		if !byokFSSEnabled {
+			Skip("BYOK FSS is not enabled")
+		}
+
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
+
+		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
+
+		By("Create Encryption Class for the VM")
+
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nativeKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: nativeKeyProviderID,
+			},
+		}
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+
+		By("Create VM using encryption storage policy and encryption class")
+
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    "best-effort-small",
+				StorageClass: utils.E2EEncryptionStorageClassName,
+				PowerState:   vmopv1a3.VirtualMachinePowerStateOn,
+				Crypto: &vmopv1a3.VirtualMachineCryptoSpec{
+					EncryptionClassName:   class.Name,
+					UseDefaultKeyProvider: ptr.To(false),
+				},
+			},
+		}
+
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
+
+		By("Verify VM config and disks are encrypted")
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
+		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeConfig))
+		Expect(cryptoStatus.Encrypted).To(ContainElement(vmopv1.VirtualMachineEncryptionTypeDisks))
+	})
+
+	It("Encrypt PVC using encryption class annotation on the PVC", Label("experimental"), func() {
+		if !byokFSSEnabled {
+			Skip("BYOK FSS is not enabled")
+		}
+
+		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
+
+		By("Create Encryption Class for the PVC")
+
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
+		}
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider)
+
+		By("Create PVC with encryption class annotation")
+
+		pvcName := vmName + "-pvc"
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: pvcName}, pvc)).To(Succeed())
+
+		pvc.Annotations["csi.vsphere.encryption-class"] = class.Name
+		Expect(svClusterClient.Update(ctx, pvc)).To(Succeed())
+
+		By("Create VM with attached PVC")
+
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    "best-effort-small",
+				StorageClass: utils.E2EEncryptionStorageClassName,
+				PowerState:   vmopv1a3.VirtualMachinePowerStateOn,
+				Volumes: []vmopv1a3.VirtualMachineVolume{
+					{
+						Name: pvcName,
+						VirtualMachineVolumeSource: vmopv1a3.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1a3.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pvcName,
+								},
+							},
+						},
+					},
+				},
+				Crypto: &vmopv1a3.VirtualMachineCryptoSpec{
+					EncryptionClassName:   class.Name,
+					UseDefaultKeyProvider: ptr.To(false),
+				},
+			},
+		}
+
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
+		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
+
+		By("Verify VM is encrypted with the encryption class provider")
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
+		Expect(cryptoStatus.KeyID).NotTo(BeEmpty())
+
+		By("Verify crypto status of volumes reflects volume is encrypted using encryption class from annotation")
+		Eventually(func(g Gomega) {
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(vm.Status.Volumes).To(HaveLen(2))
+
+			for _, volume := range vm.Status.Volumes {
+				volumeStatusCrypto := volume.Crypto
+				g.Expect(volumeStatusCrypto).NotTo(BeNil())
+				g.Expect(volumeStatusCrypto.ProviderID).To(Equal(class.Spec.KeyProvider))
+				g.Expect(volumeStatusCrypto.KeyID).NotTo(BeEmpty())
+			}
+		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for PVC volume encryption: %s", vmName)
+	})
+
+	It("Encrypt PVC using default key provider when no encryption class annotation", func() {
+		if !byokFSSEnabled {
+			Skip("BYOK FSS is not enabled")
+		}
+
+		if !vmserviceutils.IsStandardKeyProviderAvailable(ctx, clusterProxy) {
+			Skip("Standard key provider (gce2e-standard) not available - requires PyKMIP server setup")
+		}
+
+		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
+
+		useKeyProvider(ctx, config, cryptoManager, standardKeyProviderID)
+
+		By("Create Encryption Class for the VM")
+
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
+		}
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+
+		By("Create PVC without encryption class annotation")
+
+		pvcName := vmName + "-pvc"
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+
+		By("Create VM with attached PVC and encryption class")
+
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    "best-effort-small",
+				StorageClass: utils.E2EEncryptionStorageClassName,
+				PowerState:   vmopv1a3.VirtualMachinePowerStateOn,
+				Volumes: []vmopv1a3.VirtualMachineVolume{
+					{
+						Name: pvcName,
+						VirtualMachineVolumeSource: vmopv1a3.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1a3.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pvcName,
+								},
+							},
+						},
+					},
+				},
+				Crypto: &vmopv1a3.VirtualMachineCryptoSpec{
+					EncryptionClassName:   class.Name,
+					UseDefaultKeyProvider: ptr.To(false),
+				},
+			},
+		}
+
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
+		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
+
+		By("Verify VM is encrypted")
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
+		Expect(cryptoStatus.KeyID).NotTo(BeEmpty())
+
+		By("Verify crypto status of volumes reflects volume is encrypted using the default key provider")
+		Eventually(func(g Gomega) {
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(vm.Status.Volumes).To(HaveLen(2))
+
+			for _, volume := range vm.Status.Volumes {
+				volumeStatusCrypto := volume.Crypto
+				g.Expect(volumeStatusCrypto).NotTo(BeNil())
+				g.Expect(volumeStatusCrypto.ProviderID).NotTo(BeEmpty())
+			}
+		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for PVC volume encryption with default provider: %s", vmName)
+	})
+
+	It("Re-encrypt VM and PVC when encryption class is updated on both", Label("experimental"), func() {
+		if !byokFSSEnabled {
+			Skip("BYOK FSS is not enabled")
+		}
+
+		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
+
+		By("Create initial Encryption Class")
+
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
+		}
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, class.Spec.KeyProvider)
+
+		By("Create PVC with encryption class annotation")
+
+		pvcName := vmName + "-pvc"
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: pvcName}, pvc)).To(Succeed())
+
+		pvc.Annotations["csi.vsphere.encryption-class"] = class.Name
+		Expect(svClusterClient.Update(ctx, pvc)).To(Succeed())
+
+		By("Create VM with attached PVC")
+
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    "best-effort-small",
+				StorageClass: utils.E2EEncryptionStorageClassName,
+				PowerState:   vmopv1a3.VirtualMachinePowerStateOn,
+				Volumes: []vmopv1a3.VirtualMachineVolume{
+					{
+						Name: pvcName,
+						VirtualMachineVolumeSource: vmopv1a3.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1a3.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pvcName,
+								},
+							},
+						},
+					},
+				},
+				Crypto: &vmopv1a3.VirtualMachineCryptoSpec{
+					EncryptionClassName:   class.Name,
+					UseDefaultKeyProvider: ptr.To(false),
+				},
+			},
+		}
+
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, tmpNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
+		cryptoStatus := waitForCryptoCondition(ctx, config, svClusterClient, tmpNamespaceName, vmName, "")
+		Expect(cryptoStatus.ProviderID).To(Equal(class.Spec.KeyProvider))
+		Expect(cryptoStatus.KeyID).NotTo(BeEmpty())
+		initialKeyID := cryptoStatus.KeyID
+
+		By("Update encryption class with a new key")
+
+		newKeyID, err := cryptoManager.GenerateKey(ctx, standardKeyProviderID)
+		Expect(err).ToNot(HaveOccurred())
+
+		base := class.DeepCopy()
+		class.Spec.KeyID = newKeyID
+		Expect(adminClient.Patch(ctx, class, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update EncryptionClass")
+
+		By("Verify VM is re-encrypted with new key")
+		Eventually(func(g Gomega) {
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(vm.Status.Crypto).NotTo(BeNil())
+			g.Expect(vm.Status.Crypto.ProviderID).To(Equal(class.Name))
+			g.Expect(vm.Status.Crypto.KeyID).To(Equal(newKeyID))
+			g.Expect(vm.Status.Crypto.KeyID).NotTo(Equal(initialKeyID))
+		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for VM re-encryption: %s", vmName)
+
+		By("Verify crypto status of volumes reflects the encryption class")
+		Eventually(func(g Gomega) {
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(vm.Status.Volumes).To(HaveLen(2))
+
+			for _, volume := range vm.Status.Volumes {
+				volumeStatusCrypto := volume.Crypto
+				g.Expect(volumeStatusCrypto).NotTo(BeNil())
+				g.Expect(volumeStatusCrypto.ProviderID).To(Equal(class.Name))
+			}
+		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(), "Timed out waiting for PVC volume re-encryption: %s", vmName)
+	})
+
+	It("Error when PVC encryption class uses different provider type than VM", Label("experimental"), func() {
+		if !byokFSSEnabled {
+			Skip("BYOK FSS is not enabled")
+		}
+
+		adminClusterProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		defer adminClusterProxy.Dispose(ctx)
+		adminClient, err := adminClusterProxy.GetAdminClient()
+		Expect(err).NotTo(HaveOccurred(), "failed to get admin client")
+
+		By("Create Encryption Class using native key provider for the VM")
+
+		class := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nativeKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: nativeKeyProviderID,
+			},
+		}
+		Expect(adminClient.Create(ctx, class)).Should(Succeed(), "failed to create EncryptionClass %s/%s", class.Namespace, class.Name)
+		useKeyProvider(ctx, config, cryptoManager, nativeKeyProviderID)
+
+		By("Create Encryption Class using standard key provider for the PVC")
+
+		pvcClass := &byokv1.EncryptionClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      standardKeyProviderID,
+				Namespace: tmpNamespaceName,
+			},
+			Spec: byokv1.EncryptionClassSpec{
+				KeyProvider: standardKeyProviderID,
+			},
+		}
+		Expect(adminClient.Create(ctx, pvcClass)).Should(Succeed(), "failed to create EncryptionClass %s/%s", pvcClass.Namespace, pvcClass.Name)
+
+		By("Create PVC annotated with the standard key provider encryption class")
+
+		pvcName := vmName + "-pvc"
+		testutils.AssertCreatePVC(svClusterClient, pvcName, tmpNamespaceName, utils.E2EEncryptionStorageClassName)
+		pvc := &corev1.PersistentVolumeClaim{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: pvcName}, pvc)).To(Succeed())
+
+		pvc.Annotations["csi.vsphere.encryption-class"] = pvcClass.Name
+		Expect(svClusterClient.Update(ctx, pvc)).To(Succeed())
+
+		By("Create VM with native provider encryption class and PVC using standard provider")
+
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    "best-effort-small",
+				StorageClass: utils.E2EEncryptionStorageClassName,
+				PowerState:   vmopv1a3.VirtualMachinePowerStateOn,
+				Volumes: []vmopv1a3.VirtualMachineVolume{
+					{
+						Name: pvcName,
+						VirtualMachineVolumeSource: vmopv1a3.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1a3.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pvcName,
+								},
+							},
+						},
+					},
+				},
+				Crypto: &vmopv1a3.VirtualMachineCryptoSpec{
+					EncryptionClassName:   class.Name,
+					UseDefaultKeyProvider: ptr.To(false),
+				},
+			},
+		}
+
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		By("Verify the encryption synced condition reports an error due to mixed provider types")
+		Eventually(func(g Gomega) {
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			condition := meta.FindStatusCondition(vm.GetConditions(), vmopv1.VirtualMachineEncryptionSynced)
+			g.Expect(condition).ToNot(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse),
+				"expected EncryptionSynced to be False due to mixed provider types, got %s with reason %s: %s",
+				condition.Status, condition.Reason, condition.Message)
+		}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed(),
+			"Timed out waiting for encryption error with mixed provider types: %s", vmName)
+	})
+}
+
+func useKeyProvider(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	cryptoManager *crypto.ManagerKmip,
+	keyProviderID string) {
+
+	By(fmt.Sprintf("Use %s key provider and mark it as default", keyProviderID))
+
+	providers, err := cryptoManager.ListKmipServers(ctx, nil)
+	Expect(err).NotTo(HaveOccurred(), "failed to list key providers")
+
+	var provider *types.KmipClusterInfo
+	registeredIDs := make([]string, 0, len(providers))
+	for i := range providers {
+		registeredIDs = append(registeredIDs, providers[i].ClusterId.Id)
+		if providers[i].ClusterId.Id == keyProviderID {
+			provider = &providers[i]
+		}
+	}
+	Expect(provider).NotTo(BeNil(),
+		"key provider %q is not registered; registered providers: %v; check hack/e2e/kms.sh setup",
+		keyProviderID, registeredIDs)
+
+	// Native key providers report "red" until their first key is generated on
+	// first use — they are still functional for encryption. For external KMIP
+	// providers, poll until the server is reachable (green) before proceeding.
+	isNative, err := cryptoManager.IsNativeProvider(ctx, keyProviderID)
+	Expect(err).NotTo(HaveOccurred(), "error checking if key provider %s is native", keyProviderID)
+
+	if !isNative {
+		var lastSummary string
+
+		Eventually(func(g Gomega) {
+			status, err := cryptoManager.GetClusterStatus(ctx, keyProviderID)
+			g.Expect(err).NotTo(HaveOccurred(), "error fetching status of key provider %s", keyProviderID)
+
+			servers := make([]string, 0, len(status.Servers))
+			for _, server := range status.Servers {
+				servers = append(servers, fmt.Sprintf("%s: status=%s connectionStatus=%q",
+					server.Name, server.Status, server.ConnectionStatus))
+			}
+			summary := fmt.Sprintf("overall=%s servers=[%s]", status.OverallStatus, strings.Join(servers, "; "))
+
+			// Only the last polling failure is reported on timeout, so also log
+			// each change to keep the earlier history.
+			if summary != lastSummary {
+				GinkgoWriter.Printf("Key provider %s status changed: %s\n", keyProviderID, summary)
+				lastSummary = summary
+			}
+
+			g.Expect(status.OverallStatus).To(Equal(types.ManagedEntityStatusGreen),
+				"key provider %s is not green yet: %s", keyProviderID, summary)
+		}, config.GetIntervals("default", "wait-kms-cluster-ready")...).Should(Succeed(),
+			"timed out waiting for key provider %s to become green; "+
+				"check the KMIP endpoint and certificate trust configured by hack/e2e/kms.sh",
+			keyProviderID)
+	}
+
+	Expect(cryptoManager.SetDefaultKmsClusterId(ctx, keyProviderID, nil)).To(Succeed(),
+		"failed to set default key provider %s", keyProviderID)
+}
+
+func waitForCryptoCondition(ctx context.Context, _ *e2eConfig.E2EConfig, client ctrlclient.Client, ns string, vmName string, reason string) *vmopv1.VirtualMachineCryptoStatus {
+	expectedCondition := metav1.Condition{
+		Type:   vmopv1.VirtualMachineEncryptionSynced,
+		Status: metav1.ConditionTrue,
+	}
+	if reason != "" {
+		expectedCondition.Status = metav1.ConditionFalse
+		expectedCondition.Reason = reason
+	}
+
+	By(fmt.Sprintf("Waiting for VirtualMachine.Status.Conditions[%s]", expectedCondition.Type))
+	// Note: this is vmoperator.WaitOnVirtualMachineCondition with diff:
+	// - Using A3
+	// - Check Reason before Status, gives more context on failure
+	// - Much shorter timeout
+	Eventually(func(g Gomega) {
+		vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		actualCondition := meta.FindStatusCondition(vm.GetConditions(), expectedCondition.Type)
+		g.Expect(actualCondition).ToNot(BeNil())
+
+		if actualCondition.Status == metav1.ConditionFalse {
+			g.Expect(actualCondition.Reason).Should(Equal(expectedCondition.Reason))
+		}
+
+		g.Expect(actualCondition.Status).Should(Equal(expectedCondition.Status))
+	}, time.Minute*2, time.Second*5).Should(Succeed(), "%s condition not %s", expectedCondition.Type, expectedCondition.Status)
+
+	By("Checking VirtualMachine.Status.Crypto")
+
+	vm, err := utils.GetVirtualMachine(ctx, client, ns, vmName)
+	Expect(err).ToNot(HaveOccurred())
+
+	if expectedCondition.Status == metav1.ConditionTrue {
+		Expect(vm.Status.Crypto.KeyID).NotTo(BeEmpty())
+		Expect(vm.Status.Crypto.Encrypted).NotTo(BeEmpty())
+		Expect(vm.Status.Crypto.ProviderID).NotTo(BeEmpty())
+	} else {
+		Expect(vm.Status.Crypto).To(BeNil())
+	}
+
+	return vm.Status.Crypto
+}

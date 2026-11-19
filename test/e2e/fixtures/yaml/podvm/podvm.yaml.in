@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  {{- if .Name}}
+  name: {{.Name}}
+  {{- else}}
+  name: jumpbox
+  {{- end}}
+  namespace: {{.Namespace}}
+spec:
+  containers:
+    - image: "dockerhub.packages.vcfd.broadcom.net/library/photon:3.0"
+      {{- if .Name}}
+      name: {{.Name}}
+      {{- else}}
+      name: jumpbox
+      {{- end}}
+      securityContext:
+        runAsUser: 0
+      {{- if or .MemoryRequest .MemoryLimit .CPURequest .CPULimit }}
+      resources:
+        {{- if or .MemoryRequest .CPURequest }}
+        requests:
+          {{- if .MemoryRequest }}
+          memory: {{ .MemoryRequest }}
+          {{- end }}
+          {{- if .CPURequest }}
+          cpu: {{ .CPURequest }}
+          {{- end }}
+        {{- end }}
+        {{- if or .MemoryLimit .CPULimit }}
+        limits:
+          {{- if .MemoryLimit }}
+          memory: {{ .MemoryLimit }}
+          {{- end }}
+          {{- if .CPULimit }}
+          cpu: {{ .CPULimit }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+      command: [ "/bin/bash", "-c", "--" ]
+      args:
+        - |
+          rm -f /etc/yum.repos.d/photon-updates.repo /etc/yum.repos.d/photon-extras.repo
+          yum install -y iputils openssh-server sshpass
+          mkdir /root/.ssh
+          echo > /root/.completed
+          while true; do sleep 30; done
+      {{- if or .PrivateKeySecretName .CustomUserPrivateKeySecretName }}
+      volumeMounts:
+      {{- if .PrivateKeySecretName }}
+      - name: cluster-private-key
+        mountPath: /secrets/luster-private-key
+      {{- end }}
+      {{- if .CustomUserPrivateKeySecretName }}
+      - name: custom-user-private-key
+        mountPath: /secrets/custom-user-private-key
+      {{- end }}
+      {{- end }}
+  {{- if or .PrivateKeySecretName .CustomUserPrivateKeySecretName }}
+  volumes:
+  {{- if .PrivateKeySecretName }}
+  - name: cluster-private-key
+    secret:
+      secretName: {{ .PrivateKeySecretName }}
+      defaultMode: 0600
+  {{- end }}
+  {{- if .CustomUserPrivateKeySecretName }}
+  - name: custom-user-private-key
+    secret:
+      secretName: {{ .CustomUserPrivateKeySecretName }}
+      defaultMode: 0600
+  {{- end }}
+  {{- end }}

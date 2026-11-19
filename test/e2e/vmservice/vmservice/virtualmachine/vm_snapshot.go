@@ -1,0 +1,656 @@
+// Copyright (c) 2025 Broadcom. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package virtualmachine
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/vim25"
+	capiutil "sigs.k8s.io/cluster-api/util"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	mopv1a2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
+
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
+	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
+)
+
+const (
+	vmSnapshotSpecName = "vm-snapshot"
+)
+
+type VMSnapshotSpecInput struct {
+	Config           *e2eConfig.E2EConfig
+	ClusterProxy     wcpframework.WCPClusterProxyInterface
+	WCPClient        wcp.WorkloadManagementAPI
+	ArtifactFolder   string
+	WCPNamespaceName string
+}
+
+func VMSnapshotSpec(ctx context.Context, inputGetter func() VMSnapshotSpecInput) {
+	var (
+		vmSnapshotInput       VMSnapshotSpecInput
+		vmSvcClusterProxy     *common.VMServiceClusterProxy
+		vmSvcE2EConfig        *e2eConfig.E2EConfig
+		svClusterClient       ctrlclient.Client
+		vmSvcClusterResources *e2eConfig.Resources
+		vmSvcNamespace        string
+
+		randomString    string
+		vmName          string
+		vmSnapshot1Name string
+		vmSnapshot2Name string
+		vmSnapshot3Name string
+	)
+
+	vmSnapshotReference := func(name ...string) *vmopv1.VirtualMachineSnapshotReference {
+		res := &vmopv1.VirtualMachineSnapshotReference{
+			Type: vmopv1.VirtualMachineSnapshotReferenceTypeUnmanaged,
+		}
+		if len(name) > 0 {
+			res = &vmopv1.VirtualMachineSnapshotReference{
+				Type: vmopv1.VirtualMachineSnapshotReferenceTypeManaged,
+				Name: name[0],
+			}
+		}
+
+		return res
+	}
+
+	skipChecks := func() {
+		skipper.SkipUnlessInfraIs(vmSnapshotInput.Config.InfraConfig.InfraName, consts.WCP)
+		skipper.SkipUnlessSupervisorCapabilityEnabled(vmSnapshotInput.Config.SupervisorCapabilities, consts.VirtualMachineSnapshotCapabilityName)
+	}
+
+	BeforeEach(func() {
+		vmSnapshotInput = inputGetter()
+		Expect(vmSnapshotInput.Config).ToNot(BeNil(), "Invalid argument. input.E2EConfig can't be nil when calling %s spec", vmSnapshotSpecName)
+		Expect(vmSnapshotInput.Config.InfraConfig).ToNot(BeNil(), "Invalid argument. input.E2EConfig.InfraConfig can't be nil when calling %s spec", vmSnapshotSpecName)
+		Expect(vmSnapshotInput.Config.InfraConfig.ManagementClusterConfig).ToNot(BeNil(), "Invalid argument. input.E2EConfig.InfraConfig.ManagementClusterConfig can't be nil when calling %s spec", vmSnapshotSpecName)
+		Expect(vmSnapshotInput.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.SVClusterProxy can't be nil when calling %s spec", vmSnapshotSpecName)
+		Expect(vmSnapshotInput.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", vmSnapshotSpecName)
+		Expect(os.MkdirAll(vmSnapshotInput.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", vmSnapshotSpecName)
+
+		vmSvcClusterProxy = vmSnapshotInput.ClusterProxy.(*common.VMServiceClusterProxy)
+		vmSvcE2EConfig = vmSnapshotInput.Config
+		vmSvcClusterResources = vmSvcE2EConfig.InfraConfig.ManagementClusterConfig.Resources
+		vmSvcNamespace = vmSnapshotInput.WCPNamespaceName
+		svClusterClient = vmSvcClusterProxy.GetClient()
+
+		skipChecks()
+
+		vmSnapshotCancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(
+			ctx,
+			[]string{vmSvcE2EConfig.GetVariable("VMOPNamespace")},
+			vmSvcClusterProxy.GetRESTConfig(),
+			filepath.Join(vmSnapshotInput.ArtifactFolder, vmSnapshotSpecName))
+		DeferCleanup(vmSnapshotCancelPodWatches)
+
+		randomString = capiutil.RandomString(4)
+		vmName = "vm-" + randomString
+		vmSnapshot1Name = "sn-1-" + randomString
+		vmSnapshot2Name = "sn-2-" + randomString
+		vmSnapshot3Name = "sn-3-" + randomString
+
+		snapshotNames := []string{vmSnapshot1Name, vmSnapshot2Name, vmSnapshot3Name}
+		kubeconfigPath := vmSvcClusterProxy.GetKubeconfigPath()
+
+		dumps := []vmoperator.DumpFunc{
+			vmoperator.DescribeResource(kubeconfigPath, "vm", vmSvcNamespace, vmName),
+		}
+		for _, name := range snapshotNames {
+			dumps = append(dumps,
+				vmoperator.DescribeResource(kubeconfigPath, "virtualmachinesnapshot", vmSvcNamespace, name))
+		}
+
+		vmoperator.DeferCleanupWithDumpOnFailure(func(ctx context.Context) {
+			vmoperator.VerifyVMDeleted(ctx, svClusterClient, vmSvcE2EConfig, vmSvcNamespace, vmName)
+			for _, name := range snapshotNames {
+				vmoperator.EnsureVMSnapshotDeleted(ctx, svClusterClient,
+					vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
+						Namespace: vmSvcNamespace,
+						Name:      name,
+					})
+			}
+		}, dumps...)
+	})
+
+	When("VM doesn't have PVC", func() {
+		BeforeEach(func() {
+			createSnapshotVM(ctx, vmSvcE2EConfig, svClusterClient, vmSvcClusterResources, vmSvcNamespace, vmName)
+			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
+		})
+
+		It("successfully create, update, revert to, and delete vm snapshots", Label("smoke"), func() {
+			By("create vm snapshot 1")
+			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+				Namespace: vmSvcNamespace,
+				Name:      vmSnapshot1Name,
+				VMName:    vmName,
+				Memory:    true,
+				Quiesce:   "10m",
+			})
+
+			By("Verifying Snapshot's status, power should be on since snapshot's spec.memory is true")
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmSnapshot1Name,
+				vmopv1.VirtualMachinePowerStateOn,
+				true,
+				[]vmopv1.VirtualMachineSnapshotReference{})
+
+			By("Verifying VM's Snapshot related status")
+			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmSnapshotReference(vmSnapshot1Name),
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
+
+			By("update vm snapshot 1")
+			vmservice.UpdateVMSnapshot(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
+				manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace:   vmSvcNamespace,
+					Name:        vmSnapshot1Name,
+					VMName:      vmName,
+					Memory:      true,
+					Quiesce:     "10m",
+					Description: "updated snapshot 1",
+				})
+
+			By("create a new vm snapshot 2")
+			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+				Namespace: vmSvcNamespace,
+				Name:      vmSnapshot2Name,
+				VMName:    vmName,
+			})
+
+			By("Verifying Snapshot 2's status, power should be off since memory is false")
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmSnapshot2Name,
+				vmopv1.VirtualMachinePowerStateOff,
+				false,
+				[]vmopv1.VirtualMachineSnapshotReference{})
+
+			By("Verifying Snapshot 1's status, it should have snapshot 2 as child")
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmSnapshot1Name,
+				vmopv1.VirtualMachinePowerStateOn,
+				true,
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot2Name)})
+
+			By("Verifying VM's Snapshot related status")
+			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmSnapshotReference(vmSnapshot2Name),
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
+
+			By("create a new vm snapshot 3")
+			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+				Namespace: vmSvcNamespace,
+				Name:      vmSnapshot3Name,
+				VMName:    vmName,
+			})
+
+			By("Verifying Snapshot 3's status, power should be off since memory is false")
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmSnapshot3Name,
+				vmopv1.VirtualMachinePowerStateOff,
+				false,
+				[]vmopv1.VirtualMachineSnapshotReference{})
+
+			By("Verifying Snapshot 2's status, it should have snapshot 3 as child")
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmSnapshot2Name,
+				vmopv1.VirtualMachinePowerStateOff,
+				false,
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot3Name)})
+
+			By("Verifying VM's Snapshot related status")
+			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmSnapshotReference(vmSnapshot3Name),
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
+
+			By("Revert to vm snapshot 2")
+			vmservice.RevertVMSnapshot(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
+				vmName, vmSvcNamespace, vmSnapshotReference(vmSnapshot2Name))
+
+			By("Verifying VM's Snapshot related status, VM should be powered off")
+			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmSnapshotReference(vmSnapshot2Name),
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOff)
+
+			By("Revert to vm snapshot 1")
+			vmservice.RevertVMSnapshot(ctx,
+				vmSvcClusterProxy, vmSvcE2EConfig, vmName, vmSvcNamespace,
+				vmSnapshotReference(vmSnapshot1Name))
+
+			By("Verifying VM's Snapshot related status, VM should be powered on")
+			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmSnapshotReference(vmSnapshot1Name),
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
+
+			By("Verifying Snapshot's quota usage")
+			vmoperator.VerifyVMSnapshotQuotaUsage(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, vmSvcNamespace,
+				vmSvcClusterResources.StorageClassName+"-vmsnapshot-usage",
+				vmSnapshot1Name, vmSnapshot2Name, vmSnapshot3Name)
+
+			By("Revert to current snapshot: vm snapshot 1")
+			vmservice.RevertVMSnapshot(ctx,
+				vmSvcClusterProxy, vmSvcE2EConfig, vmName, vmSvcNamespace,
+				vmSnapshotReference(vmSnapshot1Name))
+
+			By("Verifying VM's Snapshot related status, VM should be powered on")
+			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmSnapshotReference(vmSnapshot1Name),
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
+
+			By("Delete vm snapshot 2")
+			vmoperator.EnsureVMSnapshotDeleted(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace,
+					Name:      vmSnapshot2Name,
+				})
+
+			By("Verifying Snapshot 1's status, it should not have snapshot 2 as child")
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmSnapshot1Name,
+				vmopv1.VirtualMachinePowerStateOn,
+				true,
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot3Name)})
+
+			By("Set power off mode to hard so deletion doesn't wait on a graceful guest shutdown")
+			vmservice.UpdateVMPowerOffMode(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
+				vmName, vmSvcNamespace, vmopv1.VirtualMachinePowerOpModeHard)
+
+			By("Delete vm")
+			vmoperator.VerifyVMDeleted(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, vmSvcNamespace, vmName)
+
+			By("Verifying Snapshot 1 and Snapshot 3 are gone because of garbage collection")
+			vmoperator.VerifyVMSnapshotDeletion(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace,
+					Name:      vmSnapshot1Name,
+				})
+			vmoperator.VerifyVMSnapshotDeletion(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace,
+					Name:      vmSnapshot3Name,
+				})
+
+			By("Verifying Snapshot's quota usage")
+			vmoperator.VerifyVMSnapshotQuotaUsage(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, vmSvcNamespace, vmSvcClusterResources.StorageClassName+"-vmsnapshot-usage")
+		})
+
+		It("successfully show unmanaged vm snapshot", func() {
+			By("create a snapshot in vsphere")
+			vmservice.CreateSnapshotInVC(ctx, vmSvcClusterProxy, vmSnapshot1Name, vmName, vmSvcNamespace)
+
+			By("Verifying VM's Snapshot related status, it should show the unmanaged snapshot reference")
+			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmSnapshotReference(),
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference()},
+				vmopv1.VirtualMachinePowerStateOn)
+		})
+
+		It("successfully revert to imported Snapshot", func() {
+			By("create imported vm snapshot 1 in vsphere")
+			vmservice.CreateSnapshotInVC(ctx, vmSvcClusterProxy, vmSnapshot1Name, vmName, vmSvcNamespace)
+
+			By("Create the snapshot CR with same name as the imported snapshot, with imported snapshot annotation")
+			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+				Namespace:        vmSvcNamespace,
+				Name:             vmSnapshot1Name,
+				VMName:           vmName,
+				ImportedSnapshot: true,
+			})
+
+			By("Verifying VM's Snapshot related status")
+			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmSnapshotReference(vmSnapshot1Name),
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
+
+			By("Set restart mode to hard")
+			vmservice.UpdateVMRestartMode(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
+				vmName, vmSvcNamespace, vmopv1.VirtualMachinePowerOpModeHard)
+
+			By("Revert to imported snapshot")
+			vmservice.RevertVMSnapshot(ctx, vmSvcClusterProxy, vmSvcE2EConfig,
+				vmName, vmSvcNamespace, vmSnapshotReference(vmSnapshot1Name))
+
+			By("Verifying VM's restart mode is updated")
+			vmoperator.VerifyVirtualMachineRestartMode(
+				ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmopv1.VirtualMachinePowerOpModeHard)
+		})
+	})
+
+	When("VM has PVC", func() {
+		BeforeEach(func() {
+			createSnapshotVM(ctx, vmSvcE2EConfig, svClusterClient, vmSvcClusterResources, vmSvcNamespace, vmName,
+				manifestbuilders.PVC{
+					VolumeName:       "test-vol" + randomString,
+					ClaimName:        "test-claim" + randomString,
+					StorageClassName: vmSvcClusterResources.StorageClassName,
+					RequestSize:      "1Gi",
+					Namespace:        vmSvcNamespace,
+				})
+			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
+		})
+
+		It("successfully create, and delete vm snapshots", func() {
+			By("create vm snapshot 1")
+			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+				Namespace: vmSvcNamespace,
+				Name:      vmSnapshot1Name,
+				VMName:    vmName,
+			})
+
+			By("Verifying Snapshot's status")
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmSnapshot1Name,
+				vmopv1.VirtualMachinePowerStateOff,
+				false,
+				[]vmopv1.VirtualMachineSnapshotReference{})
+
+			By("Verifying VM's Snapshot related status")
+			vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmName,
+				vmSnapshotReference(vmSnapshot1Name),
+				[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+				vmopv1.VirtualMachinePowerStateOn)
+
+			By("Verifying Snapshot's quota usage")
+			vmoperator.VerifyVMSnapshotQuotaUsage(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, vmSvcNamespace,
+				vmSvcClusterResources.StorageClassName+"-vmsnapshot-usage",
+				vmSnapshot1Name)
+
+			By("Delete vm snapshot 1")
+			vmoperator.EnsureVMSnapshotDeleted(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace,
+					Name:      vmSnapshot1Name,
+				})
+
+			By("Verifying Snapshot 1 is deleted")
+			vmoperator.VerifyVMSnapshotDeletion(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace,
+					Name:      vmSnapshot1Name,
+				})
+			vmoperator.VerifyVMSnapshotQuotaUsage(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, vmSvcNamespace,
+				vmSvcClusterResources.StorageClassName+"-vmsnapshot-usage")
+		})
+	})
+
+	When("VM is imported from vCenter (brownfield)", Label("extended-functional"), func() {
+		var (
+			vCenterAdminClient *vim25.Client
+			brownfieldVMName   string
+			brownfieldVMMoID   string
+			importedVMName     string
+			importOperation    *mopv1a2.ImportOperation
+		)
+
+		BeforeEach(func() {
+			kubeconfigPath := vmSvcClusterProxy.GetKubeconfigPath()
+			vCenterHostname := vcenter.GetVCPNIDFromKubeconfigFile(ctx, kubeconfigPath)
+
+			var err error
+
+			vCenterAdminClient, err = vcenter.NewVimClient(vCenterHostname, testbed.AdminUsername, testbed.AdminPassword)
+			Expect(err).ToNot(HaveOccurred(), "Failed to create vCenter admin client")
+
+			brownfieldVMName = fmt.Sprintf("brownfield-vm-snapshot-%s", randomString)
+		})
+
+		AfterEach(func() {
+			if importedVMName != "" {
+				vmoperator.VerifyVMDeleted(ctx, vmSvcClusterProxy.GetClient(),
+					vmSvcE2EConfig, vmSvcNamespace, importedVMName)
+			}
+
+			CleanupBrownfieldVM(ctx, BrownfieldVMCleanupInput{
+				VCenterAdminClient: vCenterAdminClient,
+				BrownfieldVMName:   brownfieldVMName,
+				BrownfieldVMMoID:   brownfieldVMMoID,
+				ImportOperation:    importOperation,
+				SVClusterClient:    svClusterClient,
+			})
+
+			vmoperator.EnsureVMSnapshotDeleted(ctx, vmSvcClusterProxy.GetClient(),
+				vmSvcE2EConfig, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace,
+					Name:      vmSnapshot1Name,
+				})
+
+			vcenter.LogoutVimClient(vCenterAdminClient)
+		})
+
+		It("snapshot on an imported brownfield VM should succeed and quota should be calculated correctly",
+			func() {
+				clusterMoID := GetClusterMoIDForNamespace(ctx, svClusterClient, vmSvcNamespace)
+
+				importOpName := fmt.Sprintf("import-snapshot-%s", randomString)
+				result := ImportBrownfieldVM(ImportBrownfieldVMInput{
+					Ctx:                ctx,
+					Config:             vmSvcE2EConfig,
+					VCenterAdminClient: vCenterAdminClient,
+					SVClusterClient:    svClusterClient,
+					Namespace:          vmSvcNamespace,
+					ClusterMoID:        clusterMoID,
+					BrownfieldVMName:   brownfieldVMName,
+					StorageClassName:   vmSvcClusterResources.StorageClassName,
+					VMClassName:        vmSvcClusterResources.VMClassName,
+					ImportOpName:       importOpName,
+				})
+				brownfieldVMMoID = result.BrownfieldVMMoID
+				importedVMName = result.ImportedVMName
+
+				// Keep a reference to the ImportOperation for cleanup.
+				importOperation = &mopv1a2.ImportOperation{}
+				_ = svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: vmSvcNamespace,
+					Name:      importOpName,
+				}, importOperation)
+
+				By("Waiting for the imported VM to power on")
+				vmoperator.WaitForVirtualMachinePowerState(
+					ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, importedVMName, vmopv1.VirtualMachinePowerStateOn)
+
+				By("Creating a snapshot on the imported brownfield VM")
+				vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+					Namespace: vmSvcNamespace,
+					Name:      vmSnapshot1Name,
+					VMName:    importedVMName,
+				})
+
+				By("Verifying VirtualMachineSnapshotReady condition becomes true")
+				vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+					vmSvcClusterProxy.GetClient(),
+					vmSvcNamespace,
+					vmSnapshot1Name,
+					vmopv1.VirtualMachinePowerStateOff,
+					false,
+					[]vmopv1.VirtualMachineSnapshotReference{})
+
+				By("Verifying the snapshot is reflected in the VM's snapshot status")
+				vmoperator.VerifySnapshotStatusOnVirtualMachine(ctx, vmSvcE2EConfig,
+					vmSvcClusterProxy.GetClient(),
+					vmSvcNamespace,
+					importedVMName,
+					vmSnapshotReference(vmSnapshot1Name),
+					[]vmopv1.VirtualMachineSnapshotReference{*vmSnapshotReference(vmSnapshot1Name)},
+					vmopv1.VirtualMachinePowerStateOn)
+
+				By("Verifying snapshot storage quota is calculated correctly")
+				vmoperator.VerifyVMSnapshotQuotaUsage(ctx, vmSvcClusterProxy.GetClient(),
+					vmSvcE2EConfig, vmSvcNamespace,
+					vmSvcClusterResources.StorageClassName+"-vmsnapshot-usage",
+					vmSnapshot1Name)
+			})
+	})
+
+	When("CSI Backup API is enabled", Label("experimental"), func() {
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(vmSnapshotInput.Config.SupervisorCapabilities, consts.CSIBackupAPICapabilityName)
+
+			createSnapshotVM(ctx, vmSvcE2EConfig, svClusterClient, vmSvcClusterResources, vmSvcNamespace, vmName)
+			vmoperator.WaitForVirtualMachineConditionCreated(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName)
+			vmoperator.WaitForVirtualMachinePowerState(ctx, vmSvcE2EConfig, svClusterClient, vmSvcNamespace, vmName, vmopv1.VirtualMachinePowerStateOn)
+
+			By("Enabling ChangeBlockTracking on the VM")
+			vm := &vmopv1.VirtualMachine{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: vmName}, vm)).To(Succeed())
+			vmPatch := vm.DeepCopy()
+			if vmPatch.Spec.Advanced == nil {
+				vmPatch.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+			}
+			vmPatch.Spec.Advanced.ChangeBlockTracking = new(true)
+			Expect(svClusterClient.Patch(ctx, vmPatch, ctrlclient.MergeFrom(vm))).To(Succeed())
+
+			By("Waiting for the VM to be reconfigured with CBT")
+			Eventually(func(g Gomega) {
+				g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: vmName}, vm)).To(Succeed())
+
+				g.Expect(vm.Status.ChangeBlockTracking).ToNot(BeNil())
+				g.Expect(*vm.Status.ChangeBlockTracking).To(BeTrue())
+			}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-condition-update")...).Should(Succeed(), "Timed out waiting for VM to be updated with CBT")
+		})
+
+		It("exposes the disk list in VirtualMachineSnapshot", func() {
+			By("create vm snapshot 1")
+			vmservice.CreateVMSnapshot(ctx, vmSvcClusterProxy, manifestbuilders.VirtualMachineSnapshotYaml{
+				Namespace: vmSvcNamespace,
+				Name:      vmSnapshot1Name,
+				VMName:    vmName,
+			})
+
+			By("Verifying Snapshot's status")
+			vmoperator.VerifyVirtualMachineSnapshotCondition(ctx, vmSvcE2EConfig,
+				vmSvcClusterProxy.GetClient(),
+				vmSvcNamespace,
+				vmSnapshot1Name,
+				vmopv1.VirtualMachinePowerStateOff,
+				false,
+				[]vmopv1.VirtualMachineSnapshotReference{})
+
+			By("Verifying Snapshot's disks are populated")
+			Eventually(func(g Gomega) {
+				vmSnapshot := &vmopv1.VirtualMachineSnapshot{}
+				err := svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: vmSvcNamespace, Name: vmSnapshot1Name}, vmSnapshot)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vmSnapshot.Status.Disks).ToNot(BeEmpty(), "Expected snapshot disks to be populated")
+
+				// Verify ChangedBlockTrackingID is populated. This is verified here in e2e
+				// since unit tests using vcsim cannot verify it due to govmomi limitations.
+				for _, disk := range vmSnapshot.Status.Disks {
+					g.Expect(disk.ChangedBlockTrackingID).ToNot(BeEmpty(), "Expected ChangeBlockTrackingID to be populated")
+				}
+			}, vmSvcE2EConfig.GetIntervals("default", "wait-virtual-machine-snapshot-condition")...).Should(Succeed(), "Timed out waiting for snapshot disks to be populated")
+		})
+	})
+}
+
+// createSnapshotVM creates the v1alpha5 VirtualMachine that the snapshot tests
+// take snapshots of, using the default Linux image, and then a PVC for each
+// entry in pvcs. The VM is described on failure and deleted by the cleanup
+// that VMSnapshotSpec registers for vmName, so none is registered here.
+func createSnapshotVM(
+	ctx context.Context,
+	config *e2eConfig.E2EConfig,
+	client ctrlclient.Client,
+	clusterResources *e2eConfig.Resources,
+	ns, vmName string,
+	pvcs ...manifestbuilders.PVC) {
+
+	GinkgoHelper()
+
+	imageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, client, ns,
+		vmservice.GetDefaultImageDisplayName(clusterResources))
+
+	vm := manifestbuilders.VirtualMachineA5(manifestbuilders.VirtualMachineYaml{
+		Namespace:        ns,
+		Name:             vmName,
+		ImageName:        imageName,
+		VMClassName:      clusterResources.VMClassName,
+		StorageClassName: clusterResources.StorageClassName,
+		PVCs:             pvcs,
+	})
+	claims, err := manifestbuilders.PersistentVolumeClaims(pvcs)
+	Expect(err).NotTo(HaveOccurred(), "failed to build PVCs")
+
+	Expect(client.Create(ctx, vm)).To(Succeed(), "failed to create VirtualMachine %s/%s", ns, vmName)
+	for _, claim := range claims {
+		Expect(client.Create(ctx, claim)).To(Succeed(), "failed to create PVC %s/%s", claim.Namespace, claim.Name)
+	}
+}

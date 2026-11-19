@@ -1,0 +1,97 @@
+// Copyright (c) 2023-2025 Broadcom. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package consts
+
+const (
+	NSX = "nsx"
+	VDS = "vds"
+
+	NSXNetworkType = "nsx-t"
+	VDSNetworkType = "vsphere-distributed"
+	VPCNetworkType = "nsx-t-vpc"
+
+	DefaultVDSNetworkName = "primary"
+
+	WCP = "wcp"
+
+	VMServiceCLName = "vmservice"
+
+	HTTPProxyEnv          = "HTTP_PROXY"
+	GatewayIPEnv          = "GATEWAY_IP"
+	DefaultVMUserName     = "vmware"
+	DefaultVMPassword     = "Admin!23"
+	AllowTCPForwardingKey = "AllowTcpForwarding"
+	SshdConfig            = "/etc/ssh/sshd_config"
+	CmdRestartSSHD        = "systemctl restart sshd"
+	SshPort               = 22
+
+	JumpboxPodVMName = "jumpbox"
+
+	// WindowsSysprepLabel decorates the Windows guest-customization specs
+	// (see vm_guestcustomization.go's "Sysprep" Context) so the suite setup
+	// can preview the filtered spec tree and only precreate the Windows VM
+	// when a spec carrying this label will actually run.
+	WindowsSysprepLabel = "windows-sysprep"
+
+	// HardAffinityDuringExecutionLabel decorates the VM-GROUP specs that need
+	// VMHardAffinityDuringExecutionCapabilityName. The VM-GROUP suite checks
+	// the capability for these specs before creating and zone-binding a
+	// temporary namespace, so a Supervisor without it skips them in seconds
+	// instead of minutes.
+	HardAffinityDuringExecutionLabel = "hard-affinity-during-execution"
+
+	// ClasslessVMLabel decorates the VM-GROUP specs that need
+	// VMServiceClasslessVMCapabilityName, ex. the specs that set powerOffDelay,
+	// which the webhook rejects without it. The VM-GROUP suite checks the
+	// capability for these specs before creating and zone-binding a temporary
+	// namespace.
+	ClasslessVMLabel = "classless-vm"
+
+	// VM condition type strings used when waiting on backfill/registration lifecycle.
+	VMUnmanagedVolumesBackfilledCondition = "VirtualMachineUnmanagedVolumesBackfilled"
+	VMUnmanagedVolumesRegisteredCondition = "VirtualMachineUnmanagedVolumesRegistered"
+
+	VMGroupsCapabilityName                  = "supports_VM_service_VM_groups"
+	VirtualMachineSnapshotCapabilityName    = "supports_VM_service_VM_snapshots"
+	VMPlacementPoliciesCapabilityName       = "supports_VM_service_VM_placement_policies"
+	VMAffinityDuringExecutionCapabilityName = "supports_VM_service_VM_affinity_during_execution"
+	InventoryContentLibraryCapabilityName   = "supports_inventory_content_library"
+	SharedDisksCapabilityName               = "supports_shared_disks_with_VM_service_VMs"
+	AllDisksArePVCapabilityName             = "supports_vm_service_all_disks_are_pvcs"
+	MultiWriterDiskVMotionCapabilityName    = "supports_multiwriter_disk_vmotion"
+	IaaSComputePoliciesCapabilityName       = "supports_iaas_compute_policies"
+	VMServiceClasslessVMCapabilityName      = "supports_vm_service_classless_vm"
+	WorkloadIPv6CapabilityName              = "supports_workload_ipv6"
+	CSIBackupAPICapabilityName              = "supports_CSI_Backup_API"
+
+	// VMEvictionCapabilityName gates the AutomaticVMEvictionPolicy and
+	// BestEffortRestartPolicy CRDs; must match
+	// pkg/config/capabilities.CapabilityKeyVMEviction.
+	VMEvictionCapabilityName = "supports_infrapolicy_vm_evacuation"
+
+	// ControlledRebalancingPolicyCapabilityName gates the
+	// ControlledRebalancingPolicy CRD; must match
+	// pkg/config/capabilities.CapabilityKeyControlledRebalancingPolicy.
+	ControlledRebalancingPolicyCapabilityName = "supports_infrapolicy_controlled_rebalancing"
+
+	// ExtensionCompatConstraintCapabilityName gates VM Operator registering
+	// extension-compatibility INVARIANT constraints on VMs it manages; must
+	// match pkg/config/capabilities.CapabilityKeyExtensionCompatConstraint.
+	ExtensionCompatConstraintCapabilityName = "supports_extension_compat_constraint"
+
+	// K8sWorkloadMgmtAPICapabilityName gates the VirtualMachineReplicaSet
+	// controller, webhooks, and CRD; must match
+	// pkg/config/capabilities.CapabilityKeyK8sWorkloadMgmtAPI.
+	K8sWorkloadMgmtAPICapabilityName = "supports_vm_service_k8s_workload_mgmt_api"
+
+	// VMHardAffinityDuringExecutionCapabilityName gates the Tag CRD,
+	// controller, and admission webhook (Features.TaggingAPI).
+	VMHardAffinityDuringExecutionCapabilityName = "supports_vm_service_vm_hard_affinity_during_execution"
+
+	// BringYourOwnNetworkInterfaceCapabilityName gates externally managed NICs.
+	BringYourOwnNetworkInterfaceCapabilityName = "supports_vm_service_byo_network_interface"
+
+	// MutableNetworksCapabilityName gates changes to existing VM interfaces.
+	MutableNetworksCapabilityName = "supports_VM_service_mutable_networks"
+)

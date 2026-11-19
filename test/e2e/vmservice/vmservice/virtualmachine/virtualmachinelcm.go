@@ -1,0 +1,1387 @@
+// Copyright (c) 2020-2025 Broadcom. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package virtualmachine
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/vapi/tags"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/types"
+
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	e2eframework "k8s.io/kubernetes/test/e2e/framework"
+	capiutil "sigs.k8s.io/cluster-api/util"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
+
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/wcp"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/utils"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/common"
+	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
+)
+
+type VMSpecInput struct {
+	ClusterProxy     wcpframework.WCPClusterProxyInterface
+	Config           *e2eConfig.E2EConfig
+	WCPClient        wcp.WorkloadManagementAPI
+	ArtifactFolder   string
+	SkipCleanup      bool
+	WCPNamespaceName string
+	LinuxVMName      string
+}
+
+func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
+	const (
+		specName = "vm-lcm"
+	)
+
+	var (
+		input                     VMSpecInput
+		wcpClient                 wcp.WorkloadManagementAPI
+		vCenterClient             *vim25.Client
+		propCollector             *property.Collector
+		config                    *e2eConfig.E2EConfig
+		clusterProxy              *common.VMServiceClusterProxy
+		svClusterClient           ctrlclient.Client
+		clusterResources          *e2eConfig.Resources
+		tmpNamespaceCtx           wcpframework.NamespaceContext
+		vmName                    string
+		instanceStorageFssEnabled bool
+		linuxImageDisplayName     string
+		linuxVMIName              string
+		linuxImageGuestID         string
+	)
+
+	BeforeEach(func() {
+		input = inputGetter()
+		Expect(input.Config).ToNot(BeNil(), "Invalid argument. input.E2EConfig can't be nil when calling %s spec", specName)
+		Expect(input.Config.InfraConfig).ToNot(BeNil(), "Invalid argument. input.E2EConfig.InfraConfig can't be nil when calling %s spec", specName)
+		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
+
+		Expect(input.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.SVClusterProxy can't be nil when calling %s spec", specName)
+		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", specName)
+		Expect(input.LinuxVMName).ToNot(BeEmpty(), "Invalid argument. input.LinuxVMName can't be empty when calling %s spec", specName)
+		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", specName)
+
+		wcpClient = input.WCPClient
+		config = input.Config
+		clusterResources = config.InfraConfig.ManagementClusterConfig.Resources
+		clusterProxy = input.ClusterProxy.(*common.VMServiceClusterProxy)
+		svClusterClient = clusterProxy.GetClient()
+		linuxImageDisplayName = vmservice.GetDefaultImageDisplayName(clusterResources)
+		linuxImageGuestID = vmservice.GetDefaultImageGuestID()
+
+		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)
+
+		// Wait for the shared warm-up VM's image cache to be ready before any test in
+		// this suite creates its own VM against the same image/datastore/profile. This
+		// call is idempotent: only the first It pays the real wait, later Its resolve
+		// immediately once the condition is already True.
+		vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, input.LinuxVMName)
+
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, clusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, specName))
+		DeferCleanup(cancelPodWatches)
+
+		vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
+		DeferCleanup(func(context.Context) {
+			vcenter.LogoutVimClient(vCenterClient)
+		})
+		propCollector = property.DefaultCollector(vCenterClient)
+
+		tmpNamespaceCtx = wcpframework.NamespaceContext{}
+		DeferCleanup(func() {
+			if tmpNamespaceCtx.GetNamespace() != nil {
+				tmpNamespaceName := tmpNamespaceCtx.GetNamespace().Name
+				clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
+				wcp.WaitForNamespaceDeleted(wcpClient, tmpNamespaceName)
+			}
+		})
+
+		instanceStorageFssEnabled = utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSInstanceStorage"))
+		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+	})
+
+	It("Should create expected resources for a single VirtualMachine", Label("smoke"), func() {
+		// Use the Linux VM deployed in the vmservice_suite_test.go to avoid
+		// creating another VM with similar config in this read only test.
+		vmName = input.LinuxVMName
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+		By("Verifying VM gets expected BIOS and instance UUID")
+		virtualMachine, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(virtualMachine.Spec.BiosUUID).To(Equal(virtualMachine.Status.BiosUUID))
+
+		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoid}
+		var vmMO mo.VirtualMachine
+		Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)).To(Succeed())
+		Expect(virtualMachine.Spec.BiosUUID).To(Equal(vmMO.Config.Uuid))
+		Expect(virtualMachine.Spec.InstanceUUID).To(Equal(vmMO.Config.InstanceUuid))
+	})
+
+	It("Should create expected resources for a single poweredOff VirtualMachine", func() {
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOff,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
+
+		var vmMO mo.VirtualMachine
+		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
+		Expect(err).ToNot(HaveOccurred())
+
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, clusterResources.VMClassName)
+		Expect(err).ToNot(HaveOccurred())
+
+		hw := vmMO.Config.Hardware
+		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+	})
+
+	It("Should resize powered off VirtualMachine", func() {
+		const newVMClassName = "guaranteed-large"
+
+		Expect(vmservice.EnsureNamespaceHasAccess(input.WCPClient, clusterResources.VMClassName, input.WCPNamespaceName)).To(Succeed())
+		Expect(vmservice.EnsureVMClassPresent(wcpClient, newVMClassName)).To(Succeed())
+		Expect(vmservice.EnsureNamespaceHasAccess(input.WCPClient, newVMClassName, input.WCPNamespaceName)).To(Succeed())
+
+		vmToCreate := &vmopv1a1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a1.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a1.VirtualMachinePoweredOff,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		By(fmt.Sprintf("Verify that a single VirtualMachine '%s/%s' is created", input.WCPNamespaceName, vmName))
+		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
+
+		var vmMO mo.VirtualMachine
+		err := propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify initial CPU and memory.
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, clusterResources.VMClassName)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+
+		// Change VM's ClassName.
+		vmoperator.UpdateVirtualMachineClassName(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, newVMClassName)
+
+		// Wait for Reconfigure.
+		vmoperator.WaitForVirtualMachineStatusClassUpdated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, newVMClassName)
+
+		classConfigSyncedCondition := metav1.Condition{
+			Type:   vmopv1.VirtualMachineClassConfigurationSynced,
+			Status: metav1.ConditionTrue,
+		}
+		vmoperator.WaitOnVirtualMachineConditionUpdate(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, classConfigSyncedCondition)
+
+		newVMClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, newVMClassName)
+		Expect(err).ToNot(HaveOccurred())
+		// Assert that we can tell that a resize happened.
+		Expect(vmClass.Spec.Hardware.Cpus).ToNot(Equal(newVMClass.Spec.Hardware.Cpus))
+		Expect(vmClass.Spec.Hardware.Memory).ToNot(Equal(newVMClass.Spec.Hardware.Memory))
+
+		By("VC VM configuration should have been updated")
+		err = propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(newVMClass.Spec.Hardware.Cpus))
+		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(newVMClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+		// Make sure the VM reflects the guaranteed class.
+		cpuAlloc := vmMO.Config.CpuAllocation
+		Expect(cpuAlloc).ToNot(BeNil())
+		Expect(cpuAlloc.Limit).To(HaveValue(BeEquivalentTo(-1)))
+		Expect(cpuAlloc.Reservation).To(HaveValue(BeNumerically(">", int64(0))))
+		memAlloc := vmMO.Config.MemoryAllocation
+		Expect(memAlloc).ToNot(BeNil())
+		Expect(memAlloc.Limit).To(HaveValue(BeEquivalentTo(-1)))
+		Expect(memAlloc.Reservation).To(HaveValue(BeNumerically(">", int64(0))))
+
+		vmservice.VerifyVMClassDeletion(wcpClient, newVMClassName)
+	})
+
+	It("Should create a VirtualMachine with an E1000 NIC and expected extraConfig, CPU, and memory", func() {
+		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassE1000)).To(Succeed())
+
+		err := vmservice.EnsureNamespaceHasAccess(input.WCPClient, vmservice.VMClassE1000, input.WCPNamespaceName)
+		Expect(err).ToNot(HaveOccurred())
+
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    vmservice.VMClassE1000,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoid}
+
+		var vmMO mo.VirtualMachine
+		err = propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
+		Expect(err).ToNot(HaveOccurred())
+
+		hw := vmMO.Config.Hardware
+		// verify nic type
+		virtualDevices := object.VirtualDeviceList(hw.Device)
+		currentEthCards := virtualDevices.SelectByType((*types.VirtualE1000)(nil))
+		Expect(currentEthCards).To(HaveLen(1))
+
+		extraConfig := vmMO.Config.ExtraConfig
+		ecMap := make(map[string]string)
+		for _, ec := range extraConfig {
+			if optionValue := ec.GetOptionValue(); optionValue != nil {
+				ecMap[optionValue.Key] = optionValue.Value.(string)
+			}
+		}
+		Expect(ecMap).To(HaveKeyWithValue("hello-test-key", "hello-test-value"))
+
+		// verify cpu and memory
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmservice.VMClassE1000)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+
+		vmservice.VerifyVMClassDeletion(wcpClient, vmservice.VMClassE1000)
+	})
+
+	It("Should create expected resources for a single VirtualMachine with hardware version 22", func() {
+		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassVMX22)).To(Succeed())
+
+		err := vmservice.EnsureNamespaceHasAccess(input.WCPClient, vmservice.VMClassVMX22, input.WCPNamespaceName)
+		Expect(err).ToNot(HaveOccurred())
+
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+				Annotations: map[string]string{
+					"vmoperator.vmware.com/fast-deploy": "false",
+				},
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    vmservice.VMClassVMX22,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoid}
+
+		var vmMO mo.VirtualMachine
+		err = propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
+		Expect(err).ToNot(HaveOccurred())
+
+		hwVersion := vmMO.Config.Version
+		hw := vmMO.Config.Hardware
+		// verify hardware version is set
+		Expect(hwVersion).To(Equal("vmx-22"))
+
+		// verify cpu and memory
+		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmservice.VMClassVMX22)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+
+		vmservice.VerifyVMClassDeletion(wcpClient, vmservice.VMClassVMX22)
+	})
+
+	It("Should create expected resources for a VirtualMachine from poweredOff to poweredOn", Label("smoke"), func() {
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOff,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOff)
+
+		By("Verify that the VirtualMachine can be powered on and also powered off after")
+		vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+		// Power off the VM and verify that this doesn't cause any issues.
+		vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+	})
+
+	Context("when suspending a VM", Label("core-functional"), func() {
+		BeforeEach(func() {
+			By("Creating a powered on VirtualMachine to suspend")
+			vmToCreate := &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: input.WCPNamespaceName,
+					Name:      vmName,
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					ImageName:    linuxVMIName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1.VirtualMachinePowerStateOn,
+				},
+			}
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
+
+			// Wait for the guest to obtain an IP so that VMware Tools is running
+			// and can service graceful (Soft / TrySoft) suspend requests.
+			vmoperator.WaitForVirtualMachineIP(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		})
+
+		DescribeTable("Should suspend and resume a VM using the configured suspend mode",
+			func(suspendMode vmopv1.VirtualMachinePowerOpMode) {
+				By(fmt.Sprintf("Suspending the VirtualMachine using %q suspend mode", suspendMode))
+				vmoperator.SuspendVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, suspendMode)
+
+				By("Resuming the VirtualMachine by powering it back on")
+				vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			},
+			Entry("using Hard suspend mode", vmopv1.VirtualMachinePowerOpModeHard),
+			Entry("using Soft suspend mode", vmopv1.VirtualMachinePowerOpModeSoft),
+			Entry("using TrySoft suspend mode", vmopv1.VirtualMachinePowerOpModeTrySoft),
+		)
+	})
+
+	It("Should create expected resources for a VirtualMachine on Namespaces recreated with identical names", func() {
+		// Create a new namespace here to avoid overwriting the existing namespace also used by other specs.
+		tmpNamespaceName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6))
+		vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+		clIDs := []string{vmserviceCLID}
+		vmClassNames := []string{clusterResources.VMClassName}
+		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
+		var err error
+		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
+		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")
+		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
+
+		// Ensure the Linux VMI name is present in the temp namespace.
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+
+		vmTemplate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
+		}
+		vmToCreate := vmTemplate.DeepCopy()
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+		// Delete the virtual machine and temporary namespace to recreate the latter with the same name.
+		Expect(svClusterClient.Delete(ctx, vmToCreate)).To(Succeed(), "failed to delete virtualmachine")
+		vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+		clusterProxy.DeleteWCPNamespace(tmpNamespaceCtx)
+		wcp.WaitForNamespaceDeleted(wcpClient, tmpNamespaceName)
+
+		// Recreate the namespace with the same name and spec.
+		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
+		Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
+		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
+
+		// Ensure the Linux VMI name is present in the temp namespace.
+		vmiName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+
+		// Create a new VM and verify the creation is successful.
+		vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+		vmToCreate = vmTemplate.DeepCopy()
+		vmToCreate.Name = vmName
+		vmToCreate.Spec.ImageName = vmiName
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+	})
+
+	It("Should verify boot disk storage policy matches VM spec.storageClass after power-on", func() {
+		vmToCreate := &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+		By("Verifying boot disk storage policy matches spec.storageClass")
+		vmoperator.EventuallyBootDiskStoragePolicyMatchesVMStorageClass(ctx, config, vCenterClient, svClusterClient, input.WCPNamespaceName, vmName)
+	})
+
+	It("Should emit a condition for a VMClass that doesn't exist in the cluster for a Virtual Machine creation", func() {
+		vmClassName := "test-vmClass"
+		expectedCondition := metav1.Condition{
+			Type:    vmopv1.VirtualMachineConditionClassReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  "NotFound",
+			Message: fmt.Sprintf("Failed to get VirtualMachineClass %s", vmClassName),
+		}
+
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    vmClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		By("Verify that we have a single VirtualMachine with expected condition")
+		vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, expectedCondition)
+	})
+
+	It("Should emit a condition for a VMClass that is not attached to the namespace for a Virtual Machine creation", func() {
+		vmClassName := "e2etest-guaranteed-medium"
+		// Create another workload and attach 'e2etest-guaranteed-medium' VM class to it,
+		// otherwise 'e2etest-guaranteed-medium' CR would be deleted if it has zero workload associations
+		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmClassName)).To(Succeed())
+		newNamespaceName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6))
+		vmClassNames := []string{vmClassName}
+		clIDs := []string{}
+		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
+		// Keep this auxiliary namespace out of tmpNamespaceCtx because it is deleted inline below.
+		newNamespaceCtx, err := clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, newNamespaceName, input.ArtifactFolder)
+		Expect(err).ToNot(HaveOccurred(), "failed to create wcp namespace")
+		wcp.WaitForNamespaceReady(wcpClient, newNamespaceName)
+
+		vmClassInfo, err := wcpClient.GetVMClassInfo(vmClassName)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(vmClassInfo.Namespaces).ShouldNot(ContainElement(input.WCPNamespaceName))
+		expectedCondition := metav1.Condition{
+			Type:    vmopv1.VirtualMachineConditionClassReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  "NotFound",
+			Message: fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s", vmClassName, input.WCPNamespaceName),
+		}
+
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    linuxVMIName,
+				ClassName:    vmClassName,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		By("Verify that we have a single VirtualMachine with expected condition")
+		vmoperator.WaitOnVirtualMachineCondition(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, expectedCondition)
+
+		clusterProxy.DeleteWCPNamespace(newNamespaceCtx)
+		// VM class should be deleted as it has no workload associations.
+		vmservice.VerifyVMClassDeletion(wcpClient, vmClassName)
+	})
+
+	It("Should Create Expected Resources For a Single Virtual Machine with Instance Storage", func() {
+		// Instance storage requires a WCP environment.
+		skipper.SkipUnlessInfraIs(config.InfraConfig.InfraName, "wcp")
+
+		// We don't need to check framework.NetworkTopologyIs(config.InfraConfig.NetworkingTopology, consts.VDS)
+		// as Instance Storage FSS is disabled on VDS
+		if !instanceStorageFssEnabled {
+			Skip("Instance Storage FSS is not enabled")
+		}
+
+		isVsanDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
+		Expect(err).ShouldNot(HaveOccurred())
+		if !isVsanDEnabled {
+			Skip("Cluster is not VSAND enabled")
+		}
+
+		storageProfileName := "gc-e2e-vsand-profile"
+		var vSANDDStoragePolicyIDInt any
+		vSANDDStoragePolicyID, err := vcenter.GetOrCreateVsanDirectStoragePolicyID(ctx, vCenterClient, storageProfileName)
+		vSANDDStoragePolicyIDInt = vSANDDStoragePolicyID
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(vSANDDStoragePolicyID).ShouldNot(BeEmpty())
+
+		// Create a new namespace here to avoid overwriting the existing namespace also used by other specs.
+		tmpNamespaceName := fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6))
+		vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+		clIDs := []string{vmserviceCLID}
+		vmClassNames := []string{clusterResources.VMClassName}
+		vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
+		tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
+		Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace %s", tmpNamespaceName)
+		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
+
+		nsDetails, err := wcpClient.GetNamespace(tmpNamespaceName)
+		Expect(err).ShouldNot(HaveOccurred())
+
+		storageSpec := []wcp.StorageSpec{
+			{Policy: vSANDDStoragePolicyID, Limit: 1024 * 100},
+			{Policy: nsDetails.VMStorageSpec[0].Policy, Limit: 1024 * 100},
+		}
+		Expect(wcpClient.SetNamespaceStorageSpecs(tmpNamespaceName, storageSpec)).Should(Succeed())
+
+		wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
+
+		Expect(vmservice.EnsureVMClassPresent(wcpClient, vmservice.VMClassInstanceStorage, vSANDDStoragePolicyIDInt)).To(Succeed())
+		Expect(vmservice.EnsureNamespaceHasAccess(input.WCPClient, vmservice.VMClassInstanceStorage, tmpNamespaceName)).To(Succeed())
+
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+
+		vmToCreate := &vmopv1a2.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: tmpNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a2.VirtualMachineSpec{
+				ImageName:    vmiName,
+				ClassName:    vmservice.VMClassInstanceStorage,
+				StorageClass: clusterResources.StorageClassName,
+				PowerState:   vmopv1a2.VirtualMachinePowerStateOn,
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		vmoperator.WaitForVirtualMachineInstanceStorageAnnotations(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+		vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+		By("Verify that instance volumes are attached to virtual machine as expected")
+		vmcInfo, err := utils.GetVirtualMachineClass(ctx, svClusterClient, tmpNamespaceName, vmservice.VMClassInstanceStorage)
+		Expect(err).NotTo(HaveOccurred())
+		vmcISVols := vmcInfo.Spec.Hardware.InstanceStorage.Volumes
+
+		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, tmpNamespaceName, vmName)
+		vmdetails, err := wcpClient.GetVirtualMachine(vmMoid)
+		Expect(err).NotTo(HaveOccurred())
+		e2eframework.Logf("%v", vmdetails)
+
+		// TODO validate desired state in a separate fn
+		var findInVMCISVols = func(vmDiskCapacity int64) bool {
+			for _, vol := range vmcISVols {
+				if vol.Size.Value() == vmDiskCapacity {
+					return true
+				}
+			}
+			return false
+		}
+		var vmInstanceDisksCount int
+		for _, deviceInfo := range vmdetails.Disks {
+			// Skip vsanDatastore
+			// TODO find vsand datastore using DS type rather than pattern matching
+			if !strings.Contains(deviceInfo.Backing.VMDKFile, "vSAND_") {
+				continue
+			}
+			Expect(findInVMCISVols(deviceInfo.Capacity)).Should(BeTrue())
+			vmInstanceDisksCount++
+		}
+
+		Expect(vmInstanceDisksCount).Should(BeEquivalentTo(len(vmcISVols)))
+	})
+
+	It("Should create expected resources for a VirtualMachine deployed from ISO", func() {
+		skipper.SkipUnlessInfraIs(config.InfraConfig.InfraName, "wcp")
+
+		if os.Getenv("RUN_CANONICAL_TEST") == "true" {
+			Skip("These tests will be skipped for Canonical OVA testing.")
+		}
+
+		By("Get the ISO-type image CR name")
+		isoImageDisplayName := "ubuntu-24.04-live-server-amd64"
+		isoImageName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, isoImageDisplayName)
+
+		By("Create a VM with CD-ROM attached and backed by the ISO-type image")
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				GuestID:      "ubuntu64Guest",
+				PowerOffMode: vmopv1a3.VirtualMachinePowerOpModeHard,
+				Cdrom: []vmopv1a3.VirtualMachineCdromSpec{
+					{
+						Name: "cdrom1",
+						Image: vmopv1a3.VirtualMachineImageRef{
+							Name: isoImageName,
+							Kind: "VirtualMachineImage",
+						},
+						Connected:         new(true),
+						AllowGuestControl: new(true),
+					},
+				},
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachineImageCacheReady(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
+
+		By("Verifying network provider CR has an IP assigned for the VM")
+		netInfo := vmoperator.WaitForVMNetworkProviderInfo(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		Expect(netInfo).NotTo(BeEmpty(), "VM network info from provider is empty")
+
+		By(fmt.Sprintf("Verifying VM status field has the expected network config info: %+v", netInfo))
+		Eventually(func(g Gomega) {
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(vm.Status.Network).NotTo(BeNil())
+			g.Expect(vm.Status.Network.Config).NotTo(BeNil())
+
+			// Check the DNS field is populated with nameservers.
+			dns := vm.Status.Network.Config.DNS
+			g.Expect(dns).NotTo(BeNil())
+			g.Expect(dns.Nameservers).NotTo(BeEmpty())
+
+			// Check the Interface field is populated and matches the network provider info.
+			interfaces := vm.Status.Network.Config.Interfaces
+			g.Expect(interfaces).To(HaveLen(len(netInfo)))
+			for i, ifc := range interfaces {
+				vmIP := ifc.IP
+				g.Expect(vmIP.Addresses).NotTo(BeEmpty())
+				// Parse the VM CIDR notation to compare both the IP and subnet mask.
+				cidr := vmIP.Addresses[0]
+				ip, ipNet, err := net.ParseCIDR(cidr)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ip.String()).To(Equal(netInfo[i].IPv4))
+				subnetMask := net.IP(ipNet.Mask).String()
+				g.Expect(subnetMask).To(Equal(netInfo[i].SubnetMask))
+				// Check the Gateway field matches either the IPv4 or IPv6 gateway.
+				g.Expect(netInfo[i].Gateway).To(Or(Equal(vmIP.Gateway4), Equal(vmIP.Gateway6)))
+			}
+		}, config.GetIntervals("default", "wait-virtual-machine-vmip")...).Should(Succeed())
+
+		By("Verifying VM has the expected CD-ROM device")
+		vmMoid := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoid}
+		cdrom := verifyCdromConnectionState(ctx, vmMoRef, propCollector, true, true)
+		Expect(cdrom.Backing).NotTo(BeNil())
+
+		By("Verifying VM's CD-ROM has expected backing file from the specified ISO-type image's content library item")
+		clItemName := strings.Replace(isoImageName, "vmi", "clitem", 1)
+		clItem := imgregv1a1.ContentLibraryItem{}
+		Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Name: clItemName, Namespace: input.WCPNamespaceName}, &clItem)).To(Succeed())
+		Expect(clItem.Status.FileInfo).NotTo(BeEmpty())
+		cdromFileName := cdrom.Backing.(*types.VirtualCdromIsoBackingInfo).FileName
+		Expect(cdromFileName).To(Equal(clItem.Status.FileInfo[0].StorageURI))
+
+		// The guest is still sitting at the ISO's boot/installer screen with no
+		// VMware Tools running and is actively reading the CD-ROM, so vCenter
+		// raises a blocking "device is locked, force disconnect?" question on a
+		// live ReconfigVM to disconnect it -- guest-mediated
+		// (allowGuestControl=true) or host-forced (allowGuestControl=false)
+		// alike. Nothing answers that question, so the task hangs until
+		// vCenter's own timeout and then fails with msg.disk.onlineConnectFail.
+		// In practice a guest would unmount the media first (releasing the
+		// lock) and then a live disconnect succeeds with no question raised;
+		// since this test doesn't control the guest, it powers the VM off to
+		// disconnect the CD-ROM instead.
+		// TODO: vSphere also has a per-VM advanced option,
+		// cdrom.showIsoLockWarning=FALSE, that suppresses this question
+		// entirely and would allow a live disconnect. Consider surfacing that
+		// as a v1alpha6 CD-ROM option instead of requiring a power cycle.
+		// https://knowledge.broadcom.com/external/article?legacyId=2144053
+		By("Powering off the VM to safely disconnect the CD-ROM")
+		vmoperator.PowerOffVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+		By("Verifying CD-ROM can be disconnected from the VM while powered off")
+		base := vmToCreate.DeepCopy()
+		vmToCreate.Spec.Cdrom[0].Connected = new(false)
+		vmToCreate.Spec.Cdrom[0].AllowGuestControl = new(false)
+		Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to disconnect CD-ROM")
+		verifyCdromConnectionState(ctx, vmMoRef, propCollector, false, false)
+
+		By("Powering the VM back on")
+		vmoperator.PowerOnVirtualMachineAndWait(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+		By("Verifying CD-ROM did not auto-connect on power on")
+		verifyCdromConnectionState(ctx, vmMoRef, propCollector, false, false)
+
+		By("Verifying CD-ROM can be reconnected to the VM with allowGuestControl disabled")
+		base = vmToCreate.DeepCopy()
+		vmToCreate.Spec.Cdrom[0].Connected = new(true)
+		vmToCreate.Spec.Cdrom[0].AllowGuestControl = new(false)
+		Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to reconnect CD-ROM")
+		verifyCdromConnectionState(ctx, vmMoRef, propCollector, true, false)
+	})
+
+	It("When deploying VM with many controllers", func() {
+		tinyCoreImageName := "tiny-core-linux-complex-hw"
+		// Ensure the vmi name is present in the temp namespace.
+		vmiName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, tinyCoreImageName)
+
+		vmToCreate := &vmopv1a3.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: input.WCPNamespaceName,
+				Name:      vmName,
+			},
+			Spec: vmopv1a3.VirtualMachineSpec{
+				ClassName:    clusterResources.VMClassName,
+				StorageClass: clusterResources.StorageClassName,
+				ImageName:    vmiName,
+				PowerState:   vmopv1a3.VirtualMachinePowerStateOn,
+				GuestID:      "ubuntu64Guest",
+			},
+		}
+		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+
+		By("Waiting for VM creation")
+		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+		vmoperator.WaitForVirtualMachinePowerState(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, vmopv1.VirtualMachinePowerStateOn)
+	})
+
+	Context("IaaS Policies", func() {
+
+		/*
+			This test validates the IaaS Compute Policies feature for VMs.
+
+			Setup:
+			1. Create 4 host and VM tags and assign the host tags to the host running the test VM.
+			2. Create 4 compute policies, each linked to one tag pair.
+			3. Create 4 infra policies from those compute policies:
+				- Mandatory (match all): Always enforced on all VMs of the namespace where this policy is assigned.
+				- Mandatory (match by label): Applied if the VM has the label matched.
+				- Optional (matchGuestID): Applied if the VM explicitly specifies and match the guest ID.
+				- Optional (matchWorkloadLabel): Applied if the VM explicitly specifies and match the labels.
+			4. Create a Supervisor namespace with all 4 infra policies assigned.
+
+			Test Scenarios:
+			1. Existing VM (created before policy assignment to namespace):
+				-> Receives only the mandatory policy (match all) and its tag.
+
+			2. New VM with explicitly specified optional policy (matchGuestID):
+				-> Receives both the mandatory policy (match all) and the specified policy (matchGuestID), along with their corresponding tags.
+
+			3. Update VM labels and policies to use match-by-label:
+				-> Mandatory policy: retained
+				-> Mandatory policy (match by label): added
+				-> Guest ID-matched policy: removed
+				-> Label-matched policy: added
+				-> Tags updated accordingly
+
+			4. Update VM labels to not match the policies and remove the explicit optional policy:
+				-> Mandatory policy: retained
+				-> Mandatory policy (match by label): removed
+				-> Guest ID-matched policy: removed
+				-> Label-matched policy: removed
+				-> Tags updated accordingly
+		*/
+
+		var (
+			tagManager                      *tags.Manager
+			tmpNamespaceName                string
+			tmpNamespaceVMIName             string
+			mandatoryPolicyNameMatchAll     string
+			mandatoryPolicyNameMatchByLabel string
+			opPolicyNameMatchByGuestID      string
+			opPolicyNameMatchByLabel        string
+			matchLabel                      map[string]string
+			policyNameToVMTagID             map[string]string
+		)
+
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.IaaSComputePoliciesCapabilityName)
+
+			By("Creating a tag manager to verify actual tag assignment")
+			restClient, err := vcenter.NewRestClient(ctx, vCenterClient, testbed.AdminUsername, testbed.AdminPassword)
+			Expect(err).NotTo(HaveOccurred(), "failed to create rest client")
+			tagManager = tags.NewManager(restClient)
+
+			By("Creating a new Supervisor namespace")
+			tmpNamespaceName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6))
+			vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+			clIDs := []string{vmserviceCLID}
+			vmClassNames := []string{clusterResources.VMClassName}
+			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
+			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
+			Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")
+			wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
+
+			By("Deploying a VM without any explicit policies")
+			tmpNamespaceVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+			vmToCreate := &vmopv1a5.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: tmpNamespaceName,
+					Name:      vmName,
+				},
+				Spec: vmopv1a5.VirtualMachineSpec{
+					ImageName:    tmpNamespaceVMIName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+				},
+			}
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+			By("Creating a new tag category")
+			tagCategoryName := fmt.Sprintf("tag-category-%s", capiutil.RandomString(4))
+			tagCategoryID, err := input.WCPClient.CreateTagCategory(tagCategoryName, "test-tag-category")
+			Expect(err).NotTo(HaveOccurred(), "failed to create tag category")
+			Expect(tagCategoryID).NotTo(BeEmpty(), "tag category ID should be returned")
+
+			By("Creating 4 new tag pairs (host tag and VM tag) under the tag category")
+			newTagIDPairs := make([][2]string, 4)
+			for i := range newTagIDPairs {
+				newHostTagID, err := input.WCPClient.CreateTag(fmt.Sprintf("host-tag-%s", capiutil.RandomString(4)), "test-tag", tagCategoryID)
+				Expect(err).NotTo(HaveOccurred(), "failed to create host tag")
+				Expect(newHostTagID).NotTo(BeEmpty(), "host tag ID should be returned")
+				newVMTagID, err := input.WCPClient.CreateTag(fmt.Sprintf("vm-tag-%s", capiutil.RandomString(4)), "test-tag", tagCategoryID)
+				Expect(err).NotTo(HaveOccurred(), "failed to create VM tag")
+				Expect(newVMTagID).NotTo(BeEmpty(), "VM tag ID should be returned")
+				newTagIDPairs[i] = [2]string{newHostTagID, newVMTagID}
+			}
+
+			By("Getting the host ID of the deployed VM")
+			vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, tmpNamespaceName, vmName)
+			vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
+			var vmMO mo.VirtualMachine
+			Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"runtime.host"}, &vmMO)).To(Succeed())
+			hostID := vmMO.Runtime.Host.Value
+			Expect(hostID).NotTo(BeEmpty(), "host ID should be present")
+
+			By("Assigning the previously created host tag IDs to the host")
+			hostTagIDs := make([]string, len(newTagIDPairs))
+			for i, tagIDPair := range newTagIDPairs {
+				hostTagIDs[i] = tagIDPair[0]
+			}
+			Expect(input.WCPClient.AssignTagsToHost(hostTagIDs, hostID)).To(Succeed(), "failed to assign tags to host")
+
+			By("Creating 4 compute policies with different tag ID pairs")
+			vmTagIDToCPID := make(map[string]string, len(newTagIDPairs))
+			for i, tagIDPair := range newTagIDPairs {
+				// Cannot use tagID in policy name because it's too long.
+				policyName := fmt.Sprintf("%s-%d", capiutil.RandomString(4), i)
+				cpSpec := wcp.ComputePolicySpec{
+					Name:        policyName,
+					Description: policyName,
+					HostTagID:   tagIDPair[0],
+					VMTagID:     tagIDPair[1],
+					Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
+				}
+				cpID, err := input.WCPClient.CreateComputePolicy(cpSpec)
+				Expect(err).NotTo(HaveOccurred(), "failed to create compute policy")
+				Expect(cpID).NotTo(BeEmpty(), "compute policy ID should be returned")
+				vmTagIDToCPID[tagIDPair[1]] = cpID
+			}
+
+			policyNameToVMTagID = make(map[string]string, len(newTagIDPairs))
+
+			By("Creating a mandatory infra policy from the compute policy with the 1st tag ID")
+			tagIDIndex := 0
+			mandatoryInfraPolicySpec := wcp.InfraPolicySpec{
+				Name:            fmt.Sprintf("mandatory-%s-%d", capiutil.RandomString(4), tagIDIndex),
+				Description:     fmt.Sprintf("mandatory infra policy for tag %s", newTagIDPairs[tagIDIndex]),
+				ComputePolicyID: vmTagIDToCPID[newTagIDPairs[tagIDIndex][1]],
+				EnforcementMode: wcp.InfraPolicyEnforcementModeMandatory,
+			}
+			Expect(input.WCPClient.CreateInfraPolicy(mandatoryInfraPolicySpec)).To(Succeed(), "failed to create mandatory infra policy")
+			mandatoryPolicyNameMatchAll = mandatoryInfraPolicySpec.Name
+			policyNameToVMTagID[mandatoryPolicyNameMatchAll] = newTagIDPairs[tagIDIndex][1]
+			tagIDIndex++
+
+			By("Creating an optional infra policy with match guest ID value from the compute policy with the 2nd tag ID")
+			optionalInfraPolicyMatchByGuestIDSpec := wcp.InfraPolicySpec{
+				Name:              fmt.Sprintf("optional-match-by-guest-id-%s-%d", capiutil.RandomString(4), tagIDIndex),
+				Description:       fmt.Sprintf("optional infra policy for tag %s", newTagIDPairs[tagIDIndex]),
+				ComputePolicyID:   vmTagIDToCPID[newTagIDPairs[tagIDIndex][1]],
+				EnforcementMode:   wcp.InfraPolicyEnforcementModeOptional,
+				MatchGuestIDValue: linuxImageGuestID,
+			}
+			Expect(input.WCPClient.CreateInfraPolicy(optionalInfraPolicyMatchByGuestIDSpec)).To(Succeed(), "failed to create optional infra policy match by guest ID")
+			opPolicyNameMatchByGuestID = optionalInfraPolicyMatchByGuestIDSpec.Name
+			policyNameToVMTagID[opPolicyNameMatchByGuestID] = newTagIDPairs[tagIDIndex][1]
+			tagIDIndex++
+
+			By("Creating an optional infra policy with match workload label from the compute policy with the 3rd tag ID")
+			matchLabel = map[string]string{"test-label": "test-value"}
+			optionalInfraPolicyMatchWorkloadLabelSpec := wcp.InfraPolicySpec{
+				Name:               fmt.Sprintf("optional-match-by-label-%s-%d", capiutil.RandomString(4), tagIDIndex),
+				Description:        fmt.Sprintf("optional infra policy for tag %s", newTagIDPairs[tagIDIndex]),
+				ComputePolicyID:    vmTagIDToCPID[newTagIDPairs[tagIDIndex][1]],
+				EnforcementMode:    wcp.InfraPolicyEnforcementModeOptional,
+				MatchWorkloadLabel: matchLabel,
+			}
+			Expect(input.WCPClient.CreateInfraPolicy(optionalInfraPolicyMatchWorkloadLabelSpec)).To(Succeed(), "failed to create optional infra policy match by label")
+			opPolicyNameMatchByLabel = optionalInfraPolicyMatchWorkloadLabelSpec.Name
+			policyNameToVMTagID[opPolicyNameMatchByLabel] = newTagIDPairs[tagIDIndex][1]
+			tagIDIndex++
+
+			By("Creating a mandatory infra policy with match by label from the compute policy with the 4th tag ID")
+			mandatoryInfraPolicyMatchByLabelSpec := wcp.InfraPolicySpec{
+				Name:               fmt.Sprintf("mandatory-match-by-label-%s-%d", capiutil.RandomString(4), tagIDIndex),
+				Description:        fmt.Sprintf("mandatory infra policy for tag %s", newTagIDPairs[tagIDIndex]),
+				ComputePolicyID:    vmTagIDToCPID[newTagIDPairs[tagIDIndex][1]],
+				EnforcementMode:    wcp.InfraPolicyEnforcementModeMandatory,
+				MatchWorkloadLabel: matchLabel,
+			}
+			Expect(input.WCPClient.CreateInfraPolicy(mandatoryInfraPolicyMatchByLabelSpec)).To(Succeed(), "failed to create mandatory infra policy match by label")
+			mandatoryPolicyNameMatchByLabel = mandatoryInfraPolicyMatchByLabelSpec.Name
+			policyNameToVMTagID[mandatoryPolicyNameMatchByLabel] = newTagIDPairs[tagIDIndex][1]
+			tagIDIndex++
+
+			Expect(tagIDIndex).To(BeEquivalentTo(len(newTagIDPairs)), "expected to create %d policies", len(newTagIDPairs))
+
+			By("Assigning all 4 policies to the namespace")
+			Expect(input.WCPClient.UpdateNamespaceWithInfraPolicies(tmpNamespaceName, mandatoryPolicyNameMatchAll, opPolicyNameMatchByGuestID, opPolicyNameMatchByLabel, mandatoryPolicyNameMatchByLabel)).To(Succeed(), "failed to assign policies to namespace")
+		})
+
+		It("Should apply policies and tags correctly during VM creation and update", func() {
+			By("Verifying the existing VM has only the mandatory policy (match all) and its tag applied")
+			expectedPolicyNames := []string{mandatoryPolicyNameMatchAll}
+			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
+
+			By("Creating a new VM with explicitly specified the optional policy match by guest ID")
+			vmName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(4))
+			vmToCreate := &vmopv1a5.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: tmpNamespaceName,
+					Name:      vmName,
+				},
+				Spec: vmopv1a5.VirtualMachineSpec{
+					GuestID:      linuxImageGuestID,
+					ImageName:    tmpNamespaceVMIName,
+					ClassName:    clusterResources.VMClassName,
+					StorageClass: clusterResources.StorageClassName,
+					PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+					Policies: []vmopv1a5.PolicySpec{
+						{
+							APIVersion: "vsphere.policy.vmware.com/v1alpha1",
+							Kind:       "ComputePolicy",
+							Name:       opPolicyNameMatchByGuestID,
+						},
+					},
+				},
+			}
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+			vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+			By("Verifying the new VM has both mandatory (match all) and optional policies (match by guest ID) and their tags applied")
+			expectedPolicyNames = []string{mandatoryPolicyNameMatchAll, opPolicyNameMatchByGuestID}
+			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
+
+			By("Updating the VM's labels and policies to match by label")
+			base := vmToCreate.DeepCopy()
+			vmToCreate.Labels = matchLabel
+			vmToCreate.Spec.Policies = []vmopv1a5.PolicySpec{
+				{
+					APIVersion: "vsphere.policy.vmware.com/v1alpha1",
+					Kind:       "ComputePolicy",
+					Name:       opPolicyNameMatchByLabel,
+				},
+			}
+			Expect(svClusterClient.Patch(ctx, vmToCreate, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to update VM labels and policies")
+
+			By("Verifying the VM has both mandatory policies (match all and match by label) and optional policies (match by label) and their tags applied")
+			expectedPolicyNames = []string{mandatoryPolicyNameMatchAll, mandatoryPolicyNameMatchByLabel, opPolicyNameMatchByLabel}
+			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
+
+			By("Updating the VM's label to not match the policies and remove the explicit optional policy")
+			vmObj := &vmopv1a5.VirtualMachine{}
+			Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{Namespace: tmpNamespaceName, Name: vmName}, vmObj)).To(Succeed(), "failed to get existing VM")
+			base = vmObj.DeepCopy()
+			for key := range matchLabel {
+				Expect(vmObj.Labels).To(HaveKey(key))
+				delete(vmObj.Labels, key)
+			}
+			vmObj.Spec.Policies = nil
+			Expect(svClusterClient.Patch(ctx, vmObj, ctrlclient.MergeFrom(base))).To(Succeed(), "failed to remove VM policy labels and optional policies")
+
+			By("Verifying the VM has only the mandatory policy (match all) and its tag applied")
+			expectedPolicyNames = []string{mandatoryPolicyNameMatchAll}
+			vmservice.VerifyVMTagsAndPolicyAssignment(ctx, config, svClusterClient, tagManager, tmpNamespaceName, vmName, policyNameToVMTagID, expectedPolicyNames)
+		})
+	})
+
+	Context("PLACEMENT-POLICY-COMBINATIONS", Label("placement-policy", "extended-functional"), func() {
+		var (
+			tmpNamespaceName         string
+			tmpNamespaceVMIName      string
+			mandatoryInfraPolicyName string
+			optionalInfraPolicyName  string
+			mandatoryHostTagID       string
+			mandatoryVMTagID         string
+			optionalVMTagID          string
+		)
+
+		BeforeEach(func() {
+			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.IaaSComputePoliciesCapabilityName)
+
+			// Create temporary namespace for isolation.
+			tmpNamespaceName = fmt.Sprintf("%s-%s", specName, capiutil.RandomString(6))
+			vmserviceCLID := vmservice.GetContentLibraryUUIDByName(consts.VMServiceCLName, wcpClient)
+			clIDs := []string{vmserviceCLID}
+			vmClassNames := []string{clusterResources.VMClassName}
+			vmsvcSpecs := wcp.NewVMServiceSpecDetails(vmClassNames, clIDs)
+			var err error
+			tmpNamespaceCtx, err = clusterProxy.CreateWCPNamespace(ctx, config, vmsvcSpecs, clusterResources.StorageClassName, tmpNamespaceName, input.ArtifactFolder)
+			Expect(err).NotTo(HaveOccurred(), "failed to create wcp namespace")
+			wcp.WaitForNamespaceReady(wcpClient, tmpNamespaceName)
+
+			tmpNamespaceName = tmpNamespaceCtx.GetNamespace().Name
+
+			By("Resolving VMI name for the namespace")
+			tmpNamespaceVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, tmpNamespaceName, linuxImageDisplayName)
+
+			By("Creating tag category for placement policies")
+			tagCategoryName := fmt.Sprintf("placement-policy-test-%s", tmpNamespaceName)
+			tagCategoryID, err := input.WCPClient.CreateTagCategory(tagCategoryName, "Tag category for placement policy E2E test")
+			Expect(err).NotTo(HaveOccurred(), "failed to create tag category")
+			Expect(tagCategoryID).NotTo(BeEmpty(), "tag category ID should be returned")
+
+			By("Creating mandatory policy tags")
+			mandatoryHostTagName := fmt.Sprintf("mandatory-host-tag-%s", tmpNamespaceName)
+			mandatoryHostTagID, err = input.WCPClient.CreateTag(mandatoryHostTagName, "Mandatory host tag", tagCategoryID)
+			Expect(err).NotTo(HaveOccurred(), "failed to create mandatory host tag")
+			Expect(mandatoryHostTagID).NotTo(BeEmpty(), "mandatory host tag ID should be returned")
+
+			mandatoryVMTagName := fmt.Sprintf("mandatory-vm-tag-%s", tmpNamespaceName)
+			mandatoryVMTagID, err = input.WCPClient.CreateTag(mandatoryVMTagName, "Mandatory VM tag", tagCategoryID)
+			Expect(err).NotTo(HaveOccurred(), "failed to create mandatory VM tag")
+			Expect(mandatoryVMTagID).NotTo(BeEmpty(), "mandatory VM tag ID should be returned")
+
+			By("Creating optional policy tags")
+			optionalHostTagName := fmt.Sprintf("optional-host-tag-%s", tmpNamespaceName)
+			optionalHostTagID, err := input.WCPClient.CreateTag(optionalHostTagName, "Optional host tag", tagCategoryID)
+			Expect(err).NotTo(HaveOccurred(), "failed to create optional host tag")
+			Expect(optionalHostTagID).NotTo(BeEmpty(), "optional host tag ID should be returned")
+
+			optionalVMTagName := fmt.Sprintf("optional-vm-tag-%s", tmpNamespaceName)
+			optionalVMTagID, err = input.WCPClient.CreateTag(optionalVMTagName, "Optional VM tag", tagCategoryID)
+			Expect(err).NotTo(HaveOccurred(), "failed to create optional VM tag")
+			Expect(optionalVMTagID).NotTo(BeEmpty(), "optional VM tag ID should be returned")
+
+			By("Getting available host IDs")
+			hostIDs, err := input.WCPClient.ListHostIDs()
+			Expect(err).NotTo(HaveOccurred(), "failed to list host IDs")
+			Expect(hostIDs).NotTo(BeEmpty(), "at least one host should be available")
+			hostID := hostIDs[0]
+
+			By("Assigning tags to the host")
+			Expect(input.WCPClient.AssignTagsToHost([]string{mandatoryHostTagID, optionalHostTagID}, hostID)).To(Succeed(), "failed to assign tags to host")
+
+			By("Creating mandatory compute policy with VM-Host affinity")
+			mandatoryComputePolicySpec := wcp.ComputePolicySpec{
+				Name:        fmt.Sprintf("mandatory-compute-policy-%s", capiutil.RandomString(4)),
+				Description: "Mandatory compute policy for placement test",
+				HostTagID:   mandatoryHostTagID,
+				VMTagID:     mandatoryVMTagID,
+				Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
+			}
+			mandatoryComputePolicyID, err := input.WCPClient.CreateComputePolicy(mandatoryComputePolicySpec)
+			Expect(err).NotTo(HaveOccurred(), "failed to create mandatory compute policy")
+			Expect(mandatoryComputePolicyID).NotTo(BeEmpty(), "mandatory compute policy ID should be returned")
+
+			By("Creating optional compute policy with VM-Host affinity")
+			optionalComputePolicySpec := wcp.ComputePolicySpec{
+				Name:        fmt.Sprintf("optional-compute-policy-%s", capiutil.RandomString(4)),
+				Description: "Optional compute policy for placement test",
+				HostTagID:   optionalHostTagID,
+				VMTagID:     optionalVMTagID,
+				Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
+			}
+			optionalComputePolicyID, err := input.WCPClient.CreateComputePolicy(optionalComputePolicySpec)
+			Expect(err).NotTo(HaveOccurred(), "failed to create optional compute policy")
+			Expect(optionalComputePolicyID).NotTo(BeEmpty(), "optional compute policy ID should be returned")
+
+			By("Creating mandatory infrastructure policy")
+			mandatoryInfraPolicyName = fmt.Sprintf("mandatory-infra-policy-%s", capiutil.RandomString(4))
+			mandatoryInfraPolicySpec := wcp.InfraPolicySpec{
+				Name:            mandatoryInfraPolicyName,
+				Description:     "Mandatory infrastructure policy for placement test",
+				ComputePolicyID: mandatoryComputePolicyID,
+				EnforcementMode: wcp.InfraPolicyEnforcementModeMandatory,
+			}
+			Expect(input.WCPClient.CreateInfraPolicy(mandatoryInfraPolicySpec)).To(Succeed(), "failed to create mandatory infrastructure policy")
+
+			By("Creating optional infrastructure policy")
+			optionalInfraPolicyName = fmt.Sprintf("optional-infra-policy-%s", capiutil.RandomString(4))
+			optionalInfraPolicySpec := wcp.InfraPolicySpec{
+				Name:            optionalInfraPolicyName,
+				Description:     "Optional infrastructure policy for placement test",
+				ComputePolicyID: optionalComputePolicyID,
+				EnforcementMode: wcp.InfraPolicyEnforcementModeOptional,
+			}
+			Expect(input.WCPClient.CreateInfraPolicy(optionalInfraPolicySpec)).To(Succeed(), "failed to create optional infrastructure policy")
+
+			By("Applying infrastructure policies to namespace")
+			Expect(input.WCPClient.UpdateNamespaceWithInfraPolicies(tmpNamespaceName, mandatoryInfraPolicyName, optionalInfraPolicyName)).To(Succeed(), "failed to apply infrastructure policies to namespace")
+		})
+
+		When("mandatory and optional policies are applied", func() {
+			It("should create PolicyEvaluation objects with compliant status", func() {
+				By("Creating a VM with explicit optional policy reference")
+				vmName = fmt.Sprintf("placement-test-vm-%s", capiutil.RandomString(4))
+				vmToCreate := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: tmpNamespaceName,
+						Name:      vmName,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						ImageName:    tmpNamespaceVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+						Policies: []vmopv1a5.PolicySpec{
+							{
+								APIVersion: "vsphere.policy.vmware.com/v1alpha1",
+								Kind:       "ComputePolicy",
+								Name:       optionalInfraPolicyName,
+							},
+						},
+					},
+				}
+				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, vmName)
+
+				By("Verifying PolicyEvaluation is created and populated with mandatory and optional policies")
+				var policyEvaluation vspherepolv1.PolicyEvaluation
+				policyEvaluationName := fmt.Sprintf("vm-%s", vmName)
+				Eventually(func(g Gomega) {
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName,
+						Name:      policyEvaluationName,
+					}, &policyEvaluation)).To(Succeed(), "PolicyEvaluation object should exist")
+
+					g.Expect(policyEvaluation.Status.Policies).NotTo(BeEmpty(), "PolicyEvaluation should have policies populated")
+
+					// Status.Policies[].Name is the name of the ComputePolicy CR, which is
+					// derived from the infra policy name, so the prefix check is stable.
+					var mandatoryPolicyFound, optionalPolicyFound bool
+					for _, policy := range policyEvaluation.Status.Policies {
+						if strings.Contains(policy.Name, "mandatory") {
+							mandatoryPolicyFound = true
+							g.Expect(policy.Kind).To(Equal("ComputePolicy"))
+							g.Expect(policy.Tags).To(ContainElement(mandatoryVMTagID))
+						}
+						if strings.Contains(policy.Name, "optional") {
+							optionalPolicyFound = true
+							g.Expect(policy.Kind).To(Equal("ComputePolicy"))
+							g.Expect(policy.Tags).To(ContainElement(optionalVMTagID))
+						}
+					}
+					g.Expect(mandatoryPolicyFound).To(BeTrue(), "mandatory policy should appear in PolicyEvaluation")
+					g.Expect(optionalPolicyFound).To(BeTrue(), "optional policy should appear in PolicyEvaluation")
+				}, config.GetIntervals("default", "wait-policy-evaluation-creation")...).
+					Should(Succeed(), "PolicyEvaluation should be created with expected policies")
+
+				By("Verifying PolicyEvaluation has Ready=True (compliant)")
+				Eventually(func(g Gomega) {
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName,
+						Name:      policyEvaluationName,
+					}, &policyEvaluation)).To(Succeed())
+
+					cond := apimeta.FindStatusCondition(policyEvaluation.Status.Conditions, vspherepolv1.ReadyConditionType)
+					g.Expect(cond).NotTo(BeNil(), "Ready condition should be present")
+					g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "PolicyEvaluation should be compliant")
+				}, config.GetIntervals("default", "wait-policy-evaluation-compliant")...).
+					Should(Succeed(), "PolicyEvaluation should be compliant")
+
+				e2eframework.Logf("PolicyEvaluation for VM %s is compliant with %d policies", vmName, len(policyEvaluation.Status.Policies))
+			})
+		})
+
+		When("policies are applied retroactively", func() {
+			It("should create PolicyEvaluation for existing VMs", Label("experimental"), func() {
+				By("Creating a VM before applying new policies")
+				existingVMName := fmt.Sprintf("existing-vm-%s", capiutil.RandomString(4))
+				vmToCreate := &vmopv1a5.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: tmpNamespaceName,
+						Name:      existingVMName,
+					},
+					Spec: vmopv1a5.VirtualMachineSpec{
+						ImageName:    tmpNamespaceVMIName,
+						ClassName:    clusterResources.VMClassName,
+						StorageClass: clusterResources.StorageClassName,
+						PowerState:   vmopv1a5.VirtualMachinePowerStateOn,
+					},
+				}
+				vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
+				vmoperator.WaitForVirtualMachineCreation(ctx, config, svClusterClient, tmpNamespaceName, existingVMName)
+
+				By("Verifying initial PolicyEvaluation is created with the mandatory policy")
+				existingPEName := fmt.Sprintf("vm-%s", existingVMName)
+				var policyEvaluation vspherepolv1.PolicyEvaluation
+				Eventually(func(g Gomega) {
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName,
+						Name:      existingPEName,
+					}, &policyEvaluation)).To(Succeed(), "initial PolicyEvaluation should exist")
+					g.Expect(policyEvaluation.Status.Policies).NotTo(BeEmpty(), "initial PolicyEvaluation should contain the mandatory policy")
+				}, config.GetIntervals("default", "wait-policy-evaluation-creation")...).
+					Should(Succeed(), "initial PolicyEvaluation should be created")
+
+				initialPolicyCount := len(policyEvaluation.Status.Policies)
+				e2eframework.Logf("Existing VM has %d initial policies", initialPolicyCount)
+
+				By("Creating and applying a new retroactive infrastructure policy to the namespace")
+				retroactiveInfraPolicyName := fmt.Sprintf("retroactive-infra-policy-%s", capiutil.RandomString(4))
+				retroactiveComputePolicySpec := wcp.ComputePolicySpec{
+					Name:        fmt.Sprintf("retroactive-compute-policy-%s", capiutil.RandomString(4)),
+					Description: "Retroactive compute policy for placement test",
+					HostTagID:   mandatoryHostTagID,
+					VMTagID:     mandatoryVMTagID,
+					Capability:  wcp.ComputePolicyCapabilityVMHostAffinity,
+				}
+				retroactiveComputePolicyID, err := input.WCPClient.CreateComputePolicy(retroactiveComputePolicySpec)
+				Expect(err).NotTo(HaveOccurred(), "failed to create retroactive compute policy")
+				Expect(retroactiveComputePolicyID).NotTo(BeEmpty(), "retroactive compute policy ID should be returned")
+
+				retroactiveInfraPolicySpec := wcp.InfraPolicySpec{
+					Name:            retroactiveInfraPolicyName,
+					Description:     "Retroactive infrastructure policy for placement test",
+					ComputePolicyID: retroactiveComputePolicyID,
+					EnforcementMode: wcp.InfraPolicyEnforcementModeMandatory,
+				}
+				Expect(input.WCPClient.CreateInfraPolicy(retroactiveInfraPolicySpec)).To(Succeed(), "failed to create retroactive infrastructure policy")
+				Expect(input.WCPClient.UpdateNamespaceWithInfraPolicies(tmpNamespaceName, mandatoryInfraPolicyName, optionalInfraPolicyName, retroactiveInfraPolicyName)).
+					To(Succeed(), "failed to apply retroactive policy to namespace")
+
+				By("Verifying the existing VM's PolicyEvaluation is updated to include the new policy and remains compliant")
+				Eventually(func(g Gomega) {
+					g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+						Namespace: tmpNamespaceName,
+						Name:      existingPEName,
+					}, &policyEvaluation)).To(Succeed())
+
+					g.Expect(policyEvaluation.Status.Policies).To(HaveLen(initialPolicyCount+1),
+						"PolicyEvaluation should have gained one additional policy")
+
+					retroactivePolicyFound := false
+					for _, policy := range policyEvaluation.Status.Policies {
+						if strings.Contains(policy.Name, "retroactive") {
+							retroactivePolicyFound = true
+							break
+						}
+					}
+					g.Expect(retroactivePolicyFound).To(BeTrue(), "retroactive policy should appear in updated PolicyEvaluation")
+
+					cond := apimeta.FindStatusCondition(policyEvaluation.Status.Conditions, vspherepolv1.ReadyConditionType)
+					g.Expect(cond).NotTo(BeNil(), "Ready condition should be present")
+					g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "updated PolicyEvaluation should remain compliant")
+				}, config.GetIntervals("default", "wait-policy-evaluation-update")...).
+					Should(Succeed(), "existing VM should receive the retroactive policy and remain compliant")
+
+				e2eframework.Logf("Existing VM %s received retroactive policy and has %d total policies",
+					existingVMName, len(policyEvaluation.Status.Policies))
+
+				// Delete the VM explicitly so the outer AfterEach namespace teardown is faster.
+				Expect(svClusterClient.Delete(ctx, vmToCreate)).To(Succeed(), "failed to delete existing VM")
+				vmoperator.WaitForVirtualMachineToBeDeleted(ctx, config, svClusterClient, tmpNamespaceName, existingVMName)
+			})
+		})
+	})
+}
+
+func verifyCdromConnectionState(
+	ctx context.Context,
+	vmMoRef types.ManagedObjectReference,
+	propCollector *property.Collector,
+	connected, allowGuestControl bool) *types.VirtualDevice {
+
+	var (
+		moVM  mo.VirtualMachine
+		cdrom *types.VirtualDevice
+	)
+
+	Eventually(func(g Gomega) {
+		g.Expect(propCollector.RetrieveOne(ctx, vmMoRef, []string{"config.hardware.device"}, &moVM)).To(Succeed())
+		virtualDevices := object.VirtualDeviceList(moVM.Config.Hardware.Device)
+		curCdroms := virtualDevices.SelectByType((*types.VirtualCdrom)(nil))
+		g.Expect(curCdroms).To(HaveLen(1))
+		cdrom = curCdroms[0].GetVirtualDevice()
+		g.Expect(cdrom.Connectable.Connected).To(Equal(connected))
+		g.Expect(cdrom.Connectable.AllowGuestControl).To(Equal(allowGuestControl))
+	}, 1*time.Minute, 5*time.Second).Should(Succeed(), "VM CD-ROM did not have expected connection state")
+
+	return cdrom
+}

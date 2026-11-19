@@ -1,0 +1,98 @@
+// Copyright (c) 2023-2025 Broadcom. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package virtualmachine
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	capiutil "sigs.k8s.io/cluster-api/util"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
+	e2eConfig "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/config"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/consts"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/lib/vmoperator"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/skipper"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice"
+	"github.com/vmware-tanzu/vm-operator/test/e2e/wcpframework"
+)
+
+const (
+	vmWebConsoleSpecName = "vm-web-console"
+)
+
+type VMWebConsoleRequestSpecInput struct {
+	ClusterProxy     wcpframework.WCPClusterProxyInterface
+	Config           *e2eConfig.E2EConfig
+	ArtifactFolder   string
+	SkipCleanup      bool
+	LinuxVMName      string
+	WCPNamespaceName string
+}
+
+func VMWebConsoleRequestSpec(ctx context.Context, inputGetter func() VMWebConsoleRequestSpecInput) {
+	var (
+		input            VMWebConsoleRequestSpecInput
+		config           *e2eConfig.E2EConfig
+		clusterProxy     framework.ClusterProxyInterface
+		svClusterClient  ctrlclient.Client
+		webconsoleName   string
+		webconsoleParams manifestbuilders.VirtualMachineWebConsoleRequestYaml
+	)
+
+	BeforeEach(func() {
+		// Set up infrastructure related configs.
+		input = inputGetter()
+		Expect(input.Config).ToNot(BeNil(), "Invalid argument. input.E2EConfig can't be nil when calling %s spec", vmWebConsoleSpecName)
+		Expect(input.Config.InfraConfig).ToNot(BeNil(), "Invalid argument. input.E2EConfig.InfraConfig can't be nil when calling %s spec", vmWebConsoleSpecName)
+		skipper.SkipUnlessInfraIs(input.Config.InfraConfig.InfraName, consts.WCP)
+
+		Expect(input.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.SVClusterProxy can't be nil when calling %s spec", vmWebConsoleSpecName)
+		Expect(input.WCPNamespaceName).ToNot(BeEmpty(), "Invalid argument. input.WCPNamespaceName can't be empty when calling %s spec", vmWebConsoleSpecName)
+		Expect(input.LinuxVMName).ToNot(BeEmpty(), "Invalid argument. input.LinuxVMName can't be empty when calling %s spec", vmWebConsoleSpecName)
+		Expect(os.MkdirAll(input.ArtifactFolder, 0755)).To(Succeed(), "Invalid argument. input.ArtifactFolder can't be created for %s spec", vmWebConsoleSpecName)
+
+		config = input.Config
+		clusterProxy = input.ClusterProxy
+		svClusterClient = clusterProxy.GetClient()
+
+		cancelPodWatches := framework.WatchPodLogsAndEventsInNamespaces(ctx, []string{config.GetVariable("VMOPNamespace")}, input.ClusterProxy.GetRESTConfig(), filepath.Join(input.ArtifactFolder, vmWebConsoleSpecName))
+		DeferCleanup(cancelPodWatches)
+
+		webconsoleName = fmt.Sprintf("%s-%s", vmWebConsoleSpecName, capiutil.RandomString(4))
+		webconsoleParams = manifestbuilders.VirtualMachineWebConsoleRequestYaml{
+			Namespace: input.WCPNamespaceName,
+			Name:      webconsoleName,
+			VMName:    input.LinuxVMName,
+		}
+	})
+
+	Context("Create web console request CR", func() {
+		It("should successfully create v1a1 webconsolerequests and populate status", Label("smoke"), func() {
+			vmoperator.DeferCleanupWithDumpOnFailure(nil,
+				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "webconsolerequests", input.WCPNamespaceName, webconsoleName))
+			webconsole := manifestbuilders.WebConsoleRequestA1(webconsoleParams)
+			Expect(svClusterClient.Create(ctx, webconsole)).NotTo(HaveOccurred(), "failed to create v1a1 webconsole request")
+			// Verify webconsole request creation.
+			vmservice.VerifyWebConsoleRequestCreation(ctx, config, svClusterClient, input.WCPNamespaceName, webconsoleName)
+			vmoperator.VerifyWebConsoleRequestStatus(ctx, config, svClusterClient, input.WCPNamespaceName, webconsoleName)
+		})
+
+		It("When WCP_VMService_v1alpha2 enabled, should successfully create v1a2 virtualmachinewebconsolerequests and populate status", func() {
+			vmoperator.DeferCleanupWithDumpOnFailure(nil,
+				vmoperator.DescribeResource(clusterProxy.GetKubeconfigPath(), "virtualmachinewebconsolerequests", input.WCPNamespaceName, webconsoleName))
+			vmWebconsole := manifestbuilders.VirtualMachineWebConsoleRequestA2(webconsoleParams)
+			Expect(svClusterClient.Create(ctx, vmWebconsole)).NotTo(HaveOccurred(), "failed to create v1a2 virtualmachinewebconsole request")
+			// Verify virtualmachine webconsole request creation.
+			vmservice.VerifyVirtualMachineWebConsoleRequestCreation(ctx, config, svClusterClient, input.WCPNamespaceName, webconsoleName)
+			vmoperator.VerifyVirtualMachineWebConsoleRequestStatus(ctx, config, svClusterClient, input.WCPNamespaceName, webconsoleName)
+		})
+	})
+}

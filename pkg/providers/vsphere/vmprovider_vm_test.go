@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"github.com/google/uuid"
 	vimcrypto "github.com/vmware/govmomi/crypto"
@@ -2791,6 +2794,68 @@ func vmTests() {
 								Expect(v1).To(Equal("bar"))
 								v2, _ := ec.GetString(pkgconst.VMProvKeepDisksExtraConfigKey)
 								Expect(v2).To(Equal(strings.Join(cachedDiskNames, ",")))
+							})
+
+							When("cached file verification fails", func() {
+								// serveCachedFileHEAD makes vcsim answer HEAD requests for
+								// the cached disk with the given status code, and returns
+								// the number of such requests served.
+								serveCachedFileHEAD := func(statusCode int) *atomic.Int32 {
+									var diskPath object.DatastorePath
+									Expect(diskPath.FromString(cachedDiskPaths[0])).To(BeTrue())
+									fileURL := object.NewDatastoreURL(
+										*ctx.VCClient.Client.URL(),
+										ctx.Datacenter.InventoryPath,
+										diskPath.Datastore,
+										diskPath.Path)
+
+									// The handler runs on the server's goroutine, so the
+									// counter must be safe for concurrent access.
+									var requests atomic.Int32
+									ctx.SimulatorService().ServeMux.HandleFunc(
+										"HEAD "+fileURL.Path,
+										func(w http.ResponseWriter, _ *http.Request) {
+											requests.Add(1)
+											w.WriteHeader(statusCode)
+										})
+
+									return &requests
+								}
+
+								It("returns HTTP 500 as an error instead of waiting for the cache", func() {
+									requests := serveCachedFileHEAD(http.StatusInternalServerError)
+
+									err := createOrUpdateVM(ctx, vmProvider, vm)
+									Expect(err).To(HaveOccurred())
+									Expect(err.Error()).To(ContainSubstring("failed to verify cached file"))
+									Expect(err.Error()).To(ContainSubstring("500 Internal Server Error"))
+									var cacheNotReady pkgerr.VMICacheNotReadyError
+									Expect(errors.As(err, &cacheNotReady)).To(BeFalse())
+									Expect(requests.Load()).To(Equal(int32(1)))
+
+									chanSource := cource.FromContextWithBuffer(
+										ctx, "VirtualMachineImageCache", 100)
+									Consistently(chanSource).ShouldNot(Receive())
+								})
+
+								It("still waits for the cache when the file is missing", func() {
+									requests := serveCachedFileHEAD(http.StatusNotFound)
+
+									assertVMICNotReady(
+										createOrUpdateVM(ctx, vmProvider, vm),
+										"cached files not ready",
+										vmic.Name,
+										ctx.Datacenter.Reference().Value,
+										ctx.Datastore.Reference().Value)
+									Expect(requests.Load()).To(Equal(int32(1)))
+
+									chanSource := cource.FromContextWithBuffer(
+										ctx, "VirtualMachineImageCache", 100)
+									var e event.GenericEvent
+									Eventually(chanSource).Should(Receive(&e))
+									Expect(e.Object.GetNamespace()).To(Equal(vmic.Namespace))
+									Expect(e.Object.GetName()).To(Equal(vmic.Name))
+								})
 							})
 
 							When("global default is direct mode", func() {

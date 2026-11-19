@@ -1854,6 +1854,10 @@ func (c *TestContextForVCSim) SimulatorContext() *simulator.Context {
 	return c.model.Service.Context
 }
 
+func (c *TestContextForVCSim) SimulatorService() *simulator.Service {
+	return c.model.Service
+}
+
 func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName string) {
 	clID := c.ContentLibraryID
 	Expect(clID).ToNot(BeEmpty())

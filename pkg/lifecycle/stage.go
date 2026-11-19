@@ -239,10 +239,10 @@ func ReconcileStage(
 			return Result{}, nil
 		}
 
-		// The previous hold is still being cleared; pausing now would reuse its
-		// results.
+		// The previous hold is still being cleared; pausing now would reuse its results.
+		// Wait for Lifecycle Operator to remove the stale results from status, triggering this VM reconcile
 		if isHookFailedDone(ready) {
-			markRetrying(vm, stageName, ready)
+			markFailed(vm, stageName, ready)
 		} else {
 			markWaiting(vm, stageName, nil)
 		}
@@ -261,6 +261,7 @@ func ReconcileStage(
 	state.Spec.Stages[idx].WorkflowPaused = false
 	state.Spec.Stages[idx].WorkflowResumed = true
 	if proceed && stageName == StageResourceDelete {
+		// We have reached end of life for this resource. We can release the LifecycleState CR.
 		// Release in the same write: a separate patch would conflict with the
 		// Lifecycle Operator removing the status entry in response to this one.
 		// Also release any other stage still paused, such as Delete when the
@@ -274,7 +275,7 @@ func ReconcileStage(
 	}
 
 	if failed {
-		markRetrying(vm, stageName, ready)
+		markFailed(vm, stageName, ready)
 		return Result{}, nil
 	}
 	conditions.Set(vm, &metav1.Condition{
@@ -519,7 +520,7 @@ func markWaiting(
 	})
 }
 
-func markRetrying(
+func markFailed(
 	vm *vmopv1.VirtualMachine,
 	stageName string,
 	ready *metav1.Condition) {
@@ -529,7 +530,7 @@ func markRetrying(
 		Status: metav1.ConditionFalse,
 		Reason: stageName + "Stage",
 		Message: fmt.Sprintf(
-			"%s hook failed, retrying%s", stageName, suffix(ready.Message)),
+			"%s Hook failed: %s", stageName, suffix(ready.Message)),
 	})
 }
 

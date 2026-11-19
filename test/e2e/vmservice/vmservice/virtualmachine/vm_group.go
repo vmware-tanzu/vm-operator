@@ -37,7 +37,7 @@ import (
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1a5cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha5/cloudinit"
 	vmopv1a5common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"

@@ -32,7 +32,7 @@ import (
 
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/appple2e/lib"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/dcli"

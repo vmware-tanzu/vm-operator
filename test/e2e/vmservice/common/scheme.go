@@ -34,7 +34,7 @@ import (
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
-	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 // InitScheme adds scheme to each API typed resources.

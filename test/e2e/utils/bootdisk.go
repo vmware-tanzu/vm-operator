@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1a6 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 )
 
 // FindBootDiskVolumeStatus identifies the boot disk entry inside

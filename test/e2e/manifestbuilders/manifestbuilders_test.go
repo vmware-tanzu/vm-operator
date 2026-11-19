@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/randfill"
 	"sigs.k8s.io/yaml"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	mb "github.com/vmware-tanzu/vm-operator/test/e2e/manifestbuilders"
 )
 

@@ -31,8 +31,8 @@ import (
 
 	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	vmopv1a2common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha5/common"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/framework"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/infrastructure/vsphere/testbed"

@@ -20,7 +20,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/controllers/vspherepolicy/policyevaluation"
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -38,6 +40,8 @@ var _ = Describe("AddToManager", func() {
 					pkgcfg.NewContextWithDefaultConfig(),
 					func(config *pkgcfg.Config) {
 						config.Features.VSpherePolicies = true
+						// Also exercises the eviction/restart policy watches.
+						config.Features.VMEviction = true
 					},
 				),
 			),
@@ -3340,6 +3344,237 @@ var _ = Describe("Reconcile", func() {
 					Expect(updated.Status.Policies).To(BeEmpty())
 				})
 			})
+		})
+	})
+})
+
+var _ = Describe("Reconcile errors with VMEviction enabled", func() {
+	var (
+		ctx        context.Context
+		client     ctrlclient.Client
+		reconciler *policyevaluation.Reconciler
+		obj        *vspherepolv1.PolicyEvaluation
+		failList   func(ctrlclient.ObjectList) bool
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.UpdateContext(
+			pkgcfg.NewContextWithDefaultConfig(),
+			func(config *pkgcfg.Config) {
+				config.Features.VMEviction = true
+			})
+
+		obj = &vspherepolv1.PolicyEvaluation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-policy-eval",
+				Namespace:  "test-namespace",
+				Finalizers: []string{policyevaluation.Finalizer},
+			},
+		}
+	})
+
+	JustBeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+		Expect(vspherepolv1.AddToScheme(scheme)).To(Succeed())
+
+		client = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&vspherepolv1.PolicyEvaluation{}).
+			WithObjects(obj).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(
+					ctx context.Context,
+					c ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
+
+					if failList(list) {
+						return fmt.Errorf("injected list failure")
+					}
+					return c.List(ctx, list, opts...)
+				},
+			}).
+			Build()
+
+		reconciler = policyevaluation.NewReconciler(
+			ctx,
+			client,
+			log.Log.WithName("test"),
+			record.New(events.NewFakeRecorder(100)),
+		)
+	})
+
+	reconcileObj := func() error {
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      obj.Name,
+				Namespace: obj.Namespace,
+			},
+		})
+		return err
+	}
+
+	When("listing AutomaticVMEvictionPolicies fails", func() {
+		BeforeEach(func() {
+			failList = func(l ctrlclient.ObjectList) bool {
+				_, ok := l.(*vspherepolv1.AutomaticVMEvictionPolicyList)
+				return ok
+			}
+		})
+
+		It("returns an error", func() {
+			err := reconcileObj()
+			Expect(err).To(MatchError(ContainSubstring(
+				"failed to reconcile mandatory automatic VM eviction policies")))
+			Expect(err).To(MatchError(ContainSubstring(
+				"failed to list automatic VM eviction policies")))
+		})
+	})
+
+	When("listing BestEffortRestartPolicies fails", func() {
+		BeforeEach(func() {
+			failList = func(l ctrlclient.ObjectList) bool {
+				_, ok := l.(*vspherepolv1.BestEffortRestartPolicyList)
+				return ok
+			}
+		})
+
+		It("returns an error", func() {
+			err := reconcileObj()
+			Expect(err).To(MatchError(ContainSubstring(
+				"failed to reconcile mandatory best-effort restart policies")))
+			Expect(err).To(MatchError(ContainSubstring(
+				"failed to list best-effort restart policies")))
+		})
+	})
+})
+
+var _ = Describe("Policy watch mappers", func() {
+	const namespace = "test-namespace"
+
+	var (
+		ctx     context.Context
+		withObj []ctrlclient.Object
+		failAll bool
+		client  ctrlclient.Client
+	)
+
+	newEval := func(ns, name string) *vspherepolv1.PolicyEvaluation {
+		return &vspherepolv1.PolicyEvaluation{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
+		}
+	}
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContextWithDefaultConfig()
+		withObj = nil
+		failAll = false
+	})
+
+	JustBeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+		Expect(vspherepolv1.AddToScheme(scheme)).To(Succeed())
+
+		client = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(withObj...).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(
+					ctx context.Context,
+					c ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
+
+					if failAll {
+						return fmt.Errorf("injected list failure")
+					}
+					return c.List(ctx, list, opts...)
+				},
+			}).
+			Build()
+	})
+
+	Describe("policyToPolicyEvaluationMapperFn", func() {
+		policies := []ctrlclient.Object{
+			&vspherepolv1.AutomaticVMEvictionPolicy{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "evict"},
+			},
+			&vspherepolv1.BestEffortRestartPolicy{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "restart"},
+			},
+		}
+
+		When("PolicyEvaluations exist in the policy namespace", func() {
+			BeforeEach(func() {
+				withObj = []ctrlclient.Object{
+					newEval(namespace, "vm-1"),
+					newEval(namespace, "vm-2"),
+					newEval("other-namespace", "vm-3"),
+				}
+			})
+
+			It("enqueues only the PolicyEvaluations in that namespace", func() {
+				for _, p := range policies {
+					reqs := policyevaluation.PolicyToPolicyEvaluationMapperFn(
+						ctx, client)(ctx, p)
+					Expect(reqs).To(ConsistOf(
+						reconcile.Request{NamespacedName: types.NamespacedName{
+							Namespace: namespace, Name: "vm-1"}},
+						reconcile.Request{NamespacedName: types.NamespacedName{
+							Namespace: namespace, Name: "vm-2"}},
+					))
+				}
+			})
+		})
+
+		When("there are no PolicyEvaluations in the policy namespace", func() {
+			BeforeEach(func() {
+				withObj = []ctrlclient.Object{newEval("other-namespace", "vm-3")}
+			})
+
+			It("returns no requests", func() {
+				reqs := policyevaluation.PolicyToPolicyEvaluationMapperFn(
+					ctx, client)(ctx, policies[0])
+				Expect(reqs).To(BeEmpty())
+			})
+		})
+
+		When("listing PolicyEvaluations fails", func() {
+			BeforeEach(func() {
+				failAll = true
+			})
+
+			It("returns nil", func() {
+				reqs := policyevaluation.PolicyToPolicyEvaluationMapperFn(
+					ctx, client)(ctx, policies[0])
+				Expect(reqs).To(BeNil())
+			})
+		})
+	})
+
+	Describe("virtualMachineToPolicyEvaluationMapperFn", func() {
+		It("enqueues the PolicyEvaluation that matches the VM", func() {
+			vm := &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "my-vm"},
+			}
+			reqs := policyevaluation.VirtualMachineToPolicyEvaluationMapperFn(
+				ctx, client)(ctx, vm)
+			Expect(reqs).To(HaveLen(1))
+			Expect(reqs[0].Namespace).To(Equal(namespace))
+			Expect(reqs[0].Name).To(HavePrefix("vm-"))
+			Expect(reqs[0].Name).To(ContainSubstring("my-vm"))
+		})
+	})
+
+	Describe("tagPolicyToPolicyEvaluationMapperFn", func() {
+		It("returns no requests", func() {
+			tp := &vspherepolv1.TagPolicy{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "tp"},
+			}
+			Expect(policyevaluation.TagPolicyToPolicyEvaluationMapperFn(
+				ctx, client)(ctx, tp)).To(BeNil())
 		})
 	})
 })

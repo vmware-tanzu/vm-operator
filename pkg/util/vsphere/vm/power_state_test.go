@@ -592,6 +592,15 @@ func powerStateTests() {
 					It("should suspend the VM", func() {})
 				})
 			})
+			Context("using hard standby on a powered off VM", func() {
+				BeforeEach(func() {
+					initialPowerState = vimtypes.VirtualMachinePowerStatePoweredOff
+					powerOpBehavior = vmutil.PowerOpBehaviorHard
+					mgdObj.Summary.Runtime.PowerState = initialPowerState
+					expectedErr = errors.New("hard set power state to suspended failed: *types.InvalidPowerState: *types.InvalidPowerState")
+				})
+				It("should fail because a powered off VM cannot be suspended", func() {})
+			})
 			Context("using soft standby", func() {
 				BeforeEach(func() {
 					powerOpBehavior = vmutil.PowerOpBehaviorSoft
@@ -1078,6 +1087,42 @@ var _ = Describe("WrapHardPowerOpFailure", func() {
 			err := vmutil.WrapHardPowerOpFailure(vimtypes.VirtualMachinePowerStatePoweredOn, ti, origErr)
 			Expect(errors.Is(err, origErr)).To(BeTrue())
 			Expect(errors.Is(err, vmutil.ErrInfraMaintenanceFault)).To(BeFalse())
+		})
+	})
+
+	When("ti carries a fault message", func() {
+		ti := &vimtypes.TaskInfo{
+			Error: &vimtypes.LocalizedMethodFault{
+				LocalizedMessage: "localized",
+				Fault: &vimtypes.CustomizationFault{
+					VimFault: vimtypes.VimFault{
+						MethodFault: vimtypes.MethodFault{
+							FaultMessage: []vimtypes.LocalizableMessage{
+								{Key: "some.key", Message: "host is busy"},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		It("includes the task error message and wraps the original error", func() {
+			err := vmutil.WrapHardPowerOpFailure(vimtypes.VirtualMachinePowerStatePoweredOn, ti, origErr)
+			Expect(err).To(MatchError(ContainSubstring("hard set power state to poweredOn failed: ")))
+			Expect(err).To(MatchError(ContainSubstring("host is busy")))
+			Expect(errors.Is(err, origErr)).To(BeTrue())
+			Expect(errors.Is(err, vmutil.ErrInfraMaintenanceFault)).To(BeFalse())
+		})
+	})
+
+	When("ti matches the infra-maintenance fault and carries a message", func() {
+		It("satisfies errors.Is(ErrInfraMaintenanceFault) and includes the message", func() {
+			ti := noCompatibleHostTaskInfoWithKey(vspheretask.FaultMessageKeyAutoevacHostInMaintenanceMode)
+			ti.Error.LocalizedMessage = "no compatible host"
+			err := vmutil.WrapHardPowerOpFailure(vimtypes.VirtualMachinePowerStatePoweredOn, ti, origErr)
+			Expect(errors.Is(err, vmutil.ErrInfraMaintenanceFault)).To(BeTrue())
+			Expect(errors.Is(err, origErr)).To(BeTrue())
+			Expect(err).To(MatchError(ContainSubstring("no compatible host")))
 		})
 	})
 

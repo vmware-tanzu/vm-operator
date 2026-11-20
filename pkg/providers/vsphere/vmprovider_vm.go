@@ -458,6 +458,15 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 		})
 	}
 
+	// Hold the vSphere delete until the Delete stage hooks resolve. This runs
+	// before the disk promotion cancel below so a held delete has no side
+	// effects on the VM.
+	if err := vs.reconcileLifecycleStage(
+		vmCtx, lifecycle.StageDelete); err != nil {
+
+		return err
+	}
+
 	// If the disk promotion task is still running, try to cancel since it has the
 	// VM locked and delete cannot happen while it is running.
 	if pkgcfg.FromContext(vmCtx).Features.FastDeploy {

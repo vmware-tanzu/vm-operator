@@ -603,11 +603,18 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 
 			ctx.Logger.V(4).Info("Successfully sanitized vCenter VM before unregistering")
 		} else {
+			// hooksBlocked is set while the Delete stage is held on hooks.
+			// A held delete is neither a success nor a failure, so no event
+			// is emitted until the delete actually completes or fails.
+			hooksBlocked := false
 			defer func() {
-				r.Recorder.EmitEvent(ctx.VM, "Delete", reterr, false)
+				if !hooksBlocked {
+					r.Recorder.EmitEvent(ctx.VM, "Delete", reterr, false)
+				}
 			}()
 
 			if err := r.VMProvider.DeleteVirtualMachine(ctx, ctx.VM); err != nil {
+				hooksBlocked = lifecycle.IsHooksBlocked(err)
 				return err
 			}
 		}
@@ -628,8 +635,8 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 		// runs with the capability off as well so that an object created while
 		// it was on never strands the VM.
 		//
-		// TODO: The Delete and ResourceDelete gate PR evaluates those stages
-		// before this release.
+		// TODO: The ResourceDelete gate PR evaluates that stage before this
+		// release.
 		if err := lifecycle.ReleaseLifecycleState(
 			ctx, r.Client, r.APIReader, ctx.VM); err != nil {
 

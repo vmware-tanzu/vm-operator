@@ -455,6 +455,113 @@ func intgTestsReconcile() {
 					}, "2s").Should(Equal(int32(1)))
 				})
 			})
+
+			// The fake provider stands in for the vSphere provider's Delete
+			// gate in DeleteVirtualMachine by making the same library calls,
+			// so this exercises a Delete hook registered after the VM exists
+			// holding the delete until the Delete stage's HooksReady flips.
+			It("does not delete the VM until the day-2 Delete HooksReady flips", func() {
+				const stage = lifecycle.StageDelete
+
+				var deletes int32
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.DeleteVirtualMachineFn = func(
+					pctx context.Context,
+					vm *vmopv1.VirtualMachine) error {
+
+					// Once deleted, the vSphere VM is gone, so a retry after a
+					// later failure returns before the gate.
+					if atomic.LoadInt32(&deletes) > 0 {
+						return nil
+					}
+
+					state, err := lifecycle.GetOrCreateLifecycleState(
+						pctx, ctx.Client, vm)
+					if err != nil {
+						return err
+					}
+					res, err := lifecycle.ReconcileStage(
+						pctx, ctx.Client, vm, state, stage)
+					if err != nil {
+						return err
+					}
+					if !res.Proceed {
+						return lifecycle.ErrHooksBlocked
+					}
+					atomic.AddInt32(&deletes, 1)
+					return nil
+				}
+				intgFakeVMProvider.Unlock()
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+				waitForVirtualMachineFinalizer(ctx, vmKey)
+				createdVM := getVirtualMachine(ctx, vmKey)
+				Expect(createdVM).ToNot(BeNil())
+
+				By("registering the Delete hook after the VM exists", func() {
+					Expect(ctx.Client.Create(ctx, &lifecyclev1.LifecycleSubscribedStages{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: vm.Namespace,
+							Name: lifecyclev1.SubscribedStagesName(
+								lifecycle.TargetGroup, lifecycle.TargetKind),
+						},
+						Spec: lifecyclev1.LifecycleSubscribedStagesSpec{
+							Stages: []string{stage},
+						},
+					})).To(Succeed())
+				})
+
+				stateKey := client.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, createdVM.UID),
+				}
+
+				By("deleting the VM pauses the Delete stage", func() {
+					Expect(ctx.Client.Delete(ctx, vm)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						state := &lifecyclev1.LifecycleState{}
+						g.Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+						g.Expect(state.Spec.Stages).To(ConsistOf(
+							HaveField("Name", stage)))
+						g.Expect(state.Spec.Stages[0].WorkflowPaused).To(BeTrue())
+					}).Should(Succeed())
+				})
+
+				By("holding the delete while the hooks are not ready", func() {
+					Consistently(func(g Gomega) {
+						g.Expect(atomic.LoadInt32(&deletes)).To(BeZero())
+						vm := getVirtualMachine(ctx, vmKey)
+						g.Expect(vm).ToNot(BeNil())
+						g.Expect(vm.GetFinalizers()).To(ContainElement(finalizer))
+					}, "2s").Should(Succeed())
+				})
+
+				By("deleting once HooksReady flips", func() {
+					Eventually(func(g Gomega) {
+						state := &lifecyclev1.LifecycleState{}
+						g.Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+						state.Status.Stages = []lifecyclev1.StageStatus{{
+							Name: stage,
+							Conditions: []metav1.Condition{{
+								Type:               lifecycle.HooksReadyConditionType,
+								Status:             metav1.ConditionTrue,
+								Reason:             "AllHooksDone",
+								LastTransitionTime: metav1.Now(),
+							}},
+						}}
+						g.Expect(ctx.Client.Status().Update(ctx, state)).To(Succeed())
+					}).Should(Succeed())
+
+					Eventually(func() int32 {
+						return atomic.LoadInt32(&deletes)
+					}).Should(BeNumerically(">", 0))
+
+					Eventually(func() *vmopv1.VirtualMachine {
+						return getVirtualMachine(ctx, vmKey)
+					}).Should(BeNil())
+				})
+			})
 		})
 
 		It("Reconciles after VirtualMachine creation", func() {

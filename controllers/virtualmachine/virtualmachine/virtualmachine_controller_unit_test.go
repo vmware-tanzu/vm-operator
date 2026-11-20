@@ -7,6 +7,7 @@ package virtualmachine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 
@@ -512,6 +513,57 @@ func unitTestsReconcile() {
 			}
 			err := reconciler.ReconcileDelete(vmCtx)
 			Expect(err).To(HaveOccurred())
+
+			expectEvents(ctx, "DeleteFailure")
+		})
+
+		When("the Delete stage is blocked on hooks", func() {
+			var blocked bool
+
+			BeforeEach(func() {
+				blocked = true
+			})
+
+			JustBeforeEach(func() {
+				fakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					if blocked {
+						return lifecycle.ErrHooksBlocked
+					}
+					return nil
+				}
+			})
+
+			It("emits no event and keeps the finalizers", func() {
+				err := reconciler.ReconcileDelete(vmCtx)
+				Expect(lifecycle.IsHooksBlocked(err)).To(BeTrue())
+				Expect(vm.GetFinalizers()).To(ContainElement(finalizer))
+
+				Consistently(ctx.Events).ShouldNot(Receive())
+			})
+
+			It("emits exactly one DeleteSuccess across the sequence", func() {
+				for range 3 {
+					Expect(lifecycle.IsHooksBlocked(
+						reconciler.ReconcileDelete(vmCtx))).To(BeTrue())
+				}
+
+				blocked = false
+				Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+
+				expectEvents(ctx, "DeleteSuccess")
+			})
+		})
+
+		It("emits DeleteFailure for an unsupported connection state", func() {
+			fakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+				return fmt.Errorf("failed to delete vm: %w", pkgerr.NoRequeueError{
+					Message: "unsupported connection state: disconnected",
+				})
+			}
+
+			err := reconciler.ReconcileDelete(vmCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(lifecycle.IsHooksBlocked(err)).To(BeFalse())
 
 			expectEvents(ctx, "DeleteFailure")
 		})

@@ -23,11 +23,15 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func vmResizeTests() {
+	resourceRange := func(value resource.Quantity) *vmopv1.ResourceQuantityRange {
+		return &vmopv1.ResourceQuantityRange{Default: ptr.To(value)}
+	}
 
 	var (
 		initObjects []client.Object
@@ -76,23 +80,24 @@ func vmResizeTests() {
 		}
 		class.Namespace = nsInfo.Namespace
 		class.Spec.ConfigSpec = encodedConfigSpec(cs)
-		class.Spec.Hardware.Cpus = int64(cs.NumCPUs)
-		class.Spec.Hardware.Memory = resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB))
-		class.Spec.Policies = vmopv1.VirtualMachineClassPolicies{}
+		class.Spec.Resources.Size.CPU = resourceRange(resource.MustParse(fmt.Sprintf("%d", cs.NumCPUs)))
+		class.Spec.Resources.Size.Memory = resourceRange(resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB)))
+		class.Spec.Resources.Requests = vmopv1.VirtualMachineClassResourceSpec{}
+		class.Spec.Resources.Limits = vmopv1.VirtualMachineClassResourceSpec{}
 		ExpectWithOffset(1, ctx.Client.Create(ctx, class)).To(Succeed())
 		return class
 	}
 
 	updateVMClass := func(class *vmopv1.VirtualMachineClass, cs vimtypes.VirtualMachineConfigSpec) {
 		class.Spec.ConfigSpec = encodedConfigSpec(cs)
-		class.Spec.Hardware.Cpus = int64(cs.NumCPUs)
-		class.Spec.Hardware.Memory = resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB))
+		class.Spec.Resources.Size.CPU = resourceRange(resource.MustParse(fmt.Sprintf("%d", cs.NumCPUs)))
+		class.Spec.Resources.Size.Memory = resourceRange(resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB)))
 		class.Generation++ // Fake client doesn't increment this.
 		ExpectWithOffset(1, ctx.Client.Update(ctx, class)).To(Succeed())
 	}
 
-	updateVMClassPolicies := func(class *vmopv1.VirtualMachineClass, polices vmopv1.VirtualMachineClassPolicies) {
-		class.Spec.Policies = polices
+	updateVMClassResources := func(class *vmopv1.VirtualMachineClass, resources vmopv1.VirtualMachineClassResources) {
+		class.Spec.Resources = resources
 		class.Generation++ // Fake client doesn't increment this.
 		ExpectWithOffset(1, ctx.Client.Update(ctx, class)).To(Succeed())
 	}
@@ -231,6 +236,30 @@ func vmResizeTests() {
 				assertExpectedResizedClassFields(vm, newVMClass)
 			})
 
+			It("Ignores class devices when the class has no ConfigSpec", func() {
+				newVMClass := builder.DummyVirtualMachineClassGenName()
+				newVMClass.Namespace = nsInfo.Namespace
+				newVMClass.Spec.ConfigSpec = nil
+				newVMClass.Spec.Resources.Size.CPU = resourceRange(resource.MustParse("4"))
+				newVMClass.Spec.Resources.Size.Memory = resourceRange(resource.MustParse("1024Mi"))
+				newVMClass.Spec.Resources.Requests = vmopv1.VirtualMachineClassResourceSpec{}
+				newVMClass.Spec.Resources.Limits = vmopv1.VirtualMachineClassResourceSpec{}
+				newVMClass.Spec.Hardware.Devices.VGPUDevices = []vmopv1.VGPUDevice{{ProfileName: "test-profile"}}
+				Expect(ctx.Client.Create(ctx, newVMClass)).To(Succeed())
+				vm.Spec.ClassName = newVMClass.Name
+
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				Expect(o.Config.Hardware.NumCPU).To(BeEquivalentTo(4))
+				Expect(o.Config.Hardware.MemoryMB).To(BeEquivalentTo(1024))
+				for _, d := range o.Config.Hardware.Device {
+					Expect(d).ToNot(BeAssignableToTypeOf(&vimtypes.VirtualPCIPassthrough{}), "class devices must not be added on resize")
+				}
+			})
+
 			Context("CPU/Memory Reservations", func() {
 
 				Context("No reservations", func() {
@@ -262,19 +291,14 @@ func vmResizeTests() {
 						newVMClass := createVMClass(newCS)
 						vm.Spec.ClassName = newVMClass.Name
 
-						polices := vmopv1.VirtualMachineClassPolicies{
-							Resources: vmopv1.VirtualMachineClassResources{
-								Limits: vmopv1.VirtualMachineResourceSpec{
-									Cpu:    resource.MustParse("2"),
-									Memory: resource.MustParse("8192Mi"),
-								},
-								Requests: vmopv1.VirtualMachineResourceSpec{
-									Cpu:    resource.MustParse("1"),
-									Memory: resource.MustParse("4096Mi"),
-								},
-							},
+						resources := newVMClass.Spec.Resources
+						resources.Limits = vmopv1.VirtualMachineClassResourceSpec{
+							CPU: resourceRange(resource.MustParse("2")), Memory: resourceRange(resource.MustParse("8192Mi")),
 						}
-						updateVMClassPolicies(newVMClass, polices)
+						resources.Requests = vmopv1.VirtualMachineClassResourceSpec{
+							CPU: resourceRange(resource.MustParse("1")), Memory: resourceRange(resource.MustParse("4096Mi")),
+						}
+						updateVMClassResources(newVMClass, resources)
 
 						By("Resize set reservations", func() {
 							vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
@@ -343,19 +367,14 @@ func vmResizeTests() {
 					newVMClass := createVMClass(newCS)
 					vm.Spec.ClassName = newVMClass.Name
 
-					polices := vmopv1.VirtualMachineClassPolicies{
-						Resources: vmopv1.VirtualMachineClassResources{
-							Limits: vmopv1.VirtualMachineResourceSpec{
-								Cpu:    resource.MustParse("2"),
-								Memory: resource.MustParse("8192Mi"),
-							},
-							Requests: vmopv1.VirtualMachineResourceSpec{
-								Cpu:    resource.MustParse("1"),
-								Memory: resource.MustParse("4096Mi"),
-							},
-						},
+					resources := newVMClass.Spec.Resources
+					resources.Limits = vmopv1.VirtualMachineClassResourceSpec{
+						CPU: resourceRange(resource.MustParse("2")), Memory: resourceRange(resource.MustParse("8192Mi")),
 					}
-					updateVMClassPolicies(newVMClass, polices)
+					resources.Requests = vmopv1.VirtualMachineClassResourceSpec{
+						CPU: resourceRange(resource.MustParse("1")), Memory: resourceRange(resource.MustParse("4096Mi")),
+					}
+					updateVMClassResources(newVMClass, resources)
 
 					vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)

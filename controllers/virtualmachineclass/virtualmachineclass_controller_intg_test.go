@@ -17,6 +17,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -47,20 +48,18 @@ func intgTestsReconcile() {
 				Namespace: "default",
 			},
 			Spec: vmopv1.VirtualMachineClassSpec{
-				Hardware: vmopv1.VirtualMachineClassHardware{
-					Cpus:   4,
-					Memory: resource.MustParse("1Mi"),
-				},
-				Policies: vmopv1.VirtualMachineClassPolicies{
-					Resources: vmopv1.VirtualMachineClassResources{
-						Requests: vmopv1.VirtualMachineResourceSpec{
-							Cpu:    resource.MustParse("1000Mi"),
-							Memory: resource.MustParse("100Mi"),
-						},
-						Limits: vmopv1.VirtualMachineResourceSpec{
-							Cpu:    resource.MustParse("2000Mi"),
-							Memory: resource.MustParse("200Mi"),
-						},
+				Resources: vmopv1.VirtualMachineClassResources{
+					Size: vmopv1.VirtualMachineClassResourceSpec{
+						CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4"))},
+						Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Mi"))},
+					},
+					Requests: vmopv1.VirtualMachineClassResourceSpec{
+						CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1000Mi"))},
+						Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("100Mi"))},
+					},
+					Limits: vmopv1.VirtualMachineClassResourceSpec{
+						CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2000Mi"))},
+						Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("200Mi"))},
 					},
 				},
 			},
@@ -117,7 +116,7 @@ func intgTestsReconcile() {
 				}).Should(Succeed())
 
 				By("Modify the class config")
-				vmClass.Spec.Hardware.Cpus++
+				vmClass.Spec.Resources.Size.CPU.Default = ptr.To(resource.MustParse("3"))
 				setConfigSpec(vmClass)
 
 				Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())

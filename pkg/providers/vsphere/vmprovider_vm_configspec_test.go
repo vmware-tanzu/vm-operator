@@ -475,8 +475,8 @@ func vmConfigSpecTests() {
 			var o mo.VirtualMachine
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 			Expect(o.Config.Annotation).To(Equal(constants.VCVMAnnotation))
-			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Resources.Size.CPU.Default.Value()))
+			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Resources.Size.Memory.Default.Value() / 1024 / 1024))
 		})
 	})
 
@@ -511,17 +511,17 @@ func vmConfigSpecTests() {
 			var o mo.VirtualMachine
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 			Expect(o.Summary.Config.Name).To(Equal(vm.Name))
-			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Resources.Size.CPU.Default.Value()))
 			Expect(o.Summary.Config.NumCpu).ToNot(BeEquivalentTo(configSpec.NumCPUs))
-			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Resources.Size.Memory.Default.Value() / 1024 / 1024))
 			Expect(o.Summary.Config.MemorySizeMB).ToNot(BeEquivalentTo(configSpec.MemoryMB))
 		})
 	})
 
 	Context("VM Class spec CPU reservation & limits are non-zero and ConfigSpec specifies CPU reservation", func() {
 		BeforeEach(func() {
-			vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("2")
-			vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("3")
+			vmClass.Spec.Resources.Requests.CPU.Default = ptr.To(resource.MustParse("2"))
+			vmClass.Spec.Resources.Limits.CPU.Default = ptr.To(resource.MustParse("3"))
 
 			// Specify a CPU reservation via ConfigSpec. This value should not be honored.
 			configSpec = &vimtypes.VirtualMachineConfigSpec{
@@ -534,26 +534,26 @@ func vmConfigSpecTests() {
 		It("VM gets CPU reservation from VM Class spec", func() {
 			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
 
-			resources := &vmClass.Spec.Policies.Resources
+			resources := &vmClass.Spec.Resources
 
 			var o mo.VirtualMachine
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 			reservation := o.Config.CpuAllocation.Reservation
 			Expect(reservation).ToNot(BeNil())
-			Expect(*reservation).To(Equal(virtualmachine.CPUQuantityToMhz(resources.Requests.Cpu, vcsimCPUFreq)))
+			Expect(*reservation).To(Equal(virtualmachine.CPUQuantityToMhz(*resources.Requests.CPU.Default, vcsimCPUFreq)))
 			Expect(*reservation).ToNot(Equal(*configSpec.CpuAllocation.Reservation))
 
 			limit := o.Config.CpuAllocation.Limit
 			Expect(limit).ToNot(BeNil())
-			Expect(*limit).To(Equal(virtualmachine.CPUQuantityToMhz(resources.Limits.Cpu, vcsimCPUFreq)))
+			Expect(*limit).To(Equal(virtualmachine.CPUQuantityToMhz(*resources.Limits.CPU.Default, vcsimCPUFreq)))
 		})
 	})
 
 	Context("VM Class spec CPU reservation is zero and ConfigSpec specifies CPU reservation", func() {
 		BeforeEach(func() {
-			vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("0")
-			vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("0")
+			vmClass.Spec.Resources.Requests.CPU.Default = ptr.To(resource.MustParse("0"))
+			vmClass.Spec.Resources.Limits.CPU.Default = ptr.To(resource.MustParse("0"))
 
 			// Specify a CPU reservation via ConfigSpec
 			configSpec = &vimtypes.VirtualMachineConfigSpec{
@@ -578,8 +578,8 @@ func vmConfigSpecTests() {
 
 	Context("VM Class spec Memory reservation & limits are non-zero and ConfigSpec specifies memory reservation", func() {
 		BeforeEach(func() {
-			vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("4Mi")
-			vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("4Mi")
+			vmClass.Spec.Resources.Requests.Memory.Default = ptr.To(resource.MustParse("4Mi"))
+			vmClass.Spec.Resources.Limits.Memory.Default = ptr.To(resource.MustParse("4Mi"))
 
 			// Specify a Memory reservation via ConfigSpec
 			configSpec = &vimtypes.VirtualMachineConfigSpec{
@@ -592,26 +592,26 @@ func vmConfigSpecTests() {
 		It("VM gets memory reservation from VM Class spec", func() {
 			Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
 
-			resources := &vmClass.Spec.Policies.Resources
+			resources := &vmClass.Spec.Resources
 
 			var o mo.VirtualMachine
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 			reservation := o.Config.MemoryAllocation.Reservation
 			Expect(reservation).ToNot(BeNil())
-			Expect(*reservation).To(Equal(virtualmachine.MemoryQuantityToMb(resources.Requests.Memory)))
+			Expect(*reservation).To(Equal(virtualmachine.MemoryQuantityToMb(*resources.Requests.Memory.Default)))
 			Expect(*reservation).ToNot(Equal(*configSpec.MemoryAllocation.Reservation))
 
 			limit := o.Config.MemoryAllocation.Limit
 			Expect(limit).ToNot(BeNil())
-			Expect(*limit).To(Equal(virtualmachine.MemoryQuantityToMb(resources.Limits.Memory)))
+			Expect(*limit).To(Equal(virtualmachine.MemoryQuantityToMb(*resources.Limits.Memory.Default)))
 		})
 	})
 
 	Context("VM Class spec Memory reservations are zero and ConfigSpec specifies memory reservation", func() {
 		BeforeEach(func() {
-			vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("0Mi")
-			vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("0Mi")
+			vmClass.Spec.Resources.Requests.Memory.Default = ptr.To(resource.MustParse("0Mi"))
+			vmClass.Spec.Resources.Limits.Memory.Default = ptr.To(resource.MustParse("0Mi"))
 
 			// Specify a Memory reservation via ConfigSpec
 			configSpec = &vimtypes.VirtualMachineConfigSpec{
@@ -863,8 +863,8 @@ func vmConfigSpecTests() {
 			Expect(pciBacking2.CustomLabel).To(Equal("SampleLabel2"))
 
 			// CPU and memory should be from vm class
-			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Resources.Size.CPU.Default.Value()))
+			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Resources.Size.Memory.Default.Value() / 1024 / 1024))
 		})
 	})
 

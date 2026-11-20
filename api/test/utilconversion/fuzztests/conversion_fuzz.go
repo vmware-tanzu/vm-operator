@@ -14,6 +14,7 @@ limitations under the License.
 package fuzztests
 
 import (
+	"encoding/json"
 	"math/rand"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"sigs.k8s.io/randfill"
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
 // GetFuzzer returns a new fuzzer to be used for testing.
@@ -149,5 +151,25 @@ func HubSpokeHub(input FuzzTestFuncInput) {
 			diff := cmp.Diff(hubBefore, hubAfter)
 			gomega.ExpectWithOffset(1, false).To(gomega.BeTrue(), diff)
 		}
+	}
+}
+
+// ClassPolicyFuzzerFuncs limits fuzz inputs to JSON-representable class values.
+// In particular, a pointer to a nil slice is encoded as null, not an explicit
+// empty array.
+func ClassPolicyFuzzerFuncs(_ runtimeserializer.CodecFactory) []interface{} {
+	return []interface{}{
+		func(in *vmopv1.VirtualMachineClass, c randfill.Continue) {
+			c.FillNoCustom(in)
+			in.Spec.ConfigSpec = json.RawMessage(`{"_typeName":"VirtualMachineConfigSpec"}`)
+			data, err := json.Marshal(in)
+			if err != nil {
+				panic(err)
+			}
+			*in = vmopv1.VirtualMachineClass{}
+			if err := json.Unmarshal(data, in); err != nil {
+				panic(err)
+			}
+		},
 	}
 }

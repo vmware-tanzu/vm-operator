@@ -165,6 +165,18 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	config.SupervisorCapabilities, err = common.LoadSupervisorCapabilities(ctx, vmsvcClusterProxy)
 	Expect(err).NotTo(HaveOccurred(), "failed to load Supervisor capabilities")
 
+	if phase := os.Getenv("FLEX_UPGRADE_PHASE"); phase != "" {
+		// The staged upgrade runs against a baseline that serves only v1alpha5.
+		// Its durable namespace and content library are prepared by the runner;
+		// common setup below uses candidate APIs and creates disposable warmup VMs.
+		Expect([]string{"prepare", "verify"}).To(ContainElement(phase))
+		wcpNamespaceName = os.Getenv("E2E_NAMESPACE")
+		Expect(wcpNamespaceName).NotTo(BeEmpty(), "the upgrade fixture requires an existing E2E_NAMESPACE")
+		_, err := wcpClient.GetNamespace(wcpNamespaceName)
+		Expect(err).NotTo(HaveOccurred(), "the persistent upgrade namespace must already exist")
+		return []byte(strings.Join([]string{artifactFolder, kubeconfigPath, configFilePath}, ","))
+	}
+
 	By("Creating a new WCP namespace associated with the default storage class, VM class, and vmservice content library")
 
 	By("Creating the VM Service content library")

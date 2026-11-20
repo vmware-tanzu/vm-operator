@@ -175,9 +175,10 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, clusterResources.VMClassName)
 		Expect(err).ToNot(HaveOccurred())
 
+		classCPU, classMemory := virtualMachineClassSize(vmClass)
 		hw := vmMO.Config.Hardware
-		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+		Expect(hw.NumCPU).To(BeEquivalentTo(classCPU))
+		Expect(hw.MemoryMB).To(BeEquivalentTo(classMemory / 1024 / 1024))
 	})
 
 	It("Should resize powered off VirtualMachine", func() {
@@ -212,8 +213,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		// Verify initial CPU and memory.
 		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, clusterResources.VMClassName)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+		classCPU, classMemory := virtualMachineClassSize(vmClass)
+		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(classCPU))
+		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(classMemory / 1024 / 1024))
 
 		// Change VM's ClassName.
 		vmoperator.UpdateVirtualMachineClassName(ctx, config, svClusterClient, input.WCPNamespaceName, vmName, newVMClassName)
@@ -230,14 +232,16 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		newVMClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, newVMClassName)
 		Expect(err).ToNot(HaveOccurred())
 		// Assert that we can tell that a resize happened.
-		Expect(vmClass.Spec.Hardware.Cpus).ToNot(Equal(newVMClass.Spec.Hardware.Cpus))
-		Expect(vmClass.Spec.Hardware.Memory).ToNot(Equal(newVMClass.Spec.Hardware.Memory))
+		oldClassCPU, oldClassMemory := virtualMachineClassSize(vmClass)
+		newClassCPU, newClassMemory := virtualMachineClassSize(newVMClass)
+		Expect(oldClassCPU).ToNot(Equal(newClassCPU))
+		Expect(oldClassMemory).ToNot(Equal(newClassMemory))
 
 		By("VC VM configuration should have been updated")
 		err = propCollector.RetrieveOne(ctx, vmMoRef, []string{"config"}, &vmMO)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(newVMClass.Spec.Hardware.Cpus))
-		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(newVMClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+		Expect(vmMO.Config.Hardware.NumCPU).To(BeEquivalentTo(newClassCPU))
+		Expect(vmMO.Config.Hardware.MemoryMB).To(BeEquivalentTo(newClassMemory / 1024 / 1024))
 		// Make sure the VM reflects the guaranteed class.
 		cpuAlloc := vmMO.Config.CpuAllocation
 		Expect(cpuAlloc).ToNot(BeNil())
@@ -297,8 +301,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		// verify cpu and memory
 		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmservice.VMClassE1000)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+		classCPU, classMemory := virtualMachineClassSize(vmClass)
+		Expect(hw.NumCPU).To(BeEquivalentTo(classCPU))
+		Expect(hw.MemoryMB).To(BeEquivalentTo(classMemory / 1024 / 1024))
 
 		vmservice.VerifyVMClassDeletion(wcpClient, vmservice.VMClassE1000)
 	})
@@ -342,8 +347,9 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 		// verify cpu and memory
 		vmClass, err := utils.GetVirtualMachineClass(ctx, svClusterClient, input.WCPNamespaceName, vmservice.VMClassVMX22)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(hw.NumCPU).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-		Expect(hw.MemoryMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+		classCPU, classMemory := virtualMachineClassSize(vmClass)
+		Expect(hw.NumCPU).To(BeEquivalentTo(classCPU))
+		Expect(hw.MemoryMB).To(BeEquivalentTo(classMemory / 1024 / 1024))
 
 		vmservice.VerifyVMClassDeletion(wcpClient, vmservice.VMClassVMX22)
 	})
@@ -1360,6 +1366,14 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 			})
 		})
 	})
+}
+
+func virtualMachineClassSize(vmClass *vmopv1.VirtualMachineClass) (int64, int64) {
+	Expect(vmClass.Spec.Resources.Size.CPU).NotTo(BeNil(), "VirtualMachineClass %s has no CPU size default", vmClass.Name)
+	Expect(vmClass.Spec.Resources.Size.CPU.Default).NotTo(BeNil(), "VirtualMachineClass %s has no CPU size default", vmClass.Name)
+	Expect(vmClass.Spec.Resources.Size.Memory).NotTo(BeNil(), "VirtualMachineClass %s has no memory size default", vmClass.Name)
+	Expect(vmClass.Spec.Resources.Size.Memory.Default).NotTo(BeNil(), "VirtualMachineClass %s has no memory size default", vmClass.Name)
+	return vmClass.Spec.Resources.Size.CPU.Default.Value(), vmClass.Spec.Resources.Size.Memory.Default.Value()
 }
 
 func verifyCdromConnectionState(

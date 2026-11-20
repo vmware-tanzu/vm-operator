@@ -558,8 +558,13 @@ EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha5/sysprep/conversion/v1alpha6
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha5/common/conversion/v1alpha5
 EXTRA_PEER_DIRS := $(EXTRA_PEER_DIRS),./v1alpha5/common/conversion/v1alpha6
 
+# Starting with Go 1.27 the jsonv2 experiment is enabled by default, which makes
+# json.RawMessage an alias of jsontext.Value. 
+# We are disabling the experiment so it will not break every consumer of the
+# api module that builds with an older toolchain
 generate-go-conversions:
 	cd api && \
+	GOEXPERIMENT=nojsonv2 \
 	$(abspath $(CONVERSION_GEN)) \
 		-v 10 \
 		--output-file=zz_generated.conversion.go \

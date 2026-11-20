@@ -19,11 +19,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	lifecyclev1 "github.com/vmware-tanzu/vm-operator/external/lifecycle/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -759,6 +761,162 @@ func unitTestsReconcile() {
 				It("keeps the VM finalizers on ReconcileDelete", func() {
 					Expect(reconciler.ReconcileDelete(vmCtx)).To(MatchError(
 						ContainSubstring("is not bound to VirtualMachine")))
+					Expect(vm.Finalizers).To(ContainElement(finalizer))
+				})
+			})
+
+			When("the ResourceDelete stage is hooked", func() {
+				const stage = lifecycle.StageResourceDelete
+
+				const otherVMFinalizer = "example.com/vm-other"
+
+				var stateWrites atomic.Int32
+
+				stageSpec := func() lifecyclev1.StageSpec {
+					for _, s := range getState().Spec.Stages {
+						if s.Name == stage {
+							return s
+						}
+					}
+					Fail("stage " + stage + " not found")
+					return lifecyclev1.StageSpec{}
+				}
+
+				// setHooksReady simulates the Lifecycle Operator. A nil status
+				// clears the stage's entry, as it does once a stage resumed.
+				setHooksReady := func(status *metav1.ConditionStatus) {
+					s := getState()
+					s.Status.Stages = nil
+					if status != nil {
+						s.Status.Stages = []lifecyclev1.StageStatus{{
+							Name: stage,
+							Conditions: []metav1.Condition{{
+								Type:               lifecycle.HooksReadyConditionType,
+								Status:             *status,
+								Reason:             "AllHooksDone",
+								LastTransitionTime: metav1.Now(),
+							}},
+						}}
+					}
+					ExpectWithOffset(1, ctx.Client.Status().Update(ctx, s)).To(Succeed())
+				}
+
+				BeforeEach(func() {
+					state.Spec.Stages = []lifecyclev1.StageSpec{
+						{Name: lifecycle.StageDelete},
+						{Name: stage},
+					}
+					vm.Finalizers = append(vm.Finalizers, otherVMFinalizer)
+					stateWrites.Store(0)
+				})
+
+				JustBeforeEach(func() {
+					// Count the writes to the LifecycleState.
+					reconciler.Client = interceptor.NewClient(
+						ctx.Client.(client.WithWatch),
+						interceptor.Funcs{
+							Patch: func(
+								ctx context.Context,
+								c client.WithWatch,
+								obj client.Object,
+								patch client.Patch,
+								opts ...client.PatchOption) error {
+
+								if _, ok := obj.(*lifecyclev1.LifecycleState); ok {
+									stateWrites.Add(1)
+								}
+								return c.Patch(ctx, obj, patch, opts...)
+							},
+						})
+				})
+
+				It("keeps the VM finalizers and emits no event while blocked", func() {
+					Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+
+					Expect(vm.Finalizers).To(ContainElements(finalizer, otherVMFinalizer))
+					Expect(stageSpec().WorkflowPaused).To(BeTrue())
+					Expect(getState().Finalizers).To(ContainElement(stateFinalizer))
+
+					c := conditions.Get(
+						vm, vmopv1.VirtualMachineConditionLifecycleHookReady)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal(
+						vmopv1.VirtualMachineLifecycleHookReadyResourceDeleteStageReason))
+
+					Consistently(ctx.Events).ShouldNot(Receive())
+				})
+
+				It("evaluates the stage only after Delete resolves", func() {
+					deleteBlocked := true
+					fakeVMProvider.DeleteVirtualMachineFn = func(
+						context.Context, *vmopv1.VirtualMachine) error {
+
+						if deleteBlocked {
+							return lifecycle.ErrHooksBlocked
+						}
+						return nil
+					}
+
+					By("Delete being held", func() {
+						Expect(lifecycle.IsHooksBlocked(
+							reconciler.ReconcileDelete(vmCtx))).To(BeTrue())
+						Expect(stageSpec()).To(Equal(lifecyclev1.StageSpec{Name: stage}))
+						Expect(stateWrites.Load()).To(BeZero())
+						Expect(vm.Finalizers).To(ContainElement(finalizer))
+					})
+
+					By("Delete resolving", func() {
+						deleteBlocked = false
+						Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+						Expect(stageSpec().WorkflowPaused).To(BeTrue())
+						Expect(vm.Finalizers).To(ContainElement(finalizer))
+					})
+				})
+
+				It("resumes and releases in one write, keeps other finalizers and emits one DeleteSuccess", func() {
+					By("holding across several passes", func() {
+						for range 3 {
+							Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+							Expect(vm.Finalizers).To(ContainElement(finalizer))
+						}
+					})
+
+					By("the hooks resolving", func() {
+						ready := metav1.ConditionTrue
+						setHooksReady(&ready)
+						before := stateWrites.Load()
+
+						Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+
+						// The resume write also drops VM Operator's finalizer,
+						// so the release that follows writes nothing more.
+						Expect(stateWrites.Load() - before).To(Equal(int32(1)))
+						Expect(stageSpec().WorkflowPaused).To(BeFalse())
+						Expect(stageSpec().WorkflowResumed).To(BeTrue())
+						Expect(getState().Finalizers).To(ConsistOf(otherStateFinalizer))
+						Expect(vm.Finalizers).To(ConsistOf(otherVMFinalizer))
+					})
+
+					expectEvents(ctx, "DeleteSuccess")
+				})
+
+				It("pauses again when the VM finalizer patch fails after resume", func() {
+					Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+					ready := metav1.ConditionTrue
+					setHooksReady(&ready)
+					Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+					Expect(vm.Finalizers).ToNot(ContainElement(finalizer))
+
+					By("the deferred VM patch having failed", func() {
+						vm.Finalizers = append(vm.Finalizers, finalizer)
+						// The Lifecycle Operator clears the resumed entry.
+						setHooksReady(nil)
+					})
+
+					Expect(reconciler.ReconcileDelete(vmCtx)).To(Succeed())
+					Expect(stageSpec().WorkflowPaused).To(BeTrue())
+					Expect(stageSpec().WorkflowResumed).To(BeFalse())
 					Expect(vm.Finalizers).To(ContainElement(finalizer))
 				})
 			})

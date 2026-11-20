@@ -562,6 +562,204 @@ func intgTestsReconcile() {
 					}).Should(BeNil())
 				})
 			})
+
+			// The fake provider stands in for the vSphere provider's Create and
+			// Delete gates by making the same library calls. ResourceDelete is
+			// evaluated by the controller itself. This exercises every stage
+			// hooked, in order, against a real API server.
+			It("never passes a stage early and releases the LifecycleState once both finalizers clear", func() {
+				var vSphereDeleted atomic.Bool
+
+				gate := func(
+					pctx context.Context,
+					vm *vmopv1.VirtualMachine,
+					stage string) error {
+
+					state, err := lifecycle.GetOrCreateLifecycleState(
+						pctx, ctx.Client, vm)
+					if err != nil {
+						return err
+					}
+					res, err := lifecycle.ReconcileStage(
+						pctx, ctx.Client, vm, state, stage)
+					if err != nil {
+						return err
+					}
+					if !res.Proceed {
+						return lifecycle.ErrHooksBlocked
+					}
+					return nil
+				}
+
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					intgFakeVMProvider,
+					func(pctx context.Context, vm *vmopv1.VirtualMachine) error {
+						if err := gate(pctx, vm, lifecycle.StageCreate); err != nil {
+							return err
+						}
+						conditions.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+						return nil
+					},
+				)
+
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.DeleteVirtualMachineFn = func(
+					pctx context.Context,
+					vm *vmopv1.VirtualMachine) error {
+
+					// Once deleted, the vSphere VM is gone, so a retry returns
+					// before the gate.
+					if vSphereDeleted.Load() {
+						return nil
+					}
+					if err := gate(pctx, vm, lifecycle.StageDelete); err != nil {
+						return err
+					}
+					vSphereDeleted.Store(true)
+					return nil
+				}
+				intgFakeVMProvider.Unlock()
+
+				Expect(ctx.Client.Create(ctx, &lifecyclev1.LifecycleSubscribedStages{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vm.Namespace,
+						Name: lifecyclev1.SubscribedStagesName(
+							lifecycle.TargetGroup, lifecycle.TargetKind),
+					},
+					Spec: lifecyclev1.LifecycleSubscribedStagesSpec{
+						Stages: []string{
+							lifecycle.StageCreate,
+							lifecycle.StagePowerStateChange,
+							lifecycle.StageDelete,
+							lifecycle.StageResourceDelete,
+						},
+					},
+				})).To(Succeed())
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+				waitForVirtualMachineFinalizer(ctx, vmKey)
+				createdVM := getVirtualMachine(ctx, vmKey)
+				Expect(createdVM).ToNot(BeNil())
+
+				stateKey := client.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, createdVM.UID),
+				}
+				specs := func(g Gomega) map[string]lifecyclev1.StageSpec {
+					state := &lifecyclev1.LifecycleState{}
+					g.Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+					byName := map[string]lifecyclev1.StageSpec{}
+					for _, s := range state.Spec.Stages {
+						byName[s.Name] = s
+					}
+					return byName
+				}
+				untouched := func(g Gomega, names ...string) {
+					byName := specs(g)
+					for _, n := range names {
+						g.Expect(byName).To(HaveKey(n))
+						g.Expect(byName[n].WorkflowPaused).To(BeFalse(), n)
+						g.Expect(byName[n].WorkflowResumed).To(BeFalse(), n)
+					}
+				}
+				vmHeld := func(g Gomega) {
+					vm := getVirtualMachine(ctx, vmKey)
+					g.Expect(vm).ToNot(BeNil())
+					g.Expect(vm.GetFinalizers()).To(ContainElement(finalizer))
+				}
+				// setReady simulates the Lifecycle Operator reporting the stage's
+				// hooks as done, leaving the other stages' entries alone.
+				setReady := func(stage string) {
+					Eventually(func(g Gomega) {
+						state := &lifecyclev1.LifecycleState{}
+						g.Expect(ctx.Client.Get(ctx, stateKey, state)).To(Succeed())
+						kept := state.Status.Stages[:0]
+						for _, s := range state.Status.Stages {
+							if s.Name != stage {
+								kept = append(kept, s)
+							}
+						}
+						state.Status.Stages = append(kept, lifecyclev1.StageStatus{
+							Name: stage,
+							Conditions: []metav1.Condition{{
+								Type:               lifecycle.HooksReadyConditionType,
+								Status:             metav1.ConditionTrue,
+								Reason:             "AllHooksDone",
+								LastTransitionTime: metav1.Now(),
+							}},
+						})
+						g.Expect(ctx.Client.Status().Update(ctx, state)).To(Succeed())
+					}).Should(Succeed())
+				}
+
+				By("Create pauses first and no later stage is touched", func() {
+					Eventually(func(g Gomega) {
+						g.Expect(specs(g)[lifecycle.StageCreate].WorkflowPaused).To(BeTrue())
+					}).Should(Succeed())
+					Consistently(func(g Gomega) {
+						untouched(g,
+							lifecycle.StagePowerStateChange,
+							lifecycle.StageDelete,
+							lifecycle.StageResourceDelete)
+					}, "2s").Should(Succeed())
+				})
+
+				By("the VM is created once Create resolves", func() {
+					setReady(lifecycle.StageCreate)
+					Eventually(func(g Gomega) {
+						g.Expect(specs(g)[lifecycle.StageCreate].WorkflowResumed).To(BeTrue())
+					}).Should(Succeed())
+				})
+
+				By("deleting the VM pauses Delete, and ResourceDelete waits", func() {
+					Expect(ctx.Client.Delete(ctx, vm)).To(Succeed())
+
+					Eventually(func(g Gomega) {
+						g.Expect(specs(g)[lifecycle.StageDelete].WorkflowPaused).To(BeTrue())
+					}).Should(Succeed())
+					Consistently(func(g Gomega) {
+						g.Expect(vSphereDeleted.Load()).To(BeFalse())
+						untouched(g, lifecycle.StageResourceDelete)
+						vmHeld(g)
+					}, "2s").Should(Succeed())
+				})
+
+				By("ResourceDelete pauses only after Delete resolves", func() {
+					setReady(lifecycle.StageDelete)
+
+					Eventually(func(g Gomega) {
+						g.Expect(vSphereDeleted.Load()).To(BeTrue())
+						g.Expect(specs(g)[lifecycle.StageResourceDelete].WorkflowPaused).To(BeTrue())
+					}).Should(Succeed())
+					Consistently(func(g Gomega) {
+						g.Expect(specs(g)[lifecycle.StageResourceDelete].WorkflowResumed).To(BeFalse())
+						vmHeld(g)
+					}, "2s").Should(Succeed())
+				})
+
+				By("both finalizers clear once ResourceDelete resolves", func() {
+					setReady(lifecycle.StageResourceDelete)
+
+					Eventually(func() *vmopv1.VirtualMachine {
+						return getVirtualMachine(ctx, vmKey)
+					}).Should(BeNil())
+
+					// The garbage collector is not running in envtest, so the
+					// LifecycleState itself may remain; it must no longer carry
+					// VM Operator's finalizer.
+					Eventually(func(g Gomega) {
+						state := &lifecyclev1.LifecycleState{}
+						err := ctx.Client.Get(ctx, stateKey, state)
+						if apierrors.IsNotFound(err) {
+							return
+						}
+						g.Expect(err).ToNot(HaveOccurred())
+						g.Expect(state.Finalizers).ToNot(ContainElement(
+							"vmoperator.vmware.com/lifecyclestate"))
+					}).Should(Succeed())
+				})
+			})
 		})
 
 		It("Reconciles after VirtualMachine creation", func() {

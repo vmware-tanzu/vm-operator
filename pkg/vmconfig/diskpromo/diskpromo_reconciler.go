@@ -166,6 +166,22 @@ func (r reconciler) Reconcile(
 				return nil
 
 			case vimtypes.TaskInfoStateSuccess:
+				// The VM's properties and its recent tasks are fetched with
+				// separate calls, so the task may report success while the
+				// disk backings in moVM still predate the promotion. Only
+				// report the promotion as synced once the backings show no
+				// remaining child disks. Otherwise downstream consumers (e.g.
+				// unmanaged disk registration and snapshot creation) may act
+				// on a VM whose promoted disks they have not yet observed.
+				if _, childDisks := getChildDisks(moVM); len(childDisks) > 0 {
+					pkgcond.MarkFalse(
+						vm,
+						vmopv1.VirtualMachineDiskPromotionSynced,
+						ReasonRunning,
+						"%s",
+						"Promotion completed, pending updated disk backings")
+					return nil
+				}
 				pkgcond.MarkTrue(
 					vm,
 					vmopv1.VirtualMachineDiskPromotionSynced)
@@ -186,53 +202,7 @@ func (r reconciler) Reconcile(
 		return nil
 	}
 
-	// Find the VirtualDisks for this VM.
-	var (
-		childDisks       []vimtypes.VirtualDisk
-		devices          = object.VirtualDeviceList(moVM.Config.Hardware.Device)
-		allDisks         = devices.SelectByType(&vimtypes.VirtualDisk{})
-		snapshotDiskKeys = map[int32]struct{}{}
-	)
-
-	// Find all of the disks that are participating in snapshots.
-	if moVM.LayoutEx != nil {
-		for _, snap := range moVM.LayoutEx.Snapshot {
-			for _, disk := range snap.Disk {
-				snapshotDiskKeys[disk.Key] = struct{}{}
-			}
-		}
-	}
-
-	// Find any classic, file-based disks that have parent backings that are
-	// not participating in snapshots.
-	for i := range allDisks {
-		d := allDisks[i].(*vimtypes.VirtualDisk)
-
-		if d.VDiskId == nil { // Skip FCDs.
-
-			if _, ok := snapshotDiskKeys[d.Key]; !ok { // Skip snapshots.
-
-				switch tBack := d.Backing.(type) {
-				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
-					if tBack.Parent != nil {
-						childDisks = append(childDisks, *d)
-					}
-				case *vimtypes.VirtualDiskSeSparseBackingInfo:
-					if tBack.Parent != nil {
-						childDisks = append(childDisks, *d)
-					}
-					// TODO(akutz) It does not appear SparseVer2 is supported on
-					//             ESX any longer. Verify this before removing
-					//             this commented block.
-					//
-					// case *vimtypes.VirtualDiskSparseVer2BackingInfo:
-					// 	if tBack.Parent != nil {
-					// 		childDisks = append(childDisks, *d)
-					// 	}
-				}
-			}
-		}
-	}
+	allDisks, childDisks := getChildDisks(moVM)
 
 	logger = logger.WithValues(
 		"totalDisks", len(allDisks),
@@ -376,4 +346,66 @@ func (r reconciler) Reconcile(
 		"Promotion is running")
 
 	return ErrPromoteDisks
+}
+
+// getChildDisks returns all of the VM's disks and the subset of classic,
+// file-based disks that have parent backings and are not participating in
+// snapshots, i.e. the candidates for promotion.
+func getChildDisks(
+	moVM mo.VirtualMachine) (
+	allDisks object.VirtualDeviceList,
+	childDisks []vimtypes.VirtualDisk) {
+
+	if moVM.Config == nil {
+		return nil, nil
+	}
+
+	var (
+		devices          = object.VirtualDeviceList(moVM.Config.Hardware.Device)
+		snapshotDiskKeys = map[int32]struct{}{}
+	)
+
+	allDisks = devices.SelectByType(&vimtypes.VirtualDisk{})
+
+	// Find all of the disks that are participating in snapshots.
+	if moVM.LayoutEx != nil {
+		for _, snap := range moVM.LayoutEx.Snapshot {
+			for _, disk := range snap.Disk {
+				snapshotDiskKeys[disk.Key] = struct{}{}
+			}
+		}
+	}
+
+	// Find any classic, file-based disks that have parent backings that are
+	// not participating in snapshots.
+	for i := range allDisks {
+		d := allDisks[i].(*vimtypes.VirtualDisk)
+
+		if d.VDiskId == nil { // Skip FCDs.
+
+			if _, ok := snapshotDiskKeys[d.Key]; !ok { // Skip snapshots.
+
+				switch tBack := d.Backing.(type) {
+				case *vimtypes.VirtualDiskFlatVer2BackingInfo:
+					if tBack.Parent != nil {
+						childDisks = append(childDisks, *d)
+					}
+				case *vimtypes.VirtualDiskSeSparseBackingInfo:
+					if tBack.Parent != nil {
+						childDisks = append(childDisks, *d)
+					}
+					// TODO(akutz) It does not appear SparseVer2 is supported on
+					//             ESX any longer. Verify this before removing
+					//             this commented block.
+					//
+					// case *vimtypes.VirtualDiskSparseVer2BackingInfo:
+					// 	if tBack.Parent != nil {
+					// 		childDisks = append(childDisks, *d)
+					// 	}
+				}
+			}
+		}
+	}
+
+	return allDisks, childDisks
 }

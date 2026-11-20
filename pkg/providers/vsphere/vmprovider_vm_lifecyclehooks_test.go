@@ -546,3 +546,138 @@ func vmCreateHookTests() {
 		})
 	})
 }
+
+func vmDeleteHookTests() {
+	const stage = lifecycle.StageDelete
+
+	var (
+		parentCtx   context.Context
+		initObjects []client.Object
+		testConfig  builder.VCSimTestConfig
+		ctx         *builder.TestContextForVCSim
+		vmProvider  providers.VirtualMachineProviderInterface
+
+		vm       *vmopv1.VirtualMachine
+		vmClass  *vmopv1.VirtualMachineClass
+		uniqueID string
+	)
+
+	h := hookStageHelper{
+		getCtx: func() *builder.TestContextForVCSim { return ctx },
+		getVM:  func() *vmopv1.VirtualMachine { return vm },
+		stage:  stage,
+	}
+
+	BeforeEach(func() {
+		parentCtx = newVMTestParentContext()
+		testConfig = newVMTestConfig()
+
+		vmClass, vm = newVMTestObjects("test-vm")
+		vm.UID = types.UID("delete-hook-uid")
+	})
+
+	JustBeforeEach(func() {
+		ctx, vmProvider, _ = setupVMTest(
+			parentCtx, testConfig, vmClass, vm, initObjects...)
+
+		// Create the VM before the hook is enabled.
+		Expect(createOrUpdateVM(ctx, vmProvider, vm)).To(Succeed())
+		uniqueID = vm.Status.UniqueID
+		Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+
+		h.subscribe()
+		pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+			config.Features.LifecycleHooks = true
+		})
+	})
+
+	AfterEach(func() {
+		vmTestAfterEach(ctx, vm)
+
+		vmClass = nil
+		vm = nil
+		ctx = nil
+		initObjects = nil
+		vmProvider = nil
+	})
+
+	stagePaused := h.paused
+	hookReadyCondition := h.hookReadyCondition
+
+	It("holds the delete until the hooks resolve", func() {
+		By("pausing the stage without deleting the vSphere VM")
+		err := vmProvider.DeleteVirtualMachine(ctx, vm)
+		Expect(errors.Is(err, lifecycle.ErrHooksBlocked)).To(BeTrue())
+		Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+		Expect(stagePaused()).To(BeTrue())
+		c := hookReadyCondition()
+		Expect(c).ToNot(BeNil())
+		Expect(c.Status).To(Equal(metav1.ConditionFalse))
+		Expect(c.Reason).To(Equal(vmopv1.VirtualMachineLifecycleHookReadyDeleteStageReason))
+
+		By("staying held while the hooks are not ready")
+		err = vmProvider.DeleteVirtualMachine(ctx, vm)
+		Expect(errors.Is(err, lifecycle.ErrHooksBlocked)).To(BeTrue())
+		Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+
+		By("deleting the vSphere VM once the hooks are ready")
+		ready := metav1.ConditionTrue
+		h.setHooksReady(&ready)
+		Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+		Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
+		Expect(stagePaused()).To(BeFalse())
+	})
+
+	When("the vSphere VM does not exist", func() {
+		JustBeforeEach(func() {
+			// Remove the vSphere VM out of band.
+			vcVM := ctx.GetVMFromMoID(uniqueID)
+			Expect(vcVM).ToNot(BeNil())
+			powerOff, err := vcVM.PowerOff(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(powerOff.Wait(ctx)).To(Succeed())
+			destroy, err := vcVM.Destroy(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(destroy.Wait(ctx)).To(Succeed())
+		})
+
+		It("returns nil before the gate", func() {
+			Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+			Expect(hookReadyCondition()).To(BeNil())
+
+			err := ctx.Client.Get(ctx, client.ObjectKey{
+				Namespace: vm.Namespace,
+				Name:      lifecyclev1.LifecycleStateName(lifecycle.TargetKind, vm.UID),
+			}, &lifecyclev1.LifecycleState{})
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
+	})
+
+	When("the capability is off", func() {
+		JustBeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.LifecycleHooks = false
+			})
+		})
+
+		It("deletes without pausing", func() {
+			Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+			Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
+			Expect(hookReadyCondition()).To(BeNil())
+		})
+	})
+
+	When("no hook is registered for the stage", func() {
+		JustBeforeEach(func() {
+			Expect(ctx.Client.DeleteAllOf(
+				ctx,
+				&lifecyclev1.LifecycleSubscribedStages{},
+				client.InNamespace(vm.Namespace))).To(Succeed())
+		})
+
+		It("deletes without pausing", func() {
+			Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+			Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
+		})
+	})
+}

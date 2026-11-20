@@ -75,12 +75,22 @@ With the capability on and a hook registered for `Create`, VM creation in vCente
 - [x] T038 [P] [vmop-3565] Add envtest cases (`testlabels.EnvTest`) in the VM controller's intg test: the VM is not created before the Create `HooksReady` flip; the `LifecycleState` is created with every subscribed stage at `(false, false)`; a `LifecycleState` carrying `Delete` is created at the Create checkpoint
 - [ ] T039 [P] [vmop-3565] Add E2E coverage in `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`: a VM with a Create hook stays uncreated with `LifecycleHookReady=False` until the hook resolves, then is created with no other trigger; with no hooks, behavior is unchanged
 
+## Delete gate (`pkg/providers/vsphere`, VM controller)
+
+With the capability on and a hook registered for `Delete`, deletion of the vSphere VM is held until the hooks resolve. With the capability off, or no hook registered, behavior is unchanged.
+
+- [x] T040 [vmop-3850] `DeleteVirtualMachine`: after the `paused.ByAdmin` handling and before `virtualmachine.DeleteVirtualMachine`, call the private helper `reconcileLifecycleStage` with `lifecycle.StageDelete`; blocked returns `lifecycle.ErrHooksBlocked`. No vSphere VM keeps the existing early `nil` return before the gate, so Delete passes. With `SkipDeletePlatformResourceKey` the VM is only unregistered, so Delete is not evaluated
+- [x] T041 [vmop-3850] `ReconcileDelete`: set a local `hooksBlocked` flag when `DeleteVirtualMachine` returns `ErrHooksBlocked` and suppress the deferred `EmitEvent(..."Delete"...)` while it is set; other delete errors still emit `DeleteFailure` and each VM gets exactly one `DeleteSuccess`. Do not use `filterNoRequeueErr`
+- [x] T042 [vmop-3850] Add unit tests to `pkg/providers/vsphere/vmprovider_vm_lifecyclehooks_test.go` (`testlabels.VCSim`): blocked returns `ErrHooksBlocked` and `virtualmachine.DeleteVirtualMachine` is not called; released or no entry is unchanged; no vSphere VM returns `nil` before the gate and creates no `LifecycleState`; capability off is unchanged; `LifecycleHookReady` is `False` with reason `DeleteStage` while paused
+- [x] T043 [vmop-3850] Add unit tests to `virtualmachine_controller_unit_test.go` (`testlabels.Controller`): no events while blocked; one `DeleteSuccess` across the blocked-then-released sequence; an unsupported-connection-state `NoRequeueError` still emits `DeleteFailure`; the existing `SkipDeletePlatformResourceKey` case already shows the provider, and so the gate, is not called
+- [x] T044 [P] [vmop-3850] Add an envtest case (`testlabels.EnvTest`) in the VM controller's intg test: a day-2 `Delete` hook created after the VM exists blocks deletion until `HooksReady`
+- [ ] T045 [P] [vmop-3850] Add E2E coverage in `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`: deleting a VM with a `Delete` hook keeps the vSphere VM until the hook resolves, then deletes it; `Delete` hooked alone
+
 ## Not in this change set
 
 Tracked for follow-up PRs, derived from `plan.md`'s "Controller / webhook impact" and "Test strategy" sections:
 
-- Delete gate call site in `pkg/providers/vsphere/vmprovider_vm.go`
-- Delete and ResourceDelete stage gates, the remaining `AbandonStages` call sites (`ReconcileDelete`), `ReconcileStage` use in the controller, and Delete event suppression (`hooksBlocked`)
+- ResourceDelete stage gate, the remaining `AbandonStages` call sites (`ReconcileDelete`), and `ReconcileStage` use in the controller
 - `initLifecycleStages()` in `main.go` after `initCRDs()`
 - `test/builder/fakelifecycle/` (test-only fake Lifecycle Operator)
 - `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`, including the `vmoperator-stages` startup check (SC-011)

@@ -22,13 +22,18 @@ import (
 
 var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label("virtualmachine"), Label("vmservice"), func() {
 	Context("FLEX-VM-CLASSES", Label(flexvmclasses.FeatureLabel), func() {
-		flexvmclasses.VMAPISpec(context.TODO(), func() flexvmclasses.SpecInput {
-			return flexvmclasses.SpecInput{
-				ClusterProxy:     svClusterProxy,
-				Config:           config,
-				WCPClient:        wcpClient,
-				WCPNamespaceName: wcpNamespaceName,
-			}
+		// Each spec registers its own BeforeEach, so give each one its own
+		// container; otherwise a BeforeEach that skips (such as the staged
+		// upgrade one) would apply to every sibling.
+		Context("VM-API", func() {
+			flexvmclasses.VMAPISpec(context.TODO(), func() flexvmclasses.SpecInput {
+				return flexvmclasses.SpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					WCPClient:        wcpClient,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
 		})
 	})
 	Context("VI-ADMIN-VM-CLASS", func() {

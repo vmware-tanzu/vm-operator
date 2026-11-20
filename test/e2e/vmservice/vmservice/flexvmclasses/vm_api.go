@@ -7,6 +7,7 @@ package flexvmclasses
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -47,6 +48,12 @@ func VMAPISpec(ctx context.Context, inputGetter func() SpecInput) {
 	)
 
 	ginkgo.BeforeEach(func() {
+		// The staged operator upgrade run (FLEX_UPGRADE_PHASE) selects the
+		// staged upgrade specs only.
+		if phase := os.Getenv("FLEX_UPGRADE_PHASE"); phase != "" {
+			ginkgo.Skip(fmt.Sprintf("FLEX_UPGRADE_PHASE=%s selects the staged upgrade specs only", phase))
+		}
+
 		input = inputGetter()
 		Expect(input.Config).ToNot(BeNil(),
 			"Invalid argument. input.Config can't be nil when calling %s spec", specName)

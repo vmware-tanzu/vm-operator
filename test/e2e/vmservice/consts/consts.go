@@ -51,9 +51,4 @@ const (
 	// extension-compatibility INVARIANT constraints on VMs it manages; must
 	// match pkg/config/capabilities.CapabilityKeyExtensionCompatConstraint.
 	ExtensionCompatConstraintCapabilityName = "supports_extension_compat_constraint"
-
-	// K8sWorkloadMgmtAPICapabilityName gates the VirtualMachineReplicaSet
-	// controller, webhooks, and CRD; must match
-	// pkg/config/capabilities.CapabilityKeyK8sWorkloadMgmtAPI.
-	K8sWorkloadMgmtAPICapabilityName = "supports_vm_service_k8s_workload_mgmt_api"
 )

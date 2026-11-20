@@ -80,7 +80,11 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		clusterProxy := input.ClusterProxy
 		svClusterClient = clusterProxy.GetClient()
 
-		skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.K8sWorkloadMgmtAPICapabilityName)
+		// On release/vc-9.1.0 the feature is gated by an FSS on the vm-operator
+		// deployment; there is no Supervisor capability for it.
+		if !utils.IsFssEnabled(ctx, svClusterClient, config.GetVariable("VMOPNamespace"), config.GetVariable("VMOPDeploymentName"), config.GetVariable("VMOPManagerCommand"), config.GetVariable("EnvFSSK8sWorkloadMgmtAPI")) {
+			Skip("skip the test due to the FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API FSS is not enabled")
+		}
 
 		linuxImageDisplayName := vmservice.GetDefaultImageDisplayName(clusterResources)
 		linuxVMIName = vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterClient, input.WCPNamespaceName, linuxImageDisplayName)

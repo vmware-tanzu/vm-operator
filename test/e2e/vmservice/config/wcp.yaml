@@ -44,6 +44,7 @@ variables:
   EnvNetworkProvider: "NETWORK_PROVIDER"
   EnvFSSPodVMOnStretchedSupervisor: "FSS_PODVMONSTRETCHEDSUPERVISOR"
   EnvFSSBYOK: "FSS_WCP_VMSERVICE_BYOK"
+  EnvFSSK8sWorkloadMgmtAPI: "FSS_WCP_VMSERVICE_K8S_WORKLOAD_MGMT_API"
   EnvWorkloadIsolation: "FSS_WCP_WORKLOAD_DOMAIN_ISOLATION"
   # E2E Namespace used for the VM service tests. If not set, a random namespace will be created.
   E2ENamespace: "${E2E_NAMESPACE:-}"

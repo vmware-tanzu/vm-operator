@@ -35,6 +35,7 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 				config.AsyncCreateEnabled = false
 				config.Features.BringYourOwnNetworkInterface = true
 				config.ClusterNetworkProviderTypes = string(pkgcfg.NetworkProviderTypeVDS)
+				config.Features.LifecycleHooks = true
 			}))),
 	virtualmachine.AddToManager,
 	func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {

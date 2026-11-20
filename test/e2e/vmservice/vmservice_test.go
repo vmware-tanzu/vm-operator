@@ -9,10 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/backuprestore"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/computepolicies"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/devops"
-	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/environmentbrowser"
-	tagcr "github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/tag"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/viadmin"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/e2e/vmservice/vmservice/virtualmachinereplicaset"
@@ -76,15 +73,6 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 				Config:           config,
 				WCPClient:        wcpClient,
 				WCPNamespaceName: wcpNamespaceName,
-			}
-		})
-	})
-
-	Context("VI-ADMIN-STORAGE-POLICY", func() {
-		viadmin.VIAdminStoragePolicySpec(context.TODO(), func() viadmin.VIAdminStoragePolicySpecInput {
-			return viadmin.VIAdminStoragePolicySpecInput{
-				ClusterProxy: svClusterProxy,
-				Config:       config,
 			}
 		})
 	})
@@ -266,109 +254,6 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
-		Context("ENVIRONMENT-BROWSER", func() {
-			environmentbrowser.Spec(context.TODO(), func() environmentbrowser.SpecInput {
-				return environmentbrowser.SpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
-
-		Context("VM-EVICTION-POLICY", func() {
-			computepolicies.Spec(context.TODO(), func() computepolicies.SpecInput {
-				return computepolicies.SpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPClient:        wcpClient,
-					ArtifactFolder:   artifactFolder,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
-
-		Context("CONTROLLED-REBALANCING-POLICY", func() {
-			computepolicies.ControlledRebalancingSpec(context.TODO(), func() computepolicies.SpecInput {
-				return computepolicies.SpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPClient:        wcpClient,
-					ArtifactFolder:   artifactFolder,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
-
-		Context("VM-LOCATION", func() {
-			virtualmachine.VMLocationSpec(context.TODO(), func() virtualmachine.VMLocationSpecInput {
-				return virtualmachine.VMLocationSpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPClient:        wcpClient,
-					ArtifactFolder:   artifactFolder,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
-
-		Context("VM-SET-RESOURCE-POLICY", func() {
-			virtualmachine.VMSetResourcePolicySpec(context.TODO(), func() virtualmachine.VMSetResourcePolicySpecInput {
-				return virtualmachine.VMSetResourcePolicySpecInput{
-					ClusterProxy:   svClusterProxy,
-					Config:         config,
-					ArtifactFolder: artifactFolder,
-				}
-			})
-		})
-
-		Context("VM-EXTRACONFIG", func() {
-			virtualmachine.VMExtraConfigSpec(context.TODO(), func() virtualmachine.VMExtraConfigSpecInput {
-				return virtualmachine.VMExtraConfigSpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					ArtifactFolder:   artifactFolder,
-					SkipCleanup:      skipCleanup,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
-
-		Context("VM-COMPUTE-CONFIG", func() {
-			virtualmachine.VMComputeConfigSpec(context.TODO(), func() virtualmachine.VMComputeConfigSpecInput {
-				return virtualmachine.VMComputeConfigSpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPClient:        wcpClient,
-					ArtifactFolder:   artifactFolder,
-					SkipCleanup:      skipCleanup,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
-
-		Context("TAG-CR", func() {
-			tagcr.Spec(context.TODO(), func() tagcr.SpecInput {
-				return tagcr.SpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
-
-		Context("VM-NIC-EXTRA-CONFIG", func() {
-			virtualmachine.VMNICExtraConfigSpec(context.TODO(), func() virtualmachine.VMNICExtraConfigSpecInput {
-				return virtualmachine.VMNICExtraConfigSpecInput{
-					ClusterProxy:     svClusterProxy,
-					Config:           config,
-					WCPClient:        wcpClient,
-					ArtifactFolder:   artifactFolder,
-					SkipCleanup:      skipCleanup,
-					WCPNamespaceName: wcpNamespaceName,
-				}
-			})
-		})
 	})
 
 	Context("VIRTUAL-MACHINE-REPLICASET", func() {

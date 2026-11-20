@@ -21,12 +21,10 @@ import (
 	capv1 "github.com/vmware-tanzu/vm-operator/external/capabilities/api/v1alpha1"
 	imageregistryv1alpha1 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha1"
 	imageregistryv1alpha2 "github.com/vmware-tanzu/vm-operator/external/image-registry-operator/api/v1alpha2"
-	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	mopv1alpha2 "github.com/vmware-tanzu/vm-operator/external/mobility-operator/api/v1alpha2"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	spqv1 "github.com/vmware-tanzu/vm-operator/external/storage-policy-quota/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	vimv1 "github.com/vmware-tanzu/vm-operator/external/vim/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/api/v1alpha1"
 	vspherepolv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
@@ -58,13 +56,11 @@ func addSchemes(sc *runtime.Scheme) {
 	Expect(cnsv1alpha1.AddToScheme(sc)).To(Succeed(), "unable to add cns v1alpha1 to scheme")
 	Expect(imageregistryv1alpha1.AddToScheme(sc)).To(Succeed(), "unable to add Image Registry APIs to scheme")
 	Expect(imageregistryv1alpha2.AddToScheme(sc)).To(Succeed(), "unable to add Image Registry APIs to scheme")
-	Expect(infrav1.AddToScheme(sc)).To(Succeed(), "unable to add infra v1alpha1 APIs to scheme")
 	Expect(mopv1alpha2.AddToScheme(sc)).To(Succeed(), "unable add v1alpha2 Mobility Operator APIs to scheme")
 	Expect(ncpv1alpha1.AddToScheme(sc)).To(Succeed(), "unable add ncp v1alpha1 to scheme")
 	Expect(netopv1alpha1.AddToScheme(sc)).To(Succeed(), "unable add net-operator v1alpha1 to scheme")
 	Expect(spqv1.AddToScheme(sc)).To(Succeed(), "unable to add SPQ Operator APIs to scheme")
 	Expect(topologyv1.AddToScheme(sc)).To(Succeed(), "unable add tanzu topology APIs to scheme")
-	Expect(vimv1.AddToScheme(sc)).To(Succeed(), "unable add vim v1alpha1 APIs to scheme")
 	Expect(vpcv1alpha1.AddToScheme(sc)).To(Succeed(), "unable to add NSX Operator APIs to scheme")
 	Expect(vspherepolv1alpha1.AddToScheme(sc)).To(Succeed(), "unable to add vsphere-policy v1alpha1 APIs to scheme")
 

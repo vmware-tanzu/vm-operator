@@ -227,6 +227,7 @@ type FeatureStates struct {
 	CSIBackupAPI                  bool
 	BringYourOwnNetworkInterface  bool
 	LifecycleHooks                bool
+	HostLocalStorage              bool
 }
 
 type InstanceStorage struct {

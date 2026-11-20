@@ -41,6 +41,6 @@ The `.sdd/memory/` files define what is correct. Use this section only to calibr
 
 - `.cursor/rules/` contents — intentional thin proxies to `.sdd/memory/`, not meant to be expanded
 - Markdown files with long lines — no hard wrapping is intentional per the constitution (code fences excepted)
-- The 11-step VM reconcile order itself — do not suggest reordering
+- The 13-step VM reconcile order itself — do not suggest reordering
 - Single-letter receiver names (`r`, `v`, `w`) — intentional per architectural standards
 - `external/` module contents — vendored external API types, not modified directly

@@ -24,6 +24,7 @@ rules:
   resources:
   - namespaces
   - nodes
+  - persistentvolumes
   - resourcequotas
   - secrets
   verbs:

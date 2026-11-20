@@ -311,6 +311,46 @@ var _ = Describe("IsInfraMaintenanceFault", func() {
 		})
 	})
 
+	When("a nested fault is nil", func() {
+		It("skips it and returns false", func() {
+			taskInfo := &vimtypes.TaskInfo{
+				Error: &vimtypes.LocalizedMethodFault{
+					Fault: &vimtypes.NoCompatibleHost{
+						Error: []vimtypes.LocalizedMethodFault{{Fault: nil}},
+					},
+				},
+			}
+			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeFalse())
+		})
+	})
+
+	When("a nested fault returns a nil MethodFault", func() {
+		It("skips it and still finds the key in a later nested fault", func() {
+			withKey := noCompatibleHostWithKeys(
+				task.FaultMessageKeyAutoevacHostInMaintenanceMode)
+			nch := withKey.Fault.(*vimtypes.NoCompatibleHost)
+			nch.Error = append(
+				[]vimtypes.LocalizedMethodFault{{Fault: nilMethodFault{}}},
+				nch.Error...)
+
+			Expect(task.IsInfraMaintenanceFault(
+				&vimtypes.TaskInfo{Error: withKey})).To(BeTrue())
+		})
+
+		It("returns false when no other nested fault matches", func() {
+			taskInfo := &vimtypes.TaskInfo{
+				Error: &vimtypes.LocalizedMethodFault{
+					Fault: &vimtypes.NoCompatibleHost{
+						Error: []vimtypes.LocalizedMethodFault{
+							{Fault: nilMethodFault{}},
+						},
+					},
+				},
+			}
+			Expect(task.IsInfraMaintenanceFault(taskInfo)).To(BeFalse())
+		})
+	})
+
 	When("the NoCompatibleHost fault carries the HostInMaintenanceMode key", func() {
 		It("returns true", func() {
 			taskInfo := &vimtypes.TaskInfo{
@@ -340,3 +380,8 @@ var _ = Describe("IsInfraMaintenanceFault", func() {
 		})
 	})
 })
+
+// nilMethodFault is a BaseMethodFault whose GetMethodFault returns nil.
+type nilMethodFault struct{}
+
+func (nilMethodFault) GetMethodFault() *vimtypes.MethodFault { return nil }

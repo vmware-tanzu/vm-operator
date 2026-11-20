@@ -13,7 +13,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -68,55 +67,10 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 		ginkgo.DeferCleanup(func(context.Context) { vcenter.LogoutVimClient(vimClient) })
 	})
 
-	// New behavior: a class authored with v1alpha6 ranges.
-	ginkgo.It("realizes the v1alpha6 size defaults for a v1alpha6 VirtualMachine", ginkgo.Label(FeatureLabel, "core-functional", "experimental"), func() {
-		className := "flex-new-" + capiutil.RandomString(6)
-		classCPU, classMemory := resource.MustParse("2"), resource.MustParse("2Gi")
-		class := &vmopv1.VirtualMachineClass{
-			ObjectMeta: metav1.ObjectMeta{Namespace: input.WCPNamespaceName, Name: className},
-			Spec: vmopv1.VirtualMachineClassSpec{
-				Resources: vmopv1.VirtualMachineClassResources{
-					Size: vmopv1.VirtualMachineClassResourceSpec{
-						CPU:    &vmopv1.ResourceQuantityRange{Default: &classCPU},
-						Memory: &vmopv1.ResourceQuantityRange{Default: &classMemory},
-					},
-				},
-			},
-		}
-		Expect(client.Create(ctx, class)).To(Succeed(), "failed to create v1alpha6 VirtualMachineClass")
-		// DeferCleanup nodes run last-in-first-out, so the VM cleanup that
-		// CreateVirtualMachine registers below deletes the VM and waits for
-		// it to be gone before the class is deleted.
-		ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-			Expect(ctrlclient.IgnoreNotFound(client.Delete(cleanupCtx, class))).To(Succeed(), "failed to delete v1alpha6 VirtualMachineClass")
-		})
-
-		vmName := "flex-new-vm-" + capiutil.RandomString(6)
-		vm := &vmopv1.VirtualMachine{
-			ObjectMeta: metav1.ObjectMeta{Namespace: input.WCPNamespaceName, Name: vmName},
-			Spec: vmopv1.VirtualMachineSpec{
-				ImageName:    imageName,
-				ClassName:    className,
-				StorageClass: storage,
-				PowerState:   vmopv1.VirtualMachinePowerStateOff,
-			},
-		}
-		vmoperator.CreateVirtualMachine(ctx, input.Config, proxy, vm, false)
-		moID := vmoperator.WaitForVirtualMachineMOID(ctx, input.Config, client, input.WCPNamespaceName, vmName)
-
-		got := &vmopv1.VirtualMachineClass{}
-		Expect(client.Get(ctx, ctrlclient.ObjectKeyFromObject(class), got)).To(Succeed())
-		Expect(got.Spec.Resources.Size.CPU).NotTo(BeNil())
-		Expect(got.Spec.Resources.Size.Memory).NotTo(BeNil())
-		Expect(got.Spec.Resources.Size.CPU.Default.Cmp(classCPU)).To(BeZero())
-		Expect(got.Spec.Resources.Size.Memory.Default.Cmp(classMemory)).To(BeZero())
-
-		s := getComputeSnapshot(ctx, vimClient, moID)
-		Expect(s.NumCPU).To(BeEquivalentTo(classCPU.Value()))
-		Expect(s.MemoryMB).To(BeEquivalentTo(classMemory.Value() / mib))
-		Expect(s.CPUReservation).To(BeZero(), "a class without requests must not reserve CPU")
-		Expect(s.MemoryReservation).To(BeZero(), "a class without requests must not reserve memory")
-	})
+	// Specs for classes with min/max ranges are added with the v2 class API
+	// (T912, vmop-4327): no supported path can author such a class today,
+	// because the standard E2E user cannot write classes through the Kubernetes
+	// API and the VI admin API cannot express ranges.
 
 	// Existing behavior: a class created through the VI admin API.
 	ginkgo.It("exposes a legacy VI admin class through v1alpha5 and v1alpha6 and realizes it for a v1alpha5 VirtualMachine", ginkgo.Label(FeatureLabel, "core-functional", "experimental"), func() {
@@ -180,60 +134,4 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 		Expect(s.MemoryReservation).To(BeEquivalentTo(memoryMB * reservationPC / 100))
 		Expect(s.MemoryLimit).To(BeEquivalentTo(-1))
 	})
-
-	// Existing behavior: an older client writing a class that has v1alpha6
-	// ranges only changes the values it changes.
-	ginkgo.It("preserves v1alpha6 ranges across v1alpha5 writes unless the writer changes the projected value", ginkgo.Label(FeatureLabel, "core-functional", "experimental"), func() {
-		className := "flex-compat-" + capiutil.RandomString(6)
-		q := resource.MustParse
-		class := &vmopv1.VirtualMachineClass{
-			ObjectMeta: metav1.ObjectMeta{Namespace: input.WCPNamespaceName, Name: className},
-			Spec: vmopv1.VirtualMachineClassSpec{
-				Description: "original",
-				Resources: vmopv1.VirtualMachineClassResources{
-					Size: vmopv1.VirtualMachineClassResourceSpec{
-						CPU:    &vmopv1.ResourceQuantityRange{Min: ptrQ(q("1")), Default: ptrQ(q("2")), Max: ptrQ(q("4"))},
-						Memory: &vmopv1.ResourceQuantityRange{Min: ptrQ(q("1Gi")), Default: ptrQ(q("2Gi")), Max: ptrQ(q("4Gi"))},
-					},
-				},
-			},
-		}
-		Expect(client.Create(ctx, class)).To(Succeed(), "failed to create v1alpha6 VirtualMachineClass")
-		ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-			Expect(ctrlclient.IgnoreNotFound(client.Delete(cleanupCtx, class))).To(Succeed())
-		})
-		key := ctrlclient.ObjectKeyFromObject(class)
-
-		expectRanges := func(wantCPU resource.Quantity, fixedCPU bool) {
-			ginkgo.GinkgoHelper()
-			got := &vmopv1.VirtualMachineClass{}
-			Expect(client.Get(ctx, key, got)).To(Succeed())
-			if fixedCPU {
-				expectFixedRange(got.Spec.Resources.Size.CPU, wantCPU, "size cpu")
-			} else {
-				expectRange(got.Spec.Resources.Size.CPU, q("1"), q("2"), q("4"), "size cpu")
-			}
-			expectRange(got.Spec.Resources.Size.Memory, q("1Gi"), q("2Gi"), q("4Gi"), "size memory")
-		}
-
-		ginkgo.By("writing an unrelated field through v1alpha5")
-		a5 := &vmopv1a5.VirtualMachineClass{}
-		Expect(client.Get(ctx, key, a5)).To(Succeed())
-		Expect(a5.Spec.Hardware.Cpus).To(BeEquivalentTo(2), "v1alpha5 projects the size default")
-		a5.Spec.Description = "edited by an older client"
-		Expect(client.Update(ctx, a5)).To(Succeed(), "failed to update the class through v1alpha5")
-
-		got := &vmopv1.VirtualMachineClass{}
-		Expect(client.Get(ctx, key, got)).To(Succeed())
-		Expect(got.Spec.Description).To(Equal("edited by an older client"))
-		expectRanges(resource.Quantity{}, false)
-
-		ginkgo.By("changing the projected CPU value through v1alpha5")
-		Expect(client.Get(ctx, key, a5)).To(Succeed())
-		a5.Spec.Hardware.Cpus = 3
-		Expect(client.Update(ctx, a5)).To(Succeed(), "failed to update the class through v1alpha5")
-		expectRanges(q("3"), true)
-	})
 }
-
-func ptrQ(q resource.Quantity) *resource.Quantity { return &q }

@@ -1340,6 +1340,64 @@ var _ = Describe("VPCInterfaceBootstrap",
 			})
 		})
 
+		Context("Nameservers", func() {
+			BeforeEach(func() {
+				subnetPort.Status.NetworkInterfaceConfig.DNSResolverIPs = []string{
+					"10.0.0.2", "fd00::2",
+				}
+				vm.Spec.Network.Nameservers = []string{"1.1.1.1"}
+				vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+				}
+			})
+
+			When("interfaceSpec.Nameservers is set", func() {
+				BeforeEach(func() {
+					interfaceSpec.Nameservers = []string{"9.9.9.9"}
+				})
+				It("uses the interface spec nameservers", func() {
+					Expect(bootstrap.Nameservers).To(HaveExactElements("9.9.9.9"))
+					Expect(bootstrap.ProviderNameservers).To(BeEmpty())
+				})
+			})
+
+			When("interfaceSpec.Nameservers is empty", func() {
+				It("keeps the SubnetPort DNS resolver IPs as provider nameservers, not the global ones", func() {
+					Expect(bootstrap.Nameservers).To(BeEmpty())
+					Expect(bootstrap.ProviderNameservers).To(HaveExactElements("10.0.0.2", "fd00::2"))
+				})
+			})
+
+			When("interfaceSpec.Nameservers is empty and global default is disabled", func() {
+				BeforeEach(func() {
+					vm.Spec.Bootstrap.CloudInit.UseGlobalNameserversAsDefault = ptr.To(false)
+				})
+				It("still keeps the SubnetPort DNS resolver IPs as provider nameservers", func() {
+					Expect(bootstrap.Nameservers).To(BeEmpty())
+					Expect(bootstrap.ProviderNameservers).To(HaveExactElements("10.0.0.2", "fd00::2"))
+				})
+			})
+
+			When("SubnetPort has no DNS resolver IPs", func() {
+				BeforeEach(func() {
+					subnetPort.Status.NetworkInterfaceConfig.DNSResolverIPs = nil
+				})
+				It("falls back to the global nameservers", func() {
+					Expect(bootstrap.Nameservers).To(HaveExactElements("1.1.1.1"))
+				})
+			})
+
+			When("bootstrap is not CloudInit", func() {
+				BeforeEach(func() {
+					vm.Spec.Bootstrap = nil
+				})
+				It("still keeps the SubnetPort DNS resolver IPs as provider nameservers", func() {
+					Expect(bootstrap.Nameservers).To(BeEmpty())
+					Expect(bootstrap.ProviderNameservers).To(HaveExactElements("10.0.0.2", "fd00::2"))
+				})
+			})
+		})
+
 		When("no IPAddresses and DHCPDeactivatedOnSubnet=false", func() {
 			It("bootstrap.DHCP4=true", func() {
 				Expect(bootstrap.DHCP4).To(BeTrue())

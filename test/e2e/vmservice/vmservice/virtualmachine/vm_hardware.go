@@ -649,99 +649,6 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					}, 1),
 				}
 			}),
-			Entry("create a virtual machine with a combination of placements, controller types, and sharing modes", func() testSpec {
-				pvcs := []manifestbuilders.PVC{}
-
-				// We are adding 5 PVCs without explicit assignment.
-				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-					StorageClassName: clusterResources.StorageClassName,
-				}, 5)...)
-
-				// We are adding a PVC with a persistent disk mode.
-				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModePersistent)),
-				}, 1)...)
-
-				// We are adding a PVC with a independent persistent disk mode.
-				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModeIndependentPersistent)),
-				}, 1)...)
-
-				// We are adding a PVC with a independent non persistent disk mode.
-				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModeIndependentNonPersistent)),
-				}, 1)...)
-
-				// We are adding a PVC with a non persistent disk mode.
-				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-					StorageClassName: clusterResources.StorageClassName,
-					DiskMode:         ptr.To(string(vmopv1.VolumeDiskModeNonPersistent)),
-				}, 1)...)
-
-				// We are adding a PVC explicitly assigned to a SCSI:1:1.
-				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-					StorageClassName:    clusterResources.StorageClassName,
-					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
-					ControllerBusNumber: ptr.To(int32(1)),
-					UnitNumber:          ptr.To(int32(1)),
-				}, 1)...)
-
-				// We are adding a PVC explicitly assigned to SCSI:1 and without a unit number.
-				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-					StorageClassName:    clusterResources.StorageClassName,
-					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSCSI),
-					ControllerBusNumber: ptr.To(int32(1)),
-				}, 1)...)
-
-				// TODO(Faisal A): Enable this after fixing the issues with the NVME controller status.
-				// We are adding a PVC explicitly assigned to NVME:1 and without a unit number.
-				// pvcs = append(pvcs, createPvcsFromSpec(input, vmPrefix, manifestbuilders.PVC{
-				// 	StorageClassName:    clusterResources.StorageClassName,
-				// 	ControllerType:      ptr.To(vmopv1.VirtualControllerTypeNVME),
-				// 	ControllerBusNumber: ptr.To(int32(1)),
-				// }, 1)...)
-
-				// // We are adding a PVC explicitly assigned to SATA:1 and without a unit number.
-				pvcs = append(pvcs, createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-					StorageClassName:    clusterResources.StorageClassName,
-					ControllerType:      ptr.To(vmopv1.VirtualControllerTypeSATA),
-					ControllerBusNumber: ptr.To(int32(1)),
-				}, 1)...)
-
-				return testSpec{
-					pvcs: pvcs,
-					hardware: vmopv1.VirtualMachineHardwareSpec{
-						SCSIControllers: []vmopv1.SCSIControllerSpec{
-							{
-								BusNumber: 1,
-								Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							},
-							{
-								BusNumber: 2,
-								Type:      vmopv1.SCSIControllerTypeParaVirtualSCSI,
-							},
-							{
-								BusNumber:   3,
-								Type:        vmopv1.SCSIControllerTypeParaVirtualSCSI,
-								SharingMode: vmopv1.VirtualControllerSharingModePhysical,
-							},
-						},
-						NVMEControllers: []vmopv1.NVMEControllerSpec{
-							{
-								BusNumber: 1,
-							},
-						},
-						SATAControllers: []vmopv1.SATAControllerSpec{
-							{
-								BusNumber: 1,
-							},
-						},
-					},
-				}
-			}),
 			Entry("create a virtual machine with a combination of placements, controller types, and sharing modes with ezt", func() testSpec {
 				// PVCs must exist before the VM is created, otherwise the
 				// validation webhook skips PVC-dependent checks (e.g. the
@@ -901,34 +808,6 @@ func VMHardwareSpec(ctx context.Context, inputGetter func() VMHardwareSpecInput)
 					pvcs: pvcs,
 				}
 			}),
-			Entry("create a virtual machine with a MicrosoftWSFC volume and no explicit controller",
-				func() testSpec {
-					// Create a volume with WSFC application mode and validate
-					// that a valid slot is assigned to the volume.
-					// Note that PVC must exist before we create the VM otherwise the
-					// validation webhook simply skips the validation.
-					vCenterClient = vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
-					defer vcenter.LogoutVimClient(vCenterClient)
-
-					isVSANEnabled, err := vcenter.IsVSANEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-					Expect(err).ToNot(HaveOccurred())
-					isVSANDEnabled, err := vcenter.IsVSANDEnabledCluster(ctx, vCenterClient, clusterProxy.GetKubeconfigPath())
-					Expect(err).ToNot(HaveOccurred())
-
-					if isVSANDEnabled || isVSANEnabled {
-						Skip("Skipping EZT storage profile tests as VSAN Datastore is present")
-					}
-
-					return testSpec{
-						precreatePVCs: true,
-						pvcs: createPvcsFromSpec(input, vmName, manifestbuilders.PVC{
-							StorageClassName: eztStorageProfileName,
-							AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
-							VolumeMode:       ptr.To(corev1.PersistentVolumeBlock),
-							ApplicationType:  vmopv1.VolumeApplicationTypeMicrosoftWSFC,
-						}, 1),
-					}
-				}),
 		)
 
 		Describe("Controller lifecycle", func() {

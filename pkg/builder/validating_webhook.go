@@ -156,9 +156,14 @@ func (h *validatingWebhookHandler) Handle(ctx context.Context, req admission.Req
 		return admission.Allowed(string(req.Operation))
 	}
 
+	// Give each request its own copy of the webhook context. A handler may swap
+	// in different settings for one request, and without a copy that change
+	// would stick and be seen by every later request.
+	webhookContext := *h.WebhookContext
+
 	// Create the webhook request pkgctx.
 	webhookRequestContext := &pkgctx.WebhookRequestContext{
-		WebhookContext:      h.WebhookContext,
+		WebhookContext:      &webhookContext,
 		Op:                  req.Operation,
 		Obj:                 obj,
 		OldObj:              oldObj,

@@ -8,7 +8,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware/govmomi/vim25/mo"
@@ -176,6 +180,13 @@ func ReconcileSchemaUpgrade(
 		}
 	}
 
+	if features.VMHardAffinityDuringExecution {
+		if f := vmopv1util.FeatureVersionAffinityTags; !vmFeatureVersion.Has(f) {
+			reconcileAffinityTags(ctx, vm)
+			vmFeatureVersion.Set(f)
+		}
+	}
+
 	vm.SetAnnotation(
 		pkgconst.UpgradedToFeatureVersionAnnotationKey,
 		vmFeatureVersion.String())
@@ -193,6 +204,78 @@ func ReconcileSchemaUpgrade(
 	// previously enabled.
 	return ErrUpgradeObject
 
+}
+
+// affinityUpgradeNeededMaxAPIVersion is the newest v1alphaN schema version at
+// which VMs may have been created with legacy affinity tags without prefix.
+const affinityUpgradeNeededMaxAPIVersion = 5
+
+// createdBeforeAffinityReceipts returns true if a VM created at the given
+// schema version may have affinity tags. An empty value means the
+// VM was created before the annotation existed. Unrecognized values are
+// treated as not legacy.
+func createdBeforeAffinityReceipts(schemaVersion string) bool {
+	if schemaVersion == "" {
+		return true
+	}
+	rest, ok := strings.CutPrefix(schemaVersion, "v1alpha")
+	if !ok {
+		return false
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil {
+		return false
+	}
+	return n <= affinityUpgradeNeededMaxAPIVersion
+}
+
+// reconcileAffinityTags marks the VM as pending an upgrade of its legacy bare
+// affinity tags. This will happen when the VM was created prior to v1a6 and
+// has at least one affinity or anti-affinity term with the host topology key,
+// since zonal tags were not persisted on the VM prior to v1a6.
+func reconcileAffinityTags(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) {
+
+	logger := pkglog.FromContextOrDefault(ctx)
+	logger.V(4).Info("Reconciling schema upgrade for VM affinity tags")
+
+	if !hasHostTopologyAffinity(vm.Spec.Affinity) {
+		return
+	}
+
+	if !createdBeforeAffinityReceipts(
+		vm.Annotations[pkgconst.CreatedAtSchemaVersionAnnotationKey]) {
+
+		return
+	}
+
+	vm.SetAnnotation(pkgconst.AffinityTagsUpgradePendingAnnotationKey, "true")
+	logger.Info("Marked VM for legacy affinity tags upgrade")
+}
+
+// hasHostTopologyAffinity returns true if any affinity or anti-affinity term
+// in the spec uses the host topology key.
+func hasHostTopologyAffinity(affinity *vmopv1.AffinitySpec) bool {
+	if affinity == nil {
+		return false
+	}
+
+	var terms []vmopv1.VMAffinityTerm
+	if a := affinity.VMAffinity; a != nil {
+		terms = slices.Concat(terms,
+			a.RequiredDuringSchedulingPreferredDuringExecution,
+			a.PreferredDuringSchedulingPreferredDuringExecution)
+	}
+	if a := affinity.VMAntiAffinity; a != nil {
+		terms = slices.Concat(terms,
+			a.RequiredDuringSchedulingPreferredDuringExecution,
+			a.PreferredDuringSchedulingPreferredDuringExecution)
+	}
+
+	return slices.ContainsFunc(terms, func(t vmopv1.VMAffinityTerm) bool {
+		return t.TopologyKey == corev1.LabelHostname
+	})
 }
 
 func reconcileBIOSUUID(

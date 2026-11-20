@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -276,6 +277,128 @@ var _ = Describe("ReconcileSchemaUpgrade", func() {
 						assertUpgraded()
 						// Feature version should be "1" (base only)
 						assertFeatureVersion("1")
+					})
+				})
+
+				Context("VMHardAffinityDuringExecution", func() {
+					assertPending := func(expected bool) {
+						if expected {
+							ExpectWithOffset(1, vm.Annotations).To(HaveKeyWithValue(
+								pkgconst.AffinityTagsUpgradePendingAnnotationKey, "true"))
+						} else {
+							ExpectWithOffset(1, vm.Annotations).ToNot(HaveKey(
+								pkgconst.AffinityTagsUpgradePendingAnnotationKey))
+						}
+					}
+
+					When("the feature is disabled", func() {
+						BeforeEach(func() {
+							vm.Spec.Affinity = &vmopv1.AffinitySpec{}
+						})
+						It("should neither set the bit nor mark the VM", func() {
+							assertUpgraded()
+							assertFeatureVersion("1")
+							assertPending(false)
+						})
+					})
+
+					When("the feature is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.VMHardAffinityDuringExecution = true
+							})
+						})
+
+						When("the VM has no affinity", func() {
+							It("should set the bit only", func() {
+								assertUpgraded()
+								assertFeatureVersion("33")
+								assertPending(false)
+							})
+						})
+
+						When("the VM has only zone topology affinity", func() {
+							BeforeEach(func() {
+								vm.Spec.Affinity = &vmopv1.AffinitySpec{
+									VMAffinity: &vmopv1.VMAffinitySpec{
+										PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+											TopologyKey: corev1.LabelTopologyZone,
+										}},
+									},
+								}
+								vm.Annotations = map[string]string{
+									pkgconst.CreatedAtSchemaVersionAnnotationKey: "v1alpha5",
+								}
+							})
+							It("should set the bit only", func() {
+								assertUpgraded()
+								assertFeatureVersion("33")
+								assertPending(false)
+							})
+						})
+
+						When("the VM has host topology affinity", func() {
+							BeforeEach(func() {
+								vm.Spec.Affinity = &vmopv1.AffinitySpec{
+									VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+										PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+											TopologyKey: corev1.LabelHostname,
+										}},
+									},
+								}
+							})
+
+							When("the VM was created at an older schema version", func() {
+								BeforeEach(func() {
+									vm.Annotations = map[string]string{
+										pkgconst.CreatedAtSchemaVersionAnnotationKey: "v1alpha5",
+									}
+								})
+								It("should set the bit and mark the VM", func() {
+									assertUpgraded()
+									assertFeatureVersion("33")
+									assertPending(true)
+								})
+							})
+
+							for _, v := range []string{"v1alpha6", "v1alpha7", "v1alpha10", "bogus"} {
+								When("the VM was created at schema version "+v, func() {
+									BeforeEach(func() {
+										vm.Annotations = map[string]string{
+											pkgconst.CreatedAtSchemaVersionAnnotationKey: v,
+										}
+									})
+									It("should set the bit only", func() {
+										assertUpgraded()
+										assertFeatureVersion("33")
+										assertPending(false)
+									})
+								})
+							}
+
+							When("the created-at schema version is empty", func() {
+								It("should set the bit and mark the VM", func() {
+									assertUpgraded()
+									assertFeatureVersion("33")
+									assertPending(true)
+								})
+							})
+
+							When("the bit is already set", func() {
+								BeforeEach(func() {
+									vm.Annotations = map[string]string{
+										pkgconst.UpgradedToFeatureVersionAnnotationKey: "33",
+									}
+									// Only the build and schema versions need upgrading.
+									expectedErr2 = nil
+								})
+								It("should not mark the VM", func() {
+									assertUpgraded()
+									assertFeatureVersion("33")
+									assertPending(false)
+								})
+							})
+						})
 					})
 				})
 

@@ -2816,6 +2816,12 @@ func (v validator) validateAnnotation(ctx *pkgctx.WebhookRequestContext, vm, old
 		}
 	}
 
+	// The pending legacy affinity tags upgrade is controlled only by the schema
+	// upgrade and the VM controller.
+	if vm.Annotations[pkgconst.AffinityTagsUpgradePendingAnnotationKey] != oldVM.Annotations[pkgconst.AffinityTagsUpgradePendingAnnotationKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Key(pkgconst.AffinityTagsUpgradePendingAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
 	// The following annotations will be added by the mutation webhook upon VM creation.
 	if !reflect.DeepEqual(oldVM, &vmopv1.VirtualMachine{}) {
 		if vm.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] != oldVM.Annotations[pkgconst.CreatedAtBuildVersionAnnotationKey] {

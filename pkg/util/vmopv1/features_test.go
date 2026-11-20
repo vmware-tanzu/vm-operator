@@ -471,7 +471,8 @@ var _ = Describe("FeatureVersion", func() {
 			Entry("All is valid", vmopv1util.FeatureVersionAll, true),
 			Entry("VMServiceClasslessVM alone is valid", vmopv1util.FeatureVersionTelcoVMServiceAPI, true),
 			Entry("NICUnitNumbers alone is valid", vmopv1util.FeatureVersionNICUnitNumbers, true),
-			Entry("invalid bit 32 is invalid", vmopv1util.FeatureVersion(32), false),
+			Entry("AffinityTags alone is valid", vmopv1util.FeatureVersionAffinityTags, true),
+			Entry("invalid bit 64 is invalid", vmopv1util.FeatureVersion(64), false),
 			Entry("invalid bit 255 is invalid", vmopv1util.FeatureVersion(255), false),
 		)
 	})
@@ -490,7 +491,8 @@ var _ = Describe("FeatureVersion", func() {
 			Entry("VMSharedDisks + AllDisksArePVCs", vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs, "6"),
 			Entry("VMServiceClasslessVM", vmopv1util.FeatureVersionTelcoVMServiceAPI, "8"),
 			Entry("NICUnitNumbers", vmopv1util.FeatureVersionNICUnitNumbers, "16"),
-			Entry("All", vmopv1util.FeatureVersionAll, "31"),
+			Entry("AffinityTags", vmopv1util.FeatureVersionAffinityTags, "32"),
+			Entry("All", vmopv1util.FeatureVersionAll, "63"),
 		)
 	})
 
@@ -511,6 +513,7 @@ var _ = Describe("FeatureVersion", func() {
 			Entry("All has AllDisksArePVCs", vmopv1util.FeatureVersionAll, vmopv1util.FeatureVersionAllDisksArePVCs, true),
 			Entry("All has VMServiceClasslessVM", vmopv1util.FeatureVersionAll, vmopv1util.FeatureVersionTelcoVMServiceAPI, true),
 			Entry("All has NICUnitNumbers", vmopv1util.FeatureVersionAll, vmopv1util.FeatureVersionNICUnitNumbers, true),
+			Entry("All has AffinityTags", vmopv1util.FeatureVersionAll, vmopv1util.FeatureVersionAffinityTags, true),
 		)
 	})
 
@@ -537,6 +540,7 @@ var _ = Describe("FeatureVersion", func() {
 			fv.Set(vmopv1util.FeatureVersionAllDisksArePVCs)
 			fv.Set(vmopv1util.FeatureVersionTelcoVMServiceAPI)
 			fv.Set(vmopv1util.FeatureVersionNICUnitNumbers)
+			fv.Set(vmopv1util.FeatureVersionAffinityTags)
 			Ω(fv).Should(Equal(vmopv1util.FeatureVersionAll))
 		})
 
@@ -564,10 +568,11 @@ var _ = Describe("ParseFeatureVersion", func() {
 		Entry("VMSharedDisks + AllDisksArePVCs", "6", vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs),
 		Entry("VMServiceClasslessVM", "8", vmopv1util.FeatureVersionTelcoVMServiceAPI),
 		Entry("NICUnitNumbers", "16", vmopv1util.FeatureVersionNICUnitNumbers),
-		Entry("All", "31", vmopv1util.FeatureVersionAll),
+		Entry("AffinityTags", "32", vmopv1util.FeatureVersionAffinityTags),
+		Entry("All", "63", vmopv1util.FeatureVersionAll),
 		Entry("invalid negative", "-1", vmopv1util.FeatureVersionEmpty),
 		Entry("invalid text", "abc", vmopv1util.FeatureVersionEmpty),
-		Entry("invalid with invalid bits", "32", vmopv1util.FeatureVersionEmpty),
+		Entry("invalid with invalid bits", "64", vmopv1util.FeatureVersionEmpty),
 		Entry("invalid large number", "65536", vmopv1util.FeatureVersionEmpty),
 		Entry("invalid with valid and invalid bits", "255", vmopv1util.FeatureVersionEmpty),
 	)
@@ -575,23 +580,26 @@ var _ = Describe("ParseFeatureVersion", func() {
 
 var _ = Describe("ActivatedFeatureVersion", func() {
 	DescribeTable("returns activated feature version",
-		func(vmSharedDisks, allDisksArePVCs, vmServiceClasslessVM, vmNetworkUnitNumbers bool, expected vmopv1util.FeatureVersion) {
+		func(vmSharedDisks, allDisksArePVCs, vmServiceClasslessVM, vmNetworkUnitNumbers, vmHardAffinity bool, expected vmopv1util.FeatureVersion) {
 			ctx := pkgcfg.WithConfig(pkgcfg.Config{
 				Features: pkgcfg.FeatureStates{
 					VMSharedDisks:        vmSharedDisks,
 					AllDisksArePVCs:      allDisksArePVCs,
 					VMServiceClasslessVM: vmServiceClasslessVM,
 					VMNetworkUnitNumbers: vmNetworkUnitNumbers,
+
+					VMHardAffinityDuringExecution: vmHardAffinity,
 				},
 			})
 			Ω(vmopv1util.ActivatedFeatureVersion(ctx)).Should(Equal(expected))
 		},
-		Entry("no features", false, false, false, false, vmopv1util.FeatureVersionBase),
-		Entry("VMSharedDisks only", true, false, false, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs),
-		Entry("AllDisksArePVCs only", false, true, false, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionAllDisksArePVCs),
-		Entry("both disk-related features", true, true, false, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs),
-		Entry("VMServiceClasslessVM only", false, false, true, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionTelcoVMServiceAPI),
-		Entry("VMNetworkUnitNumbers only", false, false, false, true, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionNICUnitNumbers),
-		Entry("every activated feature bit", true, true, true, true, vmopv1util.FeatureVersionAll),
+		Entry("no features", false, false, false, false, false, vmopv1util.FeatureVersionBase),
+		Entry("VMSharedDisks only", true, false, false, false, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs),
+		Entry("AllDisksArePVCs only", false, true, false, false, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionAllDisksArePVCs),
+		Entry("both disk-related features", true, true, false, false, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionVMSharedDisks|vmopv1util.FeatureVersionAllDisksArePVCs),
+		Entry("VMServiceClasslessVM only", false, false, true, false, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionTelcoVMServiceAPI),
+		Entry("VMNetworkUnitNumbers only", false, false, false, true, false, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionNICUnitNumbers),
+		Entry("VMHardAffinityDuringExecution only", false, false, false, false, true, vmopv1util.FeatureVersionBase|vmopv1util.FeatureVersionAffinityTags),
+		Entry("every activated feature bit", true, true, true, true, true, vmopv1util.FeatureVersionAll),
 	)
 })

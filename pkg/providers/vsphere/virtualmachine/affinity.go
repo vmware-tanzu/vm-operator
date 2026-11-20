@@ -673,3 +673,57 @@ func reconcileAffinityPolicies(
 	)
 	return nil
 }
+
+// LegacyAffinityTagNames returns the sorted, deduplicated bare key:value tag
+// names that vms in v1a5 attached to a VM for its affinity and
+// anti-affinity terms.
+//
+// The result is derived only from the label selectors of the host-topology
+// terms in vm.Spec.Affinity, since zonal tags were never persisted on the VM
+// prior to v1a6. It does not depend on the VM's labels or on whether a term
+// is eligible for a placement policy, so it is a superset of what was actually
+// attached. Terms with an invalid selector are skipped.
+//
+// These names never carry AffinityTagPrefix, so they cannot collide with the
+// tags attached by the current implementation.
+func LegacyAffinityTagNames(
+	ctx context.Context,
+	vm *vmopv1.VirtualMachine) []string {
+
+	if vm == nil || vm.Spec.Affinity == nil {
+		return nil
+	}
+
+	var terms []vmopv1.VMAffinityTerm
+	if a := vm.Spec.Affinity.VMAffinity; a != nil {
+		terms = slices.Concat(terms,
+			a.RequiredDuringSchedulingPreferredDuringExecution,
+			a.PreferredDuringSchedulingPreferredDuringExecution,
+			a.RequiredDuringSchedulingRequiredDuringExecution)
+	}
+	if a := vm.Spec.Affinity.VMAntiAffinity; a != nil {
+		terms = slices.Concat(terms,
+			a.RequiredDuringSchedulingPreferredDuringExecution,
+			a.PreferredDuringSchedulingPreferredDuringExecution,
+			a.RequiredDuringSchedulingRequiredDuringExecution)
+	}
+
+	var names []string
+	for _, term := range terms {
+		if term.TopologyKey != corev1.LabelHostname {
+			continue
+		}
+		pairs, err := extractLabelPairsFromSelector(term.LabelSelector)
+		if err != nil {
+			pkglog.FromContextOrDefault(ctx).V(4).Error(
+				err, "skipping invalid label selector for legacy affinity tags")
+			continue
+		}
+		for _, p := range pairs {
+			names = append(names, p.Key+":"+p.Value)
+		}
+	}
+
+	slices.Sort(names)
+	return slices.Compact(names)
+}

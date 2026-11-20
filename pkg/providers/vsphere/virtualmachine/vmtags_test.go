@@ -768,3 +768,157 @@ var _ = Describe("TagName", func() {
 		Entry("key starting with the owner name", "vmoperator", "nginx"),
 	)
 })
+
+var _ = Describe("LegacyAffinityTagNames", Label(testlabels.Controller), func() {
+	var (
+		ctx context.Context
+		vm  *vmopv1.VirtualMachine
+	)
+
+	matchLabels := func(kv ...string) *metav1.LabelSelector {
+		m := map[string]string{}
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return &metav1.LabelSelector{MatchLabels: m}
+	}
+	term := func(sel *metav1.LabelSelector) vmopv1.VMAffinityTerm {
+		return vmopv1.VMAffinityTerm{
+			TopologyKey:   "kubernetes.io/hostname",
+			LabelSelector: sel,
+		}
+	}
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		vm = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "vm"},
+		}
+	})
+
+	It("returns nil for a nil VM", func() {
+		Expect(virtualmachine.LegacyAffinityTagNames(ctx, nil)).To(BeNil())
+	})
+
+	It("returns nil without affinity", func() {
+		Expect(virtualmachine.LegacyAffinityTagNames(ctx, vm)).To(BeNil())
+	})
+
+	It("returns nil with empty affinity", func() {
+		vm.Spec.Affinity = &vmopv1.AffinitySpec{}
+		Expect(virtualmachine.LegacyAffinityTagNames(ctx, vm)).To(BeEmpty())
+	})
+
+	It("includes every one of the six term lists", func() {
+		vm.Spec.Affinity = &vmopv1.AffinitySpec{
+			VMAffinity: &vmopv1.VMAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution:  []vmopv1.VMAffinityTerm{term(matchLabels("a", "1"))},
+				PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{term(matchLabels("b", "2"))},
+				RequiredDuringSchedulingRequiredDuringExecution:   []vmopv1.VMAffinityTerm{term(matchLabels("c", "3"))},
+			},
+			VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution:  []vmopv1.VMAffinityTerm{term(matchLabels("d", "4"))},
+				PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{term(matchLabels("e", "5"))},
+				RequiredDuringSchedulingRequiredDuringExecution:   []vmopv1.VMAffinityTerm{term(matchLabels("f", "6"))},
+			},
+		}
+		Expect(virtualmachine.LegacyAffinityTagNames(ctx, vm)).To(Equal(
+			[]string{"a:1", "b:2", "c:3", "d:4", "e:5", "f:6"}))
+	})
+
+	It("handles matchLabels and In expressions", func() {
+		vm.Spec.Affinity = &vmopv1.AffinitySpec{
+			VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+					term(&metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "db"},
+						MatchExpressions: []metav1.LabelSelectorRequirement{{
+							Key:      "tier",
+							Operator: metav1.LabelSelectorOpIn,
+							Values:   []string{"gold", "silver"},
+						}},
+					}),
+				},
+			},
+		}
+		Expect(virtualmachine.LegacyAffinityTagNames(ctx, vm)).To(Equal(
+			[]string{"app:db", "tier:gold", "tier:silver"}))
+	})
+
+	It("deduplicates and sorts names", func() {
+		vm.Spec.Affinity = &vmopv1.AffinitySpec{
+			VMAffinity: &vmopv1.VMAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+					term(matchLabels("z", "1")),
+					term(matchLabels("a", "1")),
+				},
+			},
+			VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+				PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+					term(matchLabels("a", "1")),
+				},
+			},
+		}
+		Expect(virtualmachine.LegacyAffinityTagNames(ctx, vm)).To(Equal(
+			[]string{"a:1", "z:1"}))
+	})
+
+	It("skips terms with an invalid selector", func() {
+		vm.Spec.Affinity = &vmopv1.AffinitySpec{
+			VMAffinity: &vmopv1.VMAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+					term(&metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{{
+							Key:      "bad",
+							Operator: metav1.LabelSelectorOpExists,
+						}},
+					}),
+					term(matchLabels("good", "1")),
+				},
+			},
+		}
+		Expect(virtualmachine.LegacyAffinityTagNames(ctx, vm)).To(Equal(
+			[]string{"good:1"}))
+	})
+
+	It("ignores zone topology terms", func() {
+		zoneTerm := term(matchLabels("zone", "1"))
+		zoneTerm.TopologyKey = corev1.LabelTopologyZone
+		vm.Spec.Affinity = &vmopv1.AffinitySpec{
+			VMAffinity: &vmopv1.VMAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+					zoneTerm,
+					term(matchLabels("host", "1")),
+				},
+			},
+		}
+		Expect(virtualmachine.LegacyAffinityTagNames(ctx, vm)).To(Equal(
+			[]string{"host:1"}))
+	})
+
+	It("does not depend on the VM's labels", func() {
+		vm.Spec.Affinity = &vmopv1.AffinitySpec{
+			VMAffinity: &vmopv1.VMAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+					term(matchLabels("a", "1")),
+				},
+			},
+		}
+		vm.Labels = map[string]string{"unrelated": "x"}
+		Expect(virtualmachine.LegacyAffinityTagNames(ctx, vm)).To(Equal(
+			[]string{"a:1"}))
+	})
+
+	It("never returns prefixed names", func() {
+		vm.Spec.Affinity = &vmopv1.AffinitySpec{
+			VMAffinity: &vmopv1.VMAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{
+					term(matchLabels("a", "1")),
+				},
+			},
+		}
+		for _, n := range virtualmachine.LegacyAffinityTagNames(ctx, vm) {
+			Expect(n).ToNot(HavePrefix(virtualmachine.AffinityTagPrefix))
+		}
+	})
+})

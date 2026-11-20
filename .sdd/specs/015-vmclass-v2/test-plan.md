@@ -41,7 +41,7 @@ Use the `flex-vm-classes` feature label, document it in the E2E README, and add 
 | Capability extended | Dedicated testbed with authorized capability control | F33 off/on/off without pod restart. Check pod UID/restart count and fresh behavior after each transition. Restore original capability even after failure. |
 | Tenant extended, M2 only | Both capabilities, provider parent-reference support and approved family design | F35–F37. Keep separate from Milestone 1 pass-rate and enablement. |
 
-E variants that need a class with real min/max ranges (F01, F03, F05, F09, F11, F43, F44, F45 and F51) are blocked on T912 (vmop-4327): no supported path authors range classes until the v2 class API. Legacy VI admin fixtures, which convert to fixed ranges, are not blocked. Integration coverage is unchanged.
+E variants that need a class with real min/max ranges (F01, F03, F05, F09, F11, F43, F44, F45) are blocked on T912 (vmop-4327): no supported path authors range classes until the v2 class API. Legacy VI admin fixtures, which convert to fixed ranges, are not blocked. Integration coverage is unchanged.
 
 Create a unique namespace and class/profile fixture names where the provider permits. Never narrow or delete a preexisting shared governor. Capability changes and any unavoidable shared hardware configuration use isolated/serialized lanes with snapshot-and-restore cleanup. Register cleanup immediately after each successful allocation. Delete test VMs and wait for backend deletion before removing class associations, profiles/reservations and namespace; let the owning provider release capacity. Keep diagnostics on failure before cleanup. A cleanup failure must be reported, not hidden by an otherwise passing assertion.
 

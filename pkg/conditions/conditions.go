@@ -55,6 +55,48 @@ func (l Conditions) IsTrue(t string) bool {
 	return false
 }
 
+// IsReady returns true if the Ready condition exists and is True, otherwise
+// false is returned. The options add further requirements.
+func (l Conditions) IsReady(options ...ReadyOption) bool {
+	opts := &readyOptions{}
+	for _, o := range options {
+		o(opts)
+	}
+
+	c := l.Get(ReadyConditionType)
+	if c == nil || c.Status != metav1.ConditionTrue {
+		return false
+	}
+
+	return observesGeneration(c, opts.generation)
+}
+
+// GetObservedAt returns the conditions that describe the provided generation, i.e.
+// the ones whose ObservedGeneration has caught up to generation. A condition
+// that is behind describes an earlier spec, for example a True condition that
+// has yet to be re-evaluated. Each condition is judged by its own
+// ObservedGeneration, and a condition without one is only returned for a zero
+// generation. The returned conditions are a copy, in their original order.
+//
+// Only use this for objects whose controller sets ObservedGeneration on its
+// conditions.
+func (l Conditions) GetObservedAt(generation int64) Conditions {
+	current := make(Conditions, 0, len(l))
+	for i := range l {
+		if observesGeneration(&l[i], generation) {
+			current = append(current, l[i])
+		}
+	}
+	return current
+}
+
+// observesGeneration returns true if the condition's ObservedGeneration has
+// caught up to generation. A zero generation is always satisfied, since
+// ObservedGeneration is never negative, so no explicit "is set" flag is needed.
+func observesGeneration(c *metav1.Condition, generation int64) bool {
+	return c.ObservedGeneration >= generation
+}
+
 // IsFalse returns true if the condition with the given type exists and is
 // False, otherwise false is returned.
 func (l Conditions) IsFalse(t string) bool {

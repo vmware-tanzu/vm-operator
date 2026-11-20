@@ -166,6 +166,12 @@ const (
 	// VirtualMachineConditionLifecycleHookReady reason when the
 	// ResourceDelete stage was the last one evaluated.
 	VirtualMachineLifecycleHookReadyResourceDeleteStageReason = "ResourceDeleteStage"
+
+	// VirtualMachineConditionInfraMigrationReady is the mirror of the Ready
+	// condition of the VM's VirtualMachineInfraMigration, which is the resource
+	// with the same namespace and name as the VM, and indicates whether the
+	// migration has converged on its target infrastructure.
+	VirtualMachineConditionInfraMigrationReady = "VirtualMachineInfraMigrationReady"
 )
 
 const (
@@ -1554,6 +1560,17 @@ type VirtualMachineStatus struct {
 
 	// Storage describes the observed state of the VirtualMachine's storage.
 	Storage *VirtualMachineStorageStatus `json:"storage,omitempty"`
+
+	// +optional
+
+	// VolumeAttributesClassName describes the observed name of the Kubernetes
+	// VolumeAttributesClass resource (also known as the storage profile name)
+	// that the VirtualMachine is configured to.
+	//
+	// Please see VirtualMachineSpec.VolumeAttributesClassName for the desired
+	// value. This field is only reported when the storage policy mutability
+	// capability is enabled.
+	VolumeAttributesClassName string `json:"volumeAttributesClassName,omitempty"`
 
 	// +optional
 

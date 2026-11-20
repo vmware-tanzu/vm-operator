@@ -100,7 +100,7 @@ func (r *Reconciler) ReconcileNormal(
 
 	logger := pkglog.FromContextOrDefault(ctx)
 
-	policyID, err := kubeutil.GetStoragePolicyIDFromVolumeAttributesClass(*obj)
+	policyID, err := kubeutil.GetStoragePolicyIDFromVAC(*obj)
 	if err != nil || policyID == "" {
 		logger.Error(
 			err,

@@ -12,6 +12,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/configtarget"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/controllers/infra"
+	"github.com/vmware-tanzu/vm-operator/controllers/mobility"
 	"github.com/vmware-tanzu/vm-operator/controllers/storage"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
@@ -41,6 +42,9 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 	}
 	if err := storage.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize storage controllers: %w", err)
+	}
+	if err := mobility.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to initialize mobility controllers: %w", err)
 	}
 	if err := virtualmachine.AddToManager(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to initialize VirtualMachine controller: %w", err)

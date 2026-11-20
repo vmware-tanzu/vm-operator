@@ -2596,6 +2596,7 @@ func (v validator) validateHardware(
 
 	allErrs = append(allErrs, v.validateCdrom(ctx, newVM, oldVM)...)
 	allErrs = append(allErrs, v.validateControllers(ctx, newVM, oldVM)...)
+	allErrs = append(allErrs, v.validateFlexFields(ctx, newVM, oldVM)...)
 
 	return allErrs
 }

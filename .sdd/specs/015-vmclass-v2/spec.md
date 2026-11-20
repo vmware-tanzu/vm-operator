@@ -230,7 +230,7 @@ A class lists one parent in `spec.parentClassRefs`; its ranges must fit inside t
 **vm-operator**:
 
 - The v1alpha6 `VirtualMachineClass` schema (reshaped in place; v1alpha6 has not shipped), value types, conversion from v1alpha5 and older, and round-trip annotations.
-- The VM and Zone API fields: `status.governingClassNames`, `GovernanceCompliant`, observed status fields, `spec.reservedProfileName`, `spec.resources.shares`, `Zone.status.governingClasses`; the per-type device lists with vmop-3791.
+- The VM and Zone API fields: observed status fields, `spec.reservedProfileName`, `spec.resources.shares` (the `Zone.status.governingClasses` schema is a separate story owned by vcf/tera, T109; `status.governingClassNames` and `GovernanceCompliant` ship with VM compliance, vmop-4335); the per-type device lists with vmop-3791.
 - The class's list policies (devices, NICs, extraConfig), `hardware.version` and `resources.shares`, applied by one evaluator.
 - Class mutating and validating webhooks.
 - VM mutating and validating webhooks: defaults at admission, governance, the zone rule, device memory reservation, reserved profiles, `DenyPowerOn`.

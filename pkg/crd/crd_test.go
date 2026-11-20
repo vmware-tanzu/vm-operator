@@ -1826,3 +1826,143 @@ func (c *writeRecordingClient) Patch(
 	c.writes = append(c.writes, "patch/"+obj.GetName())
 	return c.Client.Patch(ctx, obj, patch, opts...)
 }
+
+var _ = Describe("Flex VM API schema", Ordered, Label(testlabels.API, testlabels.EnvTest), func() {
+	var ctx context.Context
+	BeforeAll(func() {
+		ctx = pkgcfg.NewContextWithDefaultConfig()
+		Expect(pkgcrd.Install(ctx, envTestClient, nil)).To(Succeed())
+	})
+
+	newVM := func() *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "vmoperator.vmware.com/v1alpha6", "kind": "VirtualMachine",
+			"metadata": map[string]any{"generateName": "flex-api-", "namespace": "default"},
+			"spec": map[string]any{
+				"reservedProfileName": "",
+				"hardware": map[string]any{
+					"vGPUs": []any{
+						map[string]any{"name": "gpu-0", "profileName": "gpu-small", "enableUVM": true},
+						map[string]any{"name": "gpu-1", "profileName": "gpu-small"},
+					},
+					"dynamicDirectPathIODevices": []any{
+						map[string]any{"name": "pci-0", "vendorID": int64(4318), "deviceID": int64(0), "customLabel": "device"},
+						map[string]any{"name": "pci-1"},
+					},
+				},
+			},
+		}}
+	}
+
+	It("preserves the VM spec and observed status through API server storage", func() {
+		vm := newVM()
+		wantHardware, _, err := unstructured.NestedMap(vm.Object, "spec", "hardware")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() error { return envTestClient.Create(ctx, vm) }).Should(Succeed())
+		DeferCleanup(func() { Expect(envTestClient.Delete(ctx, vm)).To(Succeed()) })
+		storedHardware, found, err := unstructured.NestedMap(vm.Object, "spec", "hardware")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(storedHardware).To(Equal(wantHardware))
+		profile, found, err := unstructured.NestedString(vm.Object, "spec", "reservedProfileName")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(profile).To(BeEmpty())
+		expectedSpec := vm.Object["spec"]
+		hardware := map[string]any{
+			"firmware": "efi", "sevEnabled": false, "sevSnpEnabled": true, "tdxEnabled": false, "smcPresent": true,
+			"cpu": map[string]any{"hotRemoveEnabled": false},
+		}
+		status := map[string]any{
+			"changeBlockTracking": false, "hardware": hardware,
+		}
+		vm.Object["status"] = status
+		Expect(envTestClient.Status().Update(ctx, vm)).To(Succeed())
+		Expect(envTestClient.Get(ctx, ctrlclient.ObjectKeyFromObject(vm), vm)).To(Succeed())
+		Expect(vm.Object["spec"]).To(Equal(expectedSpec))
+		Expect(vm.Object["status"]).To(Equal(status))
+		// Removing the pointer-valued selection preserves omission, not empty.
+		Expect(unstructured.SetNestedField(vm.Object, "reserved-small", "spec", "reservedProfileName")).To(Succeed())
+		Expect(envTestClient.Update(ctx, vm)).To(Succeed())
+		unstructured.RemoveNestedField(vm.Object, "spec", "reservedProfileName")
+		Expect(envTestClient.Update(ctx, vm)).To(Succeed())
+		Expect(envTestClient.Get(ctx, ctrlclient.ObjectKeyFromObject(vm), vm)).To(Succeed())
+		_, found, err = unstructured.NestedFieldNoCopy(vm.Object, "spec", "reservedProfileName")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeFalse())
+	})
+
+	DescribeTable("rejects invalid device lists", func(hardware map[string]any) {
+		vm := newVM()
+		Expect(unstructured.SetNestedMap(vm.Object, hardware, "spec", "hardware")).To(Succeed())
+		Eventually(func() bool {
+			return apierrors.IsInvalid(envTestClient.Create(ctx, vm))
+		}).Should(BeTrue(), "expected schema rejection")
+	},
+		Entry("vGPU missing name", map[string]any{"vGPUs": []any{map[string]any{"profileName": "gpu"}}}),
+		Entry("vGPU empty name", map[string]any{"vGPUs": []any{map[string]any{"name": "", "profileName": "gpu"}}}),
+		Entry("duplicate vGPU name", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0", "profileName": "a"}, map[string]any{"name": "gpu-0", "profileName": "b"}}}),
+		Entry("DirectPath device missing name", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"vendorID": int64(1)}}}),
+		Entry("invalid PCI ID", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "pci-0", "vendorID": int64(65536), "deviceID": int64(1)}}}),
+		Entry("vGPU missing profileName", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0"}}}),
+		Entry("vGPU empty profileName", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0", "profileName": ""}}}),
+		Entry("vGPU name not a DNS-1123 label", map[string]any{"vGPUs": []any{map[string]any{"name": "GPU_0", "profileName": "gpu"}}}),
+		Entry("vGPU name starts with dash", map[string]any{"vGPUs": []any{map[string]any{"name": "-gpu", "profileName": "gpu"}}}),
+		Entry("vGPU name too long", map[string]any{"vGPUs": []any{map[string]any{"name": strings.Repeat("a", 64), "profileName": "gpu"}}}),
+		Entry("DirectPath name not a DNS-1123 label", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "PCI.0"}}}),
+		Entry("DirectPath name ends with dash", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "pci-"}}}),
+		Entry("DirectPath name too long", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": strings.Repeat("a", 64)}}}),
+		Entry("duplicate DirectPath device name", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "pci-0", "vendorID": int64(1)}, map[string]any{"name": "pci-0", "vendorID": int64(2)}}}),
+	)
+	DescribeTable("validates the device item names and reservedProfileName", func(mutate func(map[string]any), wantInvalid bool) {
+		vm := newVM()
+		mutate(vm.Object["spec"].(map[string]any))
+		if wantInvalid {
+			Eventually(func() bool {
+				return apierrors.IsInvalid(envTestClient.Create(ctx, vm))
+			}).Should(BeTrue(), "expected schema rejection")
+			return
+		}
+		Eventually(func() error { return envTestClient.Create(ctx, vm) }).Should(Succeed())
+		DeferCleanup(func() { Expect(envTestClient.Delete(ctx, vm)).To(Succeed()) })
+	},
+		Entry("max length device names are valid", func(spec map[string]any) {
+			hw := spec["hardware"].(map[string]any)
+			hw["vGPUs"] = []any{map[string]any{"name": strings.Repeat("a", 63), "profileName": "gpu"}}
+			hw["dynamicDirectPathIODevices"] = []any{map[string]any{"name": "0-" + strings.Repeat("b", 59) + "-0"}}
+		}, false),
+		Entry("empty reservedProfileName means no profile", func(spec map[string]any) {
+			spec["reservedProfileName"] = ""
+		}, false),
+		Entry("omitted reservedProfileName", func(spec map[string]any) {
+			delete(spec, "reservedProfileName")
+		}, false),
+		Entry("DNS-1123 label reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved-small"
+		}, false),
+		Entry("DNS-1123 subdomain reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved.small-1"
+		}, false),
+		Entry("253 character reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = strings.Repeat("a", 63) + "." + strings.Repeat("a", 63) + "." + strings.Repeat("a", 63) + "." + strings.Repeat("a", 61)
+		}, false),
+		Entry("254 character reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = strings.Repeat("a", 254)
+		}, true),
+		Entry("uppercase reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "Reserved"
+		}, true),
+		Entry("underscore reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved_small"
+		}, true),
+		Entry("leading dot reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = ".reserved"
+		}, true),
+		Entry("empty subdomain label reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved..small"
+		}, true),
+		Entry("trailing dash reservedProfileName", func(spec map[string]any) {
+			spec["reservedProfileName"] = "reserved-"
+		}, true),
+	)
+})

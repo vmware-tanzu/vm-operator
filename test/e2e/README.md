@@ -137,6 +137,7 @@ Tests are organized using Ginkgo labels for easy filtering:
 - `backup-restore` - Backup/restore tests that need an external backup server. Run only by `make e2e-backup-restore` (and the matching CI suite); excluded from the smoke, core, and extended targets. While these tests also carry `experimental`, the `backup-restore` filter still selects them so they can be validated in their own suite.
 - `veeam` - The `backup-restore` tests that use Veeam Backup & Replication. They run in order and share one Veeam connection and vCenter registration.
 - `boot-disk-capacity` - The tests for `spec.advanced.bootDiskCapacity`. Run them with `make test-e2e LABEL_FILTER="boot-disk-capacity"`.
+- `flex-vm-classes` - The Flex VM Classes specs. Each new-behavior check is paired with an existing-behavior (regression) check. Run them with `make test-e2e LABEL_FILTER="flex-vm-classes && experimental"`.
 
 ## Configuration
 

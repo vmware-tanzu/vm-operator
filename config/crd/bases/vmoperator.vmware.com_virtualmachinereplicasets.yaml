@@ -9907,6 +9907,46 @@ spec:
                             x-kubernetes-list-map-keys:
                             - name
                             x-kubernetes-list-type: map
+                          dynamicDirectPathIODevices:
+                            description: |-
+                              DynamicDirectPathIODevices describes the desired Dynamic DirectPath I/O
+                              devices attached to the VM. Each item is one device.
+                            items:
+                              description: |-
+                                VirtualMachineDynamicDirectPathIODevice describes one desired Dynamic
+                                DirectPath I/O device.
+                              properties:
+                                customLabel:
+                                  description: CustomLabel selects the device backing.
+                                  type: string
+                                deviceID:
+                                  description: DeviceID is the PCI device ID, matching
+                                    the environment-browser entry.
+                                  format: int64
+                                  maximum: 65535
+                                  minimum: 0
+                                  type: integer
+                                name:
+                                  description: |-
+                                    Name uniquely identifies the device within the VM's Dynamic DirectPath
+                                    I/O device list. It must be a DNS-1123 label.
+                                  maxLength: 63
+                                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                  type: string
+                                vendorID:
+                                  description: VendorID is the PCI vendor ID, matching
+                                    the environment-browser entry.
+                                  format: int64
+                                  maximum: 65535
+                                  minimum: 0
+                                  type: integer
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
                           ideControllers:
                             description: |-
                               IDEControllers describes the desired list of IDE controllers for the VM.
@@ -10026,6 +10066,39 @@ spec:
                             type: array
                             x-kubernetes-list-map-keys:
                             - busNumber
+                            x-kubernetes-list-type: map
+                          vGPUs:
+                            description: |-
+                              VGPUs describes the desired vGPU devices attached to the VM. Each item
+                              is one device; two GPUs of the same profile are two items.
+                            items:
+                              description: VirtualMachineVGPUDevice describes one
+                                desired vGPU device.
+                              properties:
+                                enableUVM:
+                                  description: |-
+                                    EnableUVM controls whether Unified Virtual Memory is enabled for the
+                                    device.
+                                  type: boolean
+                                name:
+                                  description: |-
+                                    Name uniquely identifies the device within the VM's vGPU list. It must be
+                                    a DNS-1123 label.
+                                  maxLength: 63
+                                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                                  type: string
+                                profileName:
+                                  description: ProfileName identifies the vGPU profile
+                                    in the environment browser.
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - name
+                              - profileName
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
                             x-kubernetes-list-type: map
                         type: object
                       image:
@@ -11038,6 +11111,16 @@ spec:
                           resourcePolicyName:
                             type: string
                         type: object
+                      reservedProfileName:
+                        description: |-
+                          ReservedProfileName identifies a VirtualMachineReservedProfile in this
+                          namespace. Omission inherits the class default; an explicit empty string
+                          selects no profile. A non-empty value must be a DNS-1123 subdomain. A
+                          selected profile must match the VM's CPU, memory and passthrough device
+                          configuration.
+                        maxLength: 253
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
+                        type: string
                       resources:
                         description: |-
                           Resources describes the desired compute resource allocation for this VM.

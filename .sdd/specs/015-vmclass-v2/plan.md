@@ -43,9 +43,9 @@ Reshape the unreleased `VirtualMachineClass` v1alpha6 with typed value shapes, `
 | Area | Paths |
 |---|---|
 | Class API | `api/v1alpha6/virtualmachineclass_types.go`, value types in `api/v1alpha6/`, conversion in `api/v1alpha5` and older, `api/utilconversion` |
-| VM API | `api/v1alpha6/virtualmachine_types.go`: `spec.reservedProfileName`, `status.governingClassNames`, conditions, observed fields; `spec.resources.shares`; per-type device lists in `virtualmachine_hardware_types.go` with vmop-3791 |
+| VM API | `api/v1alpha6/virtualmachine_types.go`: `spec.reservedProfileName`, observed fields (`status.governingClassNames` and the governance conditions ship with vmop-4335); `spec.resources.shares`; per-type device lists in `virtualmachine_hardware_types.go` with vmop-3791 |
 | vmx-23 CPU fields | CPU `reservationLockedToMax` and NUMA fixed auto-affinity on the VM, the class and VM status; a separate story (vmop-4428), blocked on vSphere and govmomi with vmx-23 |
-| Zone mirror | `external/tanzu-topology/api/v1alpha1/zone.go`: `status.governingClasses` |
+| Zone mirror | `status.governingClasses` in the topology Zone CRD owned by vcf/tera (T109, separate story) |
 | Capability | `pkg/config/capabilities`, `pkg/config` |
 | Governance | new package under `pkg/`: resolve the governing class, compare a VM or a class with it |
 | Class webhooks | `webhooks/virtualmachineclass/{mutation,validation}` |
@@ -139,3 +139,9 @@ Tracked in the provider's spec and listed in tasks.md as dependency tasks T910â€
 |---|---|---|
 | `*[]string` zone lists distinguish unset from `[]` | "No zones" and "all zones" must not collapse | A plain list: dropping `[]` would make a class available everywhere |
 | The VM reconciler writes VM spec (same-class resize, schema upgrade, class change re-default) | These values come from the class and must follow it; precedent `vm_schema_upgrade.go`. A separate spec patch with an optimistic lock, apart from the deferred status patch | Asking users to re-apply the class: drift between the class and its VMs, and no backfill on upgrade |
+
+## VM and Zone API foundation (vmop-4317)
+
+T108 lands on the specification branch independently of the class reshape: optional VM profile selection, per-type device lists (`hardware.vGPUs`, `hardware.dynamicDirectPathIODevices`; item `name` plus the identity fields, no count), observed status fields. The VM governance status (`status.governingClassNames`, `GovernanceCompliant`, `NoGoverningClass`) belongs to the VM compliance story (vmop-4335, T500). The Zone mirror schema (`Zone.status.governingClasses`, T109) is not part of this change: the Zone CRD is installed by a vcf/tera service, so it has its own story. Device Go types are VM-specific so this change does not reshape existing class device lists. The schema is available without the capability; the later webhook and controller stories gate runtime behavior. T110 follows vmop-4313 and the vmop-4315 profile schema, retaining the planned class-default backfill rather than adding an interim reader of `reservedProfileID`.
+
+Validation covers v1alpha1â€“v1alpha5 conversion round trips (including omitted versus explicit empty selection and false versus unknown booleans), deep-copy isolation, API-server persistence and rejection of invalid device lists (missing or duplicate item names, out-of-range PCI IDs), and an experimental E2E check of the installed VM schema. The VM validating webhook rejects the new device lists and `spec.reservedProfileName` until the provider implements them ("not supported yet", removed with T108a, T110 and the vmop stories) and, permanently, while the VMServiceClasslessVM capability is off.

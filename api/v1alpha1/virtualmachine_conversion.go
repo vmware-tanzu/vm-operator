@@ -1345,6 +1345,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 
 	// BEGIN RESTORE
 
+	dst.Spec.ReservedProfileName = restored.Spec.ReservedProfileName
+
 	restore_v1alpha6_VirtualMachineImage(dst, restored)
 	restore_v1alpha6_VirtualMachineBootstrapSpec(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkSpec(dst, restored)

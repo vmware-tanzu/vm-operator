@@ -338,6 +338,11 @@ Parameters:
 | `PIP_INDEX_URL` | It must be a full index URL including the scheme, such as `https://packages.vcfd.broadcom.net/artifactory/api/pypi/photonos-pypi-virtual/simple` | Unset (public PyPI) |
 
 
+### Files mirror for the Jenkins spec
+
+The Jenkins spec installs Jenkins inside a guest VM. If `E2E_FILES_MIRROR_URL` is set to the base URL of a files mirror (no trailing slash needed), the guest downloads `jenkins_2.580.1_all.deb` from `$E2E_FILES_MIRROR_URL/jenkins/` first, ignoring the mirror's self-signed certificate, and falls back to the public Jenkins sites if that fails. Unset by default (public sites only). The same variable is the `E2E_FILES_MIRROR_URL` Docker build arg of `Dockerfile.e2e`, which bakes it into the image as the default runtime value (it may be overridden at run time). It is not used at image build time; build environments that cannot reach the internet should instead set the `PACKER_DOWNLOAD_URL` build arg to a reachable copy of `packer_1.9.1_linux_amd64.zip` (verified by SHA-256).
+
+
 ## Development Workflow
 
 1. **Write tests** following established patterns

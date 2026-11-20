@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,6 +32,9 @@ const (
 	// A healthy build takes ~3-11 minutes. Bound it so a stalled guest or
 	// download fails the attempt instead of consuming the suite timeout.
 	jenkinsPackerBuildTimeout = 30 * time.Minute
+	// filesMirrorURLEnvVar optionally names the base URL of a files mirror that
+	// hosts jenkins/jenkins_<version>_all.deb. Unset means use the public sites.
+	filesMirrorURLEnvVar = "E2E_FILES_MIRROR_URL"
 )
 
 func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
@@ -116,6 +120,11 @@ func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
 				"ssh_bastion_username": gatewayUsername,
 				"ssh_bastion_password": gatewayPassword,
 			},
+		}
+
+		// Optionally download the Jenkins package from an internal mirror.
+		if mirrorURL := strings.TrimRight(os.Getenv(filesMirrorURLEnvVar), "/"); mirrorURL != "" {
+			opts.TemplateVariables["files_mirror_url"] = mirrorURL
 		}
 
 		cmdOut, err := RunPackerBuildCmd(ctx, opts)

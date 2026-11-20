@@ -89,7 +89,7 @@ The constitution requires SDD work to map onto Broadcom JIRA tickets at two leve
 - A spec **MUST** declare its epic in the header: `**Epic**: vmop-NNN`. If the epic does not yet exist, file it before merging the spec PR and update the header in the same PR.
 - A task **SHOULD** carry a `[vmop-NNN]` tag pointing to its story or sub-task. Tasks for trivial setup work (lint config, README touch-ups) **MAY** omit the tag; everything that produces shipping code **MUST** have a ticket.
 - A story or sub-task ticket created for an SDD task **MUST** be linked to the spec's epic via `customfield_10830`. Without that link, the work is invisible in the epic's burn-down.
-- If a single PR closes more than one task, list every `vmop-NNN` it resolves in the PR description's release-note block (per `pull-request-standards.md`).
+- If a single PR closes more than one task, list every `vmop-NNN` it resolves in the PR description's "Which issue(s)" section (per `pull-request-standards.md`).
 - If you copy acceptance criteria from `spec.md` into the JIRA epic's `customfield_10100`, keep them in sync. The spec is the source of truth; the JIRA copy is a mirror that may lag by one PR but never by more.
 
 ### Design docs and wiki pointers

@@ -249,6 +249,148 @@ var _ = Describe("GetStoragePolicyID", func() {
 	})
 })
 
+var _ = Describe("GetStoragePolicyIDAndSource", func() {
+	var (
+		ctx    context.Context
+		client ctrlclient.Client
+		vm     vmopv1.VirtualMachine
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			PodNamespace: fakeString,
+			Features:     pkgcfg.FeatureStates{StoragePolicyMutability: true},
+		})
+		vm = vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-vm",
+				Namespace: "my-ns",
+			},
+		}
+
+		sc := storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-storage-class"},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: "id-from-storageclass",
+			},
+		}
+		vac := storagev1.VolumeAttributesClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-vac"},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: "id-from-vac",
+			},
+		}
+		client = fake.NewClientBuilder().WithObjects(&sc, &vac).Build()
+	})
+
+	When("VM has only a StorageClass", func() {
+		BeforeEach(func() {
+			vm.Spec.StorageClass = "my-storage-class"
+		})
+		It("returns the policy ID and the StorageClass as the source", func() {
+			policyID, srcPolicyObj, err := kubeutil.GetStoragePolicyIDAndSource(ctx, client, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(policyID).To(Equal("id-from-storageclass"))
+			Expect(srcPolicyObj).To(Equal(kubeutil.StoragePolicySource{
+				Kind: internal.StorageClassKind,
+				Name: "my-storage-class",
+			}))
+			Expect(srcPolicyObj.IsVolumeAttributesClass()).To(BeFalse())
+		})
+	})
+
+	When("VM has only a VolumeAttributesClass", func() {
+		BeforeEach(func() {
+			vm.Spec.VolumeAttributesClassName = "my-vac"
+		})
+		It("returns the policy ID and the VolumeAttributesClass as the source", func() {
+			policyID, srcPolicyObj, err := kubeutil.GetStoragePolicyIDAndSource(ctx, client, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(policyID).To(Equal("id-from-vac"))
+			Expect(srcPolicyObj).To(Equal(kubeutil.StoragePolicySource{
+				Kind: internal.VolumeAttributesClassKind,
+				Name: "my-vac",
+			}))
+			Expect(srcPolicyObj.IsVolumeAttributesClass()).To(BeTrue())
+		})
+	})
+
+	When("VM has a StorageClass and a VolumeAttributesClass", func() {
+		BeforeEach(func() {
+			vm.Spec.StorageClass = "my-storage-class"
+			vm.Spec.VolumeAttributesClassName = "my-vac"
+		})
+
+		It("prefers the VolumeAttributesClass over the StorageClass", func() {
+			policyID, srcPolicyObj, err := kubeutil.GetStoragePolicyIDAndSource(ctx, client, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(policyID).To(Equal("id-from-vac"))
+			Expect(srcPolicyObj).To(Equal(kubeutil.StoragePolicySource{
+				Kind: internal.VolumeAttributesClassKind,
+				Name: "my-vac",
+			}))
+		})
+
+		When("StoragePolicyMutability feature is disabled", func() {
+			BeforeEach(func() {
+				ctx = pkgcfg.WithConfig(pkgcfg.Config{
+					PodNamespace: fakeString,
+				})
+			})
+			It("returns the capability error and the VolumeAttributesClass as the source", func() {
+				policyID, srcPolicyObj, err := kubeutil.GetStoragePolicyIDAndSource(ctx, client, vm)
+				Expect(err).To(MatchError(fmt.Errorf("%s %q object is specified but capability is not enabled", internal.VolumeAttributesClassKind, "my-vac")))
+				Expect(policyID).To(BeEmpty())
+				Expect(srcPolicyObj).To(Equal(kubeutil.StoragePolicySource{
+					Kind: internal.VolumeAttributesClassKind,
+					Name: "my-vac",
+				}))
+			})
+		})
+	})
+
+	When("the referenced VolumeAttributesClass does not exist", func() {
+		BeforeEach(func() {
+			vm.Spec.VolumeAttributesClassName = "does-not-exist"
+		})
+		It("returns the API error and the VolumeAttributesClass as the source", func() {
+			policyID, srcPolicyObj, err := kubeutil.GetStoragePolicyIDAndSource(ctx, client, vm)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			Expect(policyID).To(BeEmpty())
+			Expect(srcPolicyObj).To(Equal(kubeutil.StoragePolicySource{
+				Kind: internal.VolumeAttributesClassKind,
+				Name: "does-not-exist",
+			}))
+		})
+	})
+
+	When("the referenced StorageClass does not exist", func() {
+		BeforeEach(func() {
+			vm.Spec.StorageClass = "does-not-exist"
+		})
+		It("returns the API error and the StorageClass as the source", func() {
+			policyID, srcPolicyObj, err := kubeutil.GetStoragePolicyIDAndSource(ctx, client, vm)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			Expect(policyID).To(BeEmpty())
+			Expect(srcPolicyObj).To(Equal(kubeutil.StoragePolicySource{
+				Kind: internal.StorageClassKind,
+				Name: "does-not-exist",
+			}))
+		})
+	})
+
+	When("VM has neither a StorageClass nor a VolumeAttributesClass", func() {
+		It("returns the empty-object error and an unnamed StorageClass as the source", func() {
+			policyID, srcPolicyObj, err := kubeutil.GetStoragePolicyIDAndSource(ctx, client, vm)
+			Expect(err).To(MatchError(fmt.Errorf("%s object is empty", internal.StorageClassKind)))
+			Expect(policyID).To(BeEmpty())
+			Expect(srcPolicyObj).To(Equal(kubeutil.StoragePolicySource{
+				Kind: internal.StorageClassKind,
+			}))
+		})
+	})
+})
+
 var _ = Describe("SetStoragePolicyID", func() {
 	var (
 		obj storagev1.StorageClass

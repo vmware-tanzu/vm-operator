@@ -76,8 +76,8 @@ github.com/go-openapi/testify/enable/yaml/v2 v2.6.0 h1:gGHwAJ0R/5jU8BEGDbfRNR3hL
 github.com/go-openapi/testify/enable/yaml/v2 v2.6.0/go.mod h1:tY+St1SGq4NFl0QIqdTY4aEdbChAHxhyB77XQi9iJCo=
 github.com/go-openapi/testify/v2 v2.6.0 h1:5PKH2HE7YJ/LuRPQGvSxBRlFXNQhSetBLlGAgUEu3ug=
 github.com/go-openapi/testify/v2 v2.6.0/go.mod h1:SgsVHtfooshd0tublTtJ50FPKhujf47YRqauXXOUxfw=
-github.com/go-pkgz/expirable-cache/v3 v3.1.1 h1:ryHiSI5gBE8aJ0Jt90VFMKZxe/cosf2dZPDcUTMaHNg=
-github.com/go-pkgz/expirable-cache/v3 v3.1.1/go.mod h1:peJAuIDjP76Uuc9NK55ljQlBtwwmJDvx4CnMyUcsP40=
+github.com/go-pkgz/expirable-cache/v3 v3.2.0 h1:F3gLZ7mRt0aAy2PLHFFhiQP9aHlCIV89gea5cTJ5JMg=
+github.com/go-pkgz/expirable-cache/v3 v3.2.0/go.mod h1:tihaANRQEbJXTY81KgzfP5CLnUJtEcxfRSvSfjqYTjc=
 github.com/go-task/slim-sprig/v3 v3.0.0 h1:sUs3vkvUymDpBKi3qH1YSqBQk9+9D/8M2mN1vB6EwHI=
 github.com/go-task/slim-sprig/v3 v3.0.0/go.mod h1:W848ghGpv3Qj3dhTPRyJypKRiqCdHZiAzKg9hl15HA8=
 github.com/goccy/go-yaml v1.18.0 h1:8W7wMFS12Pcas7KU+VVkaiCng+kG8QiFeFwzFb+rwuw=

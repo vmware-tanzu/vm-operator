@@ -91,6 +91,14 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 	firstVM := true
 	var errs []error
 
+	// placed records each VM with the index of its placement input, so the
+	// two are never matched by parallel position.
+	type placedVM struct {
+		vm       *vmopv1.VirtualMachine
+		inputIdx int
+	}
+	var placed []placedVM
+
 	for _, grpPlacement := range groupPlacements {
 		for _, vm := range grpPlacement.VMMembers {
 			logger := pkglog.FromContextOrDefault(ctx).WithValues(
@@ -143,6 +151,10 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 				ConfigSpec: *configSpec,
 				ZoneName:   vm.Labels[corev1.LabelTopologyZone],
 			}
+			placed = append(placed, placedVM{
+				vm:       vm,
+				inputIdx: len(placementArgs.vmPlacementInputs),
+			})
 			placementArgs.vmPlacementInputs = append(placementArgs.vmPlacementInputs,
 				vmPlacementInput)
 		}
@@ -150,6 +162,21 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementArgs(
 
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("%w: %w", ErrVMGroupPlacementConfigSpec, errors.Join(errs...))
+	}
+
+	// Resolve peer membership only after every placement builder has finished.
+	// Take the pointers after the slice stops growing so they address the
+	// final backing array.
+	affinityMembers := make([]virtualmachine.AffinityPlacementMember, 0, len(placed))
+	for _, p := range placed {
+		affinityMembers = append(affinityMembers,
+			virtualmachine.AffinityPlacementMember{
+				VM:         p.vm,
+				ConfigSpec: &placementArgs.vmPlacementInputs[p.inputIdx].ConfigSpec,
+			})
+	}
+	if err := virtualmachine.AddGroupAntiAffinityPlacementTags(ctx, affinityMembers); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrVMGroupPlacementConfigSpec, err)
 	}
 
 	return placementArgs, nil
@@ -276,7 +303,8 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 		placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 			vmCtx,
 			createArgs.ConfigSpec,
-			createArgs.Storage.StorageClassToPolicyID)
+			createArgs.Storage.StorageClassToPolicyID,
+			vs.labelDerivedTags(vmCtx))
 		if err != nil {
 			return nil, err
 		}

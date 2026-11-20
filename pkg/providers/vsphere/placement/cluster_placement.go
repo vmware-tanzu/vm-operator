@@ -321,6 +321,13 @@ func getClusterPlacementRecommendations(
 	}
 
 	logger.V(4).Info("PlaceVmsXCluster request", "spec", vimtypes.ToString(placementSpec))
+	for i := range placementSpec.VmPlacementSpecs {
+		cs := placementSpec.VmPlacementSpecs[i].ConfigSpec
+		logger.Info("PlaceVmsXCluster request tag specs and placement policies",
+			"vmName", cs.Name,
+			"tagSpecs", vimtypes.ToString(cs.TagSpecs),
+			"vmPlacementPolicies", vimtypes.ToString(cs.VmPlacementPolicies))
+	}
 
 	results, err := object.NewRootFolder(vcClient).PlaceVmsXCluster(ctx, placementSpec)
 	if err != nil {
@@ -328,8 +335,14 @@ func getClusterPlacementRecommendations(
 	}
 
 	logger.V(6).Info("PlaceVmsXCluster response", "results", vimtypes.ToString(results))
-
+	for _, info := range results.PlacementInfos {
+		logger.Info("PlaceVmsXCluster response recommendation",
+			"vmName", info.VmName,
+			"recommendation", vimtypes.ToString(info.Recommendation))
+	}
 	if len(results.Faults) != 0 {
+		logger.Info("PlaceVmsXCluster response faults",
+			"faults", vimtypes.ToString(results.Faults))
 		return nil, NewPlaceVMsXClusterErrors(results.Faults)
 	}
 

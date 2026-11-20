@@ -149,7 +149,16 @@ func vmConfigSpecTests() {
 			vm.Labels = map[string]string{"app": "nginx"}
 			terms := []vmopv1.VMAffinityTerm{{TopologyKey: corev1.LabelHostname, LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nginx"}}}}
 			vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAffinity: &vmopv1.VMAffinitySpec{PreferredDuringSchedulingPreferredDuringExecution: terms}}
-			expected := []string{"vmoperator:app:nginx", "vmoperator:af-pds-pde-host-0d65cedea5c5987a-app:nginx"}
+			// The original tag name follows the feature enablement: prefixed
+			// when VMHardAffinityDuringExecution is on, bare key:value otherwise.
+			constraints := virtualmachine.CalculateAffinityOpts(ctx, vm, false, nil)
+			Expect(constraints.ConfigureTagPrefix).To(Equal(mutable))
+			Expect(constraints.ConfigureHashedTags).To(Equal(mutable))
+			original := "app:nginx"
+			if constraints.ConfigureTagPrefix {
+				original = virtualmachine.TagName("app", "nginx")
+			}
+			expected := []string{original, "vmoperator:af-pds-pde-host-0d65cedea5c5987a-app:nginx"}
 			if anti {
 				vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{PreferredDuringSchedulingPreferredDuringExecution: terms}}
 				policyHash, err := virtualmachine.NewAffinityPolicyHash(virtualmachine.AffinityPolicyTypeGroupedAntiAffinity,
@@ -159,8 +168,8 @@ func vmConfigSpecTests() {
 				expected[1] = policyHash.TagName
 			}
 			if !mutable {
-				// The legacy path retains bare key:value tag names.
-				expected = []string{"app:nginx"}
+				// The legacy path attaches only the original tag.
+				expected = expected[:1]
 			}
 			manager := tags.NewManager(ctx.RestClient)
 			category, err := manager.CreateCategory(ctx, &tags.Category{Name: vm.Namespace, Cardinality: "MULTIPLE", AssociableTypes: []string{"VirtualMachine"}})

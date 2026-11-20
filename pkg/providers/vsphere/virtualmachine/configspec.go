@@ -168,7 +168,8 @@ func CreateConfigSpec(
 func CreateConfigSpecForPlacement(
 	vmCtx pkgctx.VirtualMachineContext,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	storageClassesToIDs map[string]string) (vimtypes.VirtualMachineConfigSpec, error) {
+	storageClassesToIDs map[string]string,
+	labelTags *LabelDerivedTags) (vimtypes.VirtualMachineConfigSpec, error) {
 
 	pciDevKey := pciDevicesStartDeviceKey - 28000
 
@@ -315,7 +316,7 @@ func CreateConfigSpecForPlacement(
 	}
 
 	// Populate affinity policies and tags for placement.
-	if err := AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &configSpec, true); err != nil {
+	if err := AddAffinityPoliciesToConfigSpec(vmCtx.Context, vmCtx.VM, &configSpec, true, labelTags); err != nil {
 		return vimtypes.VirtualMachineConfigSpec{}, fmt.Errorf("build placement affinity config: %w", err)
 	}
 

@@ -276,8 +276,15 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 					WCPNamespaceName: wcpNamespaceName,
 				}
 			}
-			flexvmclasses.ClassResourcesSpec(context.TODO(), input)
-			flexvmclasses.UpgradeSpec(context.TODO(), input)
+			// Each spec registers its own BeforeEach, so give each one its own
+			// container; otherwise the staged upgrade BeforeEach (which skips
+			// when FLEX_UPGRADE_PHASE is unset) would apply to every sibling.
+			Context("CLASS-RESOURCES", func() {
+				flexvmclasses.ClassResourcesSpec(context.TODO(), input)
+			})
+			Context("STAGED-UPGRADE", func() {
+				flexvmclasses.UpgradeSpec(context.TODO(), input)
+			})
 		})
 
 		Context("ENVIRONMENT-BROWSER", func() {

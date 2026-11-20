@@ -61,7 +61,7 @@ Each open item changes the shape of an API or a check. A task that depends on on
 
 - [ ] T101 [P] [US12] [vmop-4314] A CI pipeline that runs the Flex VM Classes E2E suites with the capability enabled, quarantined until vmop-4337 — `test/e2e`, CI config
 - [ ] T101a [P] [US12] [vmop-4315] Upgrade-compat unit tests: golden v1alpha5 classes captured from 9.1 convert to v1alpha6, and the provider's ConfigSpec for them matches 9.1 output exactly; a fresh v1alpha5 write without the conversion annotation lands on top of an existing v1alpha6 class without losing its ranges — `api/test/v1alpha5`, `pkg/providers/vsphere/virtualmachine`
-- [ ] T101b [US12] [vmop-4315] Extend the `FLEX_UPGRADE_PHASE` verify phase (`test/e2e/vmservice/vmservice/flexvmclasses/upgrade.go`), on an old (9.1) VC after a Supervisor-only upgrade: edit a class through the VC API (wcpsvc writes v1alpha1 via read-then-write `CreateOrUpdate`); check the VM resize and a new VM get the same CPU, memory and reservations as on 9.1; check an untouched v1alpha6 range survives the write. Rerun the phase after the VC upgrade — `test/e2e`
+- [ ] T101b [US12] [vmop-4315] Extend the `FLEX_UPGRADE_PHASE` verify phase (`test/e2e/vmservice/vmservice/flexvmclasses/upgrade.go`), on an old (9.1) VC after a Supervisor-only upgrade: edit a class through the VC API (wcpsvc writes v1alpha1 via read-then-write `CreateOrUpdate`); check the VM resize and a new VM get the same CPU, memory and reservations as on 9.1; range survival through VC writes is in T912. Rerun the phase after the VC upgrade — `test/e2e`
 - [ ] T101c [US12] [vmop-4315] A UTS lane that does a Supervisor-only upgrade from a 9.1.0 build and runs the T101b verify phase — UTS config, CI config
 
 ### Incremental schema PRs (vmop-4315)
@@ -277,7 +277,7 @@ Dependency tasks; vm-operator does not implement them. What vm-operator assumes 
 
 - [ ] T910 [US10] [vmop-4483] Publish a namespaced `VirtualMachineReservedProfile` per profile with its shape and per-zone counts, backfilled for existing allocations before the capability is enabled. Blocks vmop-4334 and T505
 - [ ] T911 [US12] [vmop-4484] Advertise the `supports_vm_service_classless_vm` capability once T910 and T914 hold. Blocks T505
-- [ ] T912 [US9] [vmop-4327] The per-Supervisor v2 class API. Depends on T103 and T307 (through T915)
+- [ ] T912 [US9] [vmop-4327] The per-Supervisor v2 class API. Depends on T103 and T307 (through T915). Also owns the E2E for classes with ranges, written through the v2 API (no supported path authors them before it): a v1alpha6 VM gets the range default in vSphere, and an older-version write (v1alpha5, and wcpsvc's v1alpha1 read-then-write) keeps untouched ranges and replaces an edited value with a fixed range
 - [ ] T913 [US9/US10] [vmop-4328] The older class API (rejects writes to v1alpha6 classes per T304, keeps today's block on classes with capacity, reports the schema version) and the namespace API with per-class zones; reserved profiles built from a flex class's defaults
 - [ ] T914 [US9] [vmop-4329] Supervisor and namespace-copy integration: copy classes through v1alpha6 with unset and `[]` zones kept apart, report rejected copies; end-to-end E2E of a class written through the v2 API
 - [ ] T915 [US9] [vmop-4392] Generate the class API definition from the v1alpha6 CRD and its mapping markers, with a drift check. Depends on T103 and T307

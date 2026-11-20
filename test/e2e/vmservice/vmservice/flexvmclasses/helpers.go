@@ -76,19 +76,6 @@ func expectFixedRange(r *vmopv1.ResourceQuantityRange, want resource.Quantity, w
 	Expect(r.Default.Cmp(want)).To(BeZero(), "%s default is %s, want %s", what, r.Default, &want)
 }
 
-// expectRange asserts the exact min, default and max of a range.
-func expectRange(r *vmopv1.ResourceQuantityRange, minimum, def, maximum resource.Quantity, what string) {
-	ginkgo.GinkgoHelper()
-
-	Expect(r).NotTo(BeNil(), "%s range is unset", what)
-	Expect(r.Min).NotTo(BeNil(), "%s min is unset", what)
-	Expect(r.Max).NotTo(BeNil(), "%s max is unset", what)
-	Expect(r.Default).NotTo(BeNil(), "%s default is unset", what)
-	Expect(r.Min.Cmp(minimum)).To(BeZero(), "%s min is %s, want %s", what, r.Min, &minimum)
-	Expect(r.Default.Cmp(def)).To(BeZero(), "%s default is %s, want %s", what, r.Default, &def)
-	Expect(r.Max.Cmp(maximum)).To(BeZero(), "%s max is %s, want %s", what, r.Max, &maximum)
-}
-
 // expectLegacyAllocation asserts how a legacy request or limit appears in
 // v1alpha6: a zero legacy value is an unset range and anything else a fixed
 // range.

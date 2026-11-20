@@ -43,6 +43,18 @@ OUTPUT_DIR="${RESULTSDIR:-/tmp/support-bundles}"
 SUPPORT_BUNDLE_RETRY_ATTEMPTS="${SUPPORT_BUNDLE_RETRY_ATTEMPTS:-30}"
 SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS="${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS:-30}"
 
+# Download failures (timeouts, resets, damaged archives) are budgeted
+# separately from "busy" responses. Each download attempt regenerates the whole
+# bundle, so this is kept small; the partial copy from the last failure is
+# still preserved.
+SUPPORT_BUNDLE_DOWNLOAD_ATTEMPTS="${SUPPORT_BUNDLE_DOWNLOAD_ATTEMPTS:-2}"
+
+# The bundle is generated and streamed within the same download request, so
+# this cap must cover generation plus transfer. Generation alone takes ~9
+# minutes on a small testbed and longer with more hosts; a 600s cap was
+# observed to truncate the stream mid-transfer.
+SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS="${SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS:-1800}"
+
 usage() {
     cat >&2 <<EOF
 Usage: ${SCRIPT_NAME} [OPTIONS]
@@ -153,16 +165,22 @@ if [[ "${_vc_session_http}" != "20"* || -z "${VC_SESSION}" || "${VC_SESSION}" ==
 fi
 
 OUT_FILE="${OUTPUT_DIR}/wcp-support-bundle.tar"
+# A failed download may still have streamed a useful prefix of the archive,
+# so it is kept here (overwritten by each failed attempt) rather than deleted.
+PARTIAL_FILE="${OUTPUT_DIR}/wcp-support-bundle.partial.tar"
 
 # ---------------------------------------------------------------------------
-# Request a bundle and download it, in one attempt. A losing request in the
-# single-generation-in-flight race can still come back HTTP 2xx with a
-# url/token, but downloading it yields an empty body - so a non-empty file on
-# disk is the only real success signal, not the trigger response alone.
+# Request a bundle and download it, in one attempt. Returns:
+#   0  bundle downloaded and readable (OUT_FILE written)
+#   1  busy: another collection holds the generation slot (trigger rejected,
+#      no url/token, or the download came back empty); nothing to keep
+#   2  download failed after data or a connection error; a partial copy is
+#      kept at PARTIAL_FILE when any bytes were received
 # ---------------------------------------------------------------------------
 try_collect_bundle() {
     local trigger_url="$1" token_field="$2"
-    local response http_code body url token dl_tmp dl_http_code
+    local response http_code body url token dl_tmp dl_hdr dl_meta dl_size
+    local dl_http_code dl_rc dl_length transfer_complete
 
     response=$(curl -sk -w '\n%{http_code}' --max-time 30 -X POST \
         -H "vmware-api-session-id: ${VC_SESSION}" "${trigger_url}")
@@ -183,19 +201,49 @@ try_collect_bundle() {
 
     _log "Downloading WCP support bundle from ${url}..."
     dl_tmp="$(mktemp "${OUTPUT_DIR}/wcp-support-bundle.XXXXXX.tar")"
-    dl_http_code=$(curl -sk -w '%{http_code}' --max-time 600 -X POST \
+    dl_hdr="$(mktemp "${OUTPUT_DIR}/wcp-support-bundle.XXXXXX.hdr")"
+    dl_meta=$(curl -sk -w '%{http_code} %{size_download}' \
+        --max-time "${SUPPORT_BUNDLE_DOWNLOAD_TIMEOUT_SECONDS}" -X POST \
         -H 'Content-Type: application/json' \
         -d "{\"wcp-support-bundle-token\": \"${token}\"}" \
+        -D "${dl_hdr}" \
         "${url}" -o "${dl_tmp}")
+    dl_rc=$?
+    read -r dl_http_code dl_size <<< "${dl_meta}"
+    # The last Content-Length header wins if redirects produced several.
+    dl_length=$(tr -d '\r' < "${dl_hdr}" | awk 'tolower($1) == "content-length:" {v = $2} END {print v}')
+    rm -f "${dl_hdr}"
 
     if [[ ! -s "${dl_tmp}" ]]; then
-        _warn "Downloaded support bundle from ${url} was empty (HTTP ${dl_http_code}); another collection likely won the race"
         rm -f "${dl_tmp}"
+        if (( dl_rc != 0 )); then
+            _warn "Download of support bundle from ${url} failed (curl exit ${dl_rc}, HTTP ${dl_http_code}) with no data"
+            return 2
+        fi
+        _warn "Downloaded support bundle from ${url} was empty (HTTP ${dl_http_code}); another collection likely won the race"
         return 1
+    fi
+
+    # A transfer is complete when curl exits cleanly, or when it received
+    # every byte the server declared via Content-Length (curl can report a
+    # late reset even after the full body arrived). Without a Content-Length,
+    # only a clean exit proves completeness. A readable tar is still required.
+    transfer_complete=0
+    if (( dl_rc == 0 )) || { [[ -n "${dl_length}" ]] && (( dl_size == dl_length )); }; then
+        transfer_complete=1
+    fi
+
+    if (( transfer_complete == 0 )) || ! tar -tf "${dl_tmp}" >/dev/null 2>&1; then
+        _warn "Support bundle from ${url} is incomplete (curl exit ${dl_rc}, HTTP ${dl_http_code}, ${dl_size} of ${dl_length:-unknown} bytes); keeping partial copy at ${PARTIAL_FILE}"
+        mv -f "${dl_tmp}" "${PARTIAL_FILE}"
+        chmod 644 "${PARTIAL_FILE}"
+        return 2
     fi
 
     mv "${dl_tmp}" "${OUT_FILE}"
     chmod 644 "${OUT_FILE}"
+    # A complete bundle supersedes any partial kept by an earlier attempt.
+    rm -f "${PARTIAL_FILE}"
     return 0
 }
 
@@ -228,16 +276,32 @@ else
 fi
 
 if [[ -n "${TRIGGER_URL}" ]]; then
-    attempt=1
-    while (( attempt <= SUPPORT_BUNDLE_RETRY_ATTEMPTS )); do
-        try_collect_bundle "${TRIGGER_URL}" "${TOKEN_FIELD}" && break
-        if (( attempt == SUPPORT_BUNDLE_RETRY_ATTEMPTS )); then
-            _warn "Gave up collecting a WCP support bundle from ${VC_IP} after ${SUPPORT_BUNDLE_RETRY_ATTEMPTS} attempts"
+    # Busy waits and download failures are counted separately: waiting on
+    # another collection should not consume the download budget, and a slow
+    # download should not consume the wait budget.
+    busy_count=0
+    download_count=0
+    while true; do
+        rc=0
+        try_collect_bundle "${TRIGGER_URL}" "${TOKEN_FIELD}" || rc=$?
+        (( rc == 0 )) && break
+
+        if (( rc == 1 )); then
+            busy_count=$((busy_count + 1))
+            if (( busy_count >= SUPPORT_BUNDLE_RETRY_ATTEMPTS )); then
+                _warn "Gave up waiting for a WCP support bundle from ${VC_IP} after ${busy_count} busy attempts"
+                break
+            fi
+            _warn "Retrying support bundle collection in ${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}s (busy attempt ${busy_count}/${SUPPORT_BUNDLE_RETRY_ATTEMPTS})..."
         else
-            _warn "Retrying support bundle collection in ${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}s (attempt ${attempt}/${SUPPORT_BUNDLE_RETRY_ATTEMPTS})..."
-            sleep "${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}"
+            download_count=$((download_count + 1))
+            if (( download_count >= SUPPORT_BUNDLE_DOWNLOAD_ATTEMPTS )); then
+                _warn "Gave up downloading a WCP support bundle from ${VC_IP} after ${download_count} failed downloads"
+                break
+            fi
+            _warn "Retrying support bundle download in ${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}s (download attempt ${download_count}/${SUPPORT_BUNDLE_DOWNLOAD_ATTEMPTS})..."
         fi
-        ((attempt++))
+        sleep "${SUPPORT_BUNDLE_RETRY_INTERVAL_SECONDS}"
     done
 fi
 

@@ -3496,7 +3496,7 @@ var _ = Describe("Policy watch mappers", func() {
 			Build()
 	})
 
-	Describe("policyToPolicyEvaluationMapperFn", func() {
+	Describe("PolicyToPolicyEvaluationMapperFn", func() {
 		policies := []ctrlclient.Object{
 			&vspherepolv1.AutomaticVMEvictionPolicy{
 				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "evict"},
@@ -3554,7 +3554,7 @@ var _ = Describe("Policy watch mappers", func() {
 		})
 	})
 
-	Describe("virtualMachineToPolicyEvaluationMapperFn", func() {
+	Describe("VirtualMachineToPolicyEvaluationMapperFn", func() {
 		It("enqueues the PolicyEvaluation that matches the VM", func() {
 			vm := &vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "my-vm"},
@@ -3568,7 +3568,7 @@ var _ = Describe("Policy watch mappers", func() {
 		})
 	})
 
-	Describe("tagPolicyToPolicyEvaluationMapperFn", func() {
+	Describe("TagPolicyToPolicyEvaluationMapperFn", func() {
 		It("returns no requests", func() {
 			tp := &vspherepolv1.TagPolicy{
 				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "tp"},

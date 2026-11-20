@@ -56,15 +56,15 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		Watches(
 			&vmopv1.VirtualMachine{},
 			handler.EnqueueRequestsFromMapFunc(
-				virtualMachineToPolicyEvaluationMapperFn(ctx, r.Client))).
+				VirtualMachineToPolicyEvaluationMapperFn(ctx, r.Client))).
 		Watches(
 			&vspherepolv1.ComputePolicy{},
 			handler.EnqueueRequestsFromMapFunc(
-				policyToPolicyEvaluationMapperFn(ctx, r.Client))).
+				PolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
 		Watches(
 			&vspherepolv1.TagPolicy{},
 			handler.EnqueueRequestsFromMapFunc(
-				tagPolicyToPolicyEvaluationMapperFn(ctx, r.Client)))
+				TagPolicyToPolicyEvaluationMapperFn(ctx, r.Client)))
 
 	// AutomaticVMEvictionPolicy and BestEffortRestartPolicy are both gated
 	// behind the same VMEviction capability, so only watch them once that
@@ -74,11 +74,11 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			Watches(
 				&vspherepolv1.AutomaticVMEvictionPolicy{},
 				handler.EnqueueRequestsFromMapFunc(
-					policyToPolicyEvaluationMapperFn(ctx, r.Client))).
+					PolicyToPolicyEvaluationMapperFn(ctx, r.Client))).
 			Watches(
 				&vspherepolv1.BestEffortRestartPolicy{},
 				handler.EnqueueRequestsFromMapFunc(
-					policyToPolicyEvaluationMapperFn(ctx, r.Client)))
+					PolicyToPolicyEvaluationMapperFn(ctx, r.Client)))
 	}
 
 	if pkgcfg.FromContext(ctx).Features.ControlledRebalancingPolicy {
@@ -86,7 +86,7 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 			Watches(
 				&vspherepolv1.ControlledRebalancingPolicy{},
 				handler.EnqueueRequestsFromMapFunc(
-					policyToPolicyEvaluationMapperFn(ctx, r.Client)))
+					PolicyToPolicyEvaluationMapperFn(ctx, r.Client)))
 	}
 
 	return builder.
@@ -904,10 +904,10 @@ func (r *Reconciler) resolvePolicyTags(
 	return tags, nil
 }
 
-// virtualMachineToPolicyEvaluationMapperFn returns a mapper function that returns
+// VirtualMachineToPolicyEvaluationMapperFn returns a mapper function that returns
 // the PolicyEvaluation that needs to be reconciled for a VirtualMachine event,
 // such as labels change, or explicit policy change in the VM Spec.Policies.
-func virtualMachineToPolicyEvaluationMapperFn(
+func VirtualMachineToPolicyEvaluationMapperFn(
 	_ context.Context,
 	_ ctrlclient.Client) handler.MapFunc {
 
@@ -925,7 +925,7 @@ func virtualMachineToPolicyEvaluationMapperFn(
 	}
 }
 
-// policyToPolicyEvaluationMapperFn returns a mapper function that returns the
+// PolicyToPolicyEvaluationMapperFn returns a mapper function that returns the
 // PolicyEvaluations that need to be reconciled for a compute-policy-kind
 // event (ComputePolicy, AutomaticVMEvictionPolicy, BestEffortRestartPolicy,
 // ControlledRebalancingPolicy).
@@ -934,7 +934,7 @@ func virtualMachineToPolicyEvaluationMapperFn(
 // (but at the cost of double evaluation), or check the PolicyEval
 // Status.Policies and skip ones that already have this or newer observed
 // Generation.
-func policyToPolicyEvaluationMapperFn(
+func PolicyToPolicyEvaluationMapperFn(
 	_ context.Context,
 	client ctrlclient.Client) handler.MapFunc {
 
@@ -980,9 +980,9 @@ func policyToPolicyEvaluationMapperFn(
 	}
 }
 
-// tagPolicyToPolicyEvaluationMapperFn returns a mapper function that returns
+// TagPolicyToPolicyEvaluationMapperFn returns a mapper function that returns
 // the PolicyEvaluations that need to be reconciled for a TagPolicy event.
-func tagPolicyToPolicyEvaluationMapperFn(
+func TagPolicyToPolicyEvaluationMapperFn(
 	_ context.Context,
 	_ ctrlclient.Client) handler.MapFunc {
 

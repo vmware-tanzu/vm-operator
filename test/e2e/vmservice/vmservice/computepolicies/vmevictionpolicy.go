@@ -62,7 +62,7 @@ type SpecInput struct {
 // .sdd/specs/007-vm-eviction-policy/plan.md's Test strategy item
 // 1, plus that an already-created, non-matching VM picks up the policy once
 // its match is widened — the latter specifically exercises the
-// policyToPolicyEvaluationMapperFn watch/informer path, which a
+// PolicyToPolicyEvaluationMapperFn watch/informer path, which a
 // fake-client unit test cannot validate. AutomaticVMEvictionPolicy and
 // BestEffortRestartPolicy CRs are mirrored from the WCP InfraPolicy admin
 // API exactly like ComputePolicy CRs are (see virtualmachinelcm.go's "IaaS

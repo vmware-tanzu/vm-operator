@@ -584,6 +584,11 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 	if controllerutil.ContainsFinalizer(ctx.VM, finalizerName) ||
 		controllerutil.ContainsFinalizer(ctx.VM, deprecatedFinalizerName) {
 
+		// hooksBlocked is set while the Delete or ResourceDelete stage is held
+		// on hooks. A held delete is neither a success nor a failure, so no
+		// Delete event is emitted until the VM is actually gone or fails.
+		hooksBlocked := false
+
 		_, skip := ctx.VM.Annotations[pkgconst.SkipDeletePlatformResourceKey]
 		if skip {
 			ctx.Logger.Info("Skipping deletion of underlying VM",
@@ -603,10 +608,6 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 
 			ctx.Logger.V(4).Info("Successfully sanitized vCenter VM before unregistering")
 		} else {
-			// hooksBlocked is set while the Delete stage is held on hooks.
-			// A held delete is neither a success nor a failure, so no event
-			// is emitted until the delete actually completes or fails.
-			hooksBlocked := false
 			defer func() {
 				if !hooksBlocked {
 					r.Recorder.EmitEvent(ctx.VM, "Delete", reterr, false)
@@ -630,15 +631,35 @@ func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr 
 			return fmt.Errorf("failed to remove stale pvc owner refs: %w", err)
 		}
 
+		// Hold the VM finalizers until the ResourceDelete stage hooks resolve.
+		// This runs only after Delete has resolved and everything above has
+		// succeeded. Blocked keeps the finalizers and returns nil; the
+		// LifecycleState watch reconciles the VM again when HooksReady flips.
+		state, err := lifecycle.GetOrCreateLifecycleState(ctx, r.Client, ctx.VM)
+		if err != nil {
+			lifecycle.MarkUnknown(ctx.VM, lifecycle.StageResourceDelete, err)
+			return err
+		}
+		result, err := lifecycle.ReconcileStage(
+			ctx, r.Client, ctx.VM, state, lifecycle.StageResourceDelete)
+		if err != nil {
+			lifecycle.MarkUnknown(ctx.VM, lifecycle.StageResourceDelete, err)
+			return err
+		}
+		if !result.Proceed {
+			hooksBlocked = true
+			return nil
+		}
+
 		// Release the LifecycleState only after everything above has
-		// succeeded. It reads the existing object, never creating one, and
-		// runs with the capability off as well so that an object created while
-		// it was on never strands the VM.
-		//
-		// TODO: The ResourceDelete gate PR evaluates that stage before this
-		// release.
+		// succeeded. Pass the state ReconcileStage just wrote, which already
+		// dropped VM Operator's finalizer in the same write as the resume; a
+		// separate read would be stale and conflict with it. With no hooked
+		// stage the state is nil and the existing object is read instead, also
+		// with the capability off so that an object created while it was on
+		// never strands the VM.
 		if err := lifecycle.ReleaseLifecycleState(
-			ctx, r.Client, r.APIReader, ctx.VM); err != nil {
+			ctx, r.Client, r.APIReader, ctx.VM, state); err != nil {
 
 			return err
 		}

@@ -86,11 +86,22 @@ With the capability on and a hook registered for `Delete`, deletion of the vSphe
 - [x] T044 [P] [vmop-3850] Add an envtest case (`testlabels.EnvTest`) in the VM controller's intg test: a day-2 `Delete` hook created after the VM exists blocks deletion until `HooksReady`
 - [ ] T045 [P] [vmop-3850] Add E2E coverage in `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`: deleting a VM with a `Delete` hook keeps the vSphere VM until the hook resolves, then deletes it; `Delete` hooked alone
 
+## ResourceDelete gate (VM controller)
+
+With the capability on and a hook registered for `ResourceDelete`, removal of VM Operator's finalizer is held until the hooks resolve, after Delete has resolved. With the capability off, or no hook registered, behavior is unchanged. The `APIReader` field and its use by `ReleaseLifecycleState` with the capability off already exist (T022, T025).
+
+- [x] T046 [vmop-3851] `ReconcileDelete`: after the Delete step and the stale-PVC OwnerRef cleanup, and before `ReleaseLifecycleState` and the finalizer removal, get the state and call `lifecycle.ReconcileStage(StageResourceDelete)`; blocked returns `nil` with the VM finalizers kept. Straight-line ordering means it is never evaluated before Delete resolves, and it runs also when Delete is skipped (`SkipDeletePlatformResourceKey`) or the vSphere VM is already gone. Blocked also sets `hooksBlocked`, so the deferred `Delete` event is not emitted and the VM still gets one `DeleteSuccess`. Remove the T025 `TODO`
+- [x] T047 [vmop-3851] Proceed: `ReconcileStage` already resumes and releases in one write (T013), so `ReleaseLifecycleState` takes the state and uses it as is when not nil (nil reads as before), then remove the VM finalizers. Re-reading from the cache is stale and conflicts with the resume write. Capability off still reads through `APIReader`
+- [x] T048 [P] [vmop-3851] Add unit tests to `pkg/lifecycle/stage_test.go` for the release with a supplied state: no read, no extra write after `ReconcileStage` resumed `ResourceDelete`, only VM Operator's finalizer removed, no `APIReader` read with the capability off
+- [ ] T049 [vmop-3851] Add unit tests to `virtualmachine_controller_unit_test.go` (`testlabels.Controller`): VM finalizer kept while blocked; evaluated only after Delete resolves; `ReleaseLifecycleState` called once, before `RemoveFinalizer`; other finalizers kept; a failed finalizer patch after resume re-pauses; capability off releases via `APIReader`
+- [ ] T050 [P] [vmop-3851] Add an envtest case (`testlabels.EnvTest`) in the VM controller's intg test: with hooks on all four stages none passes early, and the `LifecycleState` is gone once both finalizers clear
+- [ ] T051 [P] [vmop-3851] Add E2E coverage in `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`: the VM and the Kubernetes resource remain after the vSphere VM is deleted until the `ResourceDelete` hook resolves; `ResourceDelete` hooked alone
+
 ## Not in this change set
 
 Tracked for follow-up PRs, derived from `plan.md`'s "Controller / webhook impact" and "Test strategy" sections:
 
-- ResourceDelete stage gate, the remaining `AbandonStages` call sites (`ReconcileDelete`), and `ReconcileStage` use in the controller
+- The remaining `AbandonStages` call sites (`ReconcileDelete`)
 - `initLifecycleStages()` in `main.go` after `initCRDs()`
 - `test/builder/fakelifecycle/` (test-only fake Lifecycle Operator)
 - `test/e2e/vmservice/vmservice/virtualmachine/vm_lifecycle_hooks.go`, including the `vmoperator-stages` startup check (SC-011)

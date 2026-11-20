@@ -150,7 +150,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	})
 
 	It("Should tag a matching VM and surface the policy in status.policies",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction", suffix)
 
@@ -180,7 +180,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		})
 
 	It("Should re-evaluate an already-created VM when a policy's match is widened",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-widen", suffix)
 
@@ -225,7 +225,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		})
 
 	It("Should tag a VM that explicitly references a matching Optional BestEffortRestartPolicy",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-restart", suffix)
 
@@ -252,7 +252,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		})
 
 	It("Should surface an error when a VM explicitly references a non-matching Optional BestEffortRestartPolicy",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-restart-no-match", suffix)
 
@@ -276,7 +276,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		})
 
 	It("Should surface both a Mandatory AutomaticVMEvictionPolicy and an Optional BestEffortRestartPolicy in status.policies",
-		Label("core-functional", "experimental"),
+		Label("smoke"),
 		func() {
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mixed", suffix)
 			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-restart-mixed", suffix)
@@ -312,7 +312,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		})
 
 	It("Should tag a VM matching both a Mandatory AutomaticVMEvictionPolicy and a Mandatory BestEffortRestartPolicy",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-both-mandatory", suffix)
 			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-restart-both-mandatory", suffix)
@@ -345,7 +345,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		})
 
 	It("Should tag a VM explicitly referencing both an Optional AutomaticVMEvictionPolicy and an Optional BestEffortRestartPolicy",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-both-optional", suffix)
 			restartTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-restart-both-optional", suffix)
@@ -380,7 +380,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		})
 
 	It("Should update the VM's vSphere tag when the policy's Tags are changed",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			tagID1 := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-update-1", suffix)
 
@@ -431,7 +431,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 		})
 
 	It("Should remove the VM's vSphere tag and status.policies entry when the policy is deleted",
-		Label("core-functional", "experimental"),
+		Label("core-functional"),
 		func() {
 			tagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-delete", suffix)
 
@@ -475,7 +475,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	// host is whatever DRS happens to place it on.
 	It("Should relocate a VM matching a Mandatory AutomaticVMEvictionPolicy off a host entering "+
 		"maintenance mode, keeping it powered on",
-		Label("core-functional", "experimental"),
+		Label("extended-functional"),
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-avep", suffix)
@@ -514,7 +514,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 
 	It("Should restart a VM matching an Optional BestEffortRestartPolicy on another host when its "+
 		"current host enters maintenance mode",
-		Label("core-functional", "experimental"),
+		Label("extended-functional"),
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-ber-avep", suffix)
@@ -570,7 +570,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	// ComputePolicy/InfraPolicy at all.
 	It("Should surface VirtualMachinePowerStateSynced=False with reason InfraInMaintenance for a VM "+
 		"pinned to a host entering maintenance mode, and clear once it exits",
-		Label("core-functional", "experimental"),
+		Label("extended-functional"),
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-pin-avep", suffix)
@@ -635,7 +635,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	// here so a regression in either path is caught.
 	It("Should surface VirtualMachinePowerStateSynced=False with reason NotSynced for a VM pinned to a "+
 		"host entering maintenance mode that also explicitly references an Optional BestEffortRestartPolicy",
-		Label("core-functional", "experimental"),
+		Label("extended-functional"),
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-pin-ber-avep", suffix)
@@ -706,7 +706,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	// maintenance mode on the original host.
 	It("Should power a VM back on, on another host, once the affinity rule pinning it to a host "+
 		"in maintenance mode is removed, without exiting maintenance mode",
-		Label("core-functional", "experimental"),
+		Label("extended-functional"),
 		func() {
 			By("Creating a Mandatory AutomaticVMEvictionPolicy matching the VM's label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-unpin-avep", suffix)
@@ -784,7 +784,7 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 	XIt("Should surface VirtualMachinePowerStateSynced=False with reason InfraInMaintenance for a VM pinned, "+
 		"alongside another pinned VM, to a host that does not finish entering maintenance mode, and recover "+
 		"once entering maintenance mode is cancelled",
-		Label("core-functional", "experimental"),
+		Label("extended-functional"),
 		func() {
 			By("Creating an Optional AutomaticVMEvictionPolicy matching the VMs' label")
 			evictionTagID := createVSphereTag(input.WCPClient, tagManager, tagCategoryID, "vm-eviction-mm-nowait-avep", suffix)

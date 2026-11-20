@@ -364,28 +364,36 @@ func MarkUnknown(
 
 // ReleaseLifecycleState removes VM Operator's finalizer from the VM's
 // LifecycleState, and releases any stage still paused in the same write. It
-// reads the existing object itself and never creates or deletes it. It is a
-// no-op if the VM has no LifecycleState.
+// never creates or deletes the object. It is a no-op if the VM has no
+// LifecycleState or the finalizer is already gone.
 //
-// With the capability off, the object is read through apiReader so that no
-// informer is started; this keeps an object created while the capability was on
-// from blocking VM and namespace deletion.
+// If state is not nil, it is used as is and nothing is read. Pass the state a
+// preceding ReconcileStage wrote to: that call leaves it holding the new
+// resourceVersion, whereas a read through the cache can be stale and conflict
+// with that write. If state is nil, the existing object is read; with the
+// capability off that is through apiReader so that no informer is started,
+// which keeps an object created while the capability was on from blocking VM
+// and namespace deletion.
 func ReleaseLifecycleState(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
 	apiReader ctrlclient.Reader,
-	vm *vmopv1.VirtualMachine) error {
+	vm *vmopv1.VirtualMachine,
+	state *lifecyclev1.LifecycleState) error {
 
-	reader := ctrlclient.Reader(k8sClient)
-	if !pkgcfg.FromContext(ctx).Features.LifecycleHooks {
-		reader = apiReader
-	}
-	state, err := getState(ctx, reader, vm)
-	if err != nil {
-		if apimeta.IsNoMatchError(err) {
-			return nil
+	if state == nil {
+		reader := ctrlclient.Reader(k8sClient)
+		if !pkgcfg.FromContext(ctx).Features.LifecycleHooks {
+			reader = apiReader
 		}
-		return err
+		var err error
+		state, err = getState(ctx, reader, vm)
+		if err != nil {
+			if apimeta.IsNoMatchError(err) {
+				return nil
+			}
+			return err
+		}
 	}
 
 	if state == nil ||

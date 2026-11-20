@@ -1000,7 +1000,7 @@ var _ = Describe("ReleaseLifecycleState", Label(testlabels.Controller), func() {
 			newState(
 				stage(lifecycle.StageDelete, true, false),
 				stage(lifecycle.StageCreate, false, true)))
-		Expect(lifecycle.ReleaseLifecycleState(ctxOn(), c, c, vm)).To(Succeed())
+		Expect(lifecycle.ReleaseLifecycleState(ctxOn(), c, c, vm, nil)).To(Succeed())
 
 		got := getState(c)
 		Expect(got.Finalizers).To(ConsistOf(otherFin))
@@ -1013,7 +1013,7 @@ var _ = Describe("ReleaseLifecycleState", Label(testlabels.Controller), func() {
 	It("is a no-op, and creates nothing, when the VM has no LifecycleState", func() {
 		c = builder.NewFakeClientWithInterceptors(countingFuncs(cnt, interceptor.Funcs{}))
 
-		Expect(lifecycle.ReleaseLifecycleState(ctxOn(), c, c, vm)).To(Succeed())
+		Expect(lifecycle.ReleaseLifecycleState(ctxOn(), c, c, vm, nil)).To(Succeed())
 		Expect(cnt.create.Load()).To(BeZero())
 		Expect(cnt.patch.Load()).To(BeZero())
 	})
@@ -1024,16 +1024,81 @@ var _ = Describe("ReleaseLifecycleState", Label(testlabels.Controller), func() {
 		c = builder.NewFakeClientWithInterceptors(
 			countingFuncs(cnt, interceptor.Funcs{}), s)
 
-		Expect(lifecycle.ReleaseLifecycleState(ctxOn(), c, c, vm)).To(Succeed())
+		Expect(lifecycle.ReleaseLifecycleState(ctxOn(), c, c, vm, nil)).To(Succeed())
 		Expect(cnt.patch.Load()).To(BeZero())
 	})
 
 	It("returns a conflict and keeps the other writer's finalizer", func() {
 		c = builder.NewFakeClientWithInterceptors(
 			conflictOnPatch(), newState())
-		err := lifecycle.ReleaseLifecycleState(ctxOn(), c, c, vm)
+		err := lifecycle.ReleaseLifecycleState(ctxOn(), c, c, vm, nil)
 		Expect(apierrors.IsConflict(err)).To(BeTrue())
 		Expect(getState(c).Finalizers).To(ConsistOf(finalizer, otherFin))
+	})
+
+	When("a state is supplied", func() {
+		It("uses it without reading and removes only VM Operator's finalizer", func() {
+			state := newState(stage(lifecycle.StageDelete, true, false))
+			c = builder.NewFakeClientWithInterceptors(
+				countingFuncs(cnt, interceptor.Funcs{}), state)
+
+			Expect(lifecycle.ReleaseLifecycleState(
+				ctxOn(), c, c, vm, state)).To(Succeed())
+			Expect(cnt.get.Load()).To(BeZero())
+			Expect(cnt.patch.Load()).To(Equal(int32(1)))
+			Expect(getState(c).Finalizers).To(ConsistOf(otherFin))
+			Expect(specOf(getState(c), lifecycle.StageDelete)).To(
+				Equal(stage(lifecycle.StageDelete, false, true)))
+		})
+
+		It("writes nothing after ReconcileStage resumed ResourceDelete", func() {
+			state := withReady(
+				newState(stage(lifecycle.StageResourceDelete, true, false)),
+				lifecycle.StageResourceDelete,
+				metav1.ConditionTrue, reasonAllOK, "ok")
+			c = builder.NewFakeClientWithInterceptors(
+				countingFuncs(cnt, interceptor.Funcs{}), state)
+
+			res, err := lifecycle.ReconcileStage(
+				ctxOn(), c, vm, state, lifecycle.StageResourceDelete)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.Proceed).To(BeTrue())
+			Expect(cnt.patch.Load()).To(Equal(int32(1)))
+			Expect(state.Finalizers).To(ConsistOf(otherFin))
+
+			// The release reuses the state that holds the resume write's
+			// resourceVersion, so it neither reads nor conflicts.
+			Expect(lifecycle.ReleaseLifecycleState(
+				ctxOn(), c, c, vm, state)).To(Succeed())
+			Expect(cnt.patch.Load()).To(Equal(int32(1)))
+			Expect(cnt.get.Load()).To(BeZero())
+			Expect(getState(c).Finalizers).To(ConsistOf(otherFin))
+		})
+
+		It("is a no-op when the supplied state has no finalizer", func() {
+			state := newState()
+			state.Finalizers = []string{otherFin}
+			c = builder.NewFakeClientWithInterceptors(
+				countingFuncs(cnt, interceptor.Funcs{}), state)
+
+			Expect(lifecycle.ReleaseLifecycleState(
+				ctxOn(), c, c, vm, state)).To(Succeed())
+			Expect(cnt.patch.Load()).To(BeZero())
+		})
+
+		It("does not read through the API reader with the capability off", func() {
+			state := newState()
+			c = builder.NewFakeClientWithInterceptors(
+				countingFuncs(cnt, interceptor.Funcs{}), state)
+			reader := &counts{}
+			apiReader := builder.NewFakeClientWithInterceptors(
+				countingFuncs(reader, interceptor.Funcs{}))
+
+			Expect(lifecycle.ReleaseLifecycleState(
+				ctxOff(), c, apiReader, vm, state)).To(Succeed())
+			Expect(reader.get.Load()).To(BeZero())
+			Expect(getState(c).Finalizers).To(ConsistOf(otherFin))
+		})
 	})
 
 	When("the capability is off", func() {
@@ -1046,7 +1111,7 @@ var _ = Describe("ReleaseLifecycleState", Label(testlabels.Controller), func() {
 
 			// With the capability off the object must come from the API reader.
 			Expect(lifecycle.ReleaseLifecycleState(
-				ctxOff(), c, apiReader, vm)).To(Succeed())
+				ctxOff(), c, apiReader, vm, nil)).To(Succeed())
 			Expect(reader.get.Load()).To(Equal(int32(1)))
 			Expect(cnt.get.Load()).To(BeZero())
 			Expect(getState(c).Finalizers).To(ConsistOf(otherFin))
@@ -1055,7 +1120,7 @@ var _ = Describe("ReleaseLifecycleState", Label(testlabels.Controller), func() {
 		It("is a no-op when the object is not found", func() {
 			c = builder.NewFakeClient()
 			Expect(lifecycle.ReleaseLifecycleState(
-				ctxOff(), c, c, vm)).To(Succeed())
+				ctxOff(), c, c, vm, nil)).To(Succeed())
 		})
 
 		It("is a no-op when the CRD is not installed", func() {
@@ -1075,7 +1140,7 @@ var _ = Describe("ReleaseLifecycleState", Label(testlabels.Controller), func() {
 				},
 			})
 			Expect(lifecycle.ReleaseLifecycleState(
-				ctxOff(), c, noMatch, vm)).To(Succeed())
+				ctxOff(), c, noMatch, vm, nil)).To(Succeed())
 		})
 	})
 })

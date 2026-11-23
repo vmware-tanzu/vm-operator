@@ -11215,6 +11215,110 @@ func commonCreateAndUpdateValidations(
 ) {
 	Context("Application type validation", func() {
 
+		// expectedNoBusNumberReason is the full denial reason for the volume
+		// added by setupSCSIVolumeWithoutBusNumber. Updates also require a
+		// unit number.
+		var expectedNoBusNumberReason string
+
+		// setupSCSIVolumeWithoutBusNumber adds a MicrosoftWSFC volume that
+		// references a SCSI controller without a bus number, which is what
+		// the validator receives when the mutation webhook does not assign a
+		// controller. The volume's PVC has the specified access mode and,
+		// optionally, an encrypted StorageClass.
+		setupSCSIVolumeWithoutBusNumber := func(
+			accessMode corev1.PersistentVolumeAccessMode,
+			encrypted bool) func(*unitValidatingWebhookContext) {
+
+			return func(ctx *unitValidatingWebhookContext) {
+				expectedNoBusNumberReason = "spec.volumes[0].controllerBusNumber: Required value"
+				if ctx.oldVM != nil {
+					expectedNoBusNumberReason = "spec.volumes[0].unitNumber: Required value, " +
+						expectedNoBusNumberReason
+				}
+
+				pvc := &corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "no-bus-number-pvc",
+						Namespace: ctx.vm.Namespace,
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						AccessModes: []corev1.PersistentVolumeAccessMode{accessMode},
+					},
+				}
+				if encrypted {
+					sc := &storagev1.StorageClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "no-bus-number-encrypted",
+						},
+						Provisioner: "test-provisioner",
+						Parameters: map[string]string{
+							"storagePolicyID": "4b0b2c5e-7a4e-4f6e-9d0c-2b8a3c1d5e6f",
+						},
+					}
+					Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+					Expect(kubeutil.MarkEncryptedStorageClass(ctx, ctx.Client, *sc, true)).To(Succeed())
+					pvc.Spec.StorageClassName = ptr.To(sc.Name)
+				}
+				Expect(ctx.Client.Create(ctx, pvc)).To(Succeed())
+
+				ctx.vm.Spec.Hardware.SCSIControllers = nil
+				if ctx.oldVM != nil {
+					ctx.oldVM.Spec.Hardware = ctx.vm.Spec.Hardware.DeepCopy()
+					ctx.oldVM.Spec.Volumes = []vmopv1.VirtualMachineVolume{}
+				}
+				ctx.vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+					{
+						Name:            "wsfc-volume",
+						ApplicationType: vmopv1.VolumeApplicationTypeMicrosoftWSFC,
+						DiskMode:        vmopv1.VolumeDiskModeIndependentPersistent,
+						ControllerType:  vmopv1.VirtualControllerTypeSCSI,
+						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pvc.Name,
+								},
+							},
+						},
+					},
+				}
+			}
+		}
+
+		// validateOnlyMissingBusNumber asserts that only the missing placement
+		// fields are reported, so the unassigned controller is treated as
+		// neither a shared nor a non-shared controller.
+		validateOnlyMissingBusNumber := func(response admission.Response) {
+			Expect(string(response.Result.Reason)).To(Equal(expectedNoBusNumberReason))
+		}
+
+		DescribeTable("validate a SCSI volume without a controller bus number",
+			doTest,
+
+			Entry("should deny a ReadWriteOnce volume without panicking",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup:                   setupSCSIVolumeWithoutBusNumber(corev1.ReadWriteOnce, false),
+					validate:                validateOnlyMissingBusNumber,
+				},
+			),
+
+			Entry("should deny an encrypted volume without panicking",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup:                   setupSCSIVolumeWithoutBusNumber(corev1.ReadWriteOnce, true),
+					validate:                validateOnlyMissingBusNumber,
+				},
+			),
+
+			Entry("should deny a ReadWriteMany volume only for the missing bus number",
+				testParams{
+					skipSetControllerForPVC: true,
+					setup:                   setupSCSIVolumeWithoutBusNumber(corev1.ReadWriteMany, false),
+					validate:                validateOnlyMissingBusNumber,
+				},
+			),
+		)
+
 		DescribeTable("validate Microsoft WSFC controller requirements",
 			doTest,
 

@@ -300,27 +300,38 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 			}
 		}
 
-		// The PVCs are included so that the recommendation accounts for their
-		// storage policies, but their disk paths are not resolved: group
-		// placement uses PlaceVmsXCluster, and a real multi-VM batch call of
-		// this exact shape -- several VmPlacementSpecs, HostRecommRequired
-		// true -- was measured against real DRS to substitute the same host
-		// and datastore for every VM in the batch, ignoring each one's disk
-		// backing entirely. The same ConfigSpecs sent through PlaceVm instead
-		// derived the correct host and datastore for every volume, confirming
-		// this is specific to PlaceVmsXCluster rather than an ambiguity in
-		// what a disk backing means. Host derivation for host-local storage
-		// therefore does not work here the way it does in vmCreateDoPlacement,
-		// which uses PlaceVm for that reason.
-		//
-		// TODO(CRM-4964): RFE filed with DRS to honor ConfigSpec disk
-		// backings in PlaceVmsXCluster, or to accept a per-VM host constraint.
-		// Revisit once that lands.
+		// Naming each provisioned volume's disk by its real datastore path is
+		// what lets DRS work out the host: PlaceVmsXCluster keeps such a disk
+		// where it is and only recommends hosts that can reach it (CRM-4964).
+		// This is the same as vmCreateDoPlacement, except that the paths are
+		// only resolved when host-local storage is supported, which is also
+		// when vCenter is known to honor them.
+		var diskPaths map[string]string
+		if pkgcfg.FromContext(vmCtx).Features.HostLocalStorage {
+			// This only checks that no host-local PVC is waiting to bind to a
+			// host it was already given. Group placement always asks for a
+			// host recommendation, so whether one is needed does not matter.
+			if _, err := hostLocalPlacementNeeded(
+				vmCtx, vs.k8sClient, createArgs.Storage); err != nil {
+				return nil, err
+			}
+
+			paths, err := pvcDiskPaths(
+				vmCtx,
+				vcClient.VimClient(),
+				vs.k8sClient,
+				createArgs.Storage.PVCs)
+			if err != nil {
+				return nil, err
+			}
+			diskPaths = paths
+		}
+
 		placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
 			vmCtx,
 			createArgs.ConfigSpec,
 			createArgs.Storage,
-			nil,
+			diskPaths,
 			vs.labelDerivedTags(vmCtx))
 		if err != nil {
 			return nil, err

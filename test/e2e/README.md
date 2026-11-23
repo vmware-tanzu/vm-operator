@@ -150,6 +150,8 @@ The primary configuration is in `vmservice/config/wcp.yaml`:
 |----------|-------------|---------|------------------|
 | `NETWORK` | Networking topology (vds/nsx) | `vds` | ❌ |
 | `STORAGE_CLASS` | Storage class for VMs | `wcpglobal-storage-profile` | ❌ |
+| `HOST_LOCAL_STORAGE_CLASS` | WaitForFirstConsumer storage class whose policy requires host-local storage, assigned to the test namespace. The VM-HOSTLOCAL-STORAGE specs that need it are skipped when unset | (unset) | ❌ |
+| `HOST_LOCAL_IMMEDIATE_STORAGE_CLASS` | Immediate storage class whose policy requires host-local storage, assigned to the test namespace. The VM-HOSTLOCAL-STORAGE specs that need it are skipped when unset | (unset) | ❌ |
 | `E2E_KUBECONFIG_PATH` | Supervisor kubeconfig path (set by `setup-testbed-env.sh --e2e`; a unique file per invocation avoids concurrent local runs stomping on each other) | `~/.kube/wcp-config` | ❌ |
 | `E2E_NAMESPACE` | Fixed namespace for tests | Random namespace | ✅ |
 | `TEST_FOCUS` | Ginkgo focus pattern | All tests | ✅ |

@@ -44,7 +44,6 @@ are provisioned there.
 ### 1.2 Non-goals
 
 - Migrating or rebalancing a VM across hosts after creation.
-- Host-local placement for VMs placed via a `VirtualMachineGroup`.
 - Combining host-local storage with instance storage on one VM.
 - Managing the lifecycle of the host-local datastores or storage policies
   themselves.
@@ -122,7 +121,8 @@ flowchart LR
 | `pkg/config/capabilities` | Maps the `supports_host_local_storage` capability to `pkgcfg.Features.HostLocalStorage`. |
 | `pkg/util/kube` | `IsHostLocalStorageProfile`, `HasVirtualMachineDataSourceRef`. |
 | `pkg/providers/vsphere/vmprovider_vm_hostlocal_storage.go` | Resolves each bound volume's disk path from CNS, adds the per-PVC placement disks, and publishes the host to the PVCs after create. |
-| `pkg/providers/vsphere/placement` | Requests a DRS host recommendation via `PlaceVm` when the VM has host-local storage. |
+| `pkg/providers/vsphere/placement` | Requests a DRS host recommendation via `PlaceVmsXCluster` (`HostRecommRequired=true`) when the VM has host-local storage. `PlaceVm` remains only for instance storage. |
+| `pkg/providers/vsphere/vmprovider_vmgroup.go` | Resolves each group member's bound volume paths for the group's single `PlaceVmsXCluster` call, so each member is limited to the hosts that can reach its own volumes. |
 | `pkg/providers/vsphere/virtualmachine` | Expresses storage-policy requirements to DRS via a placement-only disk. |
 | `controllers/virtualmachine/volume`, `.../volumebatch` | Publishes the resolved host to CNS/CSI on the PVC. |
 
@@ -192,8 +192,8 @@ flowchart TD
     A[Placement] --> B{Volume provisioned?}
 
     B -- yes --> C[Name its real disk path<br/>in the placement ConfigSpec]
-    C --> E[DRS PlaceVm]
-    E --> F[Only one host can reach a<br/>host-local datastore, so DRS<br/>returns that host]
+    C --> E["DRS PlaceVmsXCluster<br/>(single VM or VM group)"]
+    E --> F[The disk is pinned to its datastore,<br/>so DRS returns a host that can reach it]
 
     B -- no --> G[Operator-selected mode]
     G --> H[Add a placement-only disk carrying<br/>each pending PVC's storage policy]
@@ -233,10 +233,8 @@ Two properties of the vSphere placement APIs shape this design:
 - **SPBM compliance is only evaluated when a datastore recommendation is
   requested.** Host-local placement therefore always requests one, so that the
   recommended host is guaranteed to have a policy-compliant datastore.
-- **Only the single-cluster placement API honors the disks in the ConfigSpec.**
-  Measured against real DRS, the cross-cluster API returns the same host
-  whatever disks the ConfigSpec names — including hosts that cannot reach the
-  datastore it names. Host-local placement therefore always uses `PlaceVm`.
+- **`PlaceVmsXCluster` pins existing disks (`CRM-4964`).** A disk whose backing names a full `[ds] path` is an existing disk: it stays on that datastore, and only hosts that can reach every existing-disk datastore of the VM (or of the VMs linked to it by a VM-VM policy) are candidates. Before that fix the cross-cluster API ignored disk backings and returned the same host whatever disks the ConfigSpec named, which is why this feature first used `PlaceVm`. Both single-VM and group placement now use `PlaceVmsXCluster`; `PlaceVm` remains only for instance storage.
+- **The VM's home follows the first disk DRS places itself.** DRS sets `files.vmPathName` from the datastore of the first action of its recommendation, and it lists the disks it places, in `deviceChange` order, before the pinned ones. There is no separate entry for the VM's home, and `ConfigSpec.vmProfile` does not influence it. The placement ConfigSpec therefore always leads with a disk carrying the VM's own storage policy: the image's disks when there are any, otherwise a small placement-only disk added ahead of the PVC disks. Without it, a VM with no image disks and a bound host-local PVC would get its home on the host-local datastore even when its own storage class is shared.
 
 ### 5.2 Datastore placement on create
 
@@ -516,29 +514,8 @@ binding modes:
 
 ## 11. Scope limitations and follow-on work
 
-1. **End-to-end suite coverage.** A Supervisor-level E2E spec, skipped unless
-   the capability is active, is required to guard this behavior in CI.
-2. **VM Groups.** Group placement issues `PlaceVmsXCluster`. A real 3-VM batch
-   call of exactly the shape it sends — several `VmPlacementSpecs` in one
-   request, `HostRecommRequired` true — was measured against real DRS: three
-   VMs, each carrying its own already-provisioned host-local volume on a
-   distinct host, all came back with the *same* substituted host and the
-   *same* substituted datastore, with no relationship to any of the three
-   volumes' real locations. This was deterministic across three trials, and
-   holds against both independently-created FCDs and a real Supervisor
-   namespace's own live PVCs. The same `ConfigSpec`s sent through `PlaceVm`
-   instead derived the correct host and datastore for every one of them,
-   which is the control that rules out an ambiguous API contract and
-   confirms this is specific to `PlaceVmsXCluster`. So the mechanism this
-   design rests on is not available there, and the per-VM flow uses
-   `PlaceVm` for that reason (§5). The PVCs are still passed so the
-   recommendation accounts for their storage policies; only the host
-   constraint is missing. This is an observed limitation of that API rather
-   than a statement from the DRS team; it is filed and tracked as
-   `CRM-4964`, asking DRS to honor ConfigSpec disk backings in
-   `PlaceVmsXCluster`, or to accept a per-VM host constraint. Until that
-   lands, a validation error would be clearer than falling back to zone-only
-   placement.
+1. **End-to-end suite coverage.** The `VM-HOSTLOCAL-STORAGE` spec (`test/e2e/vmservice/vmservice/virtualmachine/vm_hostlocal_storage.go`) covers single-VM and group placement on bound host-local PVCs and a group member's `WaitForFirstConsumer` PVC. It is skipped unless the capability is active and the host-local storage classes are configured, and it stays labeled `experimental` until it has been validated on a Supervisor whose vCenter has the `CRM-4964` fix.
+2. **VM Groups.** Supported since `CRM-4964`. Before that fix, a real 3-VM `PlaceVmsXCluster` batch of exactly the shape group placement sends gave every VM the same substituted host and datastore regardless of its volumes, while the same ConfigSpecs sent through `PlaceVm` were placed correctly. DRS now pins each existing disk and only recommends hosts that can reach it (tera `2511688511ad`, `f638c10f4d6f`). The remaining limits come from how DRS groups VMs: VMs linked by a VM-VM policy are placed together, all or nothing, so affine members whose volumes are on different hosts, or anti-affine members whose volumes share a single-host datastore, fail with `NoCompatibleHost`. The call also stops at the first VM it cannot place and reports only that VM's faults.
 3. **Self-referential volumes.** Volumes whose data source is the VM itself are
    derived from the VM's own placement and need not participate in host
    resolution; excluding them keeps the conflict check strictly about

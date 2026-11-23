@@ -274,16 +274,20 @@ func CreateConfigSpecForPlacement(
 
 	configSpec.DeviceChange = deviceChangeCopy
 
-	// Add a placement-only disk for each of the VM's PVCs, so the recommendation
-	// accounts for their storage policies and, for the volumes that already
-	// exist, for where they actually live.
-	hasVirtualDisk = addPVCPlacementDisks(
-		&configSpec, storageData, diskPaths) || hasVirtualDisk
-
 	if !hasVirtualDisk {
 		// PlaceVmsXCluster expects there to always be at least one disk so add a dummy disk. Typically
-		// because of fast deploy, the image's disks will be present, but for like ISO there is no image
-		// and the VM may have no PVCs either, so add the dummy disk.
+		// because of fast deploy, the image's disks will be present, but for like ISO there is no image,
+		// so add the dummy disk.
+		//
+		// The dummy disk is added even when the VM has PVCs, and it must come
+		// before their placement disks below. DRS puts the VM's home on the
+		// datastore of the first disk in DeviceChange that it places itself,
+		// and a PVC disk named by its existing datastore path is pinned rather
+		// than placed (CRM-4964). Leading with a disk that carries the VM's own
+		// storage policy keeps the VM's home on a datastore that complies with
+		// that policy, rather than on the datastore of one of its volumes --
+		// for example a host-local datastore when the VM's storage class is a
+		// shared one.
 		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
 			Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
 			FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
@@ -304,6 +308,12 @@ func CreateConfigSpecForPlacement(
 			},
 		})
 	}
+
+	// Add a placement-only disk for each of the VM's PVCs, so the recommendation
+	// accounts for their storage policies and, for the volumes that already
+	// exist, for where they actually live. These are added after the VM's own
+	// disks; see the dummy disk above for why the order matters.
+	addPVCPlacementDisks(&configSpec, storageData, diskPaths)
 
 	if pkgcfg.FromContext(vmCtx).Features.InstanceStorage {
 		isVolumes := vmopv1util.FilterInstanceStorageVolumes(vmCtx.VM)
@@ -454,8 +464,7 @@ func initResourceAllocation(ap **vimtypes.ResourceAllocationInfo) {
 // addPVCPlacementDisks adds one placement-only disk to the given placement
 // ConfigSpec for each of the VM's PVCs, carrying that PVC's storage policy, so
 // that the recommended host and datastore are compatible with all of the VM's
-// storage rather than only with the VM's own files. It reports whether any disk
-// was added.
+// storage rather than only with the VM's own files.
 //
 // diskPaths optionally maps a PVC name to the datastore path of its
 // already-provisioned volume. A disk given its real path is what lets DRS
@@ -473,7 +482,7 @@ func initResourceAllocation(ap **vimtypes.ResourceAllocationInfo) {
 func addPVCPlacementDisks(
 	configSpec *vimtypes.VirtualMachineConfigSpec,
 	storageData storage.VMStorageData,
-	diskPaths map[string]string) bool {
+	diskPaths map[string]string) {
 
 	pvcs := make([]corev1.PersistentVolumeClaim, 0, len(storageData.PVCs))
 	for _, pvc := range storageData.PVCs {
@@ -483,7 +492,7 @@ func addPVCPlacementDisks(
 	}
 
 	if len(pvcs) == 0 {
-		return false
+		return
 	}
 
 	deviceKey := pvcPlacementStartDeviceKey(configSpec)
@@ -537,8 +546,6 @@ func addPVCPlacementDisks(
 
 		deviceKey--
 	}
-
-	return true
 }
 
 // pvcPlacementStartDeviceKey returns the first device key to use for the

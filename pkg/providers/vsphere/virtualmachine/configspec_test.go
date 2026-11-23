@@ -3134,6 +3134,10 @@ var _ = Describe("CreateConfigSpecForPlacement PVC disks", func() {
 		configSpec     vimtypes.VirtualMachineConfigSpec
 	)
 
+	// dummyDiskKey is the key of the placement-only disk added when the VM has
+	// no disks of its own.
+	const dummyDiskKey = int32(-42)
+
 	// pvcDiskChanges returns the device changes the PVC placement added, i.e.
 	// every disk whose key is below the lowest key the base ConfigSpec had.
 	pvcDiskChanges := func(
@@ -3153,7 +3157,10 @@ var _ = Describe("CreateConfigSpecForPlacement PVC disks", func() {
 		baseConfigSpec = vimtypes.VirtualMachineConfigSpec{}
 		diskPaths = nil
 		storageData = storage.VMStorageData{
-			StorageClassToPolicyID: map[string]string{"my-sc": "my-policy-id"},
+			StorageClassToPolicyID: map[string]string{
+				"my-sc": "my-policy-id",
+				"vm-sc": "vm-policy-id",
+			},
 			PVCs: []corev1.PersistentVolumeClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "pvc-1"},
@@ -3170,6 +3177,7 @@ var _ = Describe("CreateConfigSpecForPlacement PVC disks", func() {
 		}
 
 		vm := builder.DummyVirtualMachine()
+		vm.Spec.StorageClass = "vm-sc"
 		vmCtx = pkgctx.VirtualMachineContext{
 			Context: pkgcfg.NewContext(),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.GetName()),
@@ -3186,7 +3194,7 @@ var _ = Describe("CreateConfigSpecForPlacement PVC disks", func() {
 
 	When("the PVC is not provisioned", func() {
 		It("adds a disk that is created, carrying the PVC's policy", func() {
-			changes := pvcDiskChanges(configSpec, 0)
+			changes := pvcDiskChanges(configSpec, dummyDiskKey)
 			Expect(changes).To(HaveLen(1))
 
 			disk := changes[0].Device.(*vimtypes.VirtualDisk)
@@ -3208,7 +3216,7 @@ var _ = Describe("CreateConfigSpecForPlacement PVC disks", func() {
 		})
 
 		It("names the disk by its path and does not create it", func() {
-			changes := pvcDiskChanges(configSpec, 0)
+			changes := pvcDiskChanges(configSpec, dummyDiskKey)
 			Expect(changes).To(HaveLen(1))
 
 			disk := changes[0].Device.(*vimtypes.VirtualDisk)
@@ -3260,6 +3268,78 @@ var _ = Describe("CreateConfigSpecForPlacement PVC disks", func() {
 		It("adds no PVC disk, since that disk is already in the ConfigSpec", func() {
 			// Only the dummy disk the placement API requires is present.
 			Expect(pvcDiskChanges(configSpec, -1000)).To(BeEmpty())
+		})
+	})
+
+	// DRS puts the VM's home on the datastore of the first disk in
+	// DeviceChange that it places itself. A PVC disk named by its existing
+	// path is pinned rather than placed, so the first disk must be one that
+	// carries the VM's own storage policy.
+	When("the VM has no disks of its own", func() {
+		assertDummyDiskLeads := func() {
+			GinkgoHelper()
+
+			disks := findVirtualDiskDeviceChanges(configSpec)
+			Expect(disks).ToNot(BeEmpty())
+
+			first := disks[0]
+			Expect(first.Device.(*vimtypes.VirtualDisk).Key).To(Equal(dummyDiskKey))
+			Expect(first.FileOperation).To(Equal(
+				vimtypes.VirtualDeviceConfigSpecFileOperationCreate))
+			Expect(first.Profile).To(HaveLen(1))
+			Expect(first.Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec).
+				ProfileId).To(Equal("vm-policy-id"))
+
+			Expect(pvcDiskChanges(configSpec, dummyDiskKey)).
+				To(HaveLen(len(disks) - 1))
+		}
+
+		When("its PVC is provisioned", func() {
+			BeforeEach(func() {
+				diskPaths = map[string]string{"pvc-1": "[my-ds] fcd/abc.vmdk"}
+			})
+
+			It("leads with a disk carrying the VM's policy", func() {
+				assertDummyDiskLeads()
+			})
+		})
+
+		When("its PVC is not provisioned", func() {
+			It("leads with a disk carrying the VM's policy", func() {
+				assertDummyDiskLeads()
+			})
+		})
+
+		It("does not set the VM profile", func() {
+			Expect(configSpec.VmProfile).To(BeEmpty())
+		})
+	})
+
+	When("the VM has a disk of its own", func() {
+		BeforeEach(func() {
+			diskPaths = map[string]string{"pvc-1": "[my-ds] fcd/abc.vmdk"}
+			baseConfigSpec.DeviceChange = append(baseConfigSpec.DeviceChange,
+				&vimtypes.VirtualDeviceConfigSpec{
+					Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+					FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+					Device: &vimtypes.VirtualDisk{
+						CapacityInBytes: 1024,
+						VirtualDevice: vimtypes.VirtualDevice{
+							Key: -10,
+							Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+								ThinProvisioned: ptr.To(true),
+							},
+						},
+					},
+				})
+		})
+
+		It("adds no dummy disk and keeps the VM's disk ahead of the PVC disks", func() {
+			disks := findVirtualDiskDeviceChanges(configSpec)
+			Expect(disks).To(HaveLen(2))
+			Expect(disks[0].Device.(*vimtypes.VirtualDisk).Key).To(BeEquivalentTo(-10))
+			Expect(disks[1].Device.(*vimtypes.VirtualDisk).Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).
+				FileName).To(Equal("[my-ds] fcd/abc.vmdk"))
 		})
 	})
 })

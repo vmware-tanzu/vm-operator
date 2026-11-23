@@ -48,7 +48,7 @@ wired outside this repository) is activated for the Supervisor.
 ```
 VirtualMachine + PersistentVolumeClaim(s) on a host-local StorageClass
   │
-  └─vmCreateDoPlacement─▶ hostLocalPlacementNeeded  (capability checked by caller)
+  └─vmCreateDoPlacement / group placement─▶ hostLocalPlacementNeeded  (capability checked by caller)
         │
         ├─ A Bound PVC ────────────────────────────────────────▶ its real disk path goes in the ConfigSpec;
         │                                                        DRS returns the one host that can reach it
@@ -56,9 +56,10 @@ VirtualMachine + PersistentVolumeClaim(s) on a host-local StorageClass
         └─ A Pending/WFFC PVC has no host anywhere ────────────▶ Constraints.NeedHostLocalPlacement = true
                                                                       │
                                                                       ▼
-                                          AddPVCPlacementDisks adds a policy-tagged
+                                          addPVCPlacementDisks adds a policy-tagged
                                           placement-only disk per PVC (excluding the
-                                          VM's own disks, i.e. dataSourceRef → VM)
+                                          VM's own disks, i.e. dataSourceRef → VM),
+                                          after a disk carrying the VM's own policy
                                                                       │
                                                                       ▼
                                           placement.Placement forces PlaceVmsXCluster
@@ -135,8 +136,8 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
    `Pending` PVC on a WFFC host-local `StorageClass` with no requested-
    topology hint, **when** the VM is created, **then** VM Operator injects a
    placement-only disk carrying the `StorageClass`'s SPBM policy ID and asks
-   `PlaceVm` for a host recommendation, so the host DRS returns is one with a
-   compliant datastore.
+   `PlaceVmsXCluster` for a host recommendation (`HostRecommRequired=true`),
+   so the host DRS returns is one with a compliant datastore.
 2. **Given** the VM has been created on a host, **when** the provider next
    reconciles it, **then** it maps that host back to its Supervisor node and
    sets the PVC's `selected-node` to that node with `selected-node-is-zone`
@@ -200,8 +201,8 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
   and no datastore is passed to placement, and nothing about the host is
   derived, recorded, or made immutable — a VM whose create fails is free to be
   placed elsewhere on the next attempt. Host-local placement is issued through
-  `PlaceVm`, because `PlaceVmsXCluster` was measured to return the same host
-  regardless of the disk backings in the ConfigSpec.
+  `PlaceVmsXCluster` with `HostRecommRequired=true`. Since `CRM-4964`, it treats a disk whose backing names a full `[ds] path` as an existing disk: the disk stays on that datastore, and only hosts that can reach it are recommended. `PlaceVm` is now used only for instance storage, whose magic disk ID `PlaceVmsXCluster` does not support. This depends on the DRS fix (`CRM-5309`), which ships in vCenter 9.2 alongside `HostLocalStorageSupport`, so the `supports_host_local_storage` capability is the only gate.
+- **The VM's home stays on a datastore that complies with the VM's own policy.** DRS puts the VM's home on the datastore of the first disk in the ConfigSpec's `deviceChange` that it places itself; a pinned (existing) disk does not count unless every disk is pinned, and `ConfigSpec.vmProfile` plays no part. A VM with image disks already leads with them. A VM without any (an ISO VM, for example) gets a small placement-only disk carrying the VM's storage class policy ahead of its PVC disks, so a VM with a shared storage class does not end up with its home on a host-local datastore.
 - **Every PVC contributes a placement disk, not only host-local ones.** A
   placement-only disk carrying the PVC's storage policy is added for each of
   the VM's PVCs, so the recommendation accounts for all of the VM's storage
@@ -226,21 +227,9 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
   re-published from wherever the VM currently is on every reconcile; only a
   migration that lands after CNS commits the volume causes a problem, and
   nothing in this feature detects or guards against that specific race.
-- **VM Groups.** Group placement issues `PlaceVmsXCluster`, so the disk-path
-  mechanism above is unavailable and the host constraint is not honored — a
-  real 3-VM batch call of the exact shape it sends, each VM carrying its own
-  already-provisioned host-local volume on a distinct host, came back with
-  every VM given the same substituted host and datastore, unrelated to any of
-  the three real locations, deterministically across three trials, both for
-  independently-created FCDs and for a real namespace's own live PVCs. The
-  same ConfigSpecs sent through `PlaceVm` instead derived the correct host
-  and datastore for every volume, confirming this is specific to
-  `PlaceVmsXCluster`. The PVCs are still passed so the recommendation
-  accounts for their storage policies. This is an observed property of that
-  API rather than a statement from the DRS team; it is filed and tracked as
-  `CRM-4964`, asking DRS to honor ConfigSpec disk backings there, or to
-  accept a per-VM host constraint. A host-local VM with `Spec.GroupName` set
-  falls back to whatever placement its group computes.
+- **VM Groups** are supported. Group placement sends each member's ConfigSpec, with its bound volumes named by their real paths, in one `PlaceVmsXCluster` call, so each member is limited to the hosts that can reach its own volumes. Before `CRM-4964` that call ignored disk backings and gave every member the same substituted host. A member whose host-local PVC was already given a host but is not Bound yet holds up the group's placement until the PVC binds, the same as for a VM placed on its own.
+- **VM-VM affinity limits group placement.** DRS places VMs linked by a VM-VM policy together, all or nothing. Members with a VM-VM affinity policy whose host-local volumes are on different hosts cannot be placed, and neither can members with a VM-VM anti-affinity policy whose existing disks are on the same single-host datastore. Both fail with `NoCompatibleHost`. Members without a VM-VM policy are placed independently.
+- **Placement faults are all or nothing.** `PlaceVmsXCluster` stops at the first VM it cannot place and returns only that VM's faults, which name the VM, the disk and its datastore (for example `ExistingDiskProfileMismatch`, or `NoCompatibleHost` with `ExistingDiskDatastoreNotAccessible`). The failing member's `PlacementReady` condition shows them, and the other members report that another member could not be placed.
 - `VirtualMachineStatus.NodeName` (`api/v1alpha6`) already exists but serves a
   different purpose (VKS node identity) and is not reused by this feature. The
   host a pending volume must be provisioned on is published to the PVC, and no
@@ -260,4 +249,4 @@ and `cns.vmware.com/selected-node-is-zone: "false"`.
       landing after CNS commits the volume), not as a blanket "unsupported"
       for the shared-zonal-home-plus-host-local-WFFC configuration, which
       creates and provisions normally in the common case.
-- [ ] Out-of-scope items (VM Groups, instance storage) are listed.
+- [ ] Out-of-scope items (instance storage) are listed.

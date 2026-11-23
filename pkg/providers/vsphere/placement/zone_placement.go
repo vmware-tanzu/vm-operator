@@ -45,12 +45,13 @@ type Constraints struct {
 	// PVC, so placement must force a DRS host recommendation compliant with
 	// that PVC's storage.
 	//
-	// Placement is not told which host. Each host-local PVC is represented by a
-	// disk in the placement ConfigSpec (see AddPVCPlacementDisks) and DRS
-	// derives the host from those disks: a provisioned volume carries its real
-	// datastore path, which only one host can reach; an unprovisioned one
-	// carries only its storage policy, so any compliant host will do and the
-	// caller publishes DRS's choice back to the PVC.
+	// Placement is not told which host. Each PVC is represented by a disk in
+	// the placement ConfigSpec (see virtualmachine.CreateConfigSpecForPlacement)
+	// and DRS derives the host from those disks: a provisioned volume carries
+	// its real datastore path, which PlaceVmsXCluster pins in place and only
+	// lets hosts that can reach it be chosen; an unprovisioned one carries only
+	// its storage policy, so any compliant host will do and the caller
+	// publishes DRS's choice back to the PVC.
 	NeedHostLocalPlacement bool
 
 	// TODO: ClusterModules?
@@ -354,33 +355,26 @@ func getPlacementRecommendation(
 	var recommendation Recommendation
 
 	switch {
-	case curResult.needInstanceStoragePlacement ||
-		curResult.needHostLocalPlacement:
-		//
-		// Use PlaceVm rather than PlaceVmsXCluster, for two reasons:
-		//
-		//   1. PlaceVmsXCluster does not support the magic instance storage
-		//      disk ID. PlaceVm always returns a host recommendation, which
-		//      instance storage requires.
-		//
-		//   2. Only PlaceVm derives the host from the disks in the ConfigSpec.
-		//      A VM with host-local storage must land on a host that can reach
-		//      its volumes. Measured against real DRS on the identical
-		//      ConfigSpec sent through both APIs, PlaceVm derives the correct
-		//      host and datastore for every volume, while PlaceVmsXCluster
-		//      substitutes its own choice of datastore regardless of those
-		//      disks - including a datastore that the recommended host cannot
-		//      even reach. Filed as CRM-4964; group placement (which only has
-		//      PlaceVmsXCluster available) cannot support host-local storage
-		//      until that is fixed.
-		//
+	case curResult.needInstanceStoragePlacement:
+		// PlaceVmsXCluster does not support the magic instance storage disk
+		// ID, so fall back to PlaceVm. PlaceVm always returns a host
+		// recommendation, which instance storage requires.
 		rec, err := getPlaceVMRecommendation(vmCtx, vcClient, candidates, configSpec)
 		if err != nil {
 			return Recommendation{}, fmt.Errorf("PlaceVM failed: %w", err)
 		}
 		recommendation = rec
 
-	case len(candidates) > 1 || curResult.needDatastorePlacement:
+	case len(candidates) > 1 ||
+		curResult.needDatastorePlacement ||
+		curResult.needHostLocalPlacement:
+		//
+		// Host-local storage asks for a host recommendation, because the VM
+		// must land on a host that can reach its volumes. PlaceVmsXCluster
+		// treats each disk whose backing names a full datastore path as an
+		// existing disk that stays where it is, and only recommends hosts that
+		// can reach all of them (CRM-4964).
+		//
 		// TODO: requesting a host recommendation only when a specific feature
 		// needs one has been called out as a false optimization, and this
 		// should always ask for one. Doing so is not a self-contained change:
@@ -402,7 +396,7 @@ func getPlacementRecommendation(
 				// We do not set ZoneName here as the candidateRPMorefs limited to
 				// the required zone.
 			}},
-			false,
+			curResult.needHostLocalPlacement,
 			curResult.needDatastorePlacement)
 		if err != nil {
 			return Recommendation{}, fmt.Errorf("PlaceVmsXCluster failed: %w", err)

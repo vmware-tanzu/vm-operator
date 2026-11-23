@@ -67,6 +67,8 @@ Used for zone-level placement across multiple clusters:
 ```yaml
 # Scenarios using PlaceVmsXCluster API:
 - Zone placement required with multiple candidates
+- Host-local storage (host recommendation required)
+- VirtualMachineGroup placement
 - No instance storage requirements
 - Optimal for comparing options across clusters
 ```
@@ -102,7 +104,7 @@ The placement workflow follows these steps:
 ```go
 // Determines what types of placement are required
 needZonePlacement     = (VM lacks zone label)
-needHostPlacement     = (VM has instance storage)
+needHostPlacement     = (VM has instance storage or host-local storage)
 needDatastorePlacement = (FastDeploy enabled)
 ```
 
@@ -189,6 +191,8 @@ host can reach a host-local datastore. For a volume that is not provisioned yet,
 DRS chooses a host whose storage satisfies the `StorageClass`'s policy, and once
 the VM has been created there, VM Operator stamps that host onto the PVC's
 `volume.kubernetes.io/selected-node` so CSI provisions the volume on it.
+
+Placement goes through the `PlaceVmsXCluster` API with a host recommendation required, for a VM placed on its own and for the members of a `VirtualMachineGroup` alike. Each provisioned volume is sent by its real datastore path, which DRS keeps in place, recommending only hosts that can reach it. This requires vCenter 9.2 or later, the release that introduces host-local storage support. VMs linked by a VM-VM affinity policy are placed together, so affine group members whose host-local volumes are on different hosts cannot be placed; likewise for anti-affine members whose volumes are on the same host-local datastore.
 
 A host-local PVC's `csi.vsphere.volume-requested-topology` annotation must
 therefore either be **omitted** — letting CSI choose the host — or name a

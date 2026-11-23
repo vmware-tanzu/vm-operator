@@ -60,6 +60,7 @@ const (
 	SharedDisksCapabilityName               = "supports_shared_disks_with_VM_service_VMs"
 	AllDisksArePVCapabilityName             = "supports_vm_service_all_disks_are_pvcs"
 	MultiWriterDiskVMotionCapabilityName    = "supports_multiwriter_disk_vmotion"
+	HostLocalStorageCapabilityName          = "supports_host_local_storage"
 	IaaSComputePoliciesCapabilityName       = "supports_iaas_compute_policies"
 	VMServiceClasslessVMCapabilityName      = "supports_vm_service_classless_vm"
 	WorkloadIPv6CapabilityName              = "supports_workload_ipv6"

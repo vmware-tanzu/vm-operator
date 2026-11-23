@@ -87,6 +87,43 @@ var _ = Describe("PlaceVMsXClusterErrors", func() {
 		Expect(err.Error()).To(ContainSubstring("nested fault"))
 	})
 
+	// DRS names the VM, the disk and its datastore in the faults for existing
+	// disks (CRM-4964). Group placement shows those messages on the failing
+	// member's PlacementReady condition, so the user can tell which volume is
+	// at fault.
+	It("keeps the disk and host details of existing-disk faults", func() {
+		const (
+			profileMismatch = "Datastore local-0 of existing disk -1042 " +
+				"([local-0] fcd/a.vmdk) of VM vm-1 is not compatible with the " +
+				"disk's storage policy shared-policy."
+			notAccessible = "Host host-25 cannot access datastore local-0 of " +
+				"existing disk -1042 ([local-0] fcd/a.vmdk) of VM vm-1."
+		)
+
+		err := placement.NewPlaceVMsXClusterErrors([]vimtypes.PlaceVmsXClusterResultPlacementFaults{
+			{
+				VmName:       "vm-1",
+				ResourcePool: vimtypes.ManagedObjectReference{Value: "rp-1"},
+				Faults:       []vimtypes.LocalizedMethodFault{{LocalizedMessage: profileMismatch}},
+			},
+			{
+				VmName:       "vm-1",
+				ResourcePool: vimtypes.ManagedObjectReference{Value: "rp-2"},
+				Faults: []vimtypes.LocalizedMethodFault{{
+					Fault: &vimtypes.NoCompatibleHost{
+						Host:  []vimtypes.ManagedObjectReference{{Value: "host-25"}},
+						Error: []vimtypes.LocalizedMethodFault{{LocalizedMessage: notAccessible}},
+					},
+				}},
+			},
+		})
+
+		vmErr := err.ErrorForVM("vm-1")
+		Expect(vmErr).To(MatchError(ContainSubstring(profileMismatch)))
+		Expect(vmErr).To(MatchError(ContainSubstring(notAccessible)))
+		Expect(err.HasFaultForVM("vm-2")).To(BeFalse())
+	})
+
 	It("retains the VM association when faults have no localized messages", func() {
 		err := placement.NewPlaceVMsXClusterErrors([]vimtypes.PlaceVmsXClusterResultPlacementFaults{{
 			VmName:       "vm-1",

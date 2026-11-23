@@ -420,4 +420,176 @@ func vmHostLocalStorageTests() {
 			&pvc)).To(Succeed())
 		Expect(pvc.Annotations).ToNot(HaveKey(storagehelpers.AnnSelectedNode))
 	})
+
+	Context("when the VM is a VirtualMachineGroup member", func() {
+		var vmg *vmopv1.VirtualMachineGroup
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(parentCtx, func(config *pkgcfg.Config) {
+				config.Features.VMGroups = true
+			})
+		})
+
+		JustBeforeEach(func() {
+			vmg = &vmopv1.VirtualMachineGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "vmg",
+					Namespace: nsInfo.Namespace,
+				},
+				Spec: vmopv1.VirtualMachineGroupSpec{
+					BootOrder: []vmopv1.VirtualMachineGroupBootOrderGroup{
+						{
+							Members: []vmopv1.GroupMember{
+								{Kind: "VirtualMachine", Name: vm.Name},
+							},
+						},
+					},
+				},
+			}
+			Expect(ctx.Client.Create(ctx, vmg)).To(Succeed())
+			vm.Spec.GroupName = vmg.Name
+		})
+
+		AfterEach(func() {
+			vmg = nil
+		})
+
+		addBoundHostLocalVolume := func() {
+			addHostLocalVolume(&corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pvcName,
+					Namespace: nsInfo.Namespace,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: ptr.To(hostLocalStorageClassName),
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimBound,
+				},
+			})
+		}
+
+		addPendingHostLocalVolumeWithSelectedNode := func() {
+			addHostLocalVolume(&corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pvcName,
+					Namespace: nsInfo.Namespace,
+					Annotations: map[string]string{
+						storagehelpers.AnnSelectedNode:               hostLocalNodeName,
+						constants.CNSSelectedNodeIsZoneAnnotationKey: "false",
+					},
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					StorageClassName: ptr.To(hostLocalStorageClassName),
+				},
+				Status: corev1.PersistentVolumeClaimStatus{
+					Phase: corev1.ClaimPending,
+				},
+			})
+		}
+
+		Context("group placement", func() {
+			placeGroup := func() error {
+				return vmProvider.PlaceVirtualMachineGroup(ctx, vmg,
+					[]providers.VMGroupPlacement{
+						{
+							VMGroup:   vmg,
+							VMMembers: []*vmopv1.VirtualMachine{vm},
+						},
+					})
+			}
+
+			It("recommends a host for a member with a Bound host-local PVC", func() {
+				addBoundHostLocalVolume()
+
+				Expect(placeGroup()).To(Succeed())
+
+				Expect(vmg.Status.Members).To(HaveLen(1))
+				ms := vmg.Status.Members[0]
+				Expect(ms.Placement).ToNot(BeNil())
+				Expect(ms.Placement.Node).ToNot(BeEmpty())
+			})
+
+			It("waits for a host-local PVC that has a selected node but is not Bound", func() {
+				// The same guard as for a VM placed on its own: the PVC has no
+				// datastore yet, so DRS could pick a different host than the
+				// one CNS was already given.
+				addPendingHostLocalVolumeWithSelectedNode()
+
+				err := placeGroup()
+				Expect(err).To(MatchError(vsphere.ErrVMGroupPlacementConfigSpec))
+
+				var requeueErr pkgerr.RequeueError
+				Expect(errors.As(err, &requeueErr)).To(BeTrue())
+
+				Expect(vmg.Status.Members).To(HaveLen(1))
+				Expect(vmg.Status.Members[0].Placement).To(BeNil())
+			})
+		})
+
+		Context("VM creation from the group's placement", func() {
+			setMemberPlacement := func(node string) {
+				GinkgoHelper()
+
+				zoneName := ctx.GetFirstZoneName()
+				nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, zoneName, "")
+				Expect(nsRP).ToNot(BeNil())
+
+				vmg.Status.Members = []vmopv1.VirtualMachineGroupMemberStatus{
+					{
+						Name: vm.Name,
+						Kind: "VirtualMachine",
+						UID:  vm.UID,
+						Conditions: []metav1.Condition{
+							{
+								Type:               vmopv1.VirtualMachineGroupMemberConditionPlacementReady,
+								Status:             metav1.ConditionTrue,
+								Reason:             string(metav1.ConditionTrue),
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+						Placement: &vmopv1.VirtualMachinePlacementStatus{
+							Zone:       zoneName,
+							Node:       node,
+							Pool:       nsRP.Reference().Value,
+							Datastores: ctx.GroupPlacementDatastores(),
+						},
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, vmg)).To(Succeed())
+			}
+
+			It("creates the VM on the host its group recommended", func() {
+				addBoundHostLocalVolume()
+				setMemberPlacement(hostMoID)
+
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vmProvider, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				vmHost, err := vcVM.HostSystem(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vmHost.Reference().Value).To(Equal(hostMoID))
+			})
+
+			It("fails when the group's placement has no host", func() {
+				addBoundHostLocalVolume()
+				setMemberPlacement("")
+
+				err := createOrUpdateVM(ctx, vmProvider, vm)
+				Expect(err).To(MatchError(ContainSubstring(
+					"placement result missing host required for host-local storage")))
+			})
+
+			It("waits for a host-local PVC that has a selected node but is not Bound", func() {
+				addPendingHostLocalVolumeWithSelectedNode()
+				setMemberPlacement(hostMoID)
+
+				err := createOrUpdateVM(ctx, vmProvider, vm)
+				Expect(err).To(HaveOccurred())
+
+				var requeueErr pkgerr.RequeueError
+				Expect(errors.As(err, &requeueErr)).To(BeTrue())
+			})
+		})
+	})
 }

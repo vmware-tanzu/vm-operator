@@ -219,7 +219,9 @@ required; Phase 6 above only adds a documentation marker.
 | Risk | Mitigation |
 |------|-----------|
 | DRS recommends a host that cannot reach a provisioned volume | The volume's real datastore path is in the placement ConfigSpec, and DRS validates every disk against the host it picks, so an unreachable host yields no recommendation rather than a wrong one |
-| `PlaceVmsXCluster` ignores the disks in the ConfigSpec | Host-local placement routes through `PlaceVm`, which does not |
+| `PlaceVmsXCluster` ignores the disks in the ConfigSpec | Fixed by DRS in `CRM-4964` (tera `2511688511ad`, `f638c10f4d6f`), which ships in vCenter 9.2 alongside `HostLocalStorageSupport`. Single-VM and group host-local placement both use `PlaceVmsXCluster`; `PlaceVm` remains only for instance storage |
+| DRS puts the VM's home on the first disk it places, not by `vmProfile` (DRS's one-pager reply says otherwise; tera `main` code does not) | The placement ConfigSpec always leads with a disk carrying the VM's own policy: the image's disks, or a small placement-only disk ahead of the PVC disks. Follow up with DRS on the one-pager thread |
+| VM-VM affinity or anti-affinity conflicts with where group members' volumes are | DRS fails the linked VMs with `NoCompatibleHost`; documented as a limitation in `spec.md` |
 | A volume told which host to use but not yet bound | It has no datastore for the ConfigSpec, so placement waits for it to bind rather than letting DRS pick a different host |
 | A tentative DRS host choice becoming permanently stuck on the VM | Nothing about the host is recorded on the VM; it is derived afresh each reconcile and only published to the PVC once the VM exists |
 

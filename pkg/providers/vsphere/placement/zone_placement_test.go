@@ -30,22 +30,20 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-// placementSpy records what was actually asked of DRS, and can rewrite the
-// host in a PlaceVm response. Neither is otherwise observable from the
-// placement Result.
+// placementSpy records what was actually asked of DRS, which is not otherwise
+// observable from the placement Result.
 type placementSpy struct {
 	soap.RoundTripper
 
 	// Recorded from the PlaceVmsXCluster request.
 	hostRecommRequired      *bool
 	datastoreRecommRequired *bool
+	xClusterConfigSpecs     []vimtypes.VirtualMachineConfigSpec
 
-	// Recorded from the PlaceVm request.
-	placeVMHosts []vimtypes.ManagedObjectReference
-
-	// Which API was called. Host-local placement must use PlaceVm, since
-	// PlaceVmsXCluster ignores the disks in the ConfigSpec and so cannot
-	// resolve the host from a host-local volume.
+	// Which API was called. Host-local placement uses PlaceVmsXCluster, which
+	// keeps a disk named by its existing datastore path in place and only
+	// recommends hosts that can reach it (CRM-4964). Only instance storage
+	// still uses PlaceVm.
 	placeVMCalls  int
 	xClusterCalls int
 }
@@ -57,10 +55,13 @@ func (s *placementSpy) RoundTrip(
 		s.xClusterCalls++
 		s.hostRecommRequired = b.Req.PlacementSpec.HostRecommRequired
 		s.datastoreRecommRequired = b.Req.PlacementSpec.DatastoreRecommRequired
+		s.xClusterConfigSpecs = nil
+		for _, vps := range b.Req.PlacementSpec.VmPlacementSpecs {
+			s.xClusterConfigSpecs = append(s.xClusterConfigSpecs, vps.ConfigSpec)
+		}
 	}
 	if b, ok := req.(*methods.PlaceVmBody); ok && b.Req != nil {
 		s.placeVMCalls++
-		s.placeVMHosts = b.Req.PlacementSpec.Hosts
 	}
 
 	if err := s.RoundTripper.RoundTrip(ctx, req, res); err != nil {
@@ -325,8 +326,16 @@ func vcSimPlacement() {
 				})
 
 				It("returns success", func() {
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+					spy := &placementSpy{}
+					vimClient := withSpy(ctx.VCClient.Client, spy)
+
+					result, err := placement.Placement(vmCtx, ctx.Client, vimClient, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
+
+					// PlaceVmsXCluster does not support the instance storage
+					// disk ID, so instance storage still uses PlaceVm.
+					Expect(spy.placeVMCalls).To(BeNumerically(">", 0))
+					Expect(spy.xClusterCalls).To(Equal(0))
 
 					Expect(result.ZoneName).ToNot(BeEmpty())
 
@@ -400,37 +409,72 @@ func vcSimPlacement() {
 				// Placement is never told which host. The VM's host-local disks
 				// are in the placement ConfigSpec and DRS derives the host from
 				// them: a provisioned volume carries its real datastore path,
-				// which only one host can reach, and an unprovisioned one
-				// carries only its storage policy.
-				It("returns a DRS-recommended host without constraining one", func() {
-					spy := &placementSpy{}
-					vimClient := withSpy(ctx.VCClient.Client, spy)
-
-					result, err := placement.Placement(vmCtx, ctx.Client, vimClient, ctx.Finder, configSpec, constraints)
+				// which only the hosts that can reach it may be chosen for, and
+				// an unprovisioned one carries only its storage policy.
+				It("returns a DRS-recommended host", func() {
+					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(result.HostLocalPlacement).To(BeTrue())
 					Expect(result.HostMoRef).ToNot(BeNil())
 					Expect(result.HostMoRef.Value).ToNot(BeEmpty())
-
-					By("not pinning the request to any host", func() {
-						Expect(spy.placeVMHosts).To(BeEmpty())
-					})
 				})
 
-				// PlaceVmsXCluster returns the same host regardless of the disks
-				// in the ConfigSpec - including hosts that cannot reach the
-				// datastore it names - so it cannot resolve the host for a
-				// host-local volume. Measured against real DRS.
-				It("uses PlaceVm rather than PlaceVmsXCluster", func() {
+				It("asks PlaceVmsXCluster for a host rather than using PlaceVm", func() {
 					spy := &placementSpy{}
 					vimClient := withSpy(ctx.VCClient.Client, spy)
 
 					_, err := placement.Placement(vmCtx, ctx.Client, vimClient, ctx.Finder, configSpec, constraints)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(spy.placeVMCalls).To(BeNumerically(">", 0))
-					Expect(spy.xClusterCalls).To(Equal(0))
+					Expect(spy.xClusterCalls).To(Equal(1))
+					Expect(spy.placeVMCalls).To(Equal(0))
+					Expect(spy.hostRecommRequired).To(HaveValue(BeTrue()))
+				})
+
+				When("a disk names its existing datastore path", func() {
+					const diskPath = "[LocalDS_0] fcd/existing.vmdk"
+
+					BeforeEach(func() {
+						configSpec.DeviceChange = append(configSpec.DeviceChange,
+							&vimtypes.VirtualDeviceConfigSpec{
+								Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimtypes.VirtualDisk{
+									CapacityInBytes: 1024 * 1024,
+									VirtualDevice: vimtypes.VirtualDevice{
+										Key: -1042,
+										Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+											FileName: diskPath,
+										},
+									},
+								},
+							})
+					})
+
+					It("sends the path to DRS as an existing disk", func() {
+						spy := &placementSpy{}
+						vimClient := withSpy(ctx.VCClient.Client, spy)
+
+						_, err := placement.Placement(vmCtx, ctx.Client, vimClient, ctx.Finder, configSpec, constraints)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(spy.xClusterConfigSpecs).To(HaveLen(1))
+
+						var found bool
+						for _, bdc := range spy.xClusterConfigSpecs[0].DeviceChange {
+							dc := bdc.GetVirtualDeviceConfigSpec()
+							disk, ok := dc.Device.(*vimtypes.VirtualDisk)
+							if !ok || disk.Key != -1042 {
+								continue
+							}
+							found = true
+							backing := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
+							Expect(backing.FileName).To(Equal(diskPath))
+							// A disk that already exists must not be created.
+							Expect(dc.FileOperation).To(BeEmpty())
+						}
+						Expect(found).To(BeTrue())
+					})
 				})
 			})
 		})
@@ -628,13 +672,19 @@ func vcSimPlacement() {
 				constraints.NeedHostLocalPlacement = true
 			})
 
-			It("returns a DRS-recommended host", func() {
-				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Finder, configSpec, constraints)
+			It("returns a DRS-recommended host from PlaceVmsXCluster", func() {
+				spy := &placementSpy{}
+				vimClient := withSpy(ctx.VCClient.Client, spy)
+
+				result, err := placement.Placement(vmCtx, ctx.Client, vimClient, ctx.Finder, configSpec, constraints)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(result.HostLocalPlacement).To(BeTrue())
 				Expect(result.HostMoRef).ToNot(BeNil())
 				Expect(result.HostMoRef.Value).ToNot(BeEmpty())
+
+				Expect(spy.xClusterCalls).To(Equal(1))
+				Expect(spy.placeVMCalls).To(Equal(0))
 			})
 		})
 	})

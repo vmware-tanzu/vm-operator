@@ -2079,6 +2079,19 @@ func (vs *vSphereVMProvider) vmCreateDoPlacementByGroup(
 		}
 	}
 
+	// A VM with host-local storage must be created on the host its group's
+	// placement recommended, since that is the host that can reach its
+	// volumes. Group placement always asks for a host, so this only guards
+	// against a placement status that is missing one.
+	if pkgcfg.FromContext(vmCtx).Features.HostLocalStorage {
+		need, err := hostLocalPlacementNeeded(
+			vmCtx, vs.k8sClient, createArgs.Storage)
+		if err != nil {
+			return err
+		}
+		result.HostLocalPlacement = need
+	}
+
 	return processPlacementResult(vmCtx, vcClient, createArgs, result)
 }
 

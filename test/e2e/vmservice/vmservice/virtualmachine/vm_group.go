@@ -80,9 +80,12 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		vCenterClient    *vim25.Client
 		clusterResources *e2eConfig.Resources
 
-		rootGroup     ctrlclient.Object
-		vmgRootName   string
-		vmgChildName  string
+		rootGroup    ctrlclient.Object
+		vmgRootName  string
+		vmgChildName string
+		// tierSfx makes the tier label values unique to a spec, so specs that
+		// share a namespace never match each other's VMs, tags or policies.
+		tierSfx       string
 		vm1Name       string
 		vm2Name       string
 		vm3Name       string
@@ -134,6 +137,8 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		vmMemberNames = []string{}
 		vmgRootName = fmt.Sprintf("%s-%s-root", specName, capiutil.RandomString(4))
 		vmgChildName = fmt.Sprintf("%s-child", vmgRootName)
+		tierSfx = capiutil.RandomString(5)
+		By(fmt.Sprintf("Using tier label suffix %q", tierSfx))
 		vm1Name = fmt.Sprintf("%s-vm1", vmgRootName)
 		vm2Name = fmt.Sprintf("%s-vm2", vmgRootName)
 		vm3Name = fmt.Sprintf("%s-vm3", vmgRootName)
@@ -2171,13 +2176,16 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		})
 	})
 
-	Context("Group placement with affinity and anti-affinity", func() {
+	Context("Group placement with affinity and anti-affinity", Ordered, ContinueOnFailure, func() {
 		var (
 			tmpNamespaceName    string
 			tmpNamespaceVMIName string
 
 			createVMWithAffinityAndAntiAffinityFunc = func(vmName, affinityTier string, antiAffinityTiers []string) {
 				GinkgoHelper()
+
+				affinityTier = tierValue(tierSfx, affinityTier)
+				antiAffinityTiers = tierValues(tierSfx, antiAffinityTiers)
 
 				vm := &vmopv1a5.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2236,7 +2244,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			}
 		)
 
-		BeforeEach(func() {
+		BeforeAll(func() {
 			skipper.SkipUnlessStretchSupervisorIsEnabled()
 			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMPlacementPoliciesCapabilityName)
 
@@ -2263,18 +2271,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			})
 
 			wcp.WaitForNamespaceReady(input.WCPClient, tmpNamespaceName)
-			deferCleanupVirtualMachineGroup(
-				config,
-				svClusterClient,
-				clusterProxy.GetKubeconfigPath(),
-				tmpNamespaceName,
-				vmgRootName,
-				vmgChildName,
-				vmgKind,
-				vmKind,
-				&rootGroup,
-				&vmMemberNames,
-			)
 
 			By("Ensuring the Linux image is available in the temp namespace")
 
@@ -2302,6 +2298,21 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				_, err = clusterProxy.UpdateNamespaceWithZones(ctx, tmpNamespaceName, unboundZones, svClusterClient)
 				Expect(err).ToNot(HaveOccurred(), "failed to update namespace with Zones")
 			}
+		})
+
+		BeforeEach(func() {
+			deferCleanupVirtualMachineGroup(
+				config,
+				svClusterClient,
+				clusterProxy.GetKubeconfigPath(),
+				tmpNamespaceName,
+				vmgRootName,
+				vmgChildName,
+				vmgKind,
+				vmKind,
+				&rootGroup,
+				&vmMemberNames,
+			)
 		})
 
 		It("Should create VMs with expected zonal affinity and anti-affinity placements in the temporary namespace", func() {
@@ -2995,7 +3006,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						Description:        policyName,
 						ComputePolicyID:    tagIDToCPID[tagID],
 						EnforcementMode:    wcp.InfraPolicyEnforcementModeMandatory,
-						MatchWorkloadLabel: map[string]string{"tier": fmt.Sprintf("%d", i+1)},
+						MatchWorkloadLabel: map[string]string{"tier": tierValue(tierSfx, fmt.Sprintf("%d", i+1))},
 					}
 					Expect(input.WCPClient.CreateInfraPolicy(infraPolicySpec)).To(Succeed(), "failed to create mandatory infra policy matched by label")
 
@@ -3096,7 +3107,11 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 		})
 	})
 
-	Context("Group placement with affinity and anti-affinity at host topology", func() {
+	// The specs share one temporary namespace, which is created once in
+	// BeforeAll, so the container must be Ordered. Each spec cleans up its
+	// own VMs and groups, and the required-required specs set the
+	// RequiredDuringExecutionVMPlacementPolicy state they need.
+	Context("Group placement with affinity and anti-affinity at host topology", Ordered, ContinueOnFailure, func() {
 		const (
 			requiredDuringSchedulingPreferredDuringExecution  = "requiredDuringSchedulingPreferredDuringExecution"
 			requiredDuringSchedulingRequiredDuringExecution   = "requiredDuringSchedulingRequiredDuringExecution"
@@ -3172,6 +3187,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		createHostVMWithAffinityAndAntiAffinityFunc := func(vmName, affinityType, label string, affinityTiers, antiAffinityTiers []string) {
 			GinkgoHelper()
+
+			label = tierValue(tierSfx, label)
+			affinityTiers = tierValues(tierSfx, affinityTiers)
+			antiAffinityTiers = tierValues(tierSfx, antiAffinityTiers)
 
 			labels := make(map[string]string)
 			labels["tier"] = label
@@ -3384,12 +3403,14 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 			// Build the set of tier labels that are actually in use so we can look up
 			// each policy ID once and then check each VM against its own policy.
+			tier1Label := "tier:" + tierValue(tierSfx, "1")
+			tier2Label := "tier:" + tierValue(tierSfx, "2")
 			tierLabels := make(map[string]string) // tier label -> policy ID
 			if len(affinedVms) > 0 {
-				tierLabels["tier:1"] = ""
+				tierLabels[tier1Label] = ""
 			}
 			if len(antiAffinedVms) > 0 {
-				tierLabels["tier:2"] = ""
+				tierLabels[tier2Label] = ""
 			}
 
 			asyncCapabilities, err := utils.CheckSupervisorCapabilitiesCRDSupport(ctx, svClusterClient)
@@ -3405,10 +3426,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			}
 			tierVMs := make(map[string]string)
 			if len(affinedVms) > 0 {
-				tierVMs["tier:1"] = affinedVms[0]
+				tierVMs[tier1Label] = affinedVms[0]
 			}
 			if len(antiAffinedVms) > 0 {
-				tierVMs["tier:2"] = antiAffinedVms[0]
+				tierVMs[tier2Label] = antiAffinedVms[0]
 			}
 			strictness := map[string]string{
 				preferredDuringSchedulingPreferredDuringExecution: "pds-pde",
@@ -3420,13 +3441,18 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			Expect(topology).NotTo(BeEmpty())
 			for tagLabel, vmName := range tierVMs {
 				kind, suffix := "af", "-"+regexp.QuoteMeta(tagLabel)
-				if tagLabel == "tier:2" {
+				if tagLabel == tier2Label {
 					kind, suffix = "aaf", ""
 				}
 				policyTagPattern := regexp.MustCompile(fmt.Sprintf(
 					`^vmoperator:%s-%s-%s-[0-9a-f]{16}%s$`, kind, strictness, topology, suffix))
 				Eventually(func(g Gomega) {
+					// Original label tags carry the vmoperator: prefix in vCenter
+					// only when VMHardAffinityDuringExecution is enabled.
 					policyTag := tagLabel
+					if vmHardAffinityDuringExecution {
+						policyTag = vmopvm.AddAffinityTagPrefix(tagLabel)
+					}
 					if vmHardAffinityDuringExecution {
 						vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vmName)
 						g.Expect(err).NotTo(HaveOccurred())
@@ -3459,10 +3485,10 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			// vmPolicyID maps each VM to the policy ID it should be checked against.
 			vmPolicyID := make(map[string]string, len(vmMemberNames))
 			for _, vmName := range affinedVms {
-				vmPolicyID[vmName] = tierLabels["tier:1"]
+				vmPolicyID[vmName] = tierLabels[tier1Label]
 			}
 			for _, vmName := range antiAffinedVms {
-				vmPolicyID[vmName] = tierLabels["tier:2"]
+				vmPolicyID[vmName] = tierLabels[tier2Label]
 			}
 
 			for _, vmName := range vmMemberNames {
@@ -3511,9 +3537,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			}
 		}
 
-		BeforeEach(func() {
-			topologyKey = hostTopoKey
-
+		BeforeAll(func() {
 			skipper.SkipUnlessStretchSupervisorIsEnabled()
 			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMPlacementPoliciesCapabilityName)
 			skipper.SkipUnlessSupervisorCapabilityEnabled(input.Config.SupervisorCapabilities, consts.VMAffinityDuringExecutionCapabilityName)
@@ -3541,18 +3565,6 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				}
 			})
 			wcp.WaitForNamespaceReady(input.WCPClient, tmpNamespaceName)
-			deferCleanupVirtualMachineGroup(
-				config,
-				svClusterClient,
-				clusterProxy.GetKubeconfigPath(),
-				tmpNamespaceName,
-				vmgRootName,
-				vmgChildName,
-				vmgKind,
-				vmKind,
-				&rootGroup,
-				&vmMemberNames,
-			)
 
 			By("Ensuring the Linux image is available in the temp namespace")
 
@@ -3583,8 +3595,26 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 		})
 
+		BeforeEach(func() {
+			topologyKey = hostTopoKey
+
+			deferCleanupVirtualMachineGroup(
+				config,
+				svClusterClient,
+				clusterProxy.GetKubeconfigPath(),
+				tmpNamespaceName,
+				vmgRootName,
+				vmgChildName,
+				vmgKind,
+				vmKind,
+				&rootGroup,
+				&vmMemberNames,
+			)
+		})
+
 		When("Group placement with affinity and anti-affinity at host topology", func() {
 			DescribeTable("updates affinity and tags", Label("experimental", consts.HardAffinityDuringExecutionLabel), func(powerState vmopv1.VirtualMachinePowerState, tier string) {
+				tier = tierValue(tierSfx, tier)
 				By("Creating a VM with preferred host affinity")
 				vmMemberNames = []string{vm1Name}
 				runVmVmAffinityAtHostTopoTest(preferredDuringSchedulingPreferredDuringExecution, vmMemberNames, nil)
@@ -3675,22 +3705,12 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				af.RequiredDuringSchedulingPreferredDuringExecution = af.PreferredDuringSchedulingPreferredDuringExecution
 				af.PreferredDuringSchedulingPreferredDuringExecution = nil
 				Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(before))).To(Succeed())
-				// Affinity is skipped while the VM is paused, so the previous
-				// affinity tag and policy must remain in place.
-				By("Verifying the affinity update is deferred while the VM is paused")
-				Consistently(func(g Gomega) {
-					names, err := affinityTierTags(ctx, tagManager, vcVM, tmpNamespaceName)
-					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(names).To(ContainElement(previousAffinityTag))
-					var actual mo.VirtualMachine
-					g.Expect(vcVM.Properties(ctx, vcVM.Reference(), []string{"config.extraConfig"}, &actual)).To(Succeed())
-					g.Expect(actual.Config).NotTo(BeNil())
-					policy, _ := object.OptionValueList(actual.Config.ExtraConfig).GetString("vmservice.placementpolicies")
-					g.Expect(policy).To(ContainSubstring(previousAffinityTag))
-					g.Expect(policy).NotTo(ContainSubstring("RequiredDuringPlacement"))
-				}, "30s", "5s").Should(Succeed())
+				// Affinity reconciles for a paused VM, like vSphere policies, so the
+				// change converges without unpausing.
+				waitForRequiredHostAffinityApplied(ctx, config, input.WCPClient, tagManager, vcVM, tmpNamespaceName,
+					tier, previousAffinityTag)
 
-				By("Unpausing the VM and verifying the pending affinity update is applied")
+				By("Unpausing the VM and verifying the affinity update is kept")
 				resumeTask, err := vcVM.Reconfigure(ctx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{&types.OptionValue{Key: vmopv1.PauseVMExtraConfigKey, Value: "FALSE"}},
 				})
@@ -3713,21 +3733,21 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(err).NotTo(HaveOccurred())
 				before = vm.DeepCopy()
 				vm.Spec.Affinity = &vmopv1.AffinitySpec{VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
-					PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{TopologyKey: hostTopoKey, LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "target"}}}},
+					PreferredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{TopologyKey: hostTopoKey, LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"tier": tierValue(tierSfx, "target")}}}},
 				}}
 				Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(before))).To(Succeed())
 				vcVM = object.NewVirtualMachine(vCenterClient, types.ManagedObjectReference{Type: "VirtualMachine", Value: vm.Status.UniqueID})
 				previousAntiAffinitySelfTag := waitForHostAntiAffinityApplied(ctx, config, input.WCPClient, tagManager,
-					vcVM, tmpNamespaceName, "target", "")
+					vcVM, tmpNamespaceName, tierValue(tierSfx, "target"), "")
 
 				By("Changing the anti-affinity target and verifying its self tag is replaced")
 				vm, err = utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vm1Name)
 				Expect(err).NotTo(HaveOccurred())
 				before = vm.DeepCopy()
-				vm.Spec.Affinity.VMAntiAffinity.PreferredDuringSchedulingPreferredDuringExecution[0].LabelSelector.MatchLabels["tier"] = "different"
+				vm.Spec.Affinity.VMAntiAffinity.PreferredDuringSchedulingPreferredDuringExecution[0].LabelSelector.MatchLabels["tier"] = tierValue(tierSfx, "different")
 				Expect(svClusterClient.Patch(ctx, vm, ctrlclient.MergeFrom(before))).To(Succeed())
 				waitForHostAntiAffinityApplied(ctx, config, input.WCPClient, tagManager,
-					vcVM, tmpNamespaceName, "different", previousAntiAffinitySelfTag)
+					vcVM, tmpNamespaceName, tierValue(tierSfx, "different"), previousAntiAffinitySelfTag)
 
 				By("Removing managed affinity state during retained-VM cleanup")
 				adminProxy, err := clusterProxy.NewAdminClusterProxy(ctx)
@@ -3881,7 +3901,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 									StorageClass: clusterResources.StorageClassName,
 									PowerState:   vmopv1.VirtualMachinePowerStateOff,
 								},
-							}, topologyKey, antiAffinity)
+							}, topologyKey, tierValue(tierSfx, "1"), antiAffinity)
 
 							err := svClusterClient.Create(ctx, vm)
 							Expect(err).To(HaveOccurred(), "VM creation should be rejected without a RequiredDuringExecutionVMPlacementPolicy")
@@ -3932,7 +3952,16 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 					BeforeEach(func() {
 						By("Creating a RequiredDuringExecutionVMPlacementPolicy in the temporary namespace")
 						Expect(adminClient.Create(ctx, policy)).To(Succeed(), "failed to create RequiredDuringExecutionVMPlacementPolicy")
-						DeferCleanup(func() { _ = adminClient.Delete(ctx, policy) })
+						// The namespace is shared across specs, so wait for the
+						// policy to be gone before the next spec starts.
+						DeferCleanup(func() {
+							_ = adminClient.Delete(ctx, policy)
+							Eventually(func(g Gomega) {
+								var list vspherepolv1.RequiredDuringExecutionVMPlacementPolicyList
+								g.Expect(adminClient.List(ctx, &list, ctrlclient.InNamespace(tmpNamespaceName))).To(Succeed())
+								g.Expect(list.Items).To(BeEmpty())
+							}, config.GetIntervals("default", "wait-virtual-machine-creation")...).Should(Succeed())
+						})
 					})
 
 					It("Should reject new VMs and allow spec updates on existing VMs once the policy is deleted", func() {
@@ -3964,7 +3993,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 								PowerState:   vmopv1.VirtualMachinePowerStateOff,
 							},
 						}
-						Expect(svClusterClient.Create(ctx, withRequiredExecutionAffinity(vmTemplate, hostTopoKey, false))).To(Succeed())
+						Expect(svClusterClient.Create(ctx, withRequiredExecutionAffinity(vmTemplate, hostTopoKey, tierValue(tierSfx, "1"), false))).To(Succeed())
 						vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient, tmpNamespaceName, vm1Name)
 
 						By("Deleting the RequiredDuringExecutionVMPlacementPolicy")
@@ -3989,7 +4018,7 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 
 						By("Verifying a new VM with required-required terms is rejected")
 						vmTemplate.Name = vm2Name
-						err = svClusterClient.Create(ctx, withRequiredExecutionAffinity(vmTemplate, hostTopoKey, false))
+						err = svClusterClient.Create(ctx, withRequiredExecutionAffinity(vmTemplate, hostTopoKey, tierValue(tierSfx, "1"), false))
 						Expect(err).To(HaveOccurred(), "VM creation should be rejected once the policy is deleted")
 						Expect(err.Error()).To(ContainSubstring("requires a RequiredDuringExecutionVMPlacementPolicy in the namespace"))
 
@@ -4206,6 +4235,9 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				// land in the same zone while different tiers land in different zones.
 				createVKSNodePoolVMFunc := func(vmName, tier, antiAffinityType string, otherTiers []string) {
 					GinkgoHelper()
+
+					tier = tierValue(tierSfx, tier)
+					otherTiers = tierValues(tierSfx, otherTiers)
 
 					hostnameAntiAffinityTerm := vmopv1a5.VMAffinityTerm{
 						LabelSelector: &metav1.LabelSelector{
@@ -4939,20 +4971,38 @@ const (
 	hostTopoKey  = "kubernetes.io/hostname"
 )
 
+// tierValue returns the tier label value for the given tier, made unique to
+// a spec by the suffix.
+func tierValue(suffix, tier string) string {
+	return tier + "-" + suffix
+}
+
+// tierValues applies tierValue to each of the given tiers.
+func tierValues(suffix string, tiers []string) []string {
+	if tiers == nil {
+		return nil
+	}
+	out := make([]string, len(tiers))
+	for i, t := range tiers {
+		out[i] = tierValue(suffix, t)
+	}
+	return out
+}
+
 // withRequiredExecutionAffinity returns a copy of the given VM with a single
 // requiredDuringSchedulingRequiredDuringExecution term on the given topology
 // key. The term is a VM anti-affinity term when antiAffinity is true, and a VM
 // affinity term otherwise. AF requesters also carry the selected tier label.
 func withRequiredExecutionAffinity(
 	template *vmopv1.VirtualMachine,
-	topologyKey string,
+	topologyKey, tier string,
 	antiAffinity bool) *vmopv1.VirtualMachine {
 
 	vm := template.DeepCopy()
 	terms := []vmopv1.VMAffinityTerm{
 		{
 			LabelSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"tier": "1"},
+				MatchLabels: map[string]string{"tier": tier},
 			},
 			TopologyKey: topologyKey,
 		},
@@ -4964,7 +5014,7 @@ func withRequiredExecutionAffinity(
 			},
 		}
 	} else {
-		metav1.SetMetaDataLabel(&vm.ObjectMeta, "tier", "1")
+		metav1.SetMetaDataLabel(&vm.ObjectMeta, "tier", tier)
 		vm.Spec.Affinity = &vmopv1.AffinitySpec{
 			VMAffinity: &vmopv1.VMAffinitySpec{
 				RequiredDuringSchedulingRequiredDuringExecution: terms,

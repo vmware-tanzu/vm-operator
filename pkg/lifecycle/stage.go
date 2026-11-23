@@ -239,8 +239,9 @@ func ReconcileStage(
 			return Result{}, nil
 		}
 
-		// The previous hold is still being cleared; pausing now would reuse its results.
-		// Wait for Lifecycle Operator to remove the stale results from status, triggering this VM reconcile
+		// The previous hold is still being cleared; pausing now would reuse its
+		// results. Wait for the Lifecycle Operator to remove the stale results
+		// from the status, which triggers a reconcile of this VM.
 		if isHookFailedDone(ready) {
 			markFailed(vm, stageName, ready)
 		} else {
@@ -249,6 +250,10 @@ func ReconcileStage(
 		return Result{}, nil
 	}
 
+	// HooksReady absent or not True means the Lifecycle Operator has not
+	// resolved the stage yet, so there is nothing to act on: wait. VM Operator
+	// adds no timeout; a hook that must not block forever declares a timeout
+	// policy, which the Lifecycle Operator resolves into HooksReady.
 	if ready == nil || ready.Status != metav1.ConditionTrue {
 		markWaiting(vm, stageName, ready)
 		return Result{}, nil
@@ -309,7 +314,8 @@ func AbandonStages(
 
 	base := state.DeepCopy()
 	var abandoned []string
-	// There is no way two stage can run parallelly, this is just defensive, so last one is overwritten. Ideally len(abandoned) == 1
+	// Two stages are never paused at once; this loop is defensive, and only the
+	// last abandoned stage's reason is kept.
 	for _, stageName := range stageNames {
 		idx := stageIndex(state, stageName)
 		if idx < 0 || !state.Spec.Stages[idx].WorkflowPaused {
@@ -530,7 +536,7 @@ func markFailed(
 		Status: metav1.ConditionFalse,
 		Reason: stageName + "Stage",
 		Message: fmt.Sprintf(
-			"%s Hook failed: %s", stageName, suffix(ready.Message)),
+			"%s hook failed%s", stageName, suffix(ready.Message)),
 	})
 }
 

@@ -650,7 +650,7 @@ var _ = Describe("ReconcileStage", Label(testlabels.Controller), func() {
 			Expect(res.Proceed).To(BeFalse())
 			Expect(cnt.patch.Load()).To(BeZero())
 			Expect(cond(vm).Status).To(Equal(metav1.ConditionFalse))
-			Expect(cond(vm).Message).To(Equal("Create hook failed, retrying: boom"))
+			Expect(cond(vm).Message).To(Equal("Create hook failed: boom"))
 		})
 	})
 
@@ -750,7 +750,7 @@ var _ = Describe("ReconcileStage", Label(testlabels.Controller), func() {
 				Equal(stage(lifecycle.StageCreate, false, true)))
 			Expect(cond(vm).Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond(vm).Reason).To(Equal("CreateStage"))
-			Expect(cond(vm).Message).To(Equal("Create hook failed, retrying: boom"))
+			Expect(cond(vm).Message).To(Equal("Create hook failed: boom"))
 		})
 
 		It("loops: re-pauses once the Lifecycle Operator clears the entry", func() {
@@ -766,7 +766,7 @@ var _ = Describe("ReconcileStage", Label(testlabels.Controller), func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(res.Proceed).To(BeFalse())
 			Expect(cnt.patch.Load()).To(BeZero())
-			Expect(cond(vm).Message).To(ContainSubstring("hook failed, retrying"))
+			Expect(cond(vm).Message).To(ContainSubstring("hook failed"))
 
 			// The Lifecycle Operator clears the status entry.
 			state.Status.Stages = nil

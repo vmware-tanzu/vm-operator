@@ -64,6 +64,8 @@ The coordination surface VM Operator reads and writes at each stage checkpoint.
 
    Definition of a hold:  pause → hooks run → `HooksReady=True` → release → the Lifecycle Operator clears the status entry → the next reach can pause again.
 
+   **Hook failed**: the Lifecycle Operator sets `HooksReady=True/HookFailed` as an aggregated result, once all hooks have finished and at least one failed. The timeout policy is maintained externally by the Lifecycle Framework; VM Operator only reads the result. VM Operator releases the stage and does not run the action. The release (`workflowResumed=true`) triggers the Lifecycle Operator to wipe the stage's status, and the next reconcile pauses the stage again and restarts the flow. This is desired state reconciliation, not a retry: VM Operator decides whether to pause again, and the Lifecycle Operator does not retry on its own.
+
    **Abandon**: when the caller will no longer run the stage's action, VM Operator releases the paused stage without running the action, ignoring whatever `HooksReady` says. This ends the hold, so hook owners stop waiting and abort in-flight work. For example: `spec.powerState` is reverted while a power change is held, the VM is deleted while `Create` or a power change is held, or the vSphere VM is already gone while `Delete` is held.
 
 3. **Watch.** The `LifecycleState` watch re-triggers the VM on status changes and when the Lifecycle Operator creates a State.
@@ -72,12 +74,12 @@ The coordination surface VM Operator reads and writes at each stage checkpoint.
 Notes:
 
 - **Stale copies.** Pause and release are optimistic-locked writes, so a stale copy can delay a stage but never let it run early. Only "absent / no entry" proceeds without a write; a stale "no entry" for a hook registered after the read is an accepted race.
-- **Wakeups.** Waits rely on the `LifecycleState` status watch, with no timed requeue; the VM's periodic resync is the backstop. A hook that fails immediately loops pause, fail, release at the Lifecycle Operator's pace; VM Operator adds no backoff or retry cap.
+- **Wakeups.** Waits rely on the `LifecycleState` status watch, with no timed requeue; the VM's periodic resync is the backstop. A hook that fails immediately loops pause, fail, release at the Lifecycle Operator's pace; VM Operator adds no backoff or retry cap. The Lifecycle Framework maintains the timeout policy and the Lifecycle Operator manages no retry; it writes `HooksReady` as an aggregated result and VM Operator only reads it. After a `HookFailed` release, the Lifecycle Operator's reset (clearing the stage's status entry, which the release triggers) is what unblocks the VM. The status change wakes it through the watch, and the periodic resync (30 minutes by default) reconciles it otherwise. A spec or label change also reconciles it, so a fixed hook is picked up without waiting for the resync.
 - **Lifecycle Operator unavailable.** A stage with an entry stays blocked until it returns; stages without an entry are unaffected. Turning the capability off unblocks every stage.
 
 ### Releasing at `ResourceDelete`
 
-VM Operator removes its `LifecycleState` finalizer in the same write that releases `ResourceDelete`, but only when it proceeds. On `HooksReady=True/HookFailed` the release keeps the finalizer, since the VM finalizer stays and the namespace-deletion protection must hold through the retry. A separate patch would conflict with the Lifecycle Operator's status cleanup, which follows the release immediately, and block the VM's own finalizer removal.
+VM Operator removes its `LifecycleState` finalizer in the same write that releases `ResourceDelete`, but only when it proceeds. On `HooksReady=True/HookFailed` the release keeps the finalizer, since the VM finalizer stays and the namespace-deletion protection must hold through the reset. A separate patch would conflict with the Lifecycle Operator's status cleanup, which follows the release immediately, and block the VM's own finalizer removal.
 
 ### Namespace-deletion protection
 
@@ -101,7 +103,7 @@ One new condition type, `VirtualMachineConditionLifecycleHookReady` (`"Lifecycle
 | `HooksReady=False/HooksPending` | held | `False` | `Waiting for <Stage> hooks: <msg>` |
 | `HooksReady=False/HookFailed` | held | `False` | `<Stage> hook failed, waiting for remaining hooks: <msg>` |
 | `HooksReady=True/AllHooksSucceeded` or `NoHooksRegistered` | released | `True` | `<msg>` |
-| `HooksReady=True/HookFailed` | released, action does not run; the next reach re-pauses | `False` | `<Stage> hook failed, retrying: <msg>` |
+| `HooksReady=True/HookFailed` | released, action does not run; the next reach re-pauses | `False` | `<Stage> hook failed: <msg>` |
 | Abandon | released | `True` | — |
 | The stage's hooks cannot be evaluated (e.g. reading the `LifecycleState` fails) | held, retried | `Unknown` | `Could not evaluate <Stage> hooks: <error>` |
 
@@ -262,7 +264,7 @@ status:
       message: 0 of 1 hooks completed
 ```
 
-**`Create` ready to resume, with a failed hook.** VM Operator releases the stage and sets `LifecycleHookReady` to `status=False`, `reason=CreateStage`, `message: "Create hook failed, retrying: domain-join-hook: timed out connecting to domain controller"`. It does not create the VM. Once the Lifecycle Operator clears the status entry, the next reconcile pauses `Create` again and the hooks re-run.
+**`Create` ready to resume, with a failed hook.** VM Operator releases the stage and sets `LifecycleHookReady` to `status=False`, `reason=CreateStage`, `message: "Create hook failed: domain-join-hook: timed out connecting to domain controller"`. It does not create the VM. Once the Lifecycle Operator clears the status entry, the next reconcile pauses `Create` again and the hooks re-run.
 
 ```yaml
 status:

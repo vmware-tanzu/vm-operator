@@ -139,7 +139,7 @@ Envtest needs no extra wiring: `test/builder/test_suite.go` loads all of `config
 | found | present | `false` | absent | pause: patch `(true, false)`; condition `False`, waiting | `false` |
 | found | present | `true` | absent, or `HooksReady` not `True` | condition `False`, waiting or hook-failed by `HooksReady`'s reason | `false` |
 | found | present | `true` | `HooksReady=True`, reason not `HookFailed` | release: patch `(false, true)` (ResourceDelete: same write also removes `lifecycleStateFinalizer`); condition `True` | `true` |
-| found | present | `true` | `HooksReady=True/HookFailed` | release: patch `(false, true)` so the Lifecycle Operator clears the entry; finalizer kept; condition `False`, `<Stage> hook failed, retrying`; the next reach re-pauses | `false` |
+| found | present | `true` | `HooksReady=True/HookFailed` | release: patch `(false, true)` so the Lifecycle Operator clears the entry; finalizer kept; condition `False`, `<Stage> hook failed`; the next reach re-pauses | `false` |
 
 - **Switches** follow the Lifecycle Operator's transition table: pause → `(true, false)`, release → `(false, true)`; admission rejects anything else.
 - **No stage branching in the decision**: pause, wait and release are the same for every stage. Reaching a checkpoint after a release is a new hold, including a retry of a failed create, delete or finalizer patch. The one stage-specific step is ResourceDelete's finalizer removal in the release write, for namespace-deletion protection.

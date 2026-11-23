@@ -62,6 +62,14 @@ variable "ssh_bastion_password" {
   sensitive = true
 }
 
+# Optional base URL of an internal files mirror, e.g. https://host. When set,
+# the Jenkins .deb is downloaded from <files_mirror_url>/jenkins/ before the
+# public Jenkins sites are tried. The mirror uses a self-signed certificate.
+variable "files_mirror_url" {
+  type = string
+  default = ""
+}
+
 # Whether to keep the created source VM after the build.
 variable "keep_input_artifact" {
   type = bool
@@ -141,14 +149,23 @@ EOF
 
       # Sometimes apt-get uses IPv6 and causes failure, force to use IPv4 address.
       # Bound each fetch so a stalled mirror fails fast instead of hanging the build.
-      "APT='sudo apt-get -qq -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -o Acquire::Retries=3'",
+      "APT='sudo apt-get -q -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -o Acquire::Retries=3'",
       "$APT update",
       "$APT install -y ca-certificates openjdk-21-jre-headless wget",
 
       # Install Jenkins from a fixed version .deb package directly (avoids GPG key issues with apt repository).
       # Use a current LTS: old releases stay on only a few mirrors and downloads of them can stall for hours.
-      # If the mirror picked by get.jenkins.io stalls, fall back to archives.jenkins.io, which keeps every release.
-      "for site in https://get.jenkins.io https://archives.jenkins.io; do timeout 300 wget -nv --timeout=60 --tries=2 -O /tmp/jenkins.deb $site/debian-stable/jenkins_2.580.1_all.deb && break; done",
+      # Prefer the internal files mirror when configured (self-signed certificate, hence no certificate check).
+      # Otherwise, or if it fails, try get.jenkins.io, then archives.jenkins.io, which keeps every release.
+      # Every copy must match the pinned SHA-256 (from the Jenkins apt index) before it is installed as root.
+      "DEB=jenkins_2.580.1_all.deb",
+      "DEB_SHA256=4a38146ee45ab16c6af227bcb8e7972f0cc6c27212132abc162c1243d8437123",
+      "MIRROR='${var.files_mirror_url}'",
+      "ok=0",
+      "if [ -n \"$MIRROR\" ]; then timeout 300 wget -nv --no-check-certificate --timeout=60 --tries=2 -O /tmp/jenkins.deb \"$MIRROR/jenkins/$DEB\" && echo \"$DEB_SHA256  /tmp/jenkins.deb\" | sha256sum -c - && ok=1; fi",
+      "if [ $ok -eq 0 ]; then for site in https://get.jenkins.io https://archives.jenkins.io; do timeout 300 wget -nv --timeout=60 --tries=2 -O /tmp/jenkins.deb $site/debian-stable/$DEB && echo \"$DEB_SHA256  /tmp/jenkins.deb\" | sha256sum -c - && ok=1 && break; done; fi",
+      # Fail here rather than letting apt-get choke on a partial file or install an unverified one.
+      "[ $ok -eq 1 ] || { echo 'failed to download and verify the Jenkins package from every site' >&2; exit 1; }",
 
       # The first start can exceed systemd's default 90s on a slow guest, so allow more time.
       "sudo mkdir -p /etc/systemd/system/jenkins.service.d",

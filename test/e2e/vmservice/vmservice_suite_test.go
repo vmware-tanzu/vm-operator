@@ -256,7 +256,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			windowsVMIName := vmoperator.WaitForVirtualMachineImageName(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsImageDisplayName)
 
 			By("Waiting for Windows image content to be fully downloaded")
-			vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsVMIName)
+			vmoperator.WaitForOVFVirtualMachineImageReady(ctx, &config.Config, svClusterProxy.GetClient(), wcpNamespaceName, windowsVMIName, "windows-sysprep")
 
 			By("Deploying a Windows VM with the minimal Sysprep config")
 			// Keep Windows VM name under 15 chars so hostName inherited from vmName can adhere to

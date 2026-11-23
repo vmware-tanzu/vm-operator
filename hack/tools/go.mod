@@ -8,7 +8,7 @@ require (
 	github.com/elastic/crd-ref-docs v0.3.0
 	github.com/golangci/golangci-lint/v2 v2.15.0
 	// The version of Ginkgo must match the one from ../../go.mod.
-	github.com/onsi/ginkgo/v2 v2.33.1
+	github.com/onsi/ginkgo/v2 v2.34.0
 	golang.org/x/tools v0.52.0
 	golang.org/x/vuln v1.9.0
 	k8s.io/code-generator v0.37.1

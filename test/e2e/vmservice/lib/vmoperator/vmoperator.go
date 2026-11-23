@@ -805,7 +805,12 @@ func WaitForVirtualMachineImageStatusDisks(ctx context.Context, config *framewor
 // is never set by the controller, but the webhook already skips the check for non-OVF images,
 // so WaitForVirtualMachineImageStatusDisks is sufficient there.
 func WaitForOVFVirtualMachineImageReady(ctx context.Context, config *framework.Config,
-	client ctrlclient.Client, namespace, imageName string) {
+	client ctrlclient.Client, namespace, imageName string, optSpec ...string) {
+
+	spec := "default"
+	if len(optSpec) > 0 && optSpec[0] != "" {
+		spec = optSpec[0]
+	}
 
 	objKey := ctrlclient.ObjectKey{Name: imageName, Namespace: namespace}
 
@@ -816,7 +821,7 @@ func WaitForOVFVirtualMachineImageReady(ctx context.Context, config *framework.C
 		// ProviderContentVersion must be non-empty before the validating webhook
 		// will allow a VM referencing this OVF image to be created.
 		g.Expect(vmi.Status.ProviderContentVersion).ToNot(BeEmpty())
-	}, config.GetIntervals("default", "wait-virtual-machine-image-creation")...).Should(Succeed(),
+	}, config.GetIntervals(spec, "wait-virtual-machine-image-creation")...).Should(Succeed(),
 		"failed to wait for OVF vm image %s to have Status.Disks and Status.ProviderContentVersion populated", imageName)
 }
 

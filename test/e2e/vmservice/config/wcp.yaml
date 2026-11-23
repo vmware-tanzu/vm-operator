@@ -133,4 +133,5 @@ intervals:
   # 5.5-6 minutes, but it can take ~10 minutes when online disk promotion
   # runs concurrently (UBMWM-13549), so this spec needs a little more room.
   windows-sysprep/wait-virtual-machine-vmip: ["12m", "3s"]
-  windows-sysprep/wait-virtual-machine-image-creation: ["20m", "5s"]
+  # The large Windows image takes a long time to download
+  windows-sysprep/wait-virtual-machine-image-creation: ["45m", "5s"]

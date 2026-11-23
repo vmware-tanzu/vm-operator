@@ -961,7 +961,7 @@ func VMGOSCSpec(ctx context.Context, inputGetter func() VMGOSCSpecInput) {
 		})
 	})
 
-	Context("Sysprep", Label(consts.WindowsSysprepLabel, "experimental"), func() {
+	Context("Sysprep", Label(consts.WindowsSysprepLabel, "extended-functional"), func() {
 
 		// verifyWindowsVMDeployed waits for vmName to exist, power on, and report a
 		// real IPv4 address.

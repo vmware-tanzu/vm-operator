@@ -6,8 +6,10 @@ package vmserviceapp
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,7 +33,31 @@ const (
 	// A healthy build takes ~3-11 minutes. Bound it so a stalled guest or
 	// download fails the attempt instead of consuming the suite timeout.
 	jenkinsPackerBuildTimeout = 30 * time.Minute
+	// filesMirrorURLEnvVar optionally names the base URL of a files mirror that
+	// hosts jenkins/jenkins_<version>_all.deb. Unset means use the public sites.
+	filesMirrorURLEnvVar = "E2E_FILES_MIRROR_URL"
 )
+
+// jenkinsFilesMirrorURL returns the trimmed files mirror base URL from the
+// environment, or an empty string if it is unset. It returns an error unless
+// the URL is absolute and uses http or https.
+func jenkinsFilesMirrorURL() (string, error) {
+	raw := strings.TrimRight(os.Getenv(filesMirrorURLEnvVar), "/")
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL %q: %w", raw, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("URL %q must use http or https", raw)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("URL %q has no host", raw)
+	}
+	return raw, nil
+}
 
 func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
 	var (
@@ -116,6 +142,13 @@ func JenkinsSpec(ctx context.Context, inputGetter func() SpecInput) {
 				"ssh_bastion_username": gatewayUsername,
 				"ssh_bastion_password": gatewayPassword,
 			},
+		}
+
+		// Optionally download the Jenkins package from an internal mirror.
+		mirrorURL, err := jenkinsFilesMirrorURL()
+		Expect(err).ToNot(HaveOccurred(), "invalid %s", filesMirrorURLEnvVar)
+		if mirrorURL != "" {
+			opts.TemplateVariables["files_mirror_url"] = mirrorURL
 		}
 
 		cmdOut, err := RunPackerBuildCmd(ctx, opts)

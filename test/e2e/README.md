@@ -315,11 +315,14 @@ Required connectivity failures (jumphost login, tunnel to vCenter) stop setup wi
 | `E2E_ISOLATED` | `true`/`false` forces isolated mode on or off instead of auto-detecting it |
 | `E2E_STOP_TUNNEL` | `true` stops the tunnel when `run-e2e.sh` exits (default on when `TEST_CALLBACK_URL` is set) |
 | `E2E_JUMPHOST_IP`, `E2E_JUMPHOST_USERNAME`, `E2E_JUMPHOST_PASSWORD` | Override the jumphost found in the testbed JSON |
-| `PIP_INDEX_URL` | PyPI mirror reachable from the gateway VM, e.g. `https://packages.vcfd.broadcom.net/artifactory/api/pypi/pypi-virtual/simple`. External PyPI is blocked at the corporate firewall, so without this (or a dedicated PyKMIP VM) the `gce2e-standard` KMIP provider is skipped on an isolated testbed and only `gce2e-native` is configured |
 
-Verified on an isolated VDS testbed: `kubectl exec` (WebSocket and SPDY, with `-it`, stdin, and multi-MB output), `logs -f`, and `port-forward` work through the proxy forward, and killing the master (`kill -9`) recovers SOCKS, `exec`, and shell `ssh` within a few seconds. With that mirror set, PyKMIP installs on the isolated gateway and `gce2e-standard` and `gce2e-native` both go green.
+### Jenkins Files Mirror
 
-Known limits: Veeam appliance-to-vCenter/ESXi reachability is a separate network prerequisite that the runner tunnel does not provide; Packer and NSX/VPC isolated runs have not yet been validated.
+The Jenkins spec downloads `jenkins_2.580.1_all.deb` inside the guest VM. The download is checked against a pinned SHA-256 before it is installed. Setting `E2E_FILES_MIRROR_URL` to a files mirror base URL makes the guest try `$E2E_FILES_MIRROR_URL/jenkins/` first, accepting its self-signed certificate. A value that is not an absolute `http` or `https` URL fails the spec. Unset uses the public Jenkins sites only.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `E2E_FILES_MIRROR_URL` | Base URL of a files mirror serving `jenkins/jenkins_2.580.1_all.deb` | Unset (public sites only) |
 
 ### Encryption Key Provider Setup (`hack/e2e/kms.sh`)
 
@@ -335,8 +338,7 @@ Parameters:
 | `KMS_GREEN_TIMEOUT` | Seconds to wait for `gce2e-standard` to become green after each attempt | `120` |
 | `KMS_RETRY_DELAY` | Seconds to wait after the first failed attempt before the next one. The wait doubles after each further failure, so the default of four attempts waits 30s, 60s, and then 120s | `30` |
 | `SSH_CONNECT_TIMEOUT` | Seconds to wait for each SSH connection to the PyKMIP host or gateway VM | `30` |
-| `PIP_INDEX_URL` | It must be a full index URL including the scheme, such as `https://packages.vcfd.broadcom.net/artifactory/api/pypi/photonos-pypi-virtual/simple` | Unset (public PyPI) |
-
+| `PIP_INDEX_URL` | Full index URL, including the scheme | Unset (public PyPI) |
 
 ## Development Workflow
 

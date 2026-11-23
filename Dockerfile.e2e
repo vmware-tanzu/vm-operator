@@ -123,9 +123,23 @@ ARG GOVC_DOWNLOAD_URL=https://github.com/vmware/govmomi/releases/download/v0.53.
 RUN curl -fsSL "${GOVC_DOWNLOAD_URL}" | tar -xz -C /usr/local/bin govc && \
     chmod +x /usr/local/bin/govc
 
-# packer — required by vmserviceapp E2E tests.
-ARG PACKER_DOWNLOAD_URL=https://releases.hashicorp.com/packer/1.9.1/packer_1.9.1_linux_amd64.zip
-RUN curl -fsSL "${PACKER_DOWNLOAD_URL}" -o /tmp/packer.zip
+# E2E_FILES_MIRROR_URL is the base URL of an internal files mirror that hosts
+# copies of the public downloads the E2E tests need at run time, laid out as
+# <mirror>/jenkins/jenkins_<version>_all.deb. Defaults to empty (download from
+# the public sites). It is not used at image build time, since build machines
+# may not be able to reach the mirror; it is kept as an ENV so the tests can use
+# it at run time (e.g. the Jenkins spec).
+ARG E2E_FILES_MIRROR_URL=""
+ENV E2E_FILES_MIRROR_URL="${E2E_FILES_MIRROR_URL}"
+
+# packer — required by vmserviceapp E2E tests. Build environments that cannot
+# reach the public internet can override PACKER_DOWNLOAD_URL with a reachable
+# copy of the same zip; the SHA-256 is verified either way.
+ARG PACKER_VERSION=1.9.1
+ARG PACKER_SHA256=793ed62255b9e572eda0c77d2a770f5fde501314b7598320786f1e51feb260d6
+ARG PACKER_DOWNLOAD_URL=https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_amd64.zip
+RUN curl -fsSL "${PACKER_DOWNLOAD_URL}" -o /tmp/packer.zip && \
+    echo "${PACKER_SHA256}  /tmp/packer.zip" | sha256sum -c -
 
 # If 7zip is available, prefer to use it otherwise fallback to unzip.
 # Certain Photon5 images versions do not have it.

@@ -760,7 +760,7 @@ func TestVirtualMachineFlexAPIRoundTrip(t *testing.T) {
 						ReservedProfileName: profile,
 						Hardware: &vmopv1.VirtualMachineHardwareSpec{
 							VGPUs: []vmopv1.VirtualMachineVGPUDevice{
-								{Name: "gpu-0", ProfileName: "gpu-small", EnableUVM: ptr.To(false)},
+								{Name: "gpu-0", Type: vmopv1.VirtualMachineVGPUTypeNVIDIA, ProfileName: "gpu-small", EnableUVM: ptr.To(false)},
 								{Name: "gpu-1", ProfileName: "gpu-small"},
 							},
 							DynamicDirectPathIODevices: []vmopv1.VirtualMachineDynamicDirectPathIODevice{
@@ -850,7 +850,7 @@ func TestVirtualMachineReplicaSetFlexAPIRoundTrip(t *testing.T) {
 								ReservedProfileName: profile,
 								Hardware: &vmopv1.VirtualMachineHardwareSpec{
 									VGPUs: []vmopv1.VirtualMachineVGPUDevice{
-										{Name: "gpu-0", ProfileName: "gpu-small", EnableUVM: ptr.To(false)},
+										{Name: "gpu-0", Type: vmopv1.VirtualMachineVGPUTypeNVIDIA, ProfileName: "gpu-small", EnableUVM: ptr.To(false)},
 									},
 									DynamicDirectPathIODevices: []vmopv1.VirtualMachineDynamicDirectPathIODevice{
 										{Name: "pci-0", VendorID: ptr.To[int64](4318), DeviceID: ptr.To[int64](0), CustomLabel: "device"},

@@ -636,10 +636,18 @@ type VirtualMachineVGPUDevice struct {
 	ProfileName string `json:"profileName"`
 
 	// +optional
+	// +kubebuilder:default=Nvidia
+	// +kubebuilder:validation:Enum=Nvidia
+
+	// Type identifies the vGPU vendor plugin. Only Nvidia is supported. It
+	// matches status.hardware.vGPUs[].type.
+	Type VirtualMachineVGPUType `json:"type,omitempty"`
+
+	// +optional
 
 	// EnableUVM controls whether Unified Virtual Memory is enabled for the
-	// device.
-	EnableUVM *bool `json:"enableUVM,omitempty"`
+	// device. A change is applied only while the VM is powered off.
+	EnableUVM *bool `json:"enableUVM,omitempty" vmx:"pciPassthru%d.cfg.enable_uvm" vmxmode:"poweroff"`
 }
 
 // VirtualMachineDynamicDirectPathIODevice describes one desired Dynamic

@@ -1790,7 +1790,7 @@ var _ = Describe("Flex VM API schema", Ordered, Label(testlabels.API, testlabels
 				"reservedProfileName": "",
 				"hardware": map[string]any{
 					"vGPUs": []any{
-						map[string]any{"name": "gpu-0", "profileName": "gpu-small", "enableUVM": true},
+						map[string]any{"name": "gpu-0", "type": "Nvidia", "profileName": "gpu-small", "enableUVM": true},
 						map[string]any{"name": "gpu-1", "profileName": "gpu-small"},
 					},
 					"dynamicDirectPathIODevices": []any{
@@ -1806,6 +1806,8 @@ var _ = Describe("Flex VM API schema", Ordered, Label(testlabels.API, testlabels
 		vm := newVM()
 		wantHardware, _, err := unstructured.NestedMap(vm.Object, "spec", "hardware")
 		Expect(err).NotTo(HaveOccurred())
+		// The API server defaults an omitted vGPU type to Nvidia.
+		wantHardware["vGPUs"].([]any)[1].(map[string]any)["type"] = "Nvidia"
 		Eventually(func() error { return envTestClient.Create(ctx, vm) }).Should(Succeed())
 		DeferCleanup(func() { Expect(envTestClient.Delete(ctx, vm)).To(Succeed()) })
 		storedHardware, found, err := unstructured.NestedMap(vm.Object, "spec", "hardware")
@@ -1854,6 +1856,7 @@ var _ = Describe("Flex VM API schema", Ordered, Label(testlabels.API, testlabels
 		Entry("invalid PCI ID", map[string]any{"dynamicDirectPathIODevices": []any{map[string]any{"name": "pci-0", "vendorID": int64(65536), "deviceID": int64(1)}}}),
 		Entry("vGPU missing profileName", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0"}}}),
 		Entry("vGPU empty profileName", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0", "profileName": ""}}}),
+		Entry("vGPU unknown type", map[string]any{"vGPUs": []any{map[string]any{"name": "gpu-0", "type": "Other", "profileName": "gpu"}}}),
 		Entry("vGPU name not a DNS-1123 label", map[string]any{"vGPUs": []any{map[string]any{"name": "GPU_0", "profileName": "gpu"}}}),
 		Entry("vGPU name starts with dash", map[string]any{"vGPUs": []any{map[string]any{"name": "-gpu", "profileName": "gpu"}}}),
 		Entry("vGPU name too long", map[string]any{"vGPUs": []any{map[string]any{"name": strings.Repeat("a", 64), "profileName": "gpu"}}}),

@@ -118,6 +118,12 @@ func VMAPISpec(ctx context.Context, inputGetter func() SpecInput) {
 				Expect(required).To(ConsistOf(wantRequired))
 				Expect(flexAPIField(items, "name")).To(HaveKeyWithValue("type", "string"))
 			}
+			vgpuItems, found, err := unstructured.NestedMap(vgpu, "items")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found).To(BeTrue())
+			vgpuType := flexAPIField(vgpuItems, "type")
+			Expect(vgpuType).To(HaveKeyWithValue("enum", []any{"Nvidia"}))
+			Expect(vgpuType).To(HaveKeyWithValue("default", "Nvidia"))
 			Expect(flexAPIField(vm, "status", "hardware", "firmware")).To(HaveKeyWithValue("enum", []any{"bios", "efi"}))
 			Expect(flexAPIField(vm, "status", "changeBlockTracking")).To(HaveKeyWithValue("type", "boolean"))
 			Expect(flexAPIField(vm, "status", "hardware", "cpu", "hotRemoveEnabled")).To(HaveKeyWithValue("type", "boolean"))

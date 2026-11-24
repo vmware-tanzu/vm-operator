@@ -15808,7 +15808,7 @@ spec:
                         enableUVM:
                           description: |-
                             EnableUVM controls whether Unified Virtual Memory is enabled for the
-                            device.
+                            device. A change is applied only while the VM is powered off.
                           type: boolean
                         name:
                           description: |-
@@ -15821,6 +15821,14 @@ spec:
                           description: ProfileName identifies the vGPU profile in
                             the environment browser.
                           minLength: 1
+                          type: string
+                        type:
+                          default: Nvidia
+                          description: |-
+                            Type identifies the vGPU vendor plugin. Only Nvidia is supported. It
+                            matches status.hardware.vGPUs[].type.
+                          enum:
+                          - Nvidia
                           type: string
                       required:
                       - name

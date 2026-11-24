@@ -36,10 +36,10 @@ func CreateConfigSpec(
 		configSpec.Annotation = constants.VCVMAnnotation
 	}
 	// Explicit size defaults take precedence over values in the config spec.
-	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.Resources.Size.CPU); q != nil {
+	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.CPU); q != nil {
 		configSpec.NumCPUs = int32(q.Value()) //nolint:gosec // validated as an int32 vCPU count
 	}
-	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.Resources.Size.Memory); q != nil {
+	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.Memory); q != nil {
 		configSpec.MemoryMB = MemoryQuantityToMb(*q)
 	}
 	configSpec.ManagedBy = &vimtypes.ManagedByInfo{
@@ -114,7 +114,7 @@ func CreateConfigSpec(
 	}
 
 	// Populate the CPU reservation and limits in the ConfigSpec if the class
-	// specifies any. An unset or zero limit is unlimited (-1).
+	// specifies any. A limit that is unset or has no default is unlimited (-1).
 	requestsCPU := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Requests.CPU)
 	limitsCPU := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Limits.CPU)
 	if requestsCPU != nil || limitsCPU != nil {
@@ -140,7 +140,8 @@ func CreateConfigSpec(
 	}
 
 	// Populate the memory reservation and limits in the ConfigSpec if the
-	// class specifies any. An unset or zero limit is unlimited (-1).
+	// class specifies any. A limit that is unset or has no default is unlimited
+	// (-1).
 	requestsMemory := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Requests.Memory)
 	limitsMemory := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Limits.Memory)
 	if requestsMemory != nil || limitsMemory != nil {

@@ -149,8 +149,8 @@ func vmCreateTests() {
 		})
 
 		By("has expected hardware config", func() {
-			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Resources.Size.CPU.Default.Value()))
-			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Resources.Size.Memory.Default.Value() / 1024 / 1024))
+			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.CPU.Default.Value()))
+			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Memory.Default.Value() / 1024 / 1024))
 		})
 
 		By("has expected backup ExtraConfig key", func() {

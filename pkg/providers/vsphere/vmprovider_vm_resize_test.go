@@ -80,8 +80,8 @@ func vmResizeTests() {
 		}
 		class.Namespace = nsInfo.Namespace
 		class.Spec.ConfigSpec = encodedConfigSpec(cs)
-		class.Spec.Resources.Size.CPU = resourceRange(resource.MustParse(fmt.Sprintf("%d", cs.NumCPUs)))
-		class.Spec.Resources.Size.Memory = resourceRange(resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB)))
+		class.Spec.CPU = resourceRange(resource.MustParse(fmt.Sprintf("%d", cs.NumCPUs)))
+		class.Spec.Memory = resourceRange(resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB)))
 		class.Spec.Resources.Requests = vmopv1.VirtualMachineClassResourceSpec{}
 		class.Spec.Resources.Limits = vmopv1.VirtualMachineClassResourceSpec{}
 		ExpectWithOffset(1, ctx.Client.Create(ctx, class)).To(Succeed())
@@ -90,8 +90,8 @@ func vmResizeTests() {
 
 	updateVMClass := func(class *vmopv1.VirtualMachineClass, cs vimtypes.VirtualMachineConfigSpec) {
 		class.Spec.ConfigSpec = encodedConfigSpec(cs)
-		class.Spec.Resources.Size.CPU = resourceRange(resource.MustParse(fmt.Sprintf("%d", cs.NumCPUs)))
-		class.Spec.Resources.Size.Memory = resourceRange(resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB)))
+		class.Spec.CPU = resourceRange(resource.MustParse(fmt.Sprintf("%d", cs.NumCPUs)))
+		class.Spec.Memory = resourceRange(resource.MustParse(fmt.Sprintf("%dMi", cs.MemoryMB)))
 		class.Generation++ // Fake client doesn't increment this.
 		ExpectWithOffset(1, ctx.Client.Update(ctx, class)).To(Succeed())
 	}
@@ -240,8 +240,8 @@ func vmResizeTests() {
 				newVMClass := builder.DummyVirtualMachineClassGenName()
 				newVMClass.Namespace = nsInfo.Namespace
 				newVMClass.Spec.ConfigSpec = nil
-				newVMClass.Spec.Resources.Size.CPU = resourceRange(resource.MustParse("4"))
-				newVMClass.Spec.Resources.Size.Memory = resourceRange(resource.MustParse("1024Mi"))
+				newVMClass.Spec.CPU = resourceRange(resource.MustParse("4"))
+				newVMClass.Spec.Memory = resourceRange(resource.MustParse("1024Mi"))
 				newVMClass.Spec.Resources.Requests = vmopv1.VirtualMachineClassResourceSpec{}
 				newVMClass.Spec.Resources.Limits = vmopv1.VirtualMachineClassResourceSpec{}
 				newVMClass.Spec.Hardware.Devices.VGPUDevices = []vmopv1.VGPUDevice{{ProfileName: "test-profile"}}

@@ -1369,11 +1369,11 @@ func VMSpec(ctx context.Context, inputGetter func() VMSpecInput) {
 }
 
 func virtualMachineClassSize(vmClass *vmopv1.VirtualMachineClass) (int64, int64) {
-	Expect(vmClass.Spec.Resources.Size.CPU).NotTo(BeNil(), "VirtualMachineClass %s has no CPU size default", vmClass.Name)
-	Expect(vmClass.Spec.Resources.Size.CPU.Default).NotTo(BeNil(), "VirtualMachineClass %s has no CPU size default", vmClass.Name)
-	Expect(vmClass.Spec.Resources.Size.Memory).NotTo(BeNil(), "VirtualMachineClass %s has no memory size default", vmClass.Name)
-	Expect(vmClass.Spec.Resources.Size.Memory.Default).NotTo(BeNil(), "VirtualMachineClass %s has no memory size default", vmClass.Name)
-	return vmClass.Spec.Resources.Size.CPU.Default.Value(), vmClass.Spec.Resources.Size.Memory.Default.Value()
+	Expect(vmClass.Spec.CPU).NotTo(BeNil(), "VirtualMachineClass %s has no CPU size default", vmClass.Name)
+	Expect(vmClass.Spec.CPU.Default).NotTo(BeNil(), "VirtualMachineClass %s has no CPU size default", vmClass.Name)
+	Expect(vmClass.Spec.Memory).NotTo(BeNil(), "VirtualMachineClass %s has no memory size default", vmClass.Name)
+	Expect(vmClass.Spec.Memory.Default).NotTo(BeNil(), "VirtualMachineClass %s has no memory size default", vmClass.Name)
+	return vmClass.Spec.CPU.Default.Value(), vmClass.Spec.Memory.Default.Value()
 }
 
 func verifyCdromConnectionState(

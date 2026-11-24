@@ -59,7 +59,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 
 **Acceptance scenarios**:
 
-1. **Given** a class with `resources.size.cpu: {min: 2, max: 16, default: 4}`, **when** a VM names it without setting CPU, **then** the VM spec gets 4 CPUs at admission.
+1. **Given** a class with `cpu: {min: 2, max: 16, default: 4}`, **when** a VM names it without setting CPU, **then** the VM spec gets 4 CPUs at admission.
 2. **Given** a class that sets `min` or `max` for a number field, **when** it is written without `default`, **then** it is rejected because `default` is required.
 3. **Given** a class that sets only `min` and `default`, **when** it is stored, **then** `max` stays unset and is bounded only by the hardware (or by a parent class in Milestone 2).
 4. **Given** a fixed size, **when** it is written, **then** it is expressed as `min == max == default`; the class mutating webhook does not fill missing bounds.

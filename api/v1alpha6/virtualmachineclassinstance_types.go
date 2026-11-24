@@ -31,8 +31,8 @@ type VirtualMachineClassInstanceStatus struct {
 // +kubebuilder:resource:scope=Namespaced,shortName=vmclassinstance
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".spec.resources.size.cpu.default"
-// +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".spec.resources.size.memory.default"
+// +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".spec.cpu.default"
+// +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".spec.memory.default"
 // +kubebuilder:printcolumn:name="Active",type="string",JSONPath=".metadata.labels['vmoperator\\.vmware\\.com/active']"
 
 // VirtualMachineClassInstance is the schema for the virtualmachineclassinstances API and

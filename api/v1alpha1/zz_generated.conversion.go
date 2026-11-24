@@ -312,16 +312,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineResourceSpec)(nil), (*v1alpha6.VirtualMachineResourceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineResourceSpec(a.(*VirtualMachineResourceSpec), b.(*v1alpha6.VirtualMachineResourceSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1alpha6.VirtualMachineResourceSpec)(nil), (*VirtualMachineResourceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha6_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(a.(*v1alpha6.VirtualMachineResourceSpec), b.(*VirtualMachineResourceSpec), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineService)(nil), (*v1alpha6.VirtualMachineService)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha1_VirtualMachineService_To_v1alpha6_VirtualMachineService(a.(*VirtualMachineService), b.(*v1alpha6.VirtualMachineService), scope)
 	}); err != nil {
@@ -442,6 +432,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*VirtualMachineResourceSpec)(nil), (*v1alpha6.VirtualMachineResourceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineResourceSpec(a.(*VirtualMachineResourceSpec), b.(*v1alpha6.VirtualMachineResourceSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*VirtualMachineSetResourcePolicySpec)(nil), (*v1alpha6.VirtualMachineSetResourcePolicySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_v1alpha6_VirtualMachineSetResourcePolicySpec(a.(*VirtualMachineSetResourcePolicySpec), b.(*v1alpha6.VirtualMachineSetResourcePolicySpec), scope)
 	}); err != nil {
@@ -524,6 +519,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineReadinessProbeSpec)(nil), (*Probe)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha6_VirtualMachineReadinessProbeSpec_To_v1alpha1_Probe(a.(*v1alpha6.VirtualMachineReadinessProbeSpec), b.(*Probe), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha6.VirtualMachineResourceSpec)(nil), (*VirtualMachineResourceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha6_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(a.(*v1alpha6.VirtualMachineResourceSpec), b.(*VirtualMachineResourceSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -1088,7 +1088,6 @@ func autoConvert_v1alpha1_VirtualMachineClassResources_To_v1alpha6_VirtualMachin
 }
 
 func autoConvert_v1alpha6_VirtualMachineClassResources_To_v1alpha1_VirtualMachineClassResources(in *v1alpha6.VirtualMachineClassResources, out *VirtualMachineClassResources, s conversion.Scope) error {
-	// WARNING: in.Size requires manual conversion: does not exist in peer-type
 	if err := Convert_v1alpha6_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
 		return err
 	}
@@ -1116,6 +1115,8 @@ func autoConvert_v1alpha6_VirtualMachineClassSpec_To_v1alpha1_VirtualMachineClas
 	if err := Convert_v1alpha6_VirtualMachineClassHardware_To_v1alpha1_VirtualMachineClassHardware(&in.Hardware, &out.Hardware, s); err != nil {
 		return err
 	}
+	// WARNING: in.CPU requires manual conversion: does not exist in peer-type
+	// WARNING: in.Memory requires manual conversion: does not exist in peer-type
 	// WARNING: in.Resources requires manual conversion: does not exist in peer-type
 	out.Description = in.Description
 	out.ConfigSpec = *(*json.RawMessage)(unsafe.Pointer(&in.ConfigSpec))

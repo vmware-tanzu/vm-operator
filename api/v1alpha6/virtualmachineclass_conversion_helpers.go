@@ -31,24 +31,42 @@ func LegacyClassAllocation(value resource.Quantity) *ResourceQuantityRange {
 	return FixedClassResource(value)
 }
 
-// LegacyClassLimit converts a legacy limit into a fixed class range. A zero,
-// empty or -1 legacy limit means no limit, so it converts to an unset range.
+// LegacyClassLimit converts a legacy limit into a fixed class range. A zero or
+// empty legacy limit means no limit, so it converts to an unset range. A -1
+// legacy limit also means no limit; it converts to an empty range, which has
+// no default and so is unlimited, so that ClassLimitDefault reads it back as -1.
 func LegacyClassLimit(value resource.Quantity) *ResourceQuantityRange {
 	if value.Cmp(legacyUnlimited) == 0 {
-		return nil
+		return &ResourceQuantityRange{}
 	}
 	return LegacyClassAllocation(value)
 }
 
 var legacyUnlimited = resource.MustParse("-1")
 
-// LegacyClassLimitPair converts legacy CPU and memory limits to class ranges,
-// leaving zero, empty or -1 values unset.
+// LegacyClassLimitPair converts legacy CPU and memory limits to class ranges.
+// See LegacyClassLimit.
 func LegacyClassLimitPair(cpu, memory resource.Quantity) VirtualMachineClassResourceSpec {
 	return VirtualMachineClassResourceSpec{
 		CPU:    LegacyClassLimit(cpu),
 		Memory: LegacyClassLimit(memory),
 	}
+}
+
+// ClassLimitDefault projects a class limit into a legacy limit. An unset limit
+// projects to zero and a limit without a default, which is unlimited, projects
+// to -1, so a legacy -1 or zero limit reads back unchanged.
+func ClassLimitDefault(value *ResourceQuantityRange) resource.Quantity {
+	if value != nil && value.Default == nil {
+		return legacyUnlimited.DeepCopy()
+	}
+	return ClassResourceDefault(value)
+}
+
+// ClassLimitPairDefaults projects CPU and memory limits into independent
+// legacy quantities. See ClassLimitDefault.
+func ClassLimitPairDefaults(in VirtualMachineClassResourceSpec) (cpu, memory resource.Quantity) {
+	return ClassLimitDefault(in.CPU), ClassLimitDefault(in.Memory)
 }
 
 // LegacyClassAllocationPair converts legacy CPU and memory requests or limits
@@ -106,10 +124,11 @@ func ClassResourcePairDefaults(in VirtualMachineClassResourceSpec) (cpu, memory 
 // that API's writer changed their projected value. Projected is the preserved
 // class converted down and back up without its conversion annotation.
 func RestoreClassPolicies(dst, preserved, projected *VirtualMachineClassSpec) {
+	restoreUnchangedClassPolicy(&dst.CPU, preserved.CPU, projected.CPU)
+	restoreUnchangedClassPolicy(&dst.Memory, preserved.Memory, projected.Memory)
 	for _, group := range []struct {
 		dst, preserved, projected *VirtualMachineClassResourceSpec
 	}{
-		{&dst.Resources.Size, &preserved.Resources.Size, &projected.Resources.Size},
 		{&dst.Resources.Requests, &preserved.Resources.Requests, &projected.Resources.Requests},
 		{&dst.Resources.Limits, &preserved.Resources.Limits, &projected.Resources.Limits},
 	} {
@@ -164,6 +183,7 @@ func RestoreClassInstanceConversionData[S any](
 // that restore reads are stored, which keeps the annotation small.
 func PreserveClassConversionData(in *VirtualMachineClass, outMeta *metav1.ObjectMeta) error {
 	data := &VirtualMachineClass{}
+	data.Spec.CPU, data.Spec.Memory = in.Spec.CPU, in.Spec.Memory
 	data.Spec.Resources = in.Spec.Resources
 	return preserveClassData(data, &in.ObjectMeta, outMeta, "VMClass")
 }
@@ -172,6 +192,7 @@ func PreserveClassConversionData(in *VirtualMachineClass, outMeta *metav1.Object
 // class snapshot for an older API without modifying the source metadata.
 func PreserveClassInstanceConversionData(in *VirtualMachineClassInstance, outMeta *metav1.ObjectMeta) error {
 	data := &VirtualMachineClassInstance{}
+	data.Spec.CPU, data.Spec.Memory = in.Spec.CPU, in.Spec.Memory
 	data.Spec.Resources = in.Spec.Resources
 	return preserveClassData(data, &in.ObjectMeta, outMeta, "VMClassInstance")
 }

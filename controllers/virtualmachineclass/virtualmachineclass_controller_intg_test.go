@@ -48,11 +48,9 @@ func intgTestsReconcile() {
 				Namespace: "default",
 			},
 			Spec: vmopv1.VirtualMachineClassSpec{
+				CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4"))},
+				Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Mi"))},
 				Resources: vmopv1.VirtualMachineClassResources{
-					Size: vmopv1.VirtualMachineClassResourceSpec{
-						CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4"))},
-						Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Mi"))},
-					},
 					Requests: vmopv1.VirtualMachineClassResourceSpec{
 						CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1000m"))},
 						Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("100Mi"))},
@@ -116,7 +114,7 @@ func intgTestsReconcile() {
 				}).Should(Succeed())
 
 				By("Modify the class config")
-				vmClass.Spec.Resources.Size.CPU.Default = ptr.To(resource.MustParse("3"))
+				vmClass.Spec.CPU.Default = ptr.To(resource.MustParse("3"))
 				setConfigSpec(vmClass)
 
 				Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())

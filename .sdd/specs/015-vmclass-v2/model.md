@@ -13,7 +13,7 @@ Every governable field has one shape. Each shape is a concrete, named Go struct 
 
 | Shape | Fields | Rules |
 |---|---|---|
-| Number (`Range`) | `min`, `max`, `default` | `min` and `max` are inclusive. `default` is required when `min` or `max` is set, and must be within them. An unset bound is open: limited by the hardware, or by a parent class in Milestone 2. A fixed value is `min == max == default`. A wholly absent struct leaves the value to vpxd. Go types are concrete per value type: `IntRange` and `LongRange` for integers, and `ResourceQuantityRange` for resource quantities (`resources.size`, `resources.requests` and `resources.limits`). |
+| Number (`Range`) | `min`, `max`, `default` | `min` and `max` are inclusive. `default` is required when `min` or `max` is set, and must be within them. An unset bound is open: limited by the hardware, or by a parent class in Milestone 2. A fixed value is `min == max == default`. A wholly absent struct leaves the value to vpxd. Go types are concrete per value type: `IntRange` and `LongRange` for integers, and `ResourceQuantityRange` for resource quantities (`cpu`, `memory`, `resources.requests` and `resources.limits`). |
 | `CountRange` | `min`, `max` | How many items a list, or an entry of it, may hold. No `default`: the default count is the length of the list's `default`. Every field is optional; an unset `count`, `min` or `max` sets no class limit, and the platform's limits still apply. |
 | `EnumPolicy` | `allowed`, `default`, `required` | Unset `allowed` = all values; `[]` = none. `default` is required when `allowed` has more than one value; with one value, that value is the default. A set `default` must be in `allowed`. A VM that omits the field inherits `default`; `required: true` rejects an empty value after defaulting. An explicit `""` is not a value unless the field defines one; only `reservedProfileName` does (`""` = no profile), and its VM field is a pointer so `""` stays distinct from unset. Every other planned enum has an explicit value for "off" (`Normal`, `Disabled`, `PerVM`) or always has a value (NIC `type`, shares `level`). |
 | `StringPolicy` | `allowed`, `denied`, `default`, `required` | A free-form string. `allowed` and `denied` are lists of string matchers (below); `denied` is checked first. A set `default` must pass both. `default` and `required` behave as in `EnumPolicy`. |
@@ -103,8 +103,8 @@ Every other interface field is a per-VM input and not governed: `name`, `guestDe
 | `governs.enforcement` | enum | One value, `Deny`, set by the mutating webhook. |
 | `governs.existingVMs` | enum | `AllowOnViolation` or `DenyPowerOn`. Required on a governing class with no parent. In Milestone 2 only the top class sets it; children inherit it. |
 | `parentClassRefs` | list of `{name}` | Milestone 2. Rejected in Milestone 1. One entry; same namespace. |
-| `resources.size.{cpu,memory}` | Number | CPU is a whole vCPU count; memory in bytes. |
-| `resources.{requests,limits}.{cpu,memory}` | Number | Absolute only; no percentage form. CPU in cores, millicores allowed (`"2"`, `"1500m"`), as in v1alpha5; resolved to MHz as cores × the cluster's minimum host frequency. Memory in bytes. Requests and limits are not negative (CEL). A limit with no `default` is unlimited (`-1` in vSphere), as today; a limit with no `max` lets a VM choose any limit, including unlimited. The class has no `-1` value: an older version's `-1` limit, like a zero one, converts to an unset limit. The VM keeps `-1` in `spec.resources.limits` as its explicit unlimited value, which is above any class `max`. Same unit as the VM's `spec.resources`. See "Size, requests and limits". |
+| `cpu`, `memory` | Number | Guest size, at the VM's `spec.cpu` and `spec.memory` paths. CPU is a whole vCPU count of at least 1; memory in bytes, above 0 (CEL). |
+| `resources.{requests,limits}.{cpu,memory}` | Number | Absolute only; no percentage form. CPU in cores, millicores allowed (`"2"`, `"1500m"`), as in v1alpha5; resolved to MHz as cores × the cluster's minimum host frequency. Memory in bytes. Requests are not negative and limits are above 0 (CEL); a zero request is no reservation, and the class has no zero limit because the provider would read it as unlimited. A request `default` is not above the limit `default` (CEL; the class webhook checks the same for older-version writes). An unset limit, or one with no `default` (`{}`), is unlimited (`-1` in vSphere), as today; a limit with no `max` lets a VM choose any limit, including unlimited. The class has no `-1` value: an older version's zero limit converts to an unset limit and its `-1` limit to `{}`, so each reads back unchanged. The VM keeps `-1` in `spec.resources.limits` as its explicit unlimited value, which is above any class `max`. Same unit as the VM's `spec.resources`. See "Size, requests and limits". |
 | `resources.shares.{cpu,memory}` | `{level: EnumPolicy, value: Number}` | Same path and shape as the VM's `spec.resources.shares`. `level` is `Low`, `Normal`, `High` or `Custom`; `value` is the custom share count, allowed only when `level` can be `Custom` (CEL on the class defaults and on the VM). [NEEDS CLARIFICATION: the number rule requires a `default` whenever `value` has a bound, so a class can't default to `Normal` while bounding custom values (T021).] Milestone 1 checks `value > 0` and leaves the upper bound to vCenter (`ResourcePool.QueryResourceConfigOption`, not in the environment-browser objects). |
 | `cpuAdvanced.*`, `memoryAdvanced.*`, `bootOptions.*`, `advanced.*` | per field | Same paths as `VirtualMachine.spec`, for fields the VM spec has. `bootOptions.firmware`: an image that declares firmware wins over the class default, as today, and must be in `allowed`; a VM value still wins over the image. `bootOptions.networkBootProtocol`: `allowed` only, no class default, because the VM API defaults it to `IP4`. `enterBootSetup` is a one-time request and not a class setting. `cpuAdvanced.topology.exposeVnumaOnCpuHotadd` stays in `configSpec` until the VM has the field [NEEDS CLARIFICATION: whether the observed value is the setting or the effective state]. |
 | `advanced.extraConfig` | `ListPolicy` | At the VM's path. |
@@ -130,22 +130,22 @@ Label: the schema-version label records the last CRD version that wrote the clas
 
 ### Size, requests and limits
 
-`size` is what the guest sees (vCPU count, memory). `requests` is the host reservation and `limits` the host ceiling. The class and the VM use the same units, so governance compares them directly with no host frequency; only the provider converts CPU cores to MHz when it builds the `ConfigSpec`.
+`cpu` and `memory` are what the guest sees (vCPU count, memory). `requests` is the host reservation and `limits` the host ceiling. The class and the VM use the same units, so governance compares them directly with no host frequency; only the provider converts CPU cores to MHz when it builds the `ConfigSpec`.
 
 | Field | Unit | `ConfigSpec` |
 |---|---|---|
-| `size.cpu` | whole vCPU count | `NumCPUs` |
-| `size.memory` | bytes | `MemoryMB` |
+| `cpu` | whole vCPU count | `NumCPUs` |
+| `memory` | bytes | `MemoryMB` |
 | `requests.cpu` | cores (millicores allowed) | `CpuAllocation.Reservation` = ceil(cores × minimum host MHz) |
-| `limits.cpu` | cores (millicores allowed); unset or zero = unlimited | `CpuAllocation.Limit`; unlimited = `-1` |
+| `limits.cpu` | cores (millicores allowed), above 0; unset or no `default` = unlimited | `CpuAllocation.Limit`; unlimited = `-1` |
 | `requests.memory` | bytes | `MemoryAllocation.Reservation` (MB) |
-| `limits.memory` | bytes; unset or zero = unlimited | `MemoryAllocation.Limit` (MB); unlimited = `-1` |
+| `limits.memory` | bytes, above 0; unset or no `default` = unlimited | `MemoryAllocation.Limit` (MB); unlimited = `-1` |
 
 Relation rules, checked on the effective values (after defaulting):
 
-- **VM**: `requests.cpu ≤ limits.cpu` and `requests.memory ≤ limits.memory` when the limit is set; `requests.memory ≤ size.memory`. A limit above size is allowed and has no effect. `reservationLockedToMax: true` and an explicit `requests.memory` other than `size.memory` are rejected together.
-- **Class**: the defaults satisfy the VM rules (`requests.default ≤ limits.default`, `requests.memory.default ≤ size.memory.default`), and the bounds can be met: `requests.min ≤ limits.max` and `requests.memory.min ≤ size.memory.max`.
-- [NEEDS CLARIFICATION: whether vCenter rejects a CPU reservation above `size.cpu` × host MHz; if it does, add `requests.cpu ≤ size.cpu`.]
+- **VM**: `requests.cpu ≤ limits.cpu` and `requests.memory ≤ limits.memory` when the limit is set; `requests.memory ≤ memory`. A limit above size is allowed and has no effect. `reservationLockedToMax: true` and an explicit `requests.memory` other than `memory` are rejected together.
+- **Class**: the defaults satisfy the VM rules (`requests.default ≤ limits.default`, `requests.memory.default ≤ memory.default`), and the bounds can be met: `requests.min ≤ limits.max` and `requests.memory.min ≤ memory.max`.
+- [NEEDS CLARIFICATION: whether vCenter rejects a CPU reservation above `cpu` × host MHz; if it does, add `requests.cpu ≤ cpu`.]
 
 ## `VirtualMachineClass.status`
 
@@ -160,7 +160,7 @@ Relation rules, checked on the effective values (after defaulting):
 
 | Field | Rules |
 |---|---|
-| `spec.resources.{size,requests,limits}` | Same units and relation rules as the class ("Size, requests and limits"). `requests.cpu` and `limits.cpu` change from MHz to cores (millicores allowed) and the CEL rule rejecting the `m` suffix is removed; v1alpha6 has not shipped, so no conversion is needed. |
+| `spec.cpu`, `spec.memory`, `spec.resources.{requests,limits}` | Same units and relation rules as the class ("Size, requests and limits"). `spec.resources.size.{cpu,memory}` moves to `spec.cpu` and `spec.memory`, the class paths (separate PR). `requests.cpu` and `limits.cpu` change from MHz to cores (millicores allowed) and the CEL rule rejecting the `m` suffix is removed; v1alpha6 has not shipped, so no conversion is needed. |
 | `spec.reservedProfileName` | `*string`. Filled by the mutation webhook from the class's `reservedProfileName.default` (or the governing class's), like any other default; explicit `""` = no profile. Must be in `allowed`. On a class-backed VM it is class-supplied and can't be edited inline; a classless VM sets or inherits it. Can't change from one set value to another while the VM is powered on; vm-operator may set it from unset (schema upgrade). When set, the VM's CPU count, CPU reservation and limit, memory reservation and limit, and device identities, with how many devices have each identity, must equal the profile's; overhead is not compared. vm-operator writes the vCenter profile ID from this field and removes it when the field is empty. |
 | `status.governingClassNames` | The classes governing the VM's zone, computed live. |
 | `conditions[GovernanceCompliant]` | `True`/`False`; reason `NoGoverningClass` when the zone has none (False for classless VMs, True for class-backed VMs). |
@@ -191,10 +191,10 @@ A reserved profile is a platform object that holds one VM shape: vCPU count, CPU
 | From v1alpha5 | To v1alpha6 |
 |---|---|
 | scalar field `v` | `{min: v, max: v, default: v}` |
-| `hardware.{cpus,memory}` | `resources.size.{cpu,memory}` |
+| `hardware.{cpus,memory}` | `cpu`, `memory` |
 | `configSpec.version: vmx-N` | `hardware.version: {min: N, default: N}` |
 | `configSpec` CPU and memory allocation shares | `resources.shares.{cpu,memory}`: `Normal` for a resource that `policies.resources` sets, as today; otherwise the `configSpec` shares (T027) |
-| `policies.resources.{requests,limits}` | `resources.{requests,limits}` |
+| `policies.resources.{requests,limits}` | `resources.{requests,limits}`; a zero limit converts to unset and a `-1` limit to `{}` |
 | `configSpec` path that has a typed field | that typed field, except a `configSpec` CPU allocation in MHz (T023) and NIC settings that differ by position (T024), which stay in `configSpec` as today |
 | (none) | `externalID` = name; `zones` unset |
 | `reservedProfileID: X` | `reservedProfileName: {default: X, allowed: [X], required: true}` |
@@ -211,10 +211,8 @@ A fixed class after upgrade:
 ```yaml
 spec:
   externalID: best-effort-small
-  resources:
-    size:
-      cpu: {min: 2, max: 2, default: 2}
-      memory: {min: 4Gi, max: 4Gi, default: 4Gi}
+  cpu: {min: 2, max: 2, default: 2}
+  memory: {min: 4Gi, max: 4Gi, default: 4Gi}
 ```
 
 A governing class for a zone:
@@ -224,10 +222,8 @@ spec:
   zones: [zone-a]
   governs:
     existingVMs: AllowOnViolation
-  resources:
-    size:
-      cpu: {min: 1, max: 16, default: 2}
-      memory: {min: 1Gi, max: 64Gi, default: 4Gi}
+  cpu: {min: 1, max: 16, default: 2}
+  memory: {min: 1Gi, max: 64Gi, default: 4Gi}
   advanced:
     extraConfig:
       allowed: [{key: "guestinfo.*"}]
@@ -284,10 +280,8 @@ spec:
     default: gpu-large
     allowed: [gpu-large]
     required: true
-  resources:
-    size:
-      cpu: {min: 8, max: 8, default: 8}
-      memory: {min: 64Gi, max: 64Gi, default: 64Gi}
+  cpu: {min: 8, max: 8, default: 8}
+  memory: {min: 64Gi, max: 64Gi, default: 64Gi}
   memoryAdvanced:
     reservationLockedToMax: {allowOverride: false, default: true}
 ```

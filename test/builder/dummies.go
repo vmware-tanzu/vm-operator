@@ -273,11 +273,9 @@ func DummyVirtualMachineClass(name string) *vmopv1.VirtualMachineClass {
 			Name: name,
 		},
 		Spec: vmopv1.VirtualMachineClassSpec{
+			CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2"))},
+			Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4Gi"))},
 			Resources: vmopv1.VirtualMachineClassResources{
-				Size: vmopv1.VirtualMachineClassResourceSpec{
-					CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2"))},
-					Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4Gi"))},
-				},
 				Requests: vmopv1.VirtualMachineClassResourceSpec{
 					CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))},
 					Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))},

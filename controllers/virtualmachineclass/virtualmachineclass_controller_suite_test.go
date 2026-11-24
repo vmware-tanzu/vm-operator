@@ -34,10 +34,10 @@ var _ = AfterSuite(suite.AfterSuite)
 // setConfigSpec populates the spec.configSpec field as wcpsvc would when creating a VM Class.
 func setConfigSpec(vmClass *vmopv1.VirtualMachineClass) {
 	var spec types.VirtualMachineConfigSpec
-	if r := vmClass.Spec.Resources.Size.CPU; r != nil && r.Default != nil {
+	if r := vmClass.Spec.CPU; r != nil && r.Default != nil {
 		spec.NumCPUs = int32(r.Default.Value())
 	}
-	if r := vmClass.Spec.Resources.Size.Memory; r != nil && r.Default != nil {
+	if r := vmClass.Spec.Memory; r != nil && r.Default != nil {
 		spec.MemoryMB = r.Default.Value()
 	}
 

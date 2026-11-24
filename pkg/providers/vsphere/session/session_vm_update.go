@@ -643,12 +643,12 @@ func UpdateHardwareConfigSpec(
 	configSpec *vimtypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec) {
 
-	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.Resources.Size.CPU); q != nil {
+	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.CPU); q != nil {
 		if nCPUs := int32(q.Value()); config.Hardware.NumCPU != nCPUs { //nolint:gosec // validated as an int32 vCPU count
 			configSpec.NumCPUs = nCPUs
 		}
 	}
-	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.Resources.Size.Memory); q != nil {
+	if q := vmopv1.ClassResourceDefaultOrNil(vmClassSpec.Memory); q != nil {
 		if memMB := virtualmachine.MemoryQuantityToMb(*q); int64(config.Hardware.MemoryMB) != memMB {
 			configSpec.MemoryMB = memMB
 		}

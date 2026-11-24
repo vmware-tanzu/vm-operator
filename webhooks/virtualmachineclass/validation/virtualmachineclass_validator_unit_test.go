@@ -160,10 +160,10 @@ func unitTestsValidateUpdate() {
 		var err error
 
 		if args.changeHwCPU {
-			ctx.vmClass.Spec.Resources.Size.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("64"))}
+			ctx.vmClass.Spec.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("64"))}
 		}
 		if args.changeHwMemory {
-			ctx.vmClass.Spec.Resources.Size.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("5Gi"))}
+			ctx.vmClass.Spec.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("5Gi"))}
 		}
 		if args.changeCPU {
 			ctx.vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("5Gi"))}

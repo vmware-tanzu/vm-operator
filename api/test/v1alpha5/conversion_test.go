@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	"sigs.k8s.io/randfill"
@@ -309,10 +310,10 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				before := spoke.DeepCopyObject()
 				var hub vmopv1.VirtualMachineClass
 				Expect(spoke.ConvertTo(&hub)).To(Succeed())
-				Expect(hub.Spec.Resources.Size.CPU.Default.String()).To(Equal("4"))
-				Expect(hub.Spec.Resources.Size.CPU.Min.Cmp(*hub.Spec.Resources.Size.CPU.Default)).To(BeZero())
-				Expect(hub.Spec.Resources.Size.CPU.Max.Cmp(*hub.Spec.Resources.Size.CPU.Default)).To(BeZero())
-				Expect(hub.Spec.Resources.Size.Memory.Default.String()).To(Equal("4Gi"))
+				Expect(hub.Spec.CPU.Default.String()).To(Equal("4"))
+				Expect(hub.Spec.CPU.Min.Cmp(*hub.Spec.CPU.Default)).To(BeZero())
+				Expect(hub.Spec.CPU.Max.Cmp(*hub.Spec.CPU.Default)).To(BeZero())
+				Expect(hub.Spec.Memory.Default.String()).To(Equal("4Gi"))
 				Expect(hub.Spec.Resources.Requests.CPU.Default.String()).To(Equal("2"))
 				Expect(hub.Spec.Resources.Requests.Memory.Default.String()).To(Equal("1Gi"))
 				Expect(hub.Spec.Resources.Limits.CPU.Default.String()).To(Equal("4"))
@@ -329,7 +330,17 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				Expect(apiequality.Semantic.DeepEqual(spoke, before)).To(BeTrue())
 			})
 
-			It("converts a legacy -1 limit to an unset limit", func() {
+			legacyLimits := func(spoke runtime.Object) map[string]any {
+				data, err := json.Marshal(spoke)
+				Expect(err).NotTo(HaveOccurred())
+				var obj map[string]any
+				Expect(json.Unmarshal(data, &obj)).To(Succeed())
+				limits, _, err := unstructured.NestedMap(obj, "spec", "policies", "resources", "limits")
+				Expect(err).NotTo(HaveOccurred())
+				return limits
+			}
+
+			It("converts a legacy -1 limit to an unlimited limit and reads it back as -1", func() {
 				spoke := version.newSpoke()
 				Expect(json.Unmarshal([]byte(`{
 					"metadata":{"name":"legacy","namespace":"tenant"},
@@ -339,12 +350,74 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 					}}`), spoke)).To(Succeed())
 				var hub vmopv1.VirtualMachineClass
 				Expect(spoke.ConvertTo(&hub)).To(Succeed())
-				Expect(hub.Spec.Resources.Limits.CPU).To(BeNil())
-				Expect(hub.Spec.Resources.Limits.Memory).To(BeNil())
+				// A limit without a default is unlimited.
+				Expect(hub.Spec.Resources.Limits.CPU).To(Equal(&vmopv1.ResourceQuantityRange{}))
+				Expect(hub.Spec.Resources.Limits.Memory).To(Equal(&vmopv1.ResourceQuantityRange{}))
+				Expect(vmopv1.ClassResourceNonZeroDefault(hub.Spec.Resources.Limits.CPU)).To(BeNil())
 				// Only limits treat -1 as unlimited; a -1 request is kept,
 				// and the v1alpha6 schema rejects it.
 				Expect(hub.Spec.Resources.Requests.CPU.Default.String()).To(Equal("-1"))
 				Expect(hub.Spec.Resources.Requests.Memory.Default.String()).To(Equal("1Gi"))
+
+				down := version.newSpoke()
+				Expect(down.ConvertFrom(&hub)).To(Succeed())
+				Expect(legacyLimits(down)).To(Equal(map[string]any{"cpu": "-1", "memory": "-1"}))
+			})
+
+			It("reads a legacy zero limit back as zero", func() {
+				spoke := version.newSpoke()
+				Expect(json.Unmarshal([]byte(`{
+					"metadata":{"name":"legacy","namespace":"tenant"},
+					"spec":{
+						"hardware":{"cpus":4,"memory":"4Gi"},
+						"policies":{"resources":{"limits":{"cpu":"0","memory":"0"}}}
+					}}`), spoke)).To(Succeed())
+				var hub vmopv1.VirtualMachineClass
+				Expect(spoke.ConvertTo(&hub)).To(Succeed())
+				Expect(hub.Spec.Resources.Limits.CPU).To(BeNil())
+				Expect(hub.Spec.Resources.Limits.Memory).To(BeNil())
+
+				down := version.newSpoke()
+				Expect(down.ConvertFrom(&hub)).To(Succeed())
+				Expect(legacyLimits(down)).To(Equal(map[string]any{"cpu": "0", "memory": "0"}))
+			})
+
+			It("reads a limit set after a legacy -1 limit back as the new limit", func() {
+				spoke := version.newSpoke()
+				Expect(json.Unmarshal([]byte(`{
+					"metadata":{"name":"legacy","namespace":"tenant"},
+					"spec":{
+						"hardware":{"cpus":4,"memory":"4Gi"},
+						"policies":{"resources":{"limits":{"cpu":"-1","memory":"-1"}}}
+					}}`), spoke)).To(Succeed())
+				var hub vmopv1.VirtualMachineClass
+				Expect(spoke.ConvertTo(&hub)).To(Succeed())
+				hub.Spec.Resources.Limits.CPU = vmopv1.FixedClassResource(resource.MustParse("2"))
+
+				down := version.newSpoke()
+				Expect(down.ConvertFrom(&hub)).To(Succeed())
+				Expect(legacyLimits(down)).To(Equal(map[string]any{"cpu": "2", "memory": "-1"}))
+			})
+
+			It("keeps size ranges through an older-client write that changes another field", func() {
+				hub := classWithPolicies()
+				spoke := version.newSpoke()
+				Expect(spoke.ConvertFrom(hub)).To(Succeed())
+				data, err := json.Marshal(spoke)
+				Expect(err).NotTo(HaveOccurred())
+				var obj map[string]any
+				Expect(json.Unmarshal(data, &obj)).To(Succeed())
+				Expect(unstructured.SetNestedField(obj, "edited", "spec", "description")).To(Succeed())
+				data, err = json.Marshal(obj)
+				Expect(err).NotTo(HaveOccurred())
+				edited := version.newSpoke()
+				Expect(json.Unmarshal(data, edited)).To(Succeed())
+
+				var restored vmopv1.VirtualMachineClass
+				Expect(edited.ConvertTo(&restored)).To(Succeed())
+				Expect(restored.Spec.Description).To(Equal("edited"))
+				Expect(restored.Spec.CPU).To(Equal(hub.Spec.CPU))
+				Expect(restored.Spec.Memory).To(Equal(hub.Spec.Memory))
 			})
 
 			It("preserves policies through an unchanged older-client write", func() {
@@ -392,10 +465,10 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				Expect(json.Unmarshal([]byte(`{"spec":{"hardware":{"cpus":8},"reservedProfileID":"profile-b","reservedSlots":0}}`), spoke)).To(Succeed())
 				var restored vmopv1.VirtualMachineClass
 				Expect(spoke.ConvertTo(&restored)).To(Succeed())
-				Expect(restored.Spec.Resources.Size.CPU.Default.String()).To(Equal("8"))
-				Expect(restored.Spec.Resources.Size.CPU.Min.String()).To(Equal("8"))
-				Expect(restored.Spec.Resources.Size.CPU.Max.String()).To(Equal("8"))
-				Expect(restored.Spec.Resources.Size.Memory).To(Equal(hub.Spec.Resources.Size.Memory))
+				Expect(restored.Spec.CPU.Default.String()).To(Equal("8"))
+				Expect(restored.Spec.CPU.Min.String()).To(Equal("8"))
+				Expect(restored.Spec.CPU.Max.String()).To(Equal("8"))
+				Expect(restored.Spec.Memory).To(Equal(hub.Spec.Memory))
 				Expect(restored.Spec.Hardware.Devices).To(Equal(hub.Spec.Hardware.Devices))
 				Expect(restored.Spec.ReservedProfileID).To(Equal("profile-b"))
 				Expect(restored.Spec.ReservedSlots).To(BeZero())
@@ -415,7 +488,7 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				Expect(hub.Spec.Resources.Requests.Memory.Default.String()).To(Equal("1Gi"))
 				Expect(hub.Spec.Resources.Limits.CPU.Default.String()).To(Equal("2"))
 				Expect(hub.Spec.Resources.Limits.Memory).To(BeNil())
-				Expect(hub.Spec.Resources.Size.CPU).NotTo(BeNil())
+				Expect(hub.Spec.CPU).NotTo(BeNil())
 
 				down := version.newSpoke()
 				Expect(down.ConvertFrom(&hub)).To(Succeed())
@@ -426,9 +499,8 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 
 			It("projects unset requests and limits to zero legacy values", func() {
 				hub := &vmopv1.VirtualMachineClass{Spec: vmopv1.VirtualMachineClassSpec{
-					Resources: vmopv1.VirtualMachineClassResources{
-						Size: vmopv1.FixedClassResourcePair(resource.MustParse("2"), resource.MustParse("2Gi")),
-					},
+					CPU:    vmopv1.FixedClassResource(resource.MustParse("2")),
+					Memory: vmopv1.FixedClassResource(resource.MustParse("2Gi")),
 				}}
 				spoke := version.newSpoke()
 				Expect(spoke.ConvertFrom(hub)).To(Succeed())
@@ -449,7 +521,7 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				Expect(spoke.ConvertFrom(hub)).To(Succeed())
 				var restored vmopv1.VirtualMachineClass
 				Expect(spoke.ConvertTo(&restored)).To(Succeed())
-				Expect(restored.Spec.Resources.Size.CPU).To(BeNil())
+				Expect(restored.Spec.CPU).To(BeNil())
 				Expect(restored.Spec.Resources.Requests.CPU.Default).NotTo(BeNil())
 				Expect(restored.Spec.Resources.Requests.CPU.Default.IsZero()).To(BeTrue())
 				Expect(restored.Spec.Resources.Requests.CPU.Min).To(BeNil())
@@ -544,7 +616,7 @@ var _ = Describe("VMClass allocation conversions", Label("api"), func() {
 		{"v1alpha5", func() any { return &vmopv1a5.VirtualMachineClassResources{} }},
 	} {
 		Context(version.name, func() {
-			It("updates allocations without replacing size and isolates quantity storage", func() {
+			It("converts allocations and isolates quantity storage", func() {
 				scheme := runtime.NewScheme()
 				Expect(vmopv1a1.AddToScheme(scheme)).To(Succeed())
 				Expect(vmopv1a2.AddToScheme(scheme)).To(Succeed())
@@ -556,10 +628,8 @@ var _ = Describe("VMClass allocation conversions", Label("api"), func() {
 				Expect(json.Unmarshal([]byte(`{"requests":{"cpu":"123456789012345678901234567890","memory":"1Gi"},"limits":{"cpu":"4","memory":"8Gi"}}`), spoke)).To(Succeed())
 				before, err := json.Marshal(spoke)
 				Expect(err).NotTo(HaveOccurred())
-				size := vmopv1.FixedClassResourcePair(resource.MustParse("7"), resource.MustParse("9Gi"))
-				hub := vmopv1.VirtualMachineClassResources{Size: *size.DeepCopy()}
+				hub := vmopv1.VirtualMachineClassResources{}
 				Expect(scheme.Convert(spoke, &hub, nil)).To(Succeed())
-				Expect(hub.Size).To(Equal(size))
 				originalCPU := resource.MustParse("123456789012345678901234567890")
 				Expect(hub.Requests.CPU.Default.Cmp(originalCPU)).To(BeZero())
 				Expect(hub.Requests.Memory.Default.String()).To(Equal("1Gi"))
@@ -597,10 +667,8 @@ func classWithPolicies() *vmopv1.VirtualMachineClass {
 	return &vmopv1.VirtualMachineClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "class", Namespace: "tenant"},
 		Spec: vmopv1.VirtualMachineClassSpec{
-			Resources: vmopv1.VirtualMachineClassResources{Size: vmopv1.VirtualMachineClassResourceSpec{
-				CPU:    &vmopv1.ResourceQuantityRange{Min: &minimum, Max: &maximum, Default: &def},
-				Memory: &vmopv1.ResourceQuantityRange{Default: &memory},
-			}},
+			CPU:               &vmopv1.ResourceQuantityRange{Min: &minimum, Max: &maximum, Default: &def},
+			Memory:            &vmopv1.ResourceQuantityRange{Default: &memory},
 			Hardware:          vmopv1.VirtualMachineClassHardware{Devices: vmopv1.VirtualDevices{VGPUDevices: devices}},
 			ReservedProfileID: "profile-a",
 			ReservedSlots:     4,

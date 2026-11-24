@@ -48,7 +48,8 @@ func Convert_v1alpha4_VirtualMachineClassSpec_To_v1alpha6_VirtualMachineClassSpe
 	if err := autoConvert_v1alpha4_VirtualMachineClassSpec_To_v1alpha6_VirtualMachineClassSpec(in, out, s); err != nil {
 		return err
 	}
-	out.Resources.Size = vmopv1.FixedClassResourcePair(*resource.NewQuantity(in.Hardware.Cpus, resource.DecimalSI), in.Hardware.Memory)
+	size := vmopv1.FixedClassResourcePair(*resource.NewQuantity(in.Hardware.Cpus, resource.DecimalSI), in.Hardware.Memory)
+	out.CPU, out.Memory = size.CPU, size.Memory
 	return Convert_v1alpha4_VirtualMachineClassResources_To_v1alpha6_VirtualMachineClassResources(&in.Policies.Resources, &out.Resources, s)
 }
 
@@ -57,7 +58,7 @@ func Convert_v1alpha6_VirtualMachineClassSpec_To_v1alpha4_VirtualMachineClassSpe
 	if err := autoConvert_v1alpha6_VirtualMachineClassSpec_To_v1alpha4_VirtualMachineClassSpec(in, out, s); err != nil {
 		return err
 	}
-	cpu, memory := vmopv1.ClassResourcePairDefaults(in.Resources.Size)
+	cpu, memory := vmopv1.ClassResourcePairDefaults(vmopv1.VirtualMachineClassResourceSpec{CPU: in.CPU, Memory: in.Memory})
 	out.Hardware.Cpus = cpu.Value()
 	out.Hardware.Memory = memory
 	return Convert_v1alpha6_VirtualMachineClassResources_To_v1alpha4_VirtualMachineClassResources(&in.Resources, &out.Policies.Resources, s)
@@ -87,7 +88,8 @@ func Convert_v1alpha6_VirtualMachineClassResources_To_v1alpha4_VirtualMachineCla
 	if err := Convert_v1alpha6_VirtualMachineClassResourceSpec_To_v1alpha4_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
 		return err
 	}
-	return Convert_v1alpha6_VirtualMachineClassResourceSpec_To_v1alpha4_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s)
+	out.Limits.Cpu, out.Limits.Memory = vmopv1.ClassLimitPairDefaults(in.Limits)
+	return nil
 }
 
 // Convert_v1alpha4_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec converts legacy allocations to fixed ranges, leaving zero or empty values unset.

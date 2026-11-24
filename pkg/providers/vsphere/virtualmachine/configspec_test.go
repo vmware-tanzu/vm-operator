@@ -99,7 +99,7 @@ var _ = Describe("CreateConfigSpec", func() {
 				Expect(configSpec.Name).To(Equal(vmName))
 				Expect(configSpec.Version).To(BeEmpty())
 				Expect(configSpec.Annotation).ToNot(BeEmpty())
-				Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Resources.Size.CPU.Default.Value()))
+				Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.CPU.Default.Value()))
 				Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
 				Expect(configSpec.CpuAllocation.Shares).ToNot(BeNil())
 				Expect(configSpec.CpuAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
@@ -127,6 +127,22 @@ var _ = Describe("CreateConfigSpec", func() {
 					Expect(configSpec.MemoryAllocation.Shares.Level).To(Equal(vimtypes.SharesLevelNormal))
 					Expect(configSpec.MemoryAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
 					Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeZero()))
+				})
+			})
+
+			Context("VM Class has limits with no default", func() {
+				BeforeEach(func() {
+					vmClassSpec.Resources.Limits = vmopv1.VirtualMachineClassResourceSpec{
+						CPU:    &vmopv1.ResourceQuantityRange{},
+						Memory: &vmopv1.ResourceQuantityRange{},
+					}
+				})
+
+				It("returns unlimited limits", func() {
+					Expect(configSpec.CpuAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
+					Expect(configSpec.CpuAllocation.Reservation).To(HaveValue(BeEquivalentTo(2684354560000)))
+					Expect(configSpec.MemoryAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
+					Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeEquivalentTo(2048)))
 				})
 			})
 
@@ -296,7 +312,7 @@ var _ = Describe("CreateConfigSpec", func() {
 			Expect(configSpec.Name).To(Equal(vmName))
 			Expect(configSpec.Version).To(BeEmpty())
 			Expect(configSpec.Annotation).To(Equal("test-annotation"))
-			Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Resources.Size.CPU.Default.Value()))
+			Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.CPU.Default.Value()))
 			Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
 			Expect(configSpec.CpuAllocation).ToNot(BeNil())
 			Expect(configSpec.CpuAllocation.Shares).ToNot(BeNil())

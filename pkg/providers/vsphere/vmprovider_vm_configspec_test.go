@@ -475,8 +475,8 @@ func vmConfigSpecTests() {
 			var o mo.VirtualMachine
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 			Expect(o.Config.Annotation).To(Equal(constants.VCVMAnnotation))
-			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Resources.Size.CPU.Default.Value()))
-			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Resources.Size.Memory.Default.Value() / 1024 / 1024))
+			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.CPU.Default.Value()))
+			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Memory.Default.Value() / 1024 / 1024))
 		})
 	})
 
@@ -511,9 +511,9 @@ func vmConfigSpecTests() {
 			var o mo.VirtualMachine
 			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 			Expect(o.Summary.Config.Name).To(Equal(vm.Name))
-			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Resources.Size.CPU.Default.Value()))
+			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.CPU.Default.Value()))
 			Expect(o.Summary.Config.NumCpu).ToNot(BeEquivalentTo(configSpec.NumCPUs))
-			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Resources.Size.Memory.Default.Value() / 1024 / 1024))
+			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Memory.Default.Value() / 1024 / 1024))
 			Expect(o.Summary.Config.MemorySizeMB).ToNot(BeEquivalentTo(configSpec.MemoryMB))
 		})
 	})
@@ -863,8 +863,8 @@ func vmConfigSpecTests() {
 			Expect(pciBacking2.CustomLabel).To(Equal("SampleLabel2"))
 
 			// CPU and memory should be from vm class
-			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Resources.Size.CPU.Default.Value()))
-			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Resources.Size.Memory.Default.Value() / 1024 / 1024))
+			Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.CPU.Default.Value()))
+			Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Memory.Default.Value() / 1024 / 1024))
 		})
 	})
 

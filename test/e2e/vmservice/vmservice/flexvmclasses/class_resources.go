@@ -74,7 +74,7 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 	// API and the VI admin API cannot express ranges.
 
 	// New behavior: the installed class CRDs print the size defaults and
-	// reject negative limits. Classes cannot be written by the E2E
+	// reject zero or negative limits. Classes cannot be written by the E2E
 	// user, so this reads the installed schema; envtest covers admission.
 	ginkgo.It("publishes the v1alpha6 class size columns and limit rule", ginkgo.Label(FeatureLabel, "extended-functional", "experimental"), func() {
 		for _, name := range []string{"virtualmachineclasses", "virtualmachineclassinstances"} {
@@ -86,13 +86,13 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 				column := column.(map[string]any)
 				paths[column["name"].(string)] = column["jsonPath"]
 			}
-			Expect(paths).To(HaveKeyWithValue("CPU", ".spec.resources.size.cpu.default"), name)
-			Expect(paths).To(HaveKeyWithValue("Memory", ".spec.resources.size.memory.default"), name)
+			Expect(paths).To(HaveKeyWithValue("CPU", ".spec.cpu.default"), name)
+			Expect(paths).To(HaveKeyWithValue("Memory", ".spec.memory.default"), name)
 
 			rules, _, err := unstructured.NestedSlice(version,
 				"schema", "openAPIV3Schema", "properties", "spec", "properties", "resources", "properties", "limits", "x-kubernetes-validations")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rules).To(ContainElement(HaveKeyWithValue("message", "limits must not be negative")), name)
+			Expect(rules).To(ContainElement(HaveKeyWithValue("message", "limits must be greater than 0")), name)
 		}
 	})
 
@@ -133,8 +133,8 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 		ginkgo.By("reading the class as v1alpha6 with fixed ranges that match")
 		a6 := &vmopv1.VirtualMachineClass{}
 		Expect(client.Get(ctx, classKey, a6)).To(Succeed())
-		expectFixedRange(a6.Spec.Resources.Size.CPU, *resource.NewQuantity(cpuCount, resource.DecimalSI), "size cpu")
-		expectFixedRange(a6.Spec.Resources.Size.Memory, a5.Spec.Hardware.Memory, "size memory")
+		expectFixedRange(a6.Spec.CPU, *resource.NewQuantity(cpuCount, resource.DecimalSI), "size cpu")
+		expectFixedRange(a6.Spec.Memory, a5.Spec.Hardware.Memory, "size memory")
 		expectLegacyAllocation(a6.Spec.Resources.Requests.CPU, requests.Cpu, "requests cpu")
 		expectLegacyAllocation(a6.Spec.Resources.Requests.Memory, requests.Memory, "requests memory")
 		Expect(a6.Spec.Resources.Limits.CPU).To(BeNil())

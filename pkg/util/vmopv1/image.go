@@ -279,6 +279,19 @@ func EnsureImageCacheLocation(
 	datacenterID, datastoreID, profileID string) (
 	vmopv1.VirtualMachineImageCache, error) {
 
+	if pkgnil.IsNil(ctx) {
+		panic("context is nil")
+	}
+	if pkgnil.IsNil(k8sClient) {
+		panic("k8sClient is nil")
+	}
+	if key.Namespace == "" {
+		panic("key.Namespace is empty")
+	}
+	if key.Name == "" {
+		panic("key.Name is empty")
+	}
+
 	var obj vmopv1.VirtualMachineImageCache
 
 	err := retry.OnError(

@@ -136,11 +136,11 @@ func GetPVCZoneConstraints(
 
 	var zones sets.Set[string]
 
-	for _, pvc := range pvcs {
-		if HasVirtualMachineDataSourceRef(pvc) {
-			continue
-		}
+	// A PVC whose data source is the VM itself is one of the VM's own disks,
+	// so it does not constrain where the VM can be placed.
+	pvcs = slices.DeleteFunc(slices.Clone(pvcs), HasVirtualMachineDataSourceRef)
 
+	for _, pvc := range pvcs {
 		var z sets.Set[string]
 
 		// We don't expect anything else but check since we check CSI specific annotations below.

@@ -1440,4 +1440,32 @@ var _ = Describe("EnsureImageCacheLocation", func() {
 			Expect(err).To(MatchError("fake get error"))
 		})
 	})
+
+	DescribeTable("panics on invalid arguments",
+		func(
+			nilCtx, nilClient bool,
+			key ctrlclient.ObjectKey,
+			expPanic string) {
+
+			callCtx, callClient := ctx, k8sClient
+			if nilCtx {
+				callCtx = nil
+			}
+			if nilClient {
+				callClient = nil
+			}
+			Expect(func() {
+				_, _ = vmopv1util.EnsureImageCacheLocation(
+					callCtx, callClient, key, itemID, itemVer, dcID, dsID, profileID)
+			}).To(PanicWith(expPanic))
+		},
+		Entry("nil context", true, false,
+			ctrlclient.ObjectKey{Namespace: namespace, Name: name}, "context is nil"),
+		Entry("nil client", false, true,
+			ctrlclient.ObjectKey{Namespace: namespace, Name: name}, "k8sClient is nil"),
+		Entry("empty namespace", false, false,
+			ctrlclient.ObjectKey{Name: name}, "key.Namespace is empty"),
+		Entry("empty name", false, false,
+			ctrlclient.ObjectKey{Namespace: namespace}, "key.Name is empty"),
+	)
 })

@@ -139,19 +139,12 @@ func clusterPlacementActionToRecommendation(
 			//
 			// Get the recommended datastore for the VM.
 			//
-			if cs.Files != nil {
-				if dsn := pkgutil.DatastoreNameFromStorageURI(cs.Files.VmPathName); dsn != "" {
-					ds, err := finder.Datastore(ctx, dsn)
-					if err != nil {
-						return Recommendation{}, fmt.Errorf("failed to get datastore for %q: %w", dsn, err)
-					}
-					if ds != nil {
-						r.Datastores = append(r.Datastores, DatastoreResult{
-							Name:  dsn,
-							MoRef: ds.Reference(),
-						})
-					}
-				}
+			homeDS, err := recommendedHomeDatastore(ctx, finder, cs)
+			if err != nil {
+				return Recommendation{}, err
+			}
+			if homeDS != nil {
+				r.Datastores = append(r.Datastores, *homeDS)
 			}
 
 			//
@@ -175,6 +168,97 @@ func clusterPlacementActionToRecommendation(
 	}
 
 	return r, nil
+}
+
+// recommendedHomeDatastore returns the recommended datastore for the VM's home:
+// the datastore DRS recommended for the first disk in the ConfigSpec that DRS
+// placed itself. Only if DRS placed none, because every disk already exists and
+// stays where it is, is the datastore of ConfigSpec.Files.VmPathName used.
+//
+// That is where DRS means to put the VM's home too, which is why
+// CreateConfigSpecForPlacement leads with a disk that carries the VM's own
+// storage policy. However, DRS sets VmPathName from the first entry of its
+// recommendation after regrouping the entries by datastore in an arbitrary
+// order. When the VM's disks span several datastores, for example an image disk
+// on a shared datastore and a PVC on a host-local one, VmPathName can therefore
+// name a datastore that does not comply with the VM's storage policy.
+func recommendedHomeDatastore(
+	ctx context.Context,
+	finder *find.Finder,
+	cs *vimtypes.VirtualMachineConfigSpec) (*DatastoreResult, error) {
+
+	var vmPathDSName string
+	if cs.Files != nil {
+		vmPathDSName = pkgutil.DatastoreNameFromStorageURI(cs.Files.VmPathName)
+	}
+
+	if ds := firstPlacedDiskDatastore(cs); ds != nil {
+		if ds.Name != "" && ds.Name != vmPathDSName {
+			pkglog.FromContextOrDefault(ctx).Info(
+				"Using the datastore of the first disk placed by DRS for the VM's home",
+				"datastore", ds.Name,
+				"vmPathNameDatastore", vmPathDSName)
+		}
+		return ds, nil
+	}
+
+	if vmPathDSName == "" {
+		return nil, nil
+	}
+
+	ds, err := finder.Datastore(ctx, vmPathDSName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get datastore for %q: %w", vmPathDSName, err)
+	}
+
+	return &DatastoreResult{
+		Name:  vmPathDSName,
+		MoRef: ds.Reference(),
+	}, nil
+}
+
+// firstPlacedDiskDatastore returns the datastore DRS recommended for the first
+// disk in the ConfigSpec that DRS placed itself, or nil if there is none.
+func firstPlacedDiskDatastore(cs *vimtypes.VirtualMachineConfigSpec) *DatastoreResult {
+	for i := range cs.DeviceChange {
+		if ds := placedDiskDatastore(cs.DeviceChange[i]); ds != nil {
+			return ds
+		}
+	}
+	return nil
+}
+
+// placedDiskDatastore returns the datastore DRS recommended for the given
+// device if it is a disk DRS placed itself, or nil otherwise. A disk DRS placed
+// is still to be created, and its backing refers to the recommended datastore.
+// An existing disk keeps its full path and has no file operation. The
+// datastore's name is filled in later from its MoRef, along with its other
+// properties, so the name here is only what the backing's file name gives.
+func placedDiskDatastore(bdc vimtypes.BaseVirtualDeviceConfigSpec) *DatastoreResult {
+	dc := bdc.GetVirtualDeviceConfigSpec()
+	if dc.FileOperation != vimtypes.VirtualDeviceConfigSpecFileOperationCreate {
+		return nil
+	}
+
+	disk, ok := dc.Device.(*vimtypes.VirtualDisk)
+	if !ok {
+		return nil
+	}
+
+	bbi, ok := disk.Backing.(vimtypes.BaseVirtualDeviceFileBackingInfo)
+	if !ok {
+		return nil
+	}
+
+	bi := bbi.GetVirtualDeviceFileBackingInfo()
+	if bi.Datastore == nil {
+		return nil
+	}
+
+	return &DatastoreResult{
+		Name:  pkgutil.DatastoreNameFromStorageURI(bi.FileName),
+		MoRef: *bi.Datastore,
+	}
 }
 
 func CheckPlacementRelocateSpec(spec *vimtypes.VirtualMachineRelocateSpec) error {

@@ -280,10 +280,11 @@ func CreateConfigSpecForPlacement(
 		// so add the dummy disk.
 		//
 		// The dummy disk is added even when the VM has PVCs, and it must come
-		// before their placement disks below. DRS puts the VM's home on the
-		// datastore of the first disk in DeviceChange that it places itself,
-		// and a PVC disk named by its existing datastore path is pinned rather
-		// than placed (CRM-4964). Leading with a disk that carries the VM's own
+		// before their placement disks below. The VM's home is put on the
+		// datastore recommended for the first disk in DeviceChange that DRS
+		// places itself (see placement.recommendedHomeDatastore), and a PVC
+		// disk named by its existing datastore path is pinned rather than
+		// placed (CRM-4964). Leading with a disk that carries the VM's own
 		// storage policy keeps the VM's home on a datastore that complies with
 		// that policy, rather than on the datastore of one of its volumes --
 		// for example a host-local datastore when the VM's storage class is a

@@ -46,6 +46,10 @@ type placementSpy struct {
 	// still uses PlaceVm.
 	placeVMCalls  int
 	xClusterCalls int
+
+	// If set, applied to each PlaceVmsXCluster recommendation's ConfigSpec
+	// before it is returned, to stand in for how real DRS fills it.
+	mutateXClusterConfigSpec func(*vimtypes.VirtualMachineConfigSpec)
 }
 
 func (s *placementSpy) RoundTrip(
@@ -66,6 +70,16 @@ func (s *placementSpy) RoundTrip(
 
 	if err := s.RoundTripper.RoundTrip(ctx, req, res); err != nil {
 		return err
+	}
+
+	if b, ok := res.(*methods.PlaceVmsXClusterBody); ok && b.Res != nil && s.mutateXClusterConfigSpec != nil {
+		for _, info := range b.Res.Returnval.PlacementInfos {
+			for _, a := range info.Recommendation.Action {
+				if ca, ok := a.(*vimtypes.ClusterClusterInitialPlacementAction); ok && ca.ConfigSpec != nil {
+					s.mutateXClusterConfigSpec(ca.ConfigSpec)
+				}
+			}
+		}
 	}
 
 	return nil
@@ -737,6 +751,89 @@ func vcSimPlacement() {
 				Expect(result.Datastores[0].MoRef).ToNot(BeZero())
 				Expect(result.Datastores[0].URL).ToNot(BeZero())
 				Expect(result.Datastores[0].DiskFormats).ToNot(BeEmpty())
+			})
+		})
+
+		// DRS means to put the VM's home on the datastore of the first disk it
+		// places itself, but sets VmPathName from its recommendation's entries
+		// after regrouping them by datastore in an arbitrary order. The spy
+		// stands in for that by pointing VmPathName at another datastore.
+		Context("VM home datastore", func() {
+			// The datastore VmPathName is pointed at: whichever of the two is not
+			// the one the first disk is on.
+			var otherDatastoreName string
+
+			BeforeEach(func() {
+				testConfig.NumDatastores = 2
+				testConfig.NumFaultDomains = 1
+				otherDatastoreName = ""
+			})
+
+			placeWithVmPathNameOnOtherDatastore := func() (*placement.Result, error) {
+				spy := &placementSpy{
+					mutateXClusterConfigSpec: func(cs *vimtypes.VirtualMachineConfigSpec) {
+						disk := cs.DeviceChange[0].GetVirtualDeviceConfigSpec().Device.(*vimtypes.VirtualDisk)
+						backing := disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo)
+						diskDatastoreName := "LocalDS_0"
+						if backing.Datastore != nil {
+							diskDatastoreName = ctx.SimulatorContext().Map.Get(
+								*backing.Datastore).(*simulator.Datastore).Name
+						}
+						otherDatastoreName = "LocalDS_0"
+						if diskDatastoreName == "LocalDS_0" {
+							otherDatastoreName = "LocalDS_1"
+						}
+						cs.Files = &vimtypes.VirtualMachineFileInfo{
+							VmPathName: "[" + otherDatastoreName + "]",
+						}
+					},
+				}
+				vimClient := withSpy(ctx.VCClient.Client, spy)
+				return placement.Placement(vmCtx, ctx.Client, vimClient, ctx.Finder, configSpec, constraints)
+			}
+
+			It("is the datastore of the first disk DRS placed, not VmPathName", func() {
+				result, err := placeWithVmPathNameOnOtherDatastore()
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(result.Datastores).To(HaveLen(2))
+				Expect(result.Datastores[1].ForDisk).To(BeTrue())
+				Expect(result.Datastores[1].DiskKey).To(Equal(int32(-42)))
+				Expect(result.Datastores[1].Name).ToNot(Equal(otherDatastoreName))
+
+				Expect(result.Datastores[0].ForDisk).To(BeFalse())
+				Expect(result.Datastores[0].Name).To(Equal(result.Datastores[1].Name))
+				Expect(result.Datastores[0].MoRef).To(Equal(result.Datastores[1].MoRef))
+				Expect(result.Datastores[0].URL).ToNot(BeZero())
+			})
+
+			When("DRS placed no disk because every disk already exists", func() {
+				BeforeEach(func() {
+					configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.VirtualDisk{
+								CapacityInBytes: 1024 * 1024,
+								VirtualDevice: vimtypes.VirtualDevice{
+									Key: -1042,
+									Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+										FileName: "[LocalDS_0] fcd/existing.vmdk",
+									},
+								},
+							},
+						},
+					}
+				})
+
+				It("is the datastore of VmPathName", func() {
+					result, err := placeWithVmPathNameOnOtherDatastore()
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(result.Datastores).ToNot(BeEmpty())
+					Expect(result.Datastores[0].ForDisk).To(BeFalse())
+					Expect(result.Datastores[0].Name).To(Equal(otherDatastoreName))
+					Expect(result.Datastores[0].MoRef).ToNot(BeZero())
+				})
 			})
 		})
 	})

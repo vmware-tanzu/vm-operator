@@ -32,7 +32,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
@@ -2275,25 +2274,19 @@ func (vs *vSphereVMProvider) vmCreateGetSourceFilePaths(
 	)
 
 	// Create/patch/get the VirtualMachineImageCache resource.
-	obj := vmopv1.VirtualMachineImageCache{
-		ObjectMeta: metav1.ObjectMeta{
+	obj, err := vmopv1util.EnsureImageCacheLocation(
+		vmCtx,
+		vs.k8sClient,
+		ctrlclient.ObjectKey{
 			Namespace: pkgcfg.FromContext(vmCtx).PodNamespace,
 			Name:      pkgutil.VMIName(itemID),
 		},
-	}
-	if _, err := controllerutil.CreateOrPatch(
-		vmCtx,
-		vs.k8sClient,
-		&obj,
-		func() error {
-			obj.Spec.ProviderID = itemID
-			obj.Spec.ProviderVersion = itemVersion
-			obj.AddLocation(
-				datacenterID,
-				datastoreID,
-				profileID)
-			return nil
-		}); err != nil {
+		itemID,
+		itemVersion,
+		datacenterID,
+		datastoreID,
+		profileID)
+	if err != nil {
 		return fmt.Errorf(
 			"failed to createOrPatch image cache resource: %w", err)
 	}

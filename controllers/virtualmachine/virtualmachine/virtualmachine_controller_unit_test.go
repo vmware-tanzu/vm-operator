@@ -448,6 +448,98 @@ func unitTestsReconcile() {
 			Expect(err).To(MatchError(message))
 			Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
 		})
+
+		When("the VM is waiting on a VMI cache location", func() {
+			const (
+				vmicName = "vmi-waiting"
+				dcID     = "datacenter-1"
+				dsID     = "datastore-1"
+				pID      = "profile-1"
+			)
+
+			var specLocations []vmopv1.VirtualMachineImageCacheLocationSpec
+
+			BeforeEach(func() {
+				specLocations = nil
+				vm.Labels = map[string]string{
+					pkgconst.VMICacheLabelKey: vmicName,
+				}
+				vm.Annotations[pkgconst.VMICacheLocationAnnotationKey] =
+					dcID + "," + dsID + "," + pID
+			})
+
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.Features.FastDeploy = true
+				})
+
+				vmic := &vmopv1.VirtualMachineImageCache{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: pkgcfg.FromContext(vmCtx).PodNamespace,
+						Name:      vmicName,
+					},
+					Spec: vmopv1.VirtualMachineImageCacheSpec{
+						ProviderID:      "item-id",
+						ProviderVersion: "item-version",
+						Locations:       specLocations,
+					},
+				}
+				Expect(ctx.Client.Create(ctx, vmic)).To(Succeed())
+				vmic.Status.Conditions = []metav1.Condition{
+					{
+						Type:               vmopv1.VirtualMachineImageCacheConditionHardwareReady,
+						Status:             metav1.ConditionTrue,
+						Reason:             string(metav1.ConditionTrue),
+						LastTransitionTime: metav1.Now(),
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, vmic)).To(Succeed())
+			})
+
+			When("the location is missing from the VMI cache spec", func() {
+				BeforeEach(func() {
+					specLocations = []vmopv1.VirtualMachineImageCacheLocationSpec{
+						{DatacenterID: dcID, DatastoreID: "datastore-2", ProfileID: pID},
+					}
+				})
+
+				It("stops waiting so the provider adds the location again", func() {
+					var providerCalled bool
+					providerfake.SetCreateOrUpdateFunction(vmCtx, fakeVMProvider,
+						func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+							providerCalled = true
+							ctxop.MarkCreate(ctx)
+							return nil
+						})
+
+					Expect(reconciler.ReconcileNormal(vmCtx)).To(Succeed())
+					Expect(providerCalled).To(BeTrue())
+					Expect(vm.Labels).ToNot(HaveKey(pkgconst.VMICacheLabelKey))
+					Expect(vm.Annotations).ToNot(HaveKey(pkgconst.VMICacheLocationAnnotationKey))
+				})
+			})
+
+			When("the location is in the VMI cache spec but not yet ready", func() {
+				BeforeEach(func() {
+					specLocations = []vmopv1.VirtualMachineImageCacheLocationSpec{
+						{DatacenterID: dcID, DatastoreID: dsID, ProfileID: pID},
+					}
+				})
+
+				It("keeps waiting for the location to become ready", func() {
+					fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(context.Context, *vmopv1.VirtualMachine) error {
+						Fail("provider called before image cache became ready")
+						return nil
+					}
+
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).To(MatchError("disk image cache is not ready"))
+					Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
+					Expect(vm.Labels).To(HaveKeyWithValue(pkgconst.VMICacheLabelKey, vmicName))
+					Expect(vm.Annotations).To(HaveKey(pkgconst.VMICacheLocationAnnotationKey))
+				})
+			})
+		})
 	})
 
 	Context("ReconcileDelete", func() {

@@ -269,6 +269,72 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 	})
 
+	Context("resources.limits — powered-on, limits set to the -1 unlimited sentinel", func() {
+		BeforeEach(func() {
+			poweredOn = true
+			unlimited := resource.MustParse("-1")
+			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
+				Limits: &vmopv1.VirtualMachineResourceQuantity{
+					CPU:    &unlimited,
+					Memory: &unlimited,
+				},
+			}
+		})
+
+		When("live allocation has bounded limits", func() {
+			BeforeEach(func() {
+				liveCI.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(0)),
+					Limit:       ptr.To(int64(1000)),
+				}
+				liveCI.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(0)),
+					Limit:       ptr.To(int64(2048)),
+				}
+			})
+			It("writes Limit -1 for both cpu and memory", func() {
+				Expect(cs.CpuAllocation).NotTo(BeNil())
+				Expect(cs.CpuAllocation.Limit).To(Equal(ptr.To(int64(-1))))
+				Expect(cs.MemoryAllocation).NotTo(BeNil())
+				Expect(cs.MemoryAllocation.Limit).To(Equal(ptr.To(int64(-1))))
+			})
+		})
+
+		When("live allocation is already unlimited", func() {
+			BeforeEach(func() {
+				liveCI.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(0)),
+					Limit:       ptr.To(int64(-1)),
+				}
+				liveCI.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(0)),
+					Limit:       ptr.To(int64(-1)),
+				}
+			})
+			It("does not write allocation (desired==live, no-op)", func() {
+				Expect(cs.CpuAllocation).To(BeNil())
+				Expect(cs.MemoryAllocation).To(BeNil())
+			})
+		})
+
+		When("memory reservation is locked to max", func() {
+			BeforeEach(func() {
+				liveCI.MemoryReservationLockedToMax = ptr.To(true)
+				liveCI.Hardware.MemoryMB = 16384
+				liveCI.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+					Reservation: ptr.To(int64(16384)),
+					Limit:       ptr.To(int64(-1)),
+				}
+				vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
+					ReservationLockedToMax: ptr.To(true),
+				}
+			})
+			It("does not write MemoryAllocation", func() {
+				Expect(cs.MemoryAllocation).To(BeNil())
+			})
+		})
+	})
+
 	// ───────────────────── latency sensitivity (hot-pluggable) ─────────────────────
 
 	Context("cpuAdvanced.latencySensitivity — powered-on, set to High", func() {

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
@@ -226,11 +228,16 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		if err := kubeutil.RegisterVMTagsIndexes(ctx, mgr.GetFieldIndexer()); err != nil {
 			return fmt.Errorf("failed to register VM Tag field indexes: %w", err)
 		}
+		if virtualmachine.AffinityStatusEnabled(ctx) {
+			if err := kubeutil.RegisterTagPolicyIDIndex(ctx, mgr.GetFieldIndexer()); err != nil {
+				return fmt.Errorf("failed to register Tag policy ID field index: %w", err)
+			}
+		}
 		builder = builder.Watches(
 			&vspherepolv1.Tag{},
 			handler.EnqueueRequestsFromMapFunc(
 				kubeutil.TagToVirtualMachineMapper(ctx, r.Client)),
-			ctrlbuilder.WithPredicates(kubeutil.TagFanOutPredicate()),
+			ctrlbuilder.WithPredicates(kubeutil.TagFanOutPredicate(ctx)),
 		)
 	}
 
@@ -405,6 +412,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	ctx = ctxop.WithContext(ctx)
+	ctx = virtualmachine.WithAffinityStatusRetryContext(ctx)
 	ctx = ovfcache.JoinContext(ctx, r.Context)
 	ctx = record.WithContext(ctx, r.Recorder)
 
@@ -539,9 +547,25 @@ func requeueDelay(
 		return pkgcfg.FromContext(ctx).CreateVMRequeueDelay
 	}
 
-	// Do not requeue for the IP address if async signal is enabled.
+	// Requeue when an error prevented the affinity status from being fully
+	// resolved. No watch event is guaranteed to follow such an error.
+	affinityRetry := virtualmachine.IsAffinityStatusRetry(ctx)
+
+	// Otherwise, do not requeue for the IP address or a Pending affinity
+	// policy if async signal is enabled. The property collector reports the
+	// VM's computePolicies changes and the Tag watch covers the Kubernetes
+	// side.
 	if pkgcfg.FromContext(ctx).AsyncSignalEnabled {
+		if affinityRetry {
+			return pkgcfg.FromContext(ctx).AffinityStatusPendingRequeueDelay
+		}
 		return 0
+	}
+
+	// Without the watcher, also requeue while an affinity policy is Pending.
+	var pendingDelay time.Duration
+	if affinityRetry || hasPendingAffinityPolicyStatus(ctx) {
+		pendingDelay = pkgcfg.FromContext(ctx).AffinityStatusPendingRequeueDelay
 	}
 
 	if ctx.VM.Status.PowerState == vmopv1.VirtualMachinePowerStateOn {
@@ -549,12 +573,29 @@ func requeueDelay(
 		if networkSpec != nil && !networkSpec.Disabled {
 			networkStatus := ctx.VM.Status.Network
 			if networkStatus == nil || (networkStatus.PrimaryIP4 == "" && networkStatus.PrimaryIP6 == "") {
-				return pkgcfg.FromContext(ctx).PoweredOnVMHasIPRequeueDelay
+				ipDelay := pkgcfg.FromContext(ctx).PoweredOnVMHasIPRequeueDelay
+				if pendingDelay > 0 && pendingDelay < ipDelay {
+					return pendingDelay
+				}
+				return ipDelay
 			}
 		}
 	}
 
-	return 0
+	return pendingDelay
+}
+
+// hasPendingAffinityPolicy returns true when the affinity status feature is
+// enabled and any status.affinity entry is Pending.
+func hasPendingAffinityPolicyStatus(ctx *pkgctx.VirtualMachineContext) bool {
+	if !virtualmachine.AffinityStatusEnabled(ctx) || ctx.VM.Status.Affinity == nil {
+		return false
+	}
+	return slices.ContainsFunc(
+		ctx.VM.Status.Affinity.Policies,
+		func(p vmopv1.VirtualMachineAffinityPolicyStatus) bool {
+			return p.Compliance == vmopv1.VirtualMachineAffinityCompliancePending
+		})
 }
 
 func (r *Reconciler) ReconcileDelete(ctx *pkgctx.VirtualMachineContext) (reterr error) {

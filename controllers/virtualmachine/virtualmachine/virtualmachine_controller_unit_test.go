@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -22,6 +23,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/virtualmachine"
+	pkgcond "github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -32,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/providers/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	vmopvm "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ovfcache"
@@ -173,6 +176,190 @@ func unitTestsReconcile() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
 				Expect(res.RequeueAfter).To(Equal(pkgcfg.FromContext(ctx).CreateVMRequeueDelay))
+			})
+		})
+
+		Context("affinity status", func() {
+			const pendingDelay = 30 * time.Second
+
+			var (
+				gateOn      bool
+				asyncOn     bool
+				compliance  vmopv1.VirtualMachineAffinityCompliance
+				markRetry   bool
+				providerErr error
+			)
+
+			BeforeEach(func() {
+				gateOn = true
+				asyncOn = false
+				compliance = vmopv1.VirtualMachineAffinityCompliancePending
+				markRetry = false
+				providerErr = nil
+
+				pkgcond.MarkTrue(vm, vmopv1.VirtualMachineConditionCreated)
+			})
+
+			JustBeforeEach(func() {
+				vm.Status.Affinity = &vmopv1.VirtualMachineAffinityStatus{
+					Policies: []vmopv1.VirtualMachineAffinityPolicyStatus{
+						{
+							Type:        vmopv1.VirtualMachineAffinityPolicyTypeAntiAffinity,
+							Strictness:  vmopv1.VirtualMachineAffinityPolicyStrictnessRequiredDuringSchedulingPreferredDuringExecution,
+							TopologyKey: corev1.LabelHostname,
+							Targets:     []vmopv1.VirtualMachineAffinityLabel{{Key: "app", Value: "db"}},
+							PolicyID:    "policy-1",
+							Compliance:  vmopv1.VirtualMachineAffinityComplianceCompliant,
+						},
+						{
+							Type:        vmopv1.VirtualMachineAffinityPolicyTypeAffinity,
+							Strictness:  vmopv1.VirtualMachineAffinityPolicyStrictnessPreferredDuringSchedulingPreferredDuringExecution,
+							TopologyKey: corev1.LabelTopologyZone,
+							Targets:     []vmopv1.VirtualMachineAffinityLabel{{Key: "tier", Value: "web"}},
+							Compliance:  compliance,
+						},
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
+
+				// Set before async signal is enabled so the blocking create
+				// function is the one replaced.
+				providerfake.SetCreateOrUpdateFunction(
+					vmCtx,
+					fakeVMProvider,
+					func(ctx context.Context, _ *vmopv1.VirtualMachine) error {
+						if markRetry {
+							vmopvm.MarkAffinityStatusRetry(ctx)
+						}
+						return providerErr
+					},
+				)
+
+				// Async signal is off by default here because the watcher
+				// covers a Pending entry when it is on. Unit test contexts
+				// start from a zero config, so the delay is set explicitly.
+				pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+					config.AffinityStatusPendingRequeueDelay = pendingDelay
+					config.AsyncSignalEnabled = asyncOn
+					config.Features.TaggingAPI = gateOn
+					config.Features.VMHardAffinityDuringExecution = gateOn
+				})
+			})
+
+			reconcile := func() (ctrl.Result, error) {
+				return reconciler.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKeyFromObject(vm),
+				})
+			}
+
+			When("an entry is Pending", func() {
+				When("async signal is on", func() {
+					BeforeEach(func() {
+						asyncOn = true
+					})
+
+					It("does not requeue", func() {
+						res, err := reconcile()
+						Expect(err).ToNot(HaveOccurred())
+						Expect(res.RequeueAfter).To(BeZero())
+					})
+				})
+
+				It("requeues after the pending delay", func() {
+					res, err := reconcile()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(res.RequeueAfter).To(Equal(pendingDelay))
+				})
+
+				When("a powered-on VM has no IP", func() {
+					const ipDelay = 10 * time.Second
+
+					BeforeEach(func() {
+						vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+						vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
+					})
+
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+							config.PoweredOnVMHasIPRequeueDelay = ipDelay
+						})
+					})
+
+					It("requeues after the shorter IP delay", func() {
+						res, err := reconcile()
+						Expect(err).ToNot(HaveOccurred())
+						Expect(res.RequeueAfter).To(Equal(ipDelay))
+					})
+
+					It("requeues after the pending delay when it is shorter", func() {
+						pkgcfg.SetContext(vmCtx, func(config *pkgcfg.Config) {
+							config.PoweredOnVMHasIPRequeueDelay = time.Minute
+						})
+						res, err := reconcile()
+						Expect(err).ToNot(HaveOccurred())
+						Expect(res.RequeueAfter).To(Equal(pendingDelay))
+					})
+				})
+
+				When("the gate is off", func() {
+					BeforeEach(func() {
+						gateOn = false
+					})
+
+					It("does not requeue", func() {
+						res, err := reconcile()
+						Expect(err).ToNot(HaveOccurred())
+						Expect(res.RequeueAfter).To(BeZero())
+					})
+				})
+			})
+
+			When("no entry is Pending", func() {
+				BeforeEach(func() {
+					compliance = vmopv1.VirtualMachineAffinityComplianceNotCompliant
+				})
+
+				It("does not requeue", func() {
+					res, err := reconcile()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(res.RequeueAfter).To(BeZero())
+				})
+
+				When("the provider marks an affinity status retry", func() {
+					BeforeEach(func() {
+						markRetry = true
+					})
+
+					It("requeues after the pending delay", func() {
+						res, err := reconcile()
+						Expect(err).ToNot(HaveOccurred())
+						Expect(res.RequeueAfter).To(Equal(pendingDelay))
+					})
+
+					When("async signal is on", func() {
+						BeforeEach(func() {
+							asyncOn = true
+						})
+
+						It("requeues after the pending delay", func() {
+							res, err := reconcile()
+							Expect(err).ToNot(HaveOccurred())
+							Expect(res.RequeueAfter).To(Equal(pendingDelay))
+						})
+
+						When("the provider also returns an error", func() {
+							BeforeEach(func() {
+								providerErr = errors.New("fake")
+							})
+
+							It("returns the error without a requeue delay", func() {
+								res, err := reconcile()
+								Expect(err).To(MatchError(ContainSubstring("fake")))
+								Expect(res.RequeueAfter).To(BeZero())
+							})
+						})
+					})
+				})
 			})
 		})
 	})

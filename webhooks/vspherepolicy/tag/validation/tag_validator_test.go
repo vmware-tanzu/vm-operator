@@ -626,4 +626,30 @@ func intgTestsValidateUpdate() {
 			Expect(ctx.Client.Update(ctx, tag)).To(Succeed())
 		})
 	})
+
+	// The policyID-requires-id rule is a CEL rule on the CRD status, so it can
+	// only be verified against a real API server.
+	When("status.policyID is set without status.id", func() {
+		It("should deny the request", func() {
+			tag.Status.PolicyID = "policy-1"
+			err := ctx.Client.Status().Update(ctx, tag)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("policyID requires id"))
+		})
+	})
+
+	When("status.policyID is set with status.id", func() {
+		It("should allow the request and keep the IDs", func() {
+			tag.Status.ID = "tag-1"
+			tag.Status.CategoryID = "category-1"
+			tag.Status.PolicyID = "policy-1"
+			Expect(ctx.Client.Status().Update(ctx, tag)).To(Succeed())
+
+			got := &vspherepolv1.Tag{}
+			Expect(ctx.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(tag), got)).To(Succeed())
+			Expect(got.Status.ID).To(Equal("tag-1"))
+			Expect(got.Status.CategoryID).To(Equal("category-1"))
+			Expect(got.Status.PolicyID).To(Equal("policy-1"))
+		})
+	})
 }

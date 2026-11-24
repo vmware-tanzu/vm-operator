@@ -31,6 +31,11 @@ const (
 	summaryConfigName = "summary.config.name"
 )
 
+// ComputePoliciesPropertyPath is the VM property that reports the compute
+// policies associated with the VM and the VM's compliance with each.
+// Only available when VMHardAffinityDuringExecution is enabled.
+const ComputePoliciesPropertyPath = "computePolicies"
+
 // DefaultWatchedPropertyPaths returns the default set of property paths to
 // watch.
 func DefaultWatchedPropertyPaths() []string {

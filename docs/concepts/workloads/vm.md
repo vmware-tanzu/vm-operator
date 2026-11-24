@@ -2184,6 +2184,54 @@ spec:
         topologyKey: kubernetes.io/hostname
 ```
 
+### Affinity status
+
+When the `VMHardAffinityDuringExecution` capability is enabled, `status.affinity.policies` reports every VM Operator affinity policy that applies to the VM and whether the VM currently complies with it. This includes policies requested by the VM's own `spec.affinity` and policies that other VMs requested and that apply to this VM because it carries the target labels.
+
+```yaml
+status:
+  affinity:
+    policies:
+    - type: AntiAffinity
+      strictness: RequiredDuringSchedulingPreferredDuringExecution
+      topologyKey: kubernetes.io/hostname
+      targets:
+      - key: tier
+        value: database
+      policyID: 8f1c2d0e-1b2a-4c3d-9e8f-0a1b2c3d4e5f
+      compliance: Compliant
+      origin: Self
+```
+
+Each entry has the following fields:
+
+| Field | Description |
+|-------|-------------|
+| `type` | `Affinity` or `AntiAffinity`. |
+| `strictness` | The verb from `spec.affinity` that produced the policy, such as `RequiredDuringSchedulingPreferredDuringExecution`. |
+| `topologyKey` | `kubernetes.io/hostname` for a host-level policy or `topology.kubernetes.io/zone` for a zone-level policy. |
+| `targets` | The label key/value pairs the policy matches, sorted by key and then value. |
+| `policyID` | The vCenter compute policy ID. Empty while `compliance` is `Pending`. |
+| `compliance` | See below. |
+| `origin` | `Self` when the VM's own `spec.affinity` requests the policy. `Peer` when another VM's `spec.affinity` requests it and it applies to this VM because the VM carries the target labels. |
+
+The `compliance` field is one of:
+
+| Value | Meaning |
+|-------|---------|
+| `Pending` | VM Operator has not yet mapped the policy to its vCenter policy ID. This is expected shortly after the affinity is requested, and the entry is completed without any action. |
+| `Compliant` | vCenter reports that the VM satisfies the policy. |
+| `NotCompliant` | vCenter reports that the VM violates the policy. |
+| `NotApplicable` | vCenter reports that the policy does not currently apply to the VM. |
+| `Unknown` | vCenter reports a compliance state that VM Operator does not recognize. |
+
+Notes:
+
+- Compliance is the value that vCenter most recently recorded. Changes are reflected on the VM without any action from the user.
+- `status.affinity` is removed when no affinity policy applies to the VM, and it is not set when the capability is disabled.
+- Policies in vCenter that were not created by VM Operator are not reported.
+- Entries are sorted, so the order is stable across reconciles.
+
 ## VirtualMachine Groups
 
 VirtualMachine Groups provide a way to manage multiple VMs as a single unit, enabling coordinated operations and advanced placement capabilities.

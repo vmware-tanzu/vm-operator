@@ -5257,6 +5257,7 @@ func autoConvert_v1alpha6_VirtualMachineStatus_To_v1alpha5_VirtualMachineStatus(
 	}
 	out.Policies = *(*[]PolicyStatus)(unsafe.Pointer(&in.Policies))
 	// WARNING: in.ExtraConfig requires manual conversion: does not exist in peer-type
+	// WARNING: in.Affinity requires manual conversion: does not exist in peer-type
 	return nil
 }
 

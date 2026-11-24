@@ -67,6 +67,13 @@ type Config struct {
 	// Defaults to 10 seconds.
 	SyncImageRequeueDelay time.Duration
 
+	// AffinityStatusPendingRequeueDelay is the requeue delay that is used
+	// when a VM's status.affinity has a Pending entry, so the VM checks again
+	// whether vCenter has associated the policy. The property collector and
+	// the Tag watch usually trigger the reconcile sooner.
+	// Defaults to 30 seconds.
+	AffinityStatusPendingRequeueDelay time.Duration
+
 	// SnapshotInProgressRequeueDelay is the requeue delay that is
 	// used to requeue when a snapshot is in progress. This is used so
 	// we can come back and update the status of the snapshot of the

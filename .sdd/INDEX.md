@@ -49,6 +49,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 016 | [byo-network-interface](specs/016-byo-network-interface/) | Bring Your Own Network Interface CR | In Progress | vmop-2530 |
 | 017 | [e2e-isolated-testbeds](specs/017-e2e-isolated-testbeds/) | E2E Support for Isolated Testbeds | In Progress | vmop-4430 |
 | 018 | [vmim-infra-migration-status](specs/018-vmim-infra-migration-status/) | VirtualMachineInfraMigration Status on VirtualMachine | Draft | vmop-3432 |
+| 019 | [vm-affinity-status](specs/019-vm-affinity-status/) | VirtualMachine Affinity Status (`status.affinity`; `Tag.status` tag/category/policy IDs) | In Progress | vmop-4283 |
 
 ### Finding the right spec
 

@@ -5,6 +5,8 @@
 package config_test
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -15,6 +17,9 @@ var _ = Describe("Config", func() {
 	Describe("Default", func() {
 		It("Should bind the profiler to loopback only", func() {
 			Expect(pkgcfg.Default().ProfilerAddr).To(Equal("127.0.0.1:8073"))
+		})
+		It("Should requeue a VM with a Pending affinity policy after 30 seconds", func() {
+			Expect(pkgcfg.Default().AffinityStatusPendingRequeueDelay).To(Equal(30 * time.Second))
 		})
 	})
 

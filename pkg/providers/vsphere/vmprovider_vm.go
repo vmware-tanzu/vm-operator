@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"text/template"
@@ -69,6 +70,7 @@ import (
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 	pkgvol "github.com/vmware-tanzu/vm-operator/pkg/util/volumes"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 	vmconfbootoptions "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/bootoptions"
 	vmconfcrypto "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/crypto"
 	vmconfdiskpromo "github.com/vmware-tanzu/vm-operator/pkg/vmconfig/diskpromo"
@@ -964,6 +966,20 @@ var VMUpdatePropertiesSelector = []string{
 	"parent",
 }
 
+// VMUpdatePropertiesSelectorFor returns the set of VM properties fetched at
+// the start of updateVirtualMachine: VMUpdatePropertiesSelector, plus
+// computePolicies when the affinity status feature is enabled. A vCenter
+// that does not support computePolicies faults the whole request, so it is
+// requested only behind the feature gate.
+func VMUpdatePropertiesSelectorFor(ctx context.Context) []string {
+	if !virtualmachine.AffinityStatusEnabled(ctx) {
+		return VMUpdatePropertiesSelector
+	}
+	return append(
+		slices.Clone(VMUpdatePropertiesSelector),
+		watcher.ComputePoliciesPropertyPath)
+}
+
 func getReconcileErr(msg string, reconcileErr, err error) error {
 	err = fmt.Errorf("failed to reconcile %s: %w", msg, err)
 	if reconcileErr == nil {
@@ -1008,7 +1024,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	if err := vcVM.Properties(
 		vmCtx,
 		vcVM.Reference(),
-		VMUpdatePropertiesSelector,
+		VMUpdatePropertiesSelectorFor(vmCtx),
 		&vmCtx.MoVM); err != nil {
 
 		return fmt.Errorf("failed to fetch vm properties: %w", err)
@@ -1044,7 +1060,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	//
 	// 5. Reconcile status
 	//
-	if err := vs.reconcileStatus(vmCtx, vcVM); err != nil {
+	if err := vs.reconcileStatus(vmCtx, vcVM, vcClient); err != nil {
 		if pkgerr.IsNoRequeueError(err) {
 			return errOrReconcileErr(reconcileErr, err)
 		}
@@ -1283,7 +1299,8 @@ func validateVMFolder(
 
 func (vs *vSphereVMProvider) reconcileStatus(
 	vmCtx pkgctx.VirtualMachineContext,
-	vcVM *object.VirtualMachine) error {
+	vcVM *object.VirtualMachine,
+	vcClient *vcclient.Client) error {
 
 	vmCtx.Logger.V(4).Info("Reconciling status")
 
@@ -1293,12 +1310,19 @@ func (vs *vSphereVMProvider) reconcileStatus(
 			vmCtx, vs.k8sClient, vmCtx.MoVM)
 	}
 
+	var computePolicyQuerier vmlifecycle.ComputePolicyQuerier
+	if virtualmachine.AffinityStatusEnabled(vmCtx) {
+		computePolicyQuerier = vmlifecycle.NewComputePolicyQuerier(
+			vcClient.RestClient())
+	}
+
 	return vmlifecycle.ReconcileStatus(
 		vmCtx,
 		vs.k8sClient,
 		vcVM,
 		vmlifecycle.ReconcileStatusData{
 			NetworkDeviceKeysToSpecIdx: networkDeviceKeysToSpecIdx,
+			ComputePolicyQuerier:       computePolicyQuerier,
 		})
 }
 

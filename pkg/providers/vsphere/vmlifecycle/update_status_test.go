@@ -6,6 +6,7 @@ package vmlifecycle_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"slices"
@@ -16,25 +17,32 @@ import (
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vapi/vcenter/vm/compute/policies"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -8060,3 +8068,593 @@ func snapshotRefManaged(snapshotName string) *vmopv1.VirtualMachineSnapshotRefer
 		Name: snapshotName,
 	}
 }
+
+type fakeComputePolicyQuerier struct {
+	calls int
+	specs []policies.QuerySpec
+	res   *policies.QueryResult
+	err   error
+}
+
+func (f *fakeComputePolicyQuerier) Query(
+	_ context.Context,
+	_ *vmopv1.VirtualMachine,
+	spec policies.QuerySpec) (*policies.QueryResult, error) {
+
+	f.calls++
+	f.specs = append(f.specs, spec)
+	return f.res, f.err
+}
+
+var _ = Describe("ReconcileAffinityStatus", Label(testlabels.Controller), func() {
+	const (
+		ns     = "team-a"
+		vmID   = "vm-42"
+		policy = "policy-1"
+		tagID  = "urn:vmomi:InventoryServiceTag:1:GLOBAL"
+	)
+
+	var (
+		ctx          context.Context
+		vmCtx        pkgctx.VirtualMachineContext
+		vm           *vmopv1.VirtualMachine
+		initObjs     []ctrlclient.Object
+		k8sClient    ctrlclient.Client
+		querier      *fakeComputePolicyQuerier
+		useNilQuerer bool
+		patchErr     error
+		patchCalls   int
+		listTagsErr  error
+	)
+
+	retried := func() bool {
+		return virtualmachine.IsAffinityStatusRetry(vmCtx)
+	}
+
+	affinityWeb := func() *vmopv1.AffinitySpec {
+		return &vmopv1.AffinitySpec{
+			VMAffinity: &vmopv1.VMAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+					TopologyKey: corev1.LabelHostname,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"tier": "web"},
+					},
+				}},
+			},
+		}
+	}
+
+	antiAffinityDB := func() *vmopv1.AffinitySpec {
+		return &vmopv1.AffinitySpec{
+			VMAntiAffinity: &vmopv1.VMAntiAffinitySpec{
+				RequiredDuringSchedulingPreferredDuringExecution: []vmopv1.VMAffinityTerm{{
+					TopologyKey: corev1.LabelHostname,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "db"},
+					},
+				}},
+			},
+		}
+	}
+
+	// policyTag returns the policy-defining Tag that a VM with the affinity
+	// spec owns, with the given vCenter tag and policy IDs in its status.
+	policyTag := func(
+		affinity *vmopv1.AffinitySpec, id, pid string) *vspherepolv1.Tag {
+
+		owner := builder.DummyVirtualMachine()
+		owner.Namespace = ns
+		owner.Spec.Affinity = affinity
+		tags, err := virtualmachine.DesiredAffinityTags(ctx, owner)
+		Expect(err).ToNot(HaveOccurred())
+		for i := range tags {
+			if virtualmachine.IsAffinityPolicyTag(&tags[i]) {
+				t := tags[i].DeepCopy()
+				t.Status.ID = id
+				t.Status.PolicyID = pid
+				return t
+			}
+		}
+		Fail("no policy-defining Tag was desired")
+		return nil
+	}
+
+	reported := func(pairs ...string) {
+		vmCtx.MoVM.ComputePolicies = nil
+		for i := 0; i+1 < len(pairs); i += 2 {
+			vmCtx.MoVM.ComputePolicies = append(vmCtx.MoVM.ComputePolicies,
+				vimtypes.VirtualMachineComputePolicyInfo{
+					PolicyId:         pairs[i],
+					ComplianceStatus: pairs[i+1],
+				})
+		}
+	}
+
+	queryReturns := func(p, tag string) {
+		querier.res = &policies.QueryResult{
+			Items: []policies.VmPoliciesInfo{{
+				VM:       vmID,
+				Policies: []policies.PolicyInfo{{Policy: p, Tag: tag}},
+			}},
+		}
+	}
+
+	reconcile := func() {
+		var q vmlifecycle.ComputePolicyQuerier = querier
+		if useNilQuerer {
+			q = nil
+		}
+		vmlifecycle.ReconcileAffinityStatus(vmCtx, k8sClient, q)
+	}
+
+	entries := func() []vmopv1.VirtualMachineAffinityPolicyStatus {
+		if vm.Status.Affinity == nil {
+			return nil
+		}
+		return vm.Status.Affinity.Policies
+	}
+
+	getTag := func(name string) vspherepolv1.Tag {
+		var t vspherepolv1.Tag
+		ExpectWithOffset(1, k8sClient.Get(
+			ctx, ctrlclient.ObjectKey{Namespace: ns, Name: name}, &t)).To(Succeed())
+		return t
+	}
+
+	BeforeEach(func() {
+		ctx = pkgcfg.NewContextWithDefaultConfig()
+		pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+			c.Features.TaggingAPI = true
+			c.Features.VMAffinityDuringExecution = true
+			c.Features.VMPlacementPolicies = true
+			c.Features.VMHardAffinityDuringExecution = true
+		})
+		ctx = virtualmachine.WithAffinityStatusRetryContext(ctx)
+
+		vm = builder.DummyVirtualMachine()
+		vm.Name = "affinity-status-vm"
+		vm.Namespace = ns
+		vm.Labels = nil
+		vm.Spec.Affinity = affinityWeb()
+
+		vmCtx = pkgctx.VirtualMachineContext{
+			Context: ctx,
+			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
+			VM:      vm,
+		}
+		vmCtx.MoVM.Self = vimtypes.ManagedObjectReference{
+			Type: "VirtualMachine", Value: vmID,
+		}
+
+		initObjs = nil
+		k8sClient = nil
+		querier = &fakeComputePolicyQuerier{}
+		useNilQuerer = false
+		patchErr = nil
+		patchCalls = 0
+		listTagsErr = nil
+	})
+
+	JustBeforeEach(func() {
+		k8sClient = builder.NewFakeClientWithInterceptors(
+			interceptor.Funcs{
+				List: func(
+					ctx context.Context,
+					c ctrlclient.WithWatch,
+					list ctrlclient.ObjectList,
+					opts ...ctrlclient.ListOption) error {
+
+					if _, ok := list.(*vspherepolv1.TagList); ok && listTagsErr != nil {
+						return listTagsErr
+					}
+					return c.List(ctx, list, opts...)
+				},
+				SubResourcePatch: func(
+					ctx context.Context,
+					c ctrlclient.Client,
+					subResourceName string,
+					obj ctrlclient.Object,
+					patch ctrlclient.Patch,
+					opts ...ctrlclient.SubResourcePatchOption) error {
+
+					patchCalls++
+					if patchErr != nil {
+						return patchErr
+					}
+					return c.SubResource(subResourceName).Patch(
+						ctx, obj, patch, opts...)
+				},
+			},
+			initObjs...)
+	})
+
+	When("the VM requests an affinity policy", func() {
+		var tag *vspherepolv1.Tag
+
+		When("the Tag is resolved and its policy ID is recorded", func() {
+			BeforeEach(func() {
+				tag = policyTag(affinityWeb(), tagID, policy)
+				initObjs = append(initObjs, tag)
+				reported(policy, "Compliant")
+			})
+
+			It("reports the policy with no query and no patch", func() {
+				reconcile()
+				Expect(querier.calls).To(BeZero())
+				Expect(patchCalls).To(BeZero())
+				Expect(entries()).To(HaveLen(1))
+				e := entries()[0]
+				Expect(e.PolicyID).To(Equal(policy))
+				Expect(e.Compliance).To(Equal(
+					vmopv1.VirtualMachineAffinityComplianceCompliant))
+				Expect(e.Type).To(Equal(
+					vmopv1.VirtualMachineAffinityPolicyTypeAffinity))
+				Expect(e.TopologyKey).To(Equal(corev1.LabelHostname))
+				Expect(e.Targets).To(ConsistOf(vmopv1.VirtualMachineAffinityLabel{
+					Key: "tier", Value: "web",
+				}))
+				Expect(e.Origin).To(Equal(
+					vmopv1.VirtualMachineAffinityPolicyOriginSelf))
+			})
+
+			It("maps the reported compliance", func() {
+				reported(policy, "NonCompliant")
+				reconcile()
+				Expect(entries()).To(HaveLen(1))
+				Expect(entries()[0].Compliance).To(Equal(
+					vmopv1.VirtualMachineAffinityComplianceNotCompliant))
+			})
+
+			When("the gate is off", func() {
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+						c.Features.VMHardAffinityDuringExecution = false
+					})
+					vm.Status.Affinity = &vmopv1.VirtualMachineAffinityStatus{
+						Policies: []vmopv1.VirtualMachineAffinityPolicyStatus{{
+							PolicyID: policy,
+						}},
+					}
+				})
+
+				It("clears the status and makes no query", func() {
+					reconcile()
+					Expect(vm.Status.Affinity).To(BeNil())
+					Expect(querier.calls).To(BeZero())
+					Expect(patchCalls).To(BeZero())
+				})
+			})
+
+			When("the affinity is removed from the VM", func() {
+				BeforeEach(func() {
+					reported(policy, "Compliant")
+				})
+
+				It("clears the status once the policy is gone", func() {
+					reconcile()
+					Expect(entries()).To(HaveLen(1))
+
+					vm.Spec.Affinity = nil
+					reported()
+					reconcile()
+					Expect(vm.Status.Affinity).To(BeNil())
+				})
+			})
+
+			When("vCenter also reports an unrelated policy", func() {
+				BeforeEach(func() {
+					reported(policy, "Compliant", "unrelated", "Compliant")
+				})
+
+				It("ignores it and makes no query", func() {
+					reconcile()
+					Expect(querier.calls).To(BeZero())
+					Expect(entries()).To(HaveLen(1))
+					Expect(entries()[0].PolicyID).To(Equal(policy))
+				})
+			})
+		})
+
+		When("the Tag is resolved but its policy ID is not recorded", func() {
+			BeforeEach(func() {
+				tag = policyTag(affinityWeb(), tagID, "")
+				initObjs = append(initObjs, tag)
+			})
+
+			When("vCenter reports the policy", func() {
+				BeforeEach(func() {
+					reported(policy, "NonCompliant")
+					queryReturns(policy, tagID)
+				})
+
+				It("makes one query and one patch, and reports the policy", func() {
+					reconcile()
+					Expect(querier.calls).To(Equal(1))
+					Expect(querier.specs[0].VMs).To(ConsistOf(vmID))
+					Expect(querier.specs[0].Filter).ToNot(BeNil())
+					Expect(querier.specs[0].Filter.Policies).To(ConsistOf(policy))
+					Expect(patchCalls).To(Equal(1))
+					Expect(getTag(tag.Name).Status.PolicyID).To(Equal(policy))
+
+					Expect(entries()).To(HaveLen(1))
+					Expect(entries()[0].PolicyID).To(Equal(policy))
+					Expect(entries()[0].Compliance).To(Equal(
+						vmopv1.VirtualMachineAffinityComplianceNotCompliant))
+					Expect(retried()).To(BeFalse())
+				})
+
+				When("the patch fails", func() {
+					BeforeEach(func() {
+						patchErr = fmt.Errorf("boom")
+					})
+
+					It("reports the entry as Pending and requests a retry", func() {
+						reconcile()
+						Expect(patchCalls).To(Equal(1))
+						Expect(entries()).To(HaveLen(1))
+						Expect(entries()[0].Compliance).To(Equal(
+							vmopv1.VirtualMachineAffinityCompliancePending))
+						Expect(retried()).To(BeTrue())
+					})
+				})
+
+				It("makes no further query once the policy ID is recorded", func() {
+					reconcile()
+					reconcile()
+					Expect(querier.calls).To(Equal(1))
+					Expect(patchCalls).To(Equal(1))
+					Expect(entries()).To(HaveLen(1))
+					Expect(entries()[0].PolicyID).To(Equal(policy))
+				})
+
+				When("there is no querier", func() {
+					BeforeEach(func() { useNilQuerer = true })
+
+					It("reports the entry as Pending", func() {
+						reconcile()
+						Expect(patchCalls).To(BeZero())
+						Expect(entries()).To(HaveLen(1))
+						Expect(entries()[0].PolicyID).To(BeEmpty())
+						Expect(entries()[0].Compliance).To(Equal(
+							vmopv1.VirtualMachineAffinityCompliancePending))
+					})
+				})
+			})
+
+			When("vCenter reports only an unrelated policy", func() {
+				BeforeEach(func() {
+					reported("unrelated", "Compliant")
+					querier.res = &policies.QueryResult{
+						Items: []policies.VmPoliciesInfo{{
+							VM: vmID,
+							Policies: []policies.PolicyInfo{{
+								Policy: "unrelated",
+								Tag:    "urn:vmomi:InventoryServiceTag:other",
+							}},
+						}},
+					}
+				})
+
+				It("queries, matches nothing, and keeps the entry Pending", func() {
+					reconcile()
+					Expect(querier.calls).To(Equal(1))
+					Expect(patchCalls).To(BeZero())
+					Expect(getTag(tag.Name).Status.PolicyID).To(BeEmpty())
+					Expect(entries()).To(HaveLen(1))
+					Expect(entries()[0].PolicyID).To(BeEmpty())
+					Expect(entries()[0].Compliance).To(Equal(
+						vmopv1.VirtualMachineAffinityCompliancePending))
+					Expect(retried()).To(BeFalse())
+				})
+			})
+
+			When("vCenter reports no policy for the VM", func() {
+				BeforeEach(func() { reported() })
+
+				It("makes no query and reports the entry as Pending", func() {
+					reconcile()
+					Expect(querier.calls).To(BeZero())
+					Expect(entries()).To(HaveLen(1))
+					Expect(entries()[0].Compliance).To(Equal(
+						vmopv1.VirtualMachineAffinityCompliancePending))
+					Expect(entries()[0].Origin).To(Equal(
+						vmopv1.VirtualMachineAffinityPolicyOriginSelf))
+				})
+			})
+
+			When("a previous pass reported the policy ID", func() {
+				BeforeEach(func() {
+					prev, ok := virtualmachine.AffinityPolicyStatusFromTag(
+						tag, vmopv1.VirtualMachineAffinityComplianceCompliant)
+					Expect(ok).To(BeTrue())
+					prev.PolicyID = policy
+					prev.Origin = vmopv1.VirtualMachineAffinityPolicyOriginSelf
+					vm.Status.Affinity = &vmopv1.VirtualMachineAffinityStatus{
+						Policies: []vmopv1.VirtualMachineAffinityPolicyStatus{prev},
+					}
+					reported(policy, "NonCompliant")
+				})
+
+				expectKept := func() {
+					ExpectWithOffset(1, entries()).To(HaveLen(1))
+					e := entries()[0]
+					ExpectWithOffset(1, e.PolicyID).To(Equal(policy))
+					ExpectWithOffset(1, e.Compliance).To(Equal(
+						vmopv1.VirtualMachineAffinityComplianceNotCompliant))
+					ExpectWithOffset(1, e.Origin).To(Equal(
+						vmopv1.VirtualMachineAffinityPolicyOriginSelf))
+				}
+
+				When("the query fails", func() {
+					BeforeEach(func() {
+						querier.err = fmt.Errorf("boom")
+					})
+
+					It("keeps the prior policy ID with the current compliance", func() {
+						reconcile()
+						Expect(querier.calls).To(Equal(1))
+						expectKept()
+						Expect(retried()).To(BeTrue())
+					})
+				})
+
+				When("the query reports an error for the VM", func() {
+					BeforeEach(func() {
+						querier.res = &policies.QueryResult{
+							Errors: map[string]json.RawMessage{
+								vmID: json.RawMessage(`"boom"`),
+							},
+						}
+					})
+
+					It("keeps the prior policy ID with the current compliance", func() {
+						reconcile()
+						Expect(querier.calls).To(Equal(1))
+						expectKept()
+						Expect(retried()).To(BeTrue())
+					})
+				})
+
+				When("the patch conflicts", func() {
+					BeforeEach(func() {
+						queryReturns(policy, tagID)
+						patchErr = apierrors.NewConflict(
+							vspherepolv1.GroupVersion.WithResource("tags").GroupResource(),
+							tag.Name,
+							fmt.Errorf("the object has been modified"))
+					})
+
+					It("keeps the prior policy ID and records nothing", func() {
+						reconcile()
+						Expect(patchCalls).To(Equal(1))
+						Expect(getTag(tag.Name).Status.PolicyID).To(BeEmpty())
+						expectKept()
+						Expect(retried()).To(BeTrue())
+					})
+				})
+
+				When("listing Tags fails", func() {
+					BeforeEach(func() {
+						listTagsErr = fmt.Errorf("boom")
+					})
+
+					It("keeps the prior entry and requests a retry", func() {
+						reconcile()
+						expectKept()
+						Expect(retried()).To(BeTrue())
+					})
+				})
+
+				When("the policy is no longer reported", func() {
+					BeforeEach(func() {
+						reported()
+						querier.err = fmt.Errorf("boom")
+					})
+
+					It("reports the entry as Pending", func() {
+						reconcile()
+						Expect(entries()).To(HaveLen(1))
+						Expect(entries()[0].PolicyID).To(BeEmpty())
+						Expect(entries()[0].Compliance).To(Equal(
+							vmopv1.VirtualMachineAffinityCompliancePending))
+					})
+				})
+			})
+		})
+
+		When("the Tag is not resolved in vCenter", func() {
+			BeforeEach(func() {
+				tag = policyTag(affinityWeb(), "", "")
+				initObjs = append(initObjs, tag)
+				reported("unrelated", "Compliant")
+			})
+
+			It("makes no query and reports the entry as Pending", func() {
+				reconcile()
+				Expect(querier.calls).To(BeZero())
+				Expect(entries()).To(HaveLen(1))
+				Expect(entries()[0].Compliance).To(Equal(
+					vmopv1.VirtualMachineAffinityCompliancePending))
+			})
+		})
+
+		When("the Tag does not exist yet", func() {
+			BeforeEach(func() { reported() })
+
+			It("reports the requested policy as Pending", func() {
+				reconcile()
+				Expect(querier.calls).To(BeZero())
+				Expect(entries()).To(HaveLen(1))
+				Expect(entries()[0].PolicyID).To(BeEmpty())
+				Expect(entries()[0].Compliance).To(Equal(
+					vmopv1.VirtualMachineAffinityCompliancePending))
+				Expect(entries()[0].Origin).To(Equal(
+					vmopv1.VirtualMachineAffinityPolicyOriginSelf))
+			})
+		})
+	})
+
+	When("the VM only carries the target label", func() {
+		BeforeEach(func() {
+			vm.Spec.Affinity = nil
+			vm.Labels = map[string]string{"tier": "web"}
+			initObjs = append(initObjs, policyTag(affinityWeb(), tagID, policy))
+			reported(policy, "Compliant")
+		})
+
+		It("reports the policy as Peer with no query", func() {
+			reconcile()
+			Expect(querier.calls).To(BeZero())
+			Expect(patchCalls).To(BeZero())
+			Expect(entries()).To(HaveLen(1))
+			Expect(entries()[0].PolicyID).To(Equal(policy))
+			Expect(entries()[0].Compliance).To(Equal(
+				vmopv1.VirtualMachineAffinityComplianceCompliant))
+			Expect(entries()[0].Origin).To(Equal(
+				vmopv1.VirtualMachineAffinityPolicyOriginPeer))
+		})
+
+		When("the VM also requests the policy", func() {
+			BeforeEach(func() { vm.Spec.Affinity = affinityWeb() })
+
+			It("reports the policy as Self", func() {
+				reconcile()
+				Expect(entries()).To(HaveLen(1))
+				Expect(entries()[0].Origin).To(Equal(
+					vmopv1.VirtualMachineAffinityPolicyOriginSelf))
+			})
+		})
+	})
+
+	When("the VM is the target of an anti-affinity policy", func() {
+		BeforeEach(func() {
+			vm.Spec.Affinity = nil
+			vm.Labels = map[string]string{"app": "db"}
+			initObjs = append(initObjs, policyTag(antiAffinityDB(), tagID, policy))
+			reported(policy, "Compliant")
+		})
+
+		It("reports the policy as Peer", func() {
+			reconcile()
+			Expect(querier.calls).To(BeZero())
+			Expect(entries()).To(HaveLen(1))
+			Expect(entries()[0].Type).To(Equal(
+				vmopv1.VirtualMachineAffinityPolicyTypeAntiAffinity))
+			Expect(entries()[0].Origin).To(Equal(
+				vmopv1.VirtualMachineAffinityPolicyOriginPeer))
+		})
+
+		When("the VM is the requester", func() {
+			BeforeEach(func() { vm.Spec.Affinity = antiAffinityDB() })
+
+			It("reports the policy as Self", func() {
+				reconcile()
+				Expect(entries()).To(HaveLen(1))
+				Expect(entries()[0].Type).To(Equal(
+					vmopv1.VirtualMachineAffinityPolicyTypeAntiAffinity))
+				Expect(entries()[0].Origin).To(Equal(
+					vmopv1.VirtualMachineAffinityPolicyOriginSelf))
+			})
+		})
+	})
+})

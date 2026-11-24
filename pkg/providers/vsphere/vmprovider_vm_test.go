@@ -6,6 +6,7 @@ package vsphere_test
 
 import (
 	"path"
+	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,7 +15,10 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -53,6 +57,34 @@ var _ = Describe("VirtualMachine", Label(testlabels.VCSim), func() {
 	Describe("WebConsole", vmWebConsoleTests)
 	Describe("Zone", vmZoneTests)
 	Describe("Location", vmLocationTests)
+})
+
+var _ = Describe("VMUpdatePropertiesSelectorFor", Label(testlabels.Controller), func() {
+	DescribeTable("requests computePolicies only when the affinity status gate is on",
+		func(gateOn, expected bool) {
+			ctx := pkgcfg.UpdateContext(
+				pkgcfg.NewContextWithDefaultConfig(),
+				func(config *pkgcfg.Config) {
+					config.Features.TaggingAPI = gateOn
+					config.Features.VMHardAffinityDuringExecution = gateOn
+				})
+			base := slices.Clone(vsphere.VMUpdatePropertiesSelector)
+
+			selector := vsphere.VMUpdatePropertiesSelectorFor(ctx)
+			Expect(selector).To(ContainElements(base))
+			if expected {
+				Expect(selector).To(HaveLen(len(base) + 1))
+				Expect(selector).To(ContainElement(watcher.ComputePoliciesPropertyPath))
+			} else {
+				Expect(selector).To(Equal(base))
+			}
+
+			// The shared base selector is never modified.
+			Expect(vsphere.VMUpdatePropertiesSelector).To(Equal(base))
+		},
+		Entry("gate on", true, true),
+		Entry("gate off", false, false),
+	)
 })
 
 // getVMHomeDisk gets the VM's "home" disk, i.e. disk-0.vmdk in the VM's own

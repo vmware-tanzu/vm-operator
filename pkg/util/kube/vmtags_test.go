@@ -25,6 +25,7 @@ import (
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -124,7 +125,7 @@ var _ = Describe("TagToVirtualMachineMapper", Label(testlabels.Controller), func
 		withObjs = nil
 		withFuncs = interceptor.Funcs{}
 
-		ctx = context.Background()
+		ctx = pkgcfg.NewContextWithDefaultConfig()
 		mapFnCtx = ctx
 
 		tag = &vspherepolv1.Tag{
@@ -378,7 +379,7 @@ var _ = Describe("TagFanOutPredicate", Label(testlabels.Controller), func() {
 	// the Tag controller's own status/label-mirror write or the VM path's
 	// owner-reference patch, none of which can change any VM's desired tag set.
 	It("drops self Tag create but keeps self Tag delete", func() {
-		pred := kubeutil.TagFanOutPredicate()
+		pred := kubeutil.TagFanOutPredicate(pkgcfg.NewContextWithDefaultConfig())
 		self := &vspherepolv1.Tag{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "fake-ns", Name: "self-tag"},
 			Spec: vspherepolv1.TagSpec{
@@ -401,7 +402,7 @@ var _ = Describe("TagFanOutPredicate", Label(testlabels.Controller), func() {
 	})
 
 	It("admits only create and delete", func() {
-		pred := kubeutil.TagFanOutPredicate()
+		pred := kubeutil.TagFanOutPredicate(pkgcfg.NewContextWithDefaultConfig())
 		oldTag := &vspherepolv1.Tag{ObjectMeta: metav1.ObjectMeta{Namespace: "fake-ns", Name: "tag-1"}}
 		newTag := oldTag.DeepCopy()
 		newTag.OwnerReferences = []metav1.OwnerReference{{UID: types.UID("vm-a-uid")}}
@@ -410,6 +411,143 @@ var _ = Describe("TagFanOutPredicate", Label(testlabels.Controller), func() {
 		Expect(pred.Delete(event.DeleteEvent{Object: oldTag})).To(BeTrue())
 		Expect(pred.Generic(event.GenericEvent{Object: oldTag})).To(BeFalse())
 		Expect(pred.Update(event.UpdateEvent{ObjectOld: oldTag, ObjectNew: newTag})).To(BeFalse())
+	})
+})
+
+var _ = Describe("TagFanOutPredicate updates", Label(testlabels.Controller), func() {
+	var (
+		ctx    context.Context
+		oldTag *vspherepolv1.Tag
+		newTag *vspherepolv1.Tag
+	)
+
+	update := func() bool {
+		return kubeutil.TagFanOutPredicate(ctx).Update(
+			event.UpdateEvent{ObjectOld: oldTag, ObjectNew: newTag})
+	}
+
+	withFeatures := func(taggingAPI, hardAffinity bool) context.Context {
+		return pkgcfg.UpdateContext(
+			pkgcfg.NewContextWithDefaultConfig(),
+			func(config *pkgcfg.Config) {
+				config.Features.TaggingAPI = taggingAPI
+				config.Features.VMHardAffinityDuringExecution = hardAffinity
+			})
+	}
+
+	BeforeEach(func() {
+		ctx = withFeatures(true, true)
+		oldTag = &vspherepolv1.Tag{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "fake-ns", Name: "tag-1"},
+			Spec: vspherepolv1.TagSpec{
+				Kind:       vspherepolv1.TagKindAffinityTarget,
+				Membership: vspherepolv1.TagMembershipSourceLabel,
+				Key:        "tier",
+				Value:      "web",
+			},
+		}
+		newTag = oldTag.DeepCopy()
+	})
+
+	When("the affinity status feature is enabled", func() {
+		It("admits a status.id change on an AffinityTarget Tag", func() {
+			newTag.Status.ID = "tag-uuid"
+			Expect(update()).To(BeTrue())
+		})
+
+		It("admits a status.policyID change on an AffinityTarget Tag", func() {
+			oldTag.Status.ID = "tag-uuid"
+			newTag.Status.ID = "tag-uuid"
+			newTag.Status.PolicyID = "policy-uuid"
+			Expect(update()).To(BeTrue())
+		})
+
+		It("admits a status.policyID change on a GroupedAntiAffinitySelf Tag", func() {
+			oldTag.Spec = vspherepolv1.TagSpec{
+				Kind:       vspherepolv1.TagKindGroupedAntiAffinitySelf,
+				Membership: vspherepolv1.TagMembershipPolicyRequesters,
+			}
+			oldTag.Status.ID = "tag-uuid"
+			newTag = oldTag.DeepCopy()
+			newTag.Status.PolicyID = "policy-uuid"
+			Expect(update()).To(BeTrue())
+		})
+
+		DescribeTable("drops a status.id change on a Tag that defines no policy",
+			func(kind vspherepolv1.TagKind) {
+				oldTag.Spec.Kind = kind
+				newTag = oldTag.DeepCopy()
+				newTag.Status.ID = "tag-uuid"
+				Expect(update()).To(BeFalse())
+			},
+			Entry("Original", vspherepolv1.TagKindOriginal),
+			Entry("GroupedAntiAffinityTarget", vspherepolv1.TagKindGroupedAntiAffinityTarget),
+		)
+
+		It("drops an owner-reference change", func() {
+			newTag.OwnerReferences = []metav1.OwnerReference{{UID: types.UID("vm-a-uid")}}
+			Expect(update()).To(BeFalse())
+		})
+
+		It("drops a label-mirror change", func() {
+			newTag.Labels = map[string]string{"tier": "web"}
+			Expect(update()).To(BeFalse())
+		})
+
+		It("drops a status write that leaves the IDs unchanged", func() {
+			oldTag.Status.ID = "tag-uuid"
+			newTag.Status.ID = "tag-uuid"
+			newTag.Status.ObservedGeneration = 2
+			newTag.Status.Conditions = []metav1.Condition{{
+				Type:   vspherepolv1.TagConditionVCenterTagResolved,
+				Status: metav1.ConditionTrue,
+			}}
+			Expect(update()).To(BeFalse())
+		})
+
+		It("drops updates of objects that are not Tags", func() {
+			Expect(kubeutil.TagFanOutPredicate(ctx).Update(event.UpdateEvent{
+				ObjectOld: &corev1.Pod{},
+				ObjectNew: &corev1.Pod{},
+			})).To(BeFalse())
+		})
+	})
+
+	DescribeTable("drops a status.id change when the feature is disabled",
+		func(taggingAPI, hardAffinity bool) {
+			ctx = withFeatures(taggingAPI, hardAffinity)
+			newTag.Status.ID = "tag-uuid"
+			newTag.Status.PolicyID = "policy-uuid"
+			Expect(update()).To(BeFalse())
+		},
+		Entry("TaggingAPI disabled", false, true),
+		Entry("VMHardAffinityDuringExecution disabled", true, false),
+		Entry("both disabled", false, false),
+	)
+})
+
+var _ = Describe("TagPolicyIDIndexerFunc", Label(testlabels.Controller), func() {
+	It("returns nil for non-Tags and Tags without a policy ID", func() {
+		Expect(kubeutil.TagPolicyIDIndexerFunc(&corev1.Pod{})).To(BeNil())
+		Expect(kubeutil.TagPolicyIDIndexerFunc(&vspherepolv1.Tag{
+			Status: vspherepolv1.TagStatus{ID: "tag-uuid"},
+		})).To(BeNil())
+	})
+
+	It("returns the policy ID", func() {
+		Expect(kubeutil.TagPolicyIDIndexerFunc(&vspherepolv1.Tag{
+			Status: vspherepolv1.TagStatus{ID: "tag-uuid", PolicyID: "policy-uuid"},
+		})).To(Equal([]string{"policy-uuid"}))
+	})
+})
+
+var _ = Describe("RegisterTagPolicyIDIndex", Label(testlabels.Controller), func() {
+	It("registers the Tag policy ID index", func() {
+		indexer := &recordingFieldIndexer{}
+		Expect(kubeutil.RegisterTagPolicyIDIndex(context.Background(), indexer)).To(Succeed())
+		Expect(indexer.registered).To(ConsistOf(
+			recordedIndex{obj: &vspherepolv1.Tag{}, field: kubeutil.TagPolicyIDIndexKey},
+		))
 	})
 })
 
@@ -436,7 +574,7 @@ var _ = Describe("TagSourceLabelIndexerFunc", Label(testlabels.Controller), func
 
 var _ = Describe("Self Tag event mapping", Label(testlabels.API), func() {
 	It("maps valid unique VM owners without reading peer VMs", func() {
-		ctx := context.Background()
+		ctx := pkgcfg.NewContextWithDefaultConfig()
 		client := builder.NewFakeClientWithInterceptors(interceptor.Funcs{
 			List: func(context.Context, ctrlclient.WithWatch, ctrlclient.ObjectList, ...ctrlclient.ListOption) error {
 				Fail("self mapping must not list objects")
@@ -454,5 +592,122 @@ var _ = Describe("Self Tag event mapping", Label(testlabels.API), func() {
 			Membership: vspherepolv1.TagMembershipPolicyRequesters,
 		}}
 		Expect(kubeutil.TagToVirtualMachineMapper(ctx, client)(ctx, tag)).To(Equal([]reconcile.Request{{NamespacedName: ctrlclient.ObjectKey{Namespace: "ns", Name: "vm"}}}))
+	})
+})
+
+var _ = Describe("GroupedAntiAffinitySelf Tag event mapping", Label(testlabels.Controller), func() {
+	const ns = "fake-ns"
+
+	var (
+		ctx       context.Context
+		withFuncs interceptor.Funcs
+		tag       *vspherepolv1.Tag
+		reqs      []reconcile.Request
+	)
+
+	vm := func(name string, labels map[string]string) *vmopv1.VirtualMachine {
+		return &vmopv1.VirtualMachine{ObjectMeta: metav1.ObjectMeta{
+			Namespace: ns, Name: name, Labels: labels}}
+	}
+	req := func(name string) reconcile.Request {
+		return reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}}
+	}
+
+	BeforeEach(func() {
+		withFuncs = interceptor.Funcs{}
+		ctx = pkgcfg.UpdateContext(
+			pkgcfg.NewContextWithDefaultConfig(),
+			func(config *pkgcfg.Config) {
+				config.Features.TaggingAPI = true
+				config.Features.VMHardAffinityDuringExecution = true
+			})
+		apiVersion := vmopv1.GroupVersion.String()
+		tag = &vspherepolv1.Tag{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      "self-tag",
+				OwnerReferences: []metav1.OwnerReference{
+					{APIVersion: apiVersion, Kind: "VirtualMachine", Name: "w1", UID: "uid-w1"},
+					{APIVersion: apiVersion, Kind: "VirtualMachine", Name: "w2", UID: "uid-w2"},
+				},
+			},
+			Spec: vspherepolv1.TagSpec{
+				Kind:       vspherepolv1.TagKindGroupedAntiAffinitySelf,
+				Membership: vspherepolv1.TagMembershipPolicyRequesters,
+				Policy: &vspherepolv1.TagPolicyIdentity{
+					Targets: []vspherepolv1.TagLabelPair{
+						{Key: "app", Value: "database"},
+						{Key: "tier", Value: "data"},
+					},
+				},
+			},
+		}
+	})
+
+	JustBeforeEach(func() {
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(builder.NewScheme()).
+			WithInterceptorFuncs(withFuncs).
+			WithObjects(
+				vm("w1", map[string]string{"app": "database"}),
+				vm("w2", nil),
+				vm("d1", map[string]string{"app": "database"}),
+				vm("d2", map[string]string{"tier": "data"}),
+				vm("d3", map[string]string{"app": "database", "tier": "data"}),
+				vm("unrelated", map[string]string{"app": "web"}),
+			).
+			WithIndex(
+				&vmopv1.VirtualMachine{},
+				kubeutil.VMLabelKeyValueIndexKey,
+				kubeutil.VMLabelKeyValueIndexerFunc).
+			Build()
+		reqs = kubeutil.TagToVirtualMachineMapper(ctx, k8sClient)(ctx, tag)
+	})
+
+	It("returns the owners and every VM carrying any target label once", func() {
+		Expect(reqs).To(ConsistOf(
+			req("w1"), req("w2"), req("d1"), req("d2"), req("d3")))
+	})
+
+	When("listing the VMs for one target label fails", func() {
+		BeforeEach(func() {
+			withFuncs.List = func(
+				ctx context.Context,
+				c ctrlclient.WithWatch,
+				list ctrlclient.ObjectList,
+				opts ...ctrlclient.ListOption) error {
+
+				lo := &ctrlclient.ListOptions{}
+				lo.ApplyOptions(opts)
+				if lo.FieldSelector != nil &&
+					lo.FieldSelector.String() == kubeutil.VMLabelKeyValueIndexKey+"=app:database" {
+					return errors.New("fake")
+				}
+				return c.List(ctx, list, opts...)
+			}
+		})
+		It("still returns the owners and the carriers of the other labels", func() {
+			Expect(reqs).To(ConsistOf(req("w1"), req("w2"), req("d2"), req("d3")))
+		})
+	})
+
+	When("the affinity status feature is disabled", func() {
+		BeforeEach(func() {
+			ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.VMHardAffinityDuringExecution = false
+			})
+		})
+		It("returns only the owners", func() {
+			Expect(reqs).To(ConsistOf(req("w1"), req("w2")))
+		})
+	})
+
+	When("the Tag has no policy identity", func() {
+		BeforeEach(func() {
+			tag.Spec.Policy = nil
+		})
+		It("returns only the owners", func() {
+			Expect(reqs).To(ConsistOf(req("w1"), req("w2")))
+		})
 	})
 })

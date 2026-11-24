@@ -46,7 +46,7 @@ The `Tag` API is **invisible to DevOps users**: they continue to express intent 
 
 ## Non-goals
 
-- **NG1**: No vCenter-side work is performed on behalf of a `Tag` resource. The `Tag` resource is bookkeeping only; the vCenter Tag itself is created by `vpxd` when named in a VM's reconfigure request, or is assumed to pre-exist. The `Tag` resource's reserved identity field for a resolved vCenter Tag UUID is **not** populated by this feature.
+- **NG1**: VM Operator does not create, modify, or delete vCenter tags on behalf of a `Tag` resource. The vCenter Tag itself is created by `vpxd` when named in a VM's reconfigure request, or is assumed to pre-exist. Resolving the vCenter Tag UUID into the `Tag`'s status is specified by [spec 019](../019-vm-affinity-status/).
 - **NG2**: Multi-vCenter. A single vCenter is assumed; the `Tag` resource records no target vCenter identifier.
 - **NG3**: Removing the `VirtualMachineGroup` dependency from affinity as a whole. This feature is the first incremental step; the group-based path continues to exist.
 - **NG4**: Retiring the pre-existing create-time label-to-tag mechanism. That mechanism continues to serve the flag-off path in this feature; its removal is deferred to a follow-up spec.
@@ -68,7 +68,7 @@ vCenter Tags are identified by name **and** category, and are unique across that
 Attributes:
 
 - The source label **key** and **value**, required for every kind except `GroupedAntiAffinitySelf` and forbidden for self tags. For `SourceLabel` Tags they are also mirrored into the `Tag`'s own metadata labels, so an admin can select `Tag`s by label. (The control plane answers "does a `Tag` already exist for this key/value?" from the resource's derived name, not from that mirror — see `model.md` "Query surface".)
-- A reserved identity field for the resolved vCenter Tag UUID, left empty by this feature (see NG1).
+- An identity field for the resolved vCenter Tag UUID, populated by spec 019 (see NG1).
 - The set of owning VMs, recorded as owner references. An owner is a VM whose own `spec.affinity` references the label pair — regardless of whether the VM itself currently carries the label. A VM can own a `Tag` for a pair it never carries: this is what lets it establish a `VmToVmGroupsAntiAffinity` relationship against other VMs that carry the pair without carrying it itself. A VM's ownership follows its `spec.affinity` alone: it is added when the affinity starts referencing the pair and removed when the affinity stops referencing it, and it is not affected by relabeling. A VM that merely carries the label without referencing it is **not** an owner, even though it does get the vCenter Tag.
 - The type of tag: currently limited to "System". The `type` field is added for future modularity and usage of the Tag CR by other features.
 

@@ -38,6 +38,15 @@ func idStr(i int) string {
 	return "id-" + strconv.Itoa(i)
 }
 
+var _ = Describe("DefaultWatchedPropertyPaths", func() {
+	It("does not watch computePolicies", func() {
+		// Older vCenters fault the whole filter on computePolicies, so it is
+		// added only by callers that gate it.
+		Expect(watcher.DefaultWatchedPropertyPaths()).ToNot(
+			ContainElement(watcher.ComputePoliciesPropertyPath))
+	})
+})
+
 var _ = Describe("Start", func() {
 	var (
 		ctx             context.Context

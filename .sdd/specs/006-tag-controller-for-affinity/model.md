@@ -50,7 +50,7 @@ spec:
   key: app                        # the source label KEY
   value: nginx                    # the source label VALUE
 status:
-  id: ""                          # reserved for the resolved vCenter tag UUID; NOT populated by this feature
+  id: ""                          # vCenter tag UUID; set by spec 019 when gated on
   observedGeneration: 1
   conditions:
     - type: Ready
@@ -103,7 +103,7 @@ The prefix-free names are produced by the helpers in `pkg/providers/vsphere/virt
 
 | Field | JSON | Type | Marker | Description |
 |-------|------|------|--------|-------------|
-| `ID` | `id,omitempty` | `string` | `+optional` | Reserved for the resolved vCenter Tag UUID. **Not populated by this feature** (spec NG1) — the `Tag` controller performs no vCenter work, and tag attachment uses name+category rather than the UUID. Remains empty; absence is tolerated by every consumer. Retained on the CRD for forward-compatibility. |
+| `ID` | `id,omitempty` | `string` | `+optional` | The resolved vCenter Tag UUID. Set by the `Tag` controller under spec 019's gate, together with `categoryID`. Spec 019 also adds `policyID`, which the VM update path writes (see [spec 019 `model.md`](../019-vm-affinity-status/model.md)). Tag attachment in this feature uses name+category rather than the UUID, so every consumer here tolerates an empty value. |
 | `ObservedGeneration` | `observedGeneration,omitempty` | `int64` | `+optional` | Last reconciled `metadata.generation` (constitution requirement). |
 | `Conditions` | `conditions,omitempty` | `[]metav1.Condition` | `+optional`, `+listType=map`, `+listMapKey=type` | Standard conditions. MUST include `Ready` (`vspherepolv1.ReadyConditionType`, already defined in `common_types.go`). |
 
@@ -222,8 +222,8 @@ Neither predicate is a subset or superset of the other in general: a VM can own 
 5. **Deletion at zero owners**: the `Tag` controller `Delete`s the `Tag` when it observes an empty `ownerReferences` list, preconditioned on the `ResourceVersion` it read. `Tag` carries no finalizer (D10), so this delete is atomic — there is no persisted `deletionTimestamp` state to observe, only the resulting delete event (invariant 6). The precondition is what keeps this safe: if a VM concurrently added an owner reference after this reconcile's `Get`, the `Delete` fails with a conflict instead of destroying the newly-owned object, and the next reconcile re-reads the fresh state and skips deletion. Ordinary owner-reference garbage collection covers only the "all owner VMs deleted" case — it does **not** delete an object whose owner list was emptied while those owners still exist, which is why the `Tag` controller deletes explicitly. See [`research.md`](./research.md) "Owner-reference garbage collection", and V6's garbage-collector admission above for what garbage collection needs from admission.
 6. **Deletion fan-out**: every VM in the namespace carrying the source label `spec.key=spec.value` is enqueued by the VM controller's `Tag` watch — via the `metadata.labels.keyValue` index, not a namespace scan — so label-only VMs drop the vCenter tag (spec G5). The single delete event is sufficient: a woken VM's desired-set computation no longer finds a matching `Tag` in the `spec.sourceLabel` index, so it emits `TagSpec{remove}`. The `Tag` controller itself enqueues nothing on any path (D16, D19).
 7. **Re-create after deletion**: while a `Tag` with the derived name does not exist — because it was just deleted, or has not yet been created — a VM that needs it creates a fresh one rather than silently skipping tagging; the create is retried until it succeeds (spec G12).
-8. **Status ownership**: only the `Tag` controller writes `status`, via the status subresource, with the same optimistic-lock-and-skip-if-unchanged discipline.
-9. **No vCenter work**: nothing in the `Tag`'s lifecycle calls vCenter. `status.id` stays empty (spec NG1).
+8. **Status ownership**: the `Tag` controller writes `status`, via the status subresource, with the same optimistic-lock-and-skip-if-unchanged discipline. The one exception is `status.policyID` (spec 019), which the VM update path (`pkg/providers/vsphere/vmlifecycle`) writes with a `Status().Patch` using `MergeFromWithOptimisticLock`, skipped when unchanged. The `Tag` controller never writes `status.policyID`, so the two writers own disjoint fields.
+9. **No vCenter writes**: nothing in the `Tag`'s lifecycle creates, modifies, or deletes a vCenter tag (spec NG1). Under spec 019's gate, the `Tag` controller reads the vCenter tag and category IDs by name into `status.id` and `status.categoryID`.
 
 ---
 

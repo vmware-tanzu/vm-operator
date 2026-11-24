@@ -70,6 +70,7 @@ type funcs struct {
 
 	GetVirtualMachineConfigTargetFn func(ctx context.Context, clusterMoID string) (*vimtypes.ConfigTarget, []vimtypes.VirtualMachineConfigOptionDescriptor, error)
 	QueryConfigOptionExFn           func(ctx context.Context, clusterMoID, hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error)
+	ResolveTagIDsFn                 func(ctx context.Context, category string, names []string) (string, map[string]string, error)
 }
 
 type VMProvider struct {
@@ -512,6 +513,15 @@ func (s *VMProvider) QueryConfigOptionEx(ctx context.Context, clusterMoID, hardw
 		return s.QueryConfigOptionExFn(ctx, clusterMoID, hardwareVersion)
 	}
 	return nil, nil
+}
+
+func (s *VMProvider) ResolveTagIDs(ctx context.Context, category string, names []string) (string, map[string]string, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.ResolveTagIDsFn != nil {
+		return s.ResolveTagIDsFn(ctx, category, names)
+	}
+	return "", map[string]string{}, nil
 }
 
 func NewVMProvider() *VMProvider {

@@ -17196,6 +17196,95 @@ spec:
             description: VirtualMachineStatus defines the observed state of a VirtualMachine
               instance.
             properties:
+              affinity:
+                description: |-
+                  Affinity describes the VM Operator affinity policies that apply to
+                  this VM and the VM's compliance with each.
+                properties:
+                  policies:
+                    description: |-
+                      Policies describes each VM Operator affinity policy that applies to the
+                      VM and the VM's compliance with it.
+                    items:
+                      description: |-
+                        VirtualMachineAffinityPolicyStatus describes one VM Operator affinity
+                        policy that applies to the VM.
+                      properties:
+                        compliance:
+                          description: |-
+                            Compliance is the most recent compliance state that vCenter recorded
+                            for the VM, or Pending if the policy ID is not yet known.
+                          enum:
+                          - Pending
+                          - Compliant
+                          - NotCompliant
+                          - NotApplicable
+                          - Unknown
+                          type: string
+                        origin:
+                          description: |-
+                            Origin describes why the policy applies to the VM: Self when the VM's
+                            own spec.affinity requests it, or Peer when another VM's spec.affinity
+                            requests it and this VM carries the target labels.
+                          enum:
+                          - Self
+                          - Peer
+                          type: string
+                        policyID:
+                          description: |-
+                            PolicyID is the vCenter compute policy ID. It is empty while the
+                            compliance is Pending.
+                          type: string
+                        strictness:
+                          description: Strictness describes how strictly the policy
+                            is enforced.
+                          enum:
+                          - RequiredDuringSchedulingRequiredDuringExecution
+                          - RequiredDuringSchedulingPreferredDuringExecution
+                          - PreferredDuringSchedulingPreferredDuringExecution
+                          type: string
+                        targets:
+                          description: |-
+                            Targets are the label pairs the policy targets, sorted by key, then
+                            value, with no duplicates.
+                          items:
+                            description: VirtualMachineAffinityLabel is a resolved
+                              target label pair of a policy.
+                            properties:
+                              key:
+                                description: Key is the label key.
+                                type: string
+                              value:
+                                description: Value is the label value.
+                                type: string
+                            required:
+                            - key
+                            - value
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        topologyKey:
+                          description: |-
+                            TopologyKey is the topology at which the policy applies, either
+                            kubernetes.io/hostname or topology.kubernetes.io/zone.
+                          type: string
+                        type:
+                          description: Type is the kind of the policy.
+                          enum:
+                          - Affinity
+                          - AntiAffinity
+                          type: string
+                      required:
+                      - compliance
+                      - origin
+                      - strictness
+                      - targets
+                      - topologyKey
+                      - type
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
               biosUUID:
                 description: |-
                   BiosUUID describes a unique identifier provided by the underlying

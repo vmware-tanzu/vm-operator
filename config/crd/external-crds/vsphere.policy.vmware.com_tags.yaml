@@ -27,6 +27,14 @@ spec:
     - jsonPath: .spec.value
       name: Value
       type: string
+    - jsonPath: .status.id
+      name: TagID
+      priority: 1
+      type: string
+    - jsonPath: .status.policyID
+      name: PolicyID
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -157,6 +165,9 @@ spec:
           status:
             description: TagStatus defines the observed state of Tag.
             properties:
+              categoryID:
+                description: CategoryID is the vCenter tag category UUID.
+                type: string
               conditions:
                 description: |-
                   Conditions describes any conditions associated with this object.
@@ -222,7 +233,9 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               id:
-                description: ID is reserved for the resolved vCenter Tag UUID.
+                description: |-
+                  ID is the vCenter tag UUID, resolved by name in the namespace
+                  category.
                 type: string
               observedGeneration:
                 description: |-
@@ -231,7 +244,15 @@ spec:
                   controller.
                 format: int64
                 type: integer
+              policyID:
+                description: |-
+                  PolicyID is the vCenter compute policy this tag defines. Set only
+                  for AffinityTarget and GroupedAntiAffinitySelf kinds.
+                type: string
             type: object
+            x-kubernetes-validations:
+            - message: policyID requires id
+              rule: '!has(self.policyID) || has(self.id)'
         type: object
     served: true
     storage: true

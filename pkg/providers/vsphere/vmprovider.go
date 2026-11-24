@@ -65,6 +65,9 @@ type vSphereVMProvider struct {
 
 	vcClientLock sync.Mutex
 	vcClient     *vcclient.Client
+
+	// tagCategoryIDs caches the vCenter tag category ID by category name.
+	tagCategoryIDs sync.Map
 }
 
 func NewVSphereVMProviderFromClient(

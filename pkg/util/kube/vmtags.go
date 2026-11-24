@@ -19,6 +19,7 @@ import (
 	vspherepolv1 "github.com/vmware-tanzu/vm-operator/external/vsphere-policy/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 )
 
@@ -29,6 +30,10 @@ const (
 	// TagOwnerReferencesUIDIndexKey is the field-index key used to
 	// efficiently list every Tag owned by a given VirtualMachine UID.
 	TagOwnerReferencesUIDIndexKey = "metadata.ownerReferences.uid"
+
+	// TagPolicyIDIndexKey is the field-index key used to efficiently find the
+	// Tag that defines a given vCenter compute policy.
+	TagPolicyIDIndexKey = "status.policyID"
 
 	// VMLabelKeyValueIndexKey is the field-index key used to efficiently list
 	// every VirtualMachine carrying a given label key/value pair.
@@ -71,6 +76,16 @@ func TagOwnerReferencesUIDIndexerFunc(obj ctrlclient.Object) []string {
 	}
 
 	return uids
+}
+
+// TagPolicyIDIndexerFunc extracts the value indexed by TagPolicyIDIndexKey
+// from a Tag object. Tags without a policy ID are not indexed.
+func TagPolicyIDIndexerFunc(obj ctrlclient.Object) []string {
+	tag, ok := obj.(*vspherepolv1.Tag)
+	if !ok || tag.Status.PolicyID == "" {
+		return nil
+	}
+	return []string{tag.Status.PolicyID}
 }
 
 // VMLabelKeyValueIndexerFunc extracts the value indexed by
@@ -124,19 +139,36 @@ func RegisterVMTagsIndexes(ctx context.Context, fieldIndexer ctrlclient.FieldInd
 		VMLabelKeyValueIndexerFunc)
 }
 
+// RegisterTagPolicyIDIndex registers the Tag policy ID index. The VM
+// controller calls it once per manager when the VM affinity status feature is
+// enabled.
+func RegisterTagPolicyIDIndex(ctx context.Context, fieldIndexer ctrlclient.FieldIndexer) error {
+	return fieldIndexer.IndexField(
+		ctx,
+		&vspherepolv1.Tag{},
+		TagPolicyIDIndexKey,
+		TagPolicyIDIndexerFunc)
+}
+
 // TagToVirtualMachineMapper returns a mapper function used to enqueue
 // reconcile requests for VMs in response to an event on a Tag.
-//
-// Self tags map directly to valid VM owner references without peer reads.
 //
 // For source-label Tags, only the first owner being added (Tag created) and
 // the last owner being removed (Tag deleted) change which VMs carry the tag.
 // Owner membership changes in between do not, so TagFanOutPredicate filters
-// those events out. Both the VMs carrying the label and the Tag's owners are
-// enqueued: an owner references the label in an affinity term but may not
-// carry it, and must recreate or re-adopt a deleted Tag. A deleted Tag still
-// carries its owner references, so every owner is re-enqueued, which also
-// costs the creating VM one extra reconcile on Tag create.
+// those events out. It also admits vCenter ID changes on policy-defining Tags
+// when the VM affinity status feature is enabled. Both the VMs carrying the
+// label and the Tag's owners are enqueued: an owner references the label in
+// an affinity term but may not carry it, and must recreate or re-adopt a
+// deleted Tag. A deleted Tag still carries its owner references, so every
+// owner is re-enqueued, which also costs the creating VM one extra reconcile
+// on Tag create.
+//
+// Self tags map to their valid VM owner references. When the VM affinity
+// status feature is enabled, the VMs carrying any of a GroupedAntiAffinitySelf
+// Tag's policy target labels are also enqueued. Those peers are members of
+// the anti-affined group and map the policy to the Tag through its
+// status.policyID, which only an owner records.
 func TagToVirtualMachineMapper(
 	ctx context.Context,
 	k8sClient ctrlclient.Client) handler.MapFunc {
@@ -148,6 +180,9 @@ func TagToVirtualMachineMapper(
 	if k8sClient == nil {
 		panic("k8sClient is nil")
 	}
+
+	features := pkgcfg.FromContext(ctx).Features
+	affinityStatus := features.TaggingAPI && features.VMHardAffinityDuringExecution
 
 	return func(ctx context.Context, o ctrlclient.Object) []reconcile.Request {
 		if ctx == nil {
@@ -162,51 +197,64 @@ func TagToVirtualMachineMapper(
 			panic(fmt.Sprintf("object is %T", o))
 		}
 
-		ownerRequests := tagOwnerRequests(tag)
-		if tag.Spec.Membership == vspherepolv1.TagMembershipPolicyRequesters {
-			return ownerRequests
-		}
-		if tag.Spec.Membership != vspherepolv1.TagMembershipSourceLabel || tag.Spec.Key == "" {
+		var pairs []vspherepolv1.TagLabelPair
+		switch {
+		case tag.Spec.Membership == vspherepolv1.TagMembershipPolicyRequesters:
+			if !affinityStatus ||
+				tag.Spec.Kind != vspherepolv1.TagKindGroupedAntiAffinitySelf ||
+				tag.Spec.Policy == nil {
+
+				return tagOwnerRequests(tag)
+			}
+			pairs = tag.Spec.Policy.Targets
+		case tag.Spec.Membership == vspherepolv1.TagMembershipSourceLabel && tag.Spec.Key != "":
+			pairs = []vspherepolv1.TagLabelPair{{Key: tag.Spec.Key, Value: tag.Spec.Value}}
+		default:
 			return nil
 		}
 
 		logger := pkglog.FromContextOrDefault(ctx).
 			WithValues("name", tag.GetName(), "namespace", tag.GetNamespace())
-		logger.V(4).Info("Reconciling all VMs carrying a Tag's label")
+		logger.V(4).Info("Reconciling all VMs carrying a Tag's labels")
 
-		vmList := &vmopv1.VirtualMachineList{}
-		if err := k8sClient.List(
-			ctx,
-			vmList,
-			ctrlclient.InNamespace(tag.Namespace),
-			ctrlclient.MatchingFields{
-				VMLabelKeyValueIndexKey: TagLabelKeyValue(tag.Spec.Key, tag.Spec.Value),
-			}); err != nil {
-
-			logger.Error(err,
-				"Failed to list VirtualMachines for reconciliation due to Tag watch")
-			return ownerRequests
-		}
-
-		// Start with the owners, which may not carry the label, then add the
+		// Start with the owners, which may not carry the labels, then add the
 		// label carriers that are not already enqueued.
-		requests := make([]reconcile.Request, 0, len(ownerRequests)+len(vmList.Items))
-		requests = append(requests, ownerRequests...)
-		seen := make(map[string]bool, len(ownerRequests))
-		for _, r := range ownerRequests {
+		requests := tagOwnerRequests(tag)
+		seen := make(map[string]bool, len(requests))
+		for _, r := range requests {
 			seen[r.Name] = true
 		}
-		for i := range vmList.Items {
-			vm := vmList.Items[i]
-			if seen[vm.Name] {
+
+		for _, pair := range pairs {
+			vmList := &vmopv1.VirtualMachineList{}
+			if err := k8sClient.List(
+				ctx,
+				vmList,
+				ctrlclient.InNamespace(tag.Namespace),
+				ctrlclient.MatchingFields{
+					VMLabelKeyValueIndexKey: TagLabelKeyValue(pair.Key, pair.Value),
+				}); err != nil {
+
+				logger.Error(err,
+					"Failed to list VirtualMachines for reconciliation due to Tag watch",
+					"labelKey", pair.Key,
+					"labelValue", pair.Value)
 				continue
 			}
-			requests = append(requests, reconcile.Request{
-				NamespacedName: ctrlclient.ObjectKey{
-					Namespace: vm.Namespace,
-					Name:      vm.Name,
-				},
-			})
+
+			for i := range vmList.Items {
+				vm := vmList.Items[i]
+				if seen[vm.Name] {
+					continue
+				}
+				seen[vm.Name] = true
+				requests = append(requests, reconcile.Request{
+					NamespacedName: ctrlclient.ObjectKey{
+						Namespace: vm.Namespace,
+						Name:      vm.Name,
+					},
+				})
+			}
 		}
 
 		if len(requests) > 0 {
@@ -245,7 +293,18 @@ func tagOwnerRequests(tag *vspherepolv1.Tag) []reconcile.Request {
 // reconcile, and no other VM's desired tag set depends on it, so the event
 // would only cause a wasted reconcile of the creator. Self Tag deletes are
 // still admitted so that owners recreate a Tag that was removed.
-func TagFanOutPredicate() predicate.Predicate {
+//
+// Update events are dropped, except when the VM affinity status feature is
+// enabled (Features.TaggingAPI and Features.VMHardAffinityDuringExecution):
+// then an update that changes status.id or status.policyID of a
+// policy-defining Tag (AffinityTarget or GroupedAntiAffinitySelf) is
+// admitted, so the VMs that own the Tag or carry its labels can report that
+// policy's affinity status. Owner-reference, label-mirror, and condition
+// writes are still dropped.
+func TagFanOutPredicate(ctx context.Context) predicate.Predicate {
+	features := pkgcfg.FromContext(ctx).Features
+	affinityStatus := features.TaggingAPI && features.VMHardAffinityDuringExecution
+
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			if tag, ok := e.Object.(*vspherepolv1.Tag); ok &&
@@ -256,8 +315,8 @@ func TagFanOutPredicate() predicate.Predicate {
 			}
 			return true
 		},
-		UpdateFunc: func(event.UpdateEvent) bool {
-			return false
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return affinityStatus && tagVCenterIDsChanged(e.ObjectOld, e.ObjectNew)
 		},
 		DeleteFunc: func(event.DeleteEvent) bool {
 			return true
@@ -266,4 +325,25 @@ func TagFanOutPredicate() predicate.Predicate {
 			return false
 		},
 	}
+}
+
+// tagVCenterIDsChanged returns true if the objects are a policy-defining Tag
+// whose status.id or status.policyID differs between them.
+func tagVCenterIDsChanged(oldObj, newObj ctrlclient.Object) bool {
+	oldTag, ok := oldObj.(*vspherepolv1.Tag)
+	if !ok {
+		return false
+	}
+	newTag, ok := newObj.(*vspherepolv1.Tag)
+	if !ok {
+		return false
+	}
+	switch newTag.Spec.Kind {
+	case vspherepolv1.TagKindAffinityTarget,
+		vspherepolv1.TagKindGroupedAntiAffinitySelf:
+	default:
+		return false
+	}
+	return oldTag.Status.ID != newTag.Status.ID ||
+		oldTag.Status.PolicyID != newTag.Status.PolicyID
 }

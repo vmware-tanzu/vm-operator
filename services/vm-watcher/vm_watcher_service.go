@@ -28,6 +28,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/cource"
 	vsphereclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/watcher"
@@ -232,6 +233,19 @@ func (s Service) vmFolderMoRefWithIDs(
 
 var emptyResult watcher.Result
 
+// WatchedPropertyPaths returns the VM property paths that the watcher
+// watches: watcher.DefaultWatchedPropertyPaths, plus computePolicies when the
+// affinity status feature is enabled. A vCenter that does not support
+// computePolicies faults the whole property filter, so it is watched only
+// behind the feature gate.
+func WatchedPropertyPaths(ctx context.Context) []string {
+	paths := watcher.DefaultWatchedPropertyPaths()
+	if virtualmachine.AffinityStatusEnabled(ctx) {
+		paths = append(paths, watcher.ComputePoliciesPropertyPath)
+	}
+	return paths
+}
+
 func (s Service) waitForChanges(ctx context.Context) error {
 
 	var (
@@ -256,7 +270,7 @@ func (s Service) waitForChanges(ctx context.Context) error {
 	w, err := watcher.Start(
 		ctx,
 		vcClient.VimClient(),
-		nil,
+		WatchedPropertyPaths(ctx),
 		nil,
 		s.lookupNamespacedName,
 		moRefWithIDs)

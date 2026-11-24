@@ -17,6 +17,7 @@ const (
 	CreateVMRequeueDelay
 	PoweredOnVMHasIPRequeueDelay
 	SyncImageRequeueDelay
+	AffinityStatusPendingRequeueDelay
 	PrivilegedUsers
 	NetworkProviderType
 	LoadBalancerProvider
@@ -97,6 +98,8 @@ func (n VarName) String() string {
 		return "POWERED_ON_VM_HAS_IP_REQUEUE_DELAY"
 	case SyncImageRequeueDelay:
 		return "SYNC_IMAGE_REQUEUE_DELAY"
+	case AffinityStatusPendingRequeueDelay:
+		return "AFFINITY_STATUS_PENDING_REQUEUE_DELAY"
 	case PrivilegedUsers:
 		return "PRIVILEGED_USERS"
 	case NetworkProviderType:

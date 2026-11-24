@@ -108,6 +108,7 @@ var _ = Describe(
 					Expect(os.Setenv("MEM_STATS_PERIOD", "127h")).To(Succeed())
 					Expect(os.Setenv("SYNC_IMAGE_REQUEUE_DELAY", "128h")).To(Succeed())
 					Expect(os.Setenv("DEPLOYMENT_NAME", "129")).To(Succeed())
+					Expect(os.Setenv("AFFINITY_STATUS_PENDING_REQUEUE_DELAY", "130h")).To(Succeed())
 					Expect(os.Setenv("SIGUSR2_RESTART_ENABLED", "true")).To(Succeed())
 					Expect(os.Setenv("CRD_CLEANUP_ENABLED", "true")).To(Succeed())
 				})
@@ -158,12 +159,13 @@ var _ = Describe(
 							WorkloadDomainIsolation:   true,
 							FastDeploy:                true,
 						},
-						CreateVMRequeueDelay:         125 * time.Hour,
-						PoweredOnVMHasIPRequeueDelay: 126 * time.Hour,
-						MemStatsPeriod:               127 * time.Hour,
-						SyncImageRequeueDelay:        128 * time.Hour,
-						DeploymentName:               "129",
-						SIGUSR2RestartEnabled:        true,
+						CreateVMRequeueDelay:              125 * time.Hour,
+						PoweredOnVMHasIPRequeueDelay:      126 * time.Hour,
+						MemStatsPeriod:                    127 * time.Hour,
+						SyncImageRequeueDelay:             128 * time.Hour,
+						DeploymentName:                    "129",
+						AffinityStatusPendingRequeueDelay: 130 * time.Hour,
+						SIGUSR2RestartEnabled:             true,
 					}))
 				})
 			})

@@ -1613,6 +1613,12 @@ type VirtualMachineStatus struct {
 	// advanced properties, and spec.advanced.extraConfig.
 	// This denotes the current configuration of the VM.
 	ExtraConfig []vmopv1common.KeyValuePair `json:"extraConfig,omitempty"`
+
+	// +optional
+
+	// Affinity describes the VM Operator affinity policies that apply to
+	// this VM and the VM's compliance with each.
+	Affinity *VirtualMachineAffinityStatus `json:"affinity,omitempty"`
 }
 
 // +kubebuilder:object:root=true

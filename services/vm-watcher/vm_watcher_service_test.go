@@ -37,6 +37,31 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+var _ = Describe("WatchedPropertyPaths", Label(testlabels.Service), func() {
+	DescribeTable("watches computePolicies only when the affinity status gate is on",
+		func(taggingAPI, hardAffinity, expected bool) {
+			ctx := pkgcfg.UpdateContext(
+				pkgcfg.NewContextWithDefaultConfig(),
+				func(config *pkgcfg.Config) {
+					config.Features.TaggingAPI = taggingAPI
+					config.Features.VMHardAffinityDuringExecution = hardAffinity
+				})
+			defaults := watcher.DefaultWatchedPropertyPaths()
+
+			paths := vmwatcher.WatchedPropertyPaths(ctx)
+			if expected {
+				Expect(paths).To(Equal(append(defaults, watcher.ComputePoliciesPropertyPath)))
+			} else {
+				Expect(paths).To(Equal(defaults))
+			}
+		},
+		Entry("gate on", true, true, true),
+		Entry("only TaggingAPI enabled", true, false, false),
+		Entry("only VMHardAffinityDuringExecution enabled", false, true, false),
+		Entry("gate off", false, false, false),
+	)
+})
+
 var _ = Describe(
 	"Start",
 	Label(

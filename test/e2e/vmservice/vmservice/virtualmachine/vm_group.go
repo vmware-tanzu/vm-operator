@@ -2416,6 +2416,48 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 			for _, vmName := range []string{vm2Name, vm3Name} {
 				Expect(getVMHostFromVmodl(ctx, svClusterClient, vCenterClient, tmpNamespaceName, vmName)).To(Equal(host1), "vm %s is not on the same host as %s", vmName, vm1Name)
 			}
+
+			By("Verifying status.affinity reports one shared compliant affinity policy requested by every VM")
+
+			intervals := config.GetIntervals("default", "wait-virtual-machine-compute-policy-status-update")
+			policyID := ""
+			for _, vmName := range vmMemberNames {
+				e := waitForOnlyAffinityStatusEntry(ctx, svClusterClient, tmpNamespaceName, vmName, intervals)
+				Expect(e.Type).To(Equal(vmopv1.VirtualMachineAffinityPolicyTypeAffinity))
+				Expect(e.TopologyKey).To(Equal(hostTopoKey))
+				Expect(e.Origin).To(Equal(vmopv1.VirtualMachineAffinityPolicyOriginSelf))
+				if policyID == "" {
+					policyID = e.PolicyID
+				}
+				Expect(e.PolicyID).To(Equal(policyID), "vm %s reports a different policy ID", vmName)
+			}
+
+			By("Verifying the target Tag has its vCenter tag and policy IDs set")
+
+			Eventually(func(g Gomega) {
+				targetTags := affinityPolicyTags(ctx, svClusterClient, tmpNamespaceName,
+					vspherepolv1.TagKindAffinityTarget, "app", vmgRootName)
+				g.Expect(targetTags).To(HaveLen(1))
+				g.Expect(targetTags[0].Status.ID).ToNot(BeEmpty())
+				g.Expect(targetTags[0].Status.PolicyID).To(Equal(policyID))
+			}, intervals...).Should(Succeed(), "timed out waiting for the target Tag status")
+
+			By("Removing the affinity from a VM that still carries the target label and verifying it becomes a Peer")
+
+			vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vm3Name)
+			Expect(err).ToNot(HaveOccurred())
+			vmPatch := ctrlclient.MergeFrom(vm.DeepCopy())
+			vm.Spec.Affinity = nil
+			Expect(svClusterClient.Patch(ctx, vm, vmPatch)).To(Succeed(), "failed to remove affinity from VM %s", vm3Name)
+
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vm3Name)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vm.Status.Affinity).ToNot(BeNil())
+				g.Expect(vm.Status.Affinity.Policies).To(HaveLen(1))
+				g.Expect(vm.Status.Affinity.Policies[0].PolicyID).To(Equal(policyID))
+				g.Expect(vm.Status.Affinity.Policies[0].Origin).To(Equal(vmopv1.VirtualMachineAffinityPolicyOriginPeer))
+			}, intervals...).Should(Succeed(), "timed out waiting for VM %s to report origin Peer", vm3Name)
 		})
 
 		It("Should place VMs without a group on different hosts using host anti-affinity", Label("experimental", consts.HardAffinityDuringExecutionLabel), func() {
@@ -2455,6 +2497,31 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(hosts).ToNot(HaveKey(host), "vms %s and %s are on the same host %s", hosts[host], vmName, host)
 				hosts[host] = vmName
 			}
+
+			By("Verifying status.affinity reports one shared compliant anti-affinity policy")
+
+			intervals := config.GetIntervals("default", "wait-virtual-machine-compute-policy-status-update")
+			policyID := ""
+			for _, vmName := range vmMemberNames {
+				e := waitForOnlyAffinityStatusEntry(ctx, svClusterClient, tmpNamespaceName, vmName, intervals)
+				Expect(e.Type).To(Equal(vmopv1.VirtualMachineAffinityPolicyTypeAntiAffinity))
+				Expect(e.TopologyKey).To(Equal(hostTopoKey))
+				Expect(e.Origin).To(Equal(vmopv1.VirtualMachineAffinityPolicyOriginSelf))
+				if policyID == "" {
+					policyID = e.PolicyID
+				}
+				Expect(e.PolicyID).To(Equal(policyID), "vm %s reports a different policy ID", vmName)
+			}
+
+			By("Verifying the VMs share one self Tag with its vCenter tag and policy IDs set")
+
+			Eventually(func(g Gomega) {
+				selfTags := affinityPolicyTags(ctx, svClusterClient, tmpNamespaceName,
+					vspherepolv1.TagKindGroupedAntiAffinitySelf, "app", vmgRootName)
+				g.Expect(selfTags).To(HaveLen(1))
+				g.Expect(selfTags[0].Status.ID).ToNot(BeEmpty())
+				g.Expect(selfTags[0].Status.PolicyID).To(Equal(policyID))
+			}, intervals...).Should(Succeed(), "timed out waiting for the self Tag status")
 		})
 
 		It("Should tag and place a VM with host anti-affinity to another VM's label on different hosts", Label("experimental", consts.HardAffinityDuringExecutionLabel), func() {
@@ -2535,6 +2602,24 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 				Expect(hostReq).ToNot(Equal(hostC), "VMs %s and %s are on the same host %s", vmName, vm3Name, hostC)
 			}
 
+			By("Verifying status.affinity reports the policy as Self for the requesters and Peer for the label-B VM")
+			var policyID string
+			for vmName, origin := range map[string]vmopv1.VirtualMachineAffinityPolicyOrigin{
+				vm1Name: vmopv1.VirtualMachineAffinityPolicyOriginSelf,
+				vm2Name: vmopv1.VirtualMachineAffinityPolicyOriginSelf,
+				vm3Name: vmopv1.VirtualMachineAffinityPolicyOriginPeer,
+			} {
+				e := waitForOnlyAffinityStatusEntry(ctx, svClusterClient, tmpNamespaceName, vmName, tagIntervals)
+				Expect(e.Type).To(Equal(vmopv1.VirtualMachineAffinityPolicyTypeAntiAffinity))
+				Expect(e.TopologyKey).To(Equal(hostTopoKey))
+				Expect(e.Targets).To(ConsistOf(vmopv1.VirtualMachineAffinityLabel{Key: labelBKey, Value: vmgRootName}))
+				Expect(e.Origin).To(Equal(origin), "vm %s", vmName)
+				if policyID == "" {
+					policyID = e.PolicyID
+				}
+				Expect(e.PolicyID).To(Equal(policyID), "vm %s reports a different policy ID", vmName)
+			}
+
 			By("Verifying the Tag resources exist and are owned by the first requesting VM")
 			selfName := vmopvm.StripAffinityTagPrefix(expectedSelfTag)
 			originalBName := labelBKey + ":" + vmgRootName
@@ -2555,6 +2640,28 @@ func VMGroupSpec(ctx context.Context, inputGetter func() VMGroupSpecInput) {
 						HaveField("Name", vm1Name)), "Tag %s must be owned by requesting VM %s", name, vm1Name)
 				}, tagIntervals...).Should(Succeed(), "timed out waiting for Tag %s (%s)", name, kind)
 			}
+
+			By("Verifying the self Tag has its vCenter tag and policy IDs set")
+			Eventually(func(g Gomega) {
+				tag := &vspherepolv1.Tag{}
+				g.Expect(svClusterClient.Get(ctx, ctrlclient.ObjectKey{
+					Namespace: tmpNamespaceName, Name: tagResourceName(tmpNamespaceName, selfName),
+				}, tag)).To(Succeed())
+				g.Expect(tag.Status.ID).ToNot(BeEmpty())
+				g.Expect(tag.Status.PolicyID).To(Equal(policyID))
+			}, tagIntervals...).Should(Succeed(), "timed out waiting for the self Tag status")
+
+			By("Removing the affinity from the second requesting VM and verifying its status.affinity is cleared")
+			vm2, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vm2Name)
+			Expect(err).ToNot(HaveOccurred())
+			vm2Patch := ctrlclient.MergeFrom(vm2.DeepCopy())
+			vm2.Spec.Affinity = nil
+			Expect(svClusterClient.Patch(ctx, vm2, vm2Patch)).To(Succeed(), "failed to remove affinity from VM %s", vm2Name)
+			Eventually(func(g Gomega) {
+				vm, err := utils.GetVirtualMachine(ctx, svClusterClient, tmpNamespaceName, vm2Name)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(vm.Status.Affinity).To(BeNil())
+			}, tagIntervals...).Should(Succeed(), "timed out waiting for VM %s to clear status.affinity", vm2Name)
 
 			By("Deleting the second requesting VM and verifying the label-B VM still has its tags")
 			vmoperator.DeleteVirtualMachineAndWait(ctx, config, svClusterClient, tmpNamespaceName, vm2Name)
@@ -5095,6 +5202,57 @@ func requiredAntiAffinity(topologyKey string, matchLabels map[string]string) *vm
 			}},
 		},
 	}
+}
+
+// waitForOnlyAffinityStatusEntry waits until the VM reports exactly one
+// status.affinity policy that has a policy ID and is Compliant, and returns it.
+func waitForOnlyAffinityStatusEntry(
+	ctx context.Context,
+	client ctrlclient.Client,
+	namespace, vmName string,
+	intervals []interface{}) vmopv1.VirtualMachineAffinityPolicyStatus {
+
+	GinkgoHelper()
+
+	var entry vmopv1.VirtualMachineAffinityPolicyStatus
+	Eventually(func(g Gomega) {
+		vm, err := utils.GetVirtualMachine(ctx, client, namespace, vmName)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(vm.Status.Affinity).ToNot(BeNil())
+		g.Expect(vm.Status.Affinity.Policies).To(HaveLen(1))
+		entry = vm.Status.Affinity.Policies[0]
+		g.Expect(entry.PolicyID).ToNot(BeEmpty())
+		g.Expect(entry.Compliance).To(Equal(vmopv1.VirtualMachineAffinityComplianceCompliant))
+	}, intervals...).Should(Succeed(),
+		"timed out waiting for VM %s to report a compliant affinity policy", vmName)
+	return entry
+}
+
+// affinityPolicyTags returns the policy-defining Tags of the given kind in the
+// namespace whose policy targets the label.
+func affinityPolicyTags(
+	ctx context.Context,
+	client ctrlclient.Client,
+	namespace string,
+	kind vspherepolv1.TagKind,
+	key, value string) []vspherepolv1.Tag {
+
+	GinkgoHelper()
+
+	var list vspherepolv1.TagList
+	Expect(client.List(ctx, &list, ctrlclient.InNamespace(namespace))).To(Succeed())
+
+	var out []vspherepolv1.Tag
+	for _, t := range list.Items {
+		if t.Spec.Kind != kind || t.Spec.Policy == nil {
+			continue
+		}
+		if slices.Contains(t.Spec.Policy.Targets,
+			vspherepolv1.TagLabelPair{Key: key, Value: value}) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // patchVMGroup gets the VirtualMachineGroup identified by key into group,

@@ -103,4 +103,11 @@ type VirtualMachineProviderInterface interface {
 	// desired hardware version string (e.g. "vmx-22"). Returns nil without error
 	// when no config option is found.
 	QueryConfigOptionEx(ctx context.Context, clusterMoID, hardwareVersion string) (*vimtypes.VirtualMachineConfigOption, error)
+
+	// ResolveTagIDs returns the ID of the vCenter tag category with the given
+	// name and the IDs of the named tags in that category. The category name
+	// is required. Names that do not exist are absent from the returned map.
+	// A missing category is not an error: the returned category ID is empty
+	// and the map has no entries.
+	ResolveTagIDs(ctx context.Context, category string, names []string) (string, map[string]string, error)
 }

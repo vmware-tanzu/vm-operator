@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apierrorsutil "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,7 +28,24 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 )
+
+const (
+	// resolveMinBackoff is the first delay before retrying a vCenter tag
+	// that does not exist yet.
+	resolveMinBackoff = 5 * time.Second
+
+	// resolveMaxBackoff caps the delay between retries.
+	resolveMaxBackoff = 5 * time.Minute
+)
+
+// SkipNameValidation is used for testing to allow multiple controllers with the
+// same name since Controller-Runtime has a global singleton registry to
+// prevent controllers with the same name, even if attached to different
+// managers.
+var SkipNameValidation *bool
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) error {
@@ -42,12 +61,14 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
+		ctx.VMProvider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: ctx.GetMaxConcurrentReconciles(controllerNameShort, ctx.MaxConcurrentReconciles),
+			SkipNameValidation:      SkipNameValidation,
 			LogConstructor: pkglog.ControllerLogConstructor(
 				controllerNameShort,
 				controlledType,
@@ -60,12 +81,14 @@ func AddToManager(ctx *pkgctx.ControllerManagerContext, mgr manager.Manager) err
 func NewReconciler(
 	ctx context.Context,
 	client ctrlclient.Client,
-	logger logr.Logger) *Reconciler {
+	logger logr.Logger,
+	vmProvider providers.VirtualMachineProviderInterface) *Reconciler {
 
 	return &Reconciler{
-		Context: ctx,
-		Client:  client,
-		Logger:  logger,
+		Context:    ctx,
+		Client:     client,
+		Logger:     logger,
+		VMProvider: vmProvider,
 	}
 }
 
@@ -74,8 +97,9 @@ func NewReconciler(
 // this reconciler never lists or enqueues a VirtualMachine.
 type Reconciler struct {
 	ctrlclient.Client
-	Context context.Context
-	Logger  logr.Logger
+	Context    context.Context
+	Logger     logr.Logger
+	VMProvider providers.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tags,verbs=get;list;watch;create;update;patch;delete
@@ -156,5 +180,67 @@ func (r *Reconciler) ReconcileNormal(
 	// The Tag has an owner and any source-label mirror matches its spec.
 	conditions.MarkTrue(obj, vspherepolv1.ReadyConditionType)
 
+	// Resolving the vCenter IDs never affects Ready.
+	return r.reconcileVCenterTag(ctx, obj)
+}
+
+// reconcileVCenterTag records the vCenter tag and category UUIDs in the Tag's
+// status. While the vCenter tag does not exist yet, it requeues with an
+// exponential backoff.
+func (r *Reconciler) reconcileVCenterTag(
+	ctx context.Context,
+	obj *vspherepolv1.Tag) (ctrl.Result, error) {
+
+	if !virtualmachine.AffinityStatusEnabled(ctx) || obj.Status.ID != "" {
+		return ctrl.Result{}, nil
+	}
+
+	name := virtualmachine.AddAffinityTagPrefix(obj.Spec.Name)
+
+	categoryID, ids, err := r.VMProvider.ResolveTagIDs(
+		ctx,
+		obj.Namespace,
+		[]string{name})
+	if err != nil {
+		conditions.MarkError(
+			obj,
+			vspherepolv1.TagConditionVCenterTagResolved,
+			vspherepolv1.TagVCenterTagResolveFailedReason,
+			err)
+		return ctrl.Result{}, fmt.Errorf(
+			"failed to resolve vCenter tag %q: %w", name, err)
+	}
+
+	id, ok := ids[name]
+	if !ok {
+		delay := notFoundBackoff(obj, time.Now())
+		conditions.MarkFalse(
+			obj,
+			vspherepolv1.TagConditionVCenterTagResolved,
+			vspherepolv1.TagVCenterTagNotFoundReason,
+			"vCenter tag %q does not exist yet", name)
+		return ctrl.Result{RequeueAfter: delay}, nil
+	}
+
+	obj.Status.ID = id
+	obj.Status.CategoryID = categoryID
+	conditions.MarkTrue(obj, vspherepolv1.TagConditionVCenterTagResolved)
+
 	return ctrl.Result{}, nil
+}
+
+// notFoundBackoff returns the next retry delay for a tag that is not found.
+// It is derived from how long the condition has been False/NotFound, which
+// roughly doubles the delay on each attempt without any in-memory state. The
+// result is clamped to [resolveMinBackoff, resolveMaxBackoff].
+func notFoundBackoff(obj *vspherepolv1.Tag, now time.Time) time.Duration {
+	c := conditions.Get(obj, vspherepolv1.TagConditionVCenterTagResolved)
+	if c == nil ||
+		c.Status != metav1.ConditionFalse ||
+		c.Reason != vspherepolv1.TagVCenterTagNotFoundReason {
+
+		return resolveMinBackoff
+	}
+	d := now.Sub(c.LastTransitionTime.Time)
+	return min(max(d, resolveMinBackoff), resolveMaxBackoff)
 }

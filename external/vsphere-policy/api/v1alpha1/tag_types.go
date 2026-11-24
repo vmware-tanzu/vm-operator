@@ -12,6 +12,19 @@ const (
 	// TagDeleteFailedReason indicates the Tag's owner-reference list is empty
 	// but deleting the Tag failed.
 	TagDeleteFailedReason = "DeleteFailed"
+
+	// TagConditionVCenterTagResolved indicates whether the Tag's vCenter tag
+	// UUID and tag category UUID have been resolved and recorded in the
+	// Tag's status.
+	TagConditionVCenterTagResolved = "VCenterTagResolved"
+
+	// TagVCenterTagNotFoundReason indicates the namespace's tag category or
+	// the Tag's backend tag does not exist in vCenter yet.
+	TagVCenterTagNotFoundReason = "NotFound"
+
+	// TagVCenterTagResolveFailedReason indicates the vCenter tagging API call
+	// used to resolve the Tag's vCenter IDs failed.
+	TagVCenterTagResolveFailedReason = "ResolveFailed"
 )
 
 // TagType describes the origin/category of a Tag resource.
@@ -112,11 +125,24 @@ type TagSpec struct {
 }
 
 // TagStatus defines the observed state of Tag.
+// +kubebuilder:validation:XValidation:rule="!has(self.policyID) || has(self.id)",message="policyID requires id"
 type TagStatus struct {
 	// +optional
 
-	// ID is reserved for the resolved vCenter Tag UUID.
+	// ID is the vCenter tag UUID, resolved by name in the namespace
+	// category.
 	ID string `json:"id,omitempty"`
+
+	// +optional
+
+	// CategoryID is the vCenter tag category UUID.
+	CategoryID string `json:"categoryID,omitempty"`
+
+	// +optional
+
+	// PolicyID is the vCenter compute policy this tag defines. Set only
+	// for AffinityTarget and GroupedAntiAffinitySelf kinds.
+	PolicyID string `json:"policyID,omitempty"`
 
 	// +optional
 
@@ -144,6 +170,8 @@ type TagStatus struct {
 // +kubebuilder:printcolumn:name="Kind",type="string",JSONPath=".spec.kind"
 // +kubebuilder:printcolumn:name="Key",type="string",JSONPath=".spec.key"
 // +kubebuilder:printcolumn:name="Value",type="string",JSONPath=".spec.value"
+// +kubebuilder:printcolumn:name="TagID",type="string",priority=1,JSONPath=".status.id"
+// +kubebuilder:printcolumn:name="PolicyID",type="string",priority=1,JSONPath=".status.policyID"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // Tag is the schema for the Tag API and represents the desired state and

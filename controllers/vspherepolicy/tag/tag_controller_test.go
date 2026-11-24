@@ -59,6 +59,8 @@ var _ = Describe(
 			namespace  string
 			listCalled bool
 
+			fakeProvider *providerfake.VMProvider
+
 			withObjs  []ctrlclient.Object
 			withFuncs interceptor.Funcs
 		)
@@ -67,6 +69,7 @@ var _ = Describe(
 			ctx = pkgcfg.NewContextWithDefaultConfig()
 			namespace = "test-namespace"
 			listCalled = false
+			fakeProvider = providerfake.NewVMProvider()
 
 			withObjs = nil
 			withFuncs = interceptor.Funcs{
@@ -114,7 +117,8 @@ var _ = Describe(
 			reconciler = tag.NewReconciler(
 				ctx,
 				k8sClient,
-				log.Log.WithName("test"))
+				log.Log.WithName("test"),
+				fakeProvider)
 		})
 
 		reconcileObj := func() (ctrl.Result, error) {
@@ -349,6 +353,208 @@ var _ = Describe(
 				Expect(err).To(HaveOccurred())
 			})
 		})
+
+		Context("vCenter tag ID resolution", func() {
+			const (
+				vcName     = "vmoperator:foo:bar"
+				tagID      = "urn:vmomi:InventoryServiceTag:tag-1:GLOBAL"
+				categoryID = "urn:vmomi:InventoryServiceCategory:cat-1:GLOBAL"
+			)
+
+			var (
+				calls       int
+				gotCategory string
+				gotNames    []string
+				resolveIDs  map[string]string
+				resolveErr  error
+			)
+
+			notFoundCondition := func(age time.Duration) metav1.Condition {
+				return metav1.Condition{
+					Type:   vspherepolv1.TagConditionVCenterTagResolved,
+					Status: metav1.ConditionFalse,
+					Reason: vspherepolv1.TagVCenterTagNotFoundReason,
+					LastTransitionTime: metav1.NewTime(
+						time.Now().Add(-age).Truncate(time.Second)),
+					Message: "vCenter tag \"" + vcName + "\" does not exist yet",
+				}
+			}
+
+			BeforeEach(func() {
+				calls = 0
+				gotCategory, gotNames = "", nil
+				resolveIDs = map[string]string{}
+				resolveErr = nil
+
+				ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.TaggingAPI = true
+					config.Features.VMHardAffinityDuringExecution = true
+				})
+
+				obj.OwnerReferences = []metav1.OwnerReference{{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       "VirtualMachine",
+					Name:       "some-vm",
+					UID:        types.UID("some-vm-uid"),
+				}}
+
+				fakeProvider.ResolveTagIDsFn = func(
+					_ context.Context,
+					category string,
+					names []string) (string, map[string]string, error) {
+
+					calls++
+					gotCategory, gotNames = category, names
+					if resolveErr != nil {
+						return "", nil, resolveErr
+					}
+					return categoryID, resolveIDs, nil
+				}
+			})
+
+			JustBeforeEach(func() {
+				// The outer JustBeforeEach has already built the client
+				// without this Tag, so create it here.
+				Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			})
+
+			When("the vCenter tag exists", func() {
+				BeforeEach(func() {
+					resolveIDs = map[string]string{vcName: tagID}
+				})
+
+				It("records the IDs and marks VCenterTagResolved true", func() {
+					result, err := reconcileObj()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(Equal(ctrl.Result{}))
+
+					Expect(calls).To(Equal(1))
+					Expect(gotCategory).To(Equal(namespace))
+					Expect(gotNames).To(ConsistOf(vcName))
+
+					out := getObj()
+					Expect(out.Status.ID).To(Equal(tagID))
+					Expect(out.Status.CategoryID).To(Equal(categoryID))
+					Expect(conditions.IsTrue(
+						out, vspherepolv1.TagConditionVCenterTagResolved)).To(BeTrue())
+					Expect(conditions.IsTrue(
+						out, vspherepolv1.ReadyConditionType)).To(BeTrue())
+				})
+			})
+
+			When("the vCenter tag does not exist, then does", func() {
+				It("requeues after 5s, then resolves on the next reconcile", func() {
+					result, err := reconcileObj()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+
+					out := getObj()
+					Expect(out.Status.ID).To(BeEmpty())
+					c := conditions.Get(
+						out, vspherepolv1.TagConditionVCenterTagResolved)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal(
+						vspherepolv1.TagVCenterTagNotFoundReason))
+					// Not found must not affect Ready.
+					Expect(conditions.IsTrue(
+						out, vspherepolv1.ReadyConditionType)).To(BeTrue())
+
+					resolveIDs = map[string]string{vcName: tagID}
+					result, err = reconcileObj()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(Equal(ctrl.Result{}))
+
+					out = getObj()
+					Expect(out.Status.ID).To(Equal(tagID))
+					Expect(conditions.IsTrue(
+						out, vspherepolv1.TagConditionVCenterTagResolved)).To(BeTrue())
+				})
+			})
+
+			DescribeTable("NotFound backoff",
+				func(age, minWant, maxWant time.Duration) {
+					cur := getObj()
+					cur.Status.Conditions = []metav1.Condition{notFoundCondition(age)}
+					Expect(k8sClient.Status().Update(ctx, cur)).To(Succeed())
+
+					result, err := reconcileObj()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result.RequeueAfter).To(BeNumerically(">=", minWant))
+					Expect(result.RequeueAfter).To(BeNumerically("<=", maxWant))
+				},
+				Entry("has a 5s floor for a fresh condition",
+					time.Second, 5*time.Second, 5*time.Second),
+				Entry("grows with the time spent not found",
+					40*time.Second, 40*time.Second, 50*time.Second),
+				Entry("is capped at 5m",
+					time.Hour, 5*time.Minute, 5*time.Minute),
+			)
+
+			When("the lookup fails", func() {
+				BeforeEach(func() {
+					resolveErr = errors.New("fake resolve error")
+				})
+
+				It("marks ResolveFailed and returns the error", func() {
+					_, err := reconcileObj()
+					Expect(err).To(MatchError(ContainSubstring("fake resolve error")))
+
+					out := getObj()
+					Expect(out.Status.ID).To(BeEmpty())
+					c := conditions.Get(
+						out, vspherepolv1.TagConditionVCenterTagResolved)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(metav1.ConditionFalse))
+					Expect(c.Reason).To(Equal(
+						vspherepolv1.TagVCenterTagResolveFailedReason))
+					Expect(conditions.IsTrue(
+						out, vspherepolv1.ReadyConditionType)).To(BeTrue())
+				})
+			})
+
+			When("the Tag is already resolved", func() {
+				BeforeEach(func() {
+					obj.Status.ID = tagID
+					obj.Status.CategoryID = categoryID
+				})
+
+				It("does not call the provider", func() {
+					result, err := reconcileObj()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(Equal(ctrl.Result{}))
+					Expect(calls).To(BeZero())
+
+					out := getObj()
+					Expect(out.Status.ID).To(Equal(tagID))
+					Expect(out.Status.CategoryID).To(Equal(categoryID))
+				})
+			})
+
+			DescribeTable("the gate is off",
+				func(taggingAPI, hardAffinity bool) {
+					ctx = pkgcfg.UpdateContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.TaggingAPI = taggingAPI
+						config.Features.VMHardAffinityDuringExecution = hardAffinity
+					})
+
+					result, err := reconcileObj()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(Equal(ctrl.Result{}))
+					Expect(calls).To(BeZero())
+
+					out := getObj()
+					Expect(out.Status.ID).To(BeEmpty())
+					Expect(conditions.Has(
+						out, vspherepolv1.TagConditionVCenterTagResolved)).To(BeFalse())
+					Expect(conditions.IsTrue(
+						out, vspherepolv1.ReadyConditionType)).To(BeTrue())
+				},
+				Entry("TaggingAPI only", true, false),
+				Entry("hard affinity only", false, true),
+				Entry("neither", false, false),
+			)
+		})
 	},
 )
 
@@ -397,7 +603,7 @@ var _ = Describe("Printer columns and status subresource", Ordered, Label(
 		intgCtx = nil
 	})
 
-	It("declares the label Key, label Value, and Age printer columns and enables the status subresource", func() {
+	It("declares the label Key, label Value, TagID, PolicyID, and Age printer columns and enables the status subresource", func() {
 		crd := crdSuite.GetInstalledCRD("tags.vsphere.policy.vmware.com")
 		Expect(crd).ToNot(BeNil())
 		Expect(crd.Spec.Versions).ToNot(BeEmpty())
@@ -419,6 +625,18 @@ var _ = Describe("Printer columns and status subresource", Ordered, Label(
 				Name:     "Value",
 				Type:     "string",
 				JSONPath: ".spec.value",
+			},
+			apiextensionsv1.CustomResourceColumnDefinition{
+				Name:     "TagID",
+				Type:     "string",
+				Priority: 1,
+				JSONPath: ".status.id",
+			},
+			apiextensionsv1.CustomResourceColumnDefinition{
+				Name:     "PolicyID",
+				Type:     "string",
+				Priority: 1,
+				JSONPath: ".status.policyID",
 			},
 			apiextensionsv1.CustomResourceColumnDefinition{
 				Name:     "Age",
@@ -815,5 +1033,113 @@ var _ = Describe("Fan-out no-op guard", Label(
 				g.Expect(reconcileCnt.Load()).To(Equal(baselineCount))
 			}, time.Second, 50*time.Millisecond).Should(Succeed())
 		}
+	})
+})
+
+var _ = Describe("vCenter tag ID resolution", Label(
+	testlabels.Controller,
+	testlabels.EnvTest,
+	testlabels.API,
+), func() {
+	const (
+		tagID      = "urn:vmomi:InventoryServiceTag:tag-1:GLOBAL"
+		categoryID = "urn:vmomi:InventoryServiceCategory:cat-1:GLOBAL"
+	)
+
+	var (
+		resolveSuite *builder.TestSuite
+		intgCtx      *builder.IntegrationTestContext
+		fakeProvider *providerfake.VMProvider
+		exists       atomic.Bool
+	)
+
+	BeforeEach(func() {
+		SetDefaultEventuallyTimeout(20 * time.Second)
+		SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
+
+		tag.SkipNameValidation = ptr.To(true)
+
+		exists.Store(false)
+		fakeProvider = providerfake.NewVMProvider()
+		fakeProvider.ResolveTagIDsFn = func(
+			_ context.Context,
+			_ string,
+			names []string) (string, map[string]string, error) {
+
+			if !exists.Load() {
+				return categoryID, map[string]string{}, nil
+			}
+			return categoryID, map[string]string{names[0]: tagID}, nil
+		}
+
+		resolveSuite = builder.NewTestSuiteForControllerWithContext(
+			pkgcfg.UpdateContext(
+				pkgcfg.NewContextWithDefaultConfig(),
+				func(config *pkgcfg.Config) {
+					config.Features.TaggingAPI = true
+					config.Features.VMHardAffinityDuringExecution = true
+				}),
+			tag.AddToManager,
+			func(ctx *pkgctx.ControllerManagerContext, _ ctrlmgr.Manager) error {
+				ctx.VMProvider = fakeProvider
+				return nil
+			})
+		resolveSuite.BeforeSuite()
+
+		intgCtx = resolveSuite.NewIntegrationTestContext()
+	})
+
+	AfterEach(func() {
+		intgCtx.AfterEach()
+		intgCtx = nil
+
+		resolveSuite.AfterSuite()
+		resolveSuite = nil
+	})
+
+	It("retries until the vCenter tag exists", func() {
+		tagObj := &vspherepolv1.Tag{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "tag-team-blue",
+				Namespace: intgCtx.Namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: vmopv1.GroupVersion.String(),
+					Kind:       "VirtualMachine",
+					Name:       "vm-owner",
+					UID:        types.UID("vm-owner-uid"),
+				}},
+			},
+			Spec: vspherepolv1.TagSpec{
+				Key:        "team",
+				Value:      "blue",
+				Name:       "team:blue",
+				Kind:       vspherepolv1.TagKindOriginal,
+				Membership: vspherepolv1.TagMembershipSourceLabel,
+			},
+		}
+		tagKey := types.NamespacedName{Namespace: tagObj.Namespace, Name: tagObj.Name}
+		Expect(intgCtx.Client.Create(intgCtx, tagObj)).To(Succeed())
+
+		By("reporting NotFound while the vCenter tag does not exist")
+		Eventually(func(g Gomega) {
+			var t vspherepolv1.Tag
+			g.Expect(intgCtx.Client.Get(intgCtx, tagKey, &t)).To(Succeed())
+			c := conditions.Get(&t, vspherepolv1.TagConditionVCenterTagResolved)
+			g.Expect(c).ToNot(BeNil())
+			g.Expect(c.Reason).To(Equal(vspherepolv1.TagVCenterTagNotFoundReason))
+			g.Expect(t.Status.ID).To(BeEmpty())
+			g.Expect(conditions.IsTrue(&t, vspherepolv1.ReadyConditionType)).To(BeTrue())
+		}).Should(Succeed())
+
+		By("resolving once the vCenter tag exists")
+		exists.Store(true)
+		Eventually(func(g Gomega) {
+			var t vspherepolv1.Tag
+			g.Expect(intgCtx.Client.Get(intgCtx, tagKey, &t)).To(Succeed())
+			g.Expect(t.Status.ID).To(Equal(tagID))
+			g.Expect(t.Status.CategoryID).To(Equal(categoryID))
+			g.Expect(conditions.IsTrue(
+				&t, vspherepolv1.TagConditionVCenterTagResolved)).To(BeTrue())
+		}).Should(Succeed())
 	})
 })

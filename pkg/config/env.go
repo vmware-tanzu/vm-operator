@@ -23,6 +23,7 @@ func FromEnv() Config {
 	setDuration(env.CreateVMRequeueDelay, &config.CreateVMRequeueDelay)
 	setDuration(env.PoweredOnVMHasIPRequeueDelay, &config.PoweredOnVMHasIPRequeueDelay)
 	setDuration(env.SyncImageRequeueDelay, &config.SyncImageRequeueDelay)
+	setDuration(env.AffinityStatusPendingRequeueDelay, &config.AffinityStatusPendingRequeueDelay)
 	setNetworkProviderType(env.NetworkProviderType, &config.NetworkProviderType)
 	setString(env.LoadBalancerProvider, &config.LoadBalancerProvider)
 	setBool(env.VSphereNetworking, &config.VSphereNetworking)

@@ -51,6 +51,11 @@ type ReconcileStatusData struct {
 	// NetworkDeviceKeysToSpecIdx maps the network device's DeviceKey to its
 	// corresponding index in the VM's Spec.Network.Interfaces[].
 	NetworkDeviceKeysToSpecIdx map[int32]int
+
+	// ComputePolicyQuerier is used to map the VM's compute policies to
+	// affinity Tags when the affinity status feature is enabled. When nil,
+	// the compute-policy query is skipped.
+	ComputePolicyQuerier ComputePolicyQuerier
 }
 
 func ReconcileStatus(
@@ -100,6 +105,10 @@ func ReconcileStatus(
 	if pkgcfg.FromContext(vmCtx).Features.VMSnapshots {
 		errs = append(errs, reconcileStatusSnapshot(vmCtx, k8sClient, vcVM, data)...)
 	}
+
+	// The affinity status never returns an error, and it clears the status
+	// when the feature is disabled.
+	ReconcileAffinityStatus(vmCtx, k8sClient, data.ComputePolicyQuerier)
 
 	MarkReconciliationCondition(vmCtx.VM)
 

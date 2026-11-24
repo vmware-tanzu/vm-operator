@@ -525,6 +525,41 @@ func vmHostLocalStorageTests() {
 				Expect(vmg.Status.Members).To(HaveLen(1))
 				Expect(vmg.Status.Members[0].Placement).To(BeNil())
 			})
+
+			// Every PVC in the VM's spec is included in placement, and a Bound
+			// PVC's disk is named by its datastore path, whatever its storage
+			// class and whether or not host-local storage is supported. This is
+			// the same for a VM placed on its own. vcsim cannot return a CNS
+			// volume's path, so this asserts the path is resolved by having the
+			// PVC name a PV that does not exist.
+			DescribeTable("resolves the disk path of a Bound PVC",
+				func(hostLocalStorage bool) {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.HostLocalStorage = hostLocalStorage
+					})
+
+					addHostLocalVolume(&corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      pvcName,
+							Namespace: nsInfo.Namespace,
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							StorageClassName: ptr.To(ctx.StorageClassName),
+							VolumeName:       "missing-pv",
+						},
+						Status: corev1.PersistentVolumeClaimStatus{
+							Phase: corev1.ClaimBound,
+						},
+					})
+
+					err := placeGroup()
+					Expect(err).To(MatchError(vsphere.ErrVMGroupPlacementConfigSpec))
+					Expect(err).To(MatchError(ContainSubstring(
+						"failed to get PV missing-pv for PVC " + pvcName)))
+				},
+				Entry("when host-local storage is supported", true),
+				Entry("when host-local storage is not supported", false),
+			)
 		})
 
 		Context("VM creation from the group's placement", func() {

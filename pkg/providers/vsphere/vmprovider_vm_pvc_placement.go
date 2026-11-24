@@ -11,10 +11,43 @@ import (
 	"github.com/vmware/govmomi/cns"
 	cnstypes "github.com/vmware/govmomi/cns/types"
 	"github.com/vmware/govmomi/vim25"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	vcclient "github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/client"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/virtualmachine"
 )
+
+// vmCreatePlacementConfigSpec returns the ConfigSpec used to place the VM,
+// whether it is placed on its own or as a member of a VirtualMachineGroup.
+//
+// It includes a placement-only disk for every PVC in the VM's spec, and names
+// each provisioned volume's disk by its real datastore path. This is done for
+// all of the VM's volumes, not only host-local ones, and regardless of whether
+// host-local storage is supported: it lets DRS account for all of the VM's
+// storage, and a path on host-local storage is what lets DRS work out the
+// host, so no host or datastore has to be passed to placement.
+func (vs *vSphereVMProvider) vmCreatePlacementConfigSpec(
+	vmCtx pkgctx.VirtualMachineContext,
+	vcClient *vcclient.Client,
+	createArgs *VMCreateArgs) (vimtypes.VirtualMachineConfigSpec, error) {
+
+	diskPaths, err := pvcDiskPaths(
+		vmCtx, vcClient.VimClient(), vs.k8sClient, createArgs.Storage.PVCs)
+	if err != nil {
+		return vimtypes.VirtualMachineConfigSpec{}, err
+	}
+
+	return virtualmachine.CreateConfigSpecForPlacement(
+		vmCtx,
+		createArgs.ConfigSpec,
+		createArgs.Storage,
+		diskPaths,
+		vs.labelDerivedTags(vmCtx))
+}
 
 // pvcDiskPaths returns the datastore path of each Bound PVC's volume, keyed by
 // PVC name. PVCs that are not Bound are skipped, since nothing is provisioned

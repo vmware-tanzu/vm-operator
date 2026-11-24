@@ -300,13 +300,6 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 			}
 		}
 
-		// Naming each provisioned volume's disk by its real datastore path is
-		// what lets DRS work out the host: PlaceVmsXCluster keeps such a disk
-		// where it is and only recommends hosts that can reach it (CRM-4964).
-		// This is the same as vmCreateDoPlacement, except that the paths are
-		// only resolved when host-local storage is supported, which is also
-		// when vCenter is known to honor them.
-		var diskPaths map[string]string
 		if pkgcfg.FromContext(vmCtx).Features.HostLocalStorage {
 			// This only checks that no host-local PVC is waiting to bind to a
 			// host it was already given. Group placement always asks for a
@@ -315,24 +308,13 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 				vmCtx, vs.k8sClient, createArgs.Storage); err != nil {
 				return nil, err
 			}
-
-			paths, err := pvcDiskPaths(
-				vmCtx,
-				vcClient.VimClient(),
-				vs.k8sClient,
-				createArgs.Storage.PVCs)
-			if err != nil {
-				return nil, err
-			}
-			diskPaths = paths
 		}
 
-		placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
-			vmCtx,
-			createArgs.ConfigSpec,
-			createArgs.Storage,
-			diskPaths,
-			vs.labelDerivedTags(vmCtx))
+		// The same ConfigSpec as for a VM placed on its own. PlaceVmsXCluster
+		// keeps a disk named by its existing datastore path where it is and
+		// only recommends hosts that can reach it (CRM-4964).
+		placementConfigSpec, err := vs.vmCreatePlacementConfigSpec(
+			vmCtx, vcClient, createArgs)
 		if err != nil {
 			return nil, err
 		}

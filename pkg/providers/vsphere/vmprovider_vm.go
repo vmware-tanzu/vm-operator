@@ -1923,21 +1923,8 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 		needHostLocalPlacement = need
 	}
 
-	// Naming each provisioned volume's disk by its real datastore path is what
-	// lets DRS work out the host, so no host or datastore has to be passed to
-	// placement.
-	diskPaths, err := pvcDiskPaths(
-		vmCtx, vcClient.VimClient(), vs.k8sClient, createArgs.Storage.PVCs)
-	if err != nil {
-		return err
-	}
-
-	placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
-		vmCtx,
-		createArgs.ConfigSpec,
-		createArgs.Storage,
-		diskPaths,
-		vs.labelDerivedTags(vmCtx))
+	placementConfigSpec, err := vs.vmCreatePlacementConfigSpec(
+		vmCtx, vcClient, createArgs)
 	if err != nil {
 		return err
 	}

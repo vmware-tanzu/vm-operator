@@ -472,7 +472,7 @@ sequenceDiagram
 | Fast deploy | **Required.** Provides explicit datastore placement on create, as described in §5.2. |
 | Zones | A resolved host implies a zone; the zone label is set from the node's zone and must remain consistent with it. |
 | Instance storage | Not supported together. Both features determine the host, and their requirements can conflict; the conflict surfaces as the invariant in §5.5.1 rather than a mis-placed VM. |
-| VM Groups | Not supported. Group placement computes a batch, multi-VM recommendation independently of the per-VM path this feature extends. |
+| VM Groups | Supported. Each member's placement ConfigSpec is built the same way as for a VM placed on its own, so its PVCs are included and its provisioned volumes are named by their disk paths, and `PlaceVmsXCluster` only recommends hosts that can reach them (`CRM-4964`). |
 | Zone constraints from PVCs | Unchanged. Existing zone-level constraint derivation continues to apply and is complementary. The two mechanisms also share a failure mode at their respective granularities: several `Immediate`-bound PVCs may be provisioned into domains that do not intersect, and the VM is rejected (§11 item 5). |
 
 ---

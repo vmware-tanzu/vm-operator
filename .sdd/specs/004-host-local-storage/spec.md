@@ -106,8 +106,12 @@ the datastore the volume lives on.
    **then** placement yields no recommendation and the VM is not created on a
    host that cannot reach both.
 3. **Given** `supports_host_local_storage` is disabled, **when** the same VM
-   is created, **then** placement behavior is unchanged from today (the
-   host-local annotations/StorageClass annotation are ignored entirely).
+   is created, **then** none of the host-local behavior applies: placement
+   does not require a host recommendation, the VM is not required to be
+   created on a placement-recommended host, and no host is published to the
+   PVC. The VM's PVCs are still included in placement, with each provisioned
+   volume named by its disk path, since that applies to every PVC regardless
+   of the capability (see Edge cases).
 
 ---
 

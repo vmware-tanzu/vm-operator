@@ -74,9 +74,9 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 	// API and the VI admin API cannot express ranges.
 
 	// New behavior: the installed class CRDs print the size defaults and
-	// accept -1 as an unlimited limit. Classes cannot be written by the E2E
+	// reject negative limits. Classes cannot be written by the E2E
 	// user, so this reads the installed schema; envtest covers admission.
-	ginkgo.It("publishes the v1alpha6 class size columns and limit rules", ginkgo.Label(FeatureLabel, "extended-functional", "experimental"), func() {
+	ginkgo.It("publishes the v1alpha6 class size columns and limit rule", ginkgo.Label(FeatureLabel, "extended-functional", "experimental"), func() {
 		for _, name := range []string{"virtualmachineclasses", "virtualmachineclassinstances"} {
 			version := classCRDVersion(ctx, client, name+".vmoperator.vmware.com", "v1alpha6")
 			columns, _, err := unstructured.NestedSlice(version, "additionalPrinterColumns")
@@ -92,7 +92,7 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 			rules, _, err := unstructured.NestedSlice(version,
 				"schema", "openAPIV3Schema", "properties", "spec", "properties", "resources", "properties", "limits", "x-kubernetes-validations")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rules).To(ContainElement(HaveKeyWithValue("message", "limits must not be negative, except -1 for unlimited")), name)
+			Expect(rules).To(ContainElement(HaveKeyWithValue("message", "limits must not be negative")), name)
 		}
 	})
 

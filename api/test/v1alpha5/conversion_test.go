@@ -329,6 +329,24 @@ var _ = Describe("VMClass schema migration", Label("api"), func() {
 				Expect(apiequality.Semantic.DeepEqual(spoke, before)).To(BeTrue())
 			})
 
+			It("converts a legacy -1 limit to an unset limit", func() {
+				spoke := version.newSpoke()
+				Expect(json.Unmarshal([]byte(`{
+					"metadata":{"name":"legacy","namespace":"tenant"},
+					"spec":{
+						"hardware":{"cpus":4,"memory":"4Gi"},
+						"policies":{"resources":{"requests":{"cpu":"-1","memory":"1Gi"},"limits":{"cpu":"-1","memory":"-1"}}}
+					}}`), spoke)).To(Succeed())
+				var hub vmopv1.VirtualMachineClass
+				Expect(spoke.ConvertTo(&hub)).To(Succeed())
+				Expect(hub.Spec.Resources.Limits.CPU).To(BeNil())
+				Expect(hub.Spec.Resources.Limits.Memory).To(BeNil())
+				// Only limits treat -1 as unlimited; a -1 request is kept,
+				// and the v1alpha6 schema rejects it.
+				Expect(hub.Spec.Resources.Requests.CPU.Default.String()).To(Equal("-1"))
+				Expect(hub.Spec.Resources.Requests.Memory.Default.String()).To(Equal("1Gi"))
+			})
+
 			It("preserves policies through an unchanged older-client write", func() {
 				hub := classWithPolicies()
 				spoke := version.newSpoke()

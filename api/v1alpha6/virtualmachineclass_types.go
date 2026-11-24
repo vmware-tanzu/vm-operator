@@ -98,12 +98,10 @@ type VirtualMachineClassResources struct {
 	// +optional
 	Requests VirtualMachineClassResourceSpec `json:"requests,omitempty"`
 
-	// +kubebuilder:validation:XValidation:rule="[?self.?cpu.?min, ?self.?cpu.?max, ?self.?cpu.?default, ?self.?memory.?min, ?self.?memory.?max, ?self.?memory.?default].all(q, quantity(string(q)).compareTo(quantity('0')) >= 0 || quantity(string(q)).compareTo(quantity('-1')) == 0)",message="limits must not be negative, except -1 for unlimited"
-	// +kubebuilder:validation:XValidation:rule="![?self.?cpu.?min, ?self.?cpu.?max, ?self.?cpu.?default].exists(q, quantity(string(q)).compareTo(quantity('-1')) == 0) || [?self.?cpu.?min, ?self.?cpu.?max, ?self.?cpu.?default].all(q, quantity(string(q)).compareTo(quantity('-1')) == 0)",message="an unlimited (-1) CPU limit must be the default and every set bound"
-	// +kubebuilder:validation:XValidation:rule="![?self.?memory.?min, ?self.?memory.?max, ?self.?memory.?default].exists(q, quantity(string(q)).compareTo(quantity('-1')) == 0) || [?self.?memory.?min, ?self.?memory.?max, ?self.?memory.?default].all(q, quantity(string(q)).compareTo(quantity('-1')) == 0)",message="an unlimited (-1) memory limit must be the default and every set bound"
-	// Limits describes CPU and memory limits. An unset or zero limit is
-	// unlimited, and -1 is an explicit unlimited limit, as for the VM's
-	// spec.resources.limits. A -1 limit cannot be bounded by another value.
+	// +kubebuilder:validation:XValidation:rule="[?self.?cpu.?min, ?self.?cpu.?max, ?self.?cpu.?default, ?self.?memory.?min, ?self.?memory.?max, ?self.?memory.?default].all(q, quantity(string(q)).compareTo(quantity('0')) >= 0)",message="limits must not be negative"
+	// Limits describes CPU and memory limits. A limit without a default is
+	// unlimited, and a limit without a max lets a VM choose any limit,
+	// including unlimited.
 	// +optional
 	Limits VirtualMachineClassResourceSpec `json:"limits,omitempty"`
 }

@@ -78,7 +78,8 @@ func Convert_v1alpha4_VirtualMachineClassResources_To_v1alpha6_VirtualMachineCla
 	if err := Convert_v1alpha4_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec(&in.Requests, &out.Requests, s); err != nil {
 		return err
 	}
-	return Convert_v1alpha4_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineClassResourceSpec(&in.Limits, &out.Limits, s)
+	out.Limits = vmopv1.LegacyClassLimitPair(in.Limits.Cpu, in.Limits.Memory)
+	return nil
 }
 
 // Convert_v1alpha6_VirtualMachineClassResources_To_v1alpha4_VirtualMachineClassResources projects allocation defaults.

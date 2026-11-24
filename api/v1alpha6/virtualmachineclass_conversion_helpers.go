@@ -31,6 +31,26 @@ func LegacyClassAllocation(value resource.Quantity) *ResourceQuantityRange {
 	return FixedClassResource(value)
 }
 
+// LegacyClassLimit converts a legacy limit into a fixed class range. A zero,
+// empty or -1 legacy limit means no limit, so it converts to an unset range.
+func LegacyClassLimit(value resource.Quantity) *ResourceQuantityRange {
+	if value.Cmp(legacyUnlimited) == 0 {
+		return nil
+	}
+	return LegacyClassAllocation(value)
+}
+
+var legacyUnlimited = resource.MustParse("-1")
+
+// LegacyClassLimitPair converts legacy CPU and memory limits to class ranges,
+// leaving zero, empty or -1 values unset.
+func LegacyClassLimitPair(cpu, memory resource.Quantity) VirtualMachineClassResourceSpec {
+	return VirtualMachineClassResourceSpec{
+		CPU:    LegacyClassLimit(cpu),
+		Memory: LegacyClassLimit(memory),
+	}
+}
+
 // LegacyClassAllocationPair converts legacy CPU and memory requests or limits
 // to class ranges, leaving zero or empty values unset.
 func LegacyClassAllocationPair(cpu, memory resource.Quantity) VirtualMachineClassResourceSpec {

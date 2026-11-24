@@ -131,10 +131,6 @@ func (v validator) vmClassFromUnstructured(obj runtime.Unstructured) (*vmopv1.Vi
 	return vmClass, nil
 }
 
-// isRequestLimitValid reports whether a request fits within a limit. A zero
-// or -1 limit is unlimited.
 func isRequestLimitValid(request, limit resource.Quantity) bool {
-	return request.IsZero() || limit.IsZero() || limit.Cmp(unlimitedLimit) == 0 || request.Cmp(limit) <= 0
+	return request.IsZero() || limit.IsZero() || request.Cmp(limit) <= 0
 }
-
-var unlimitedLimit = resource.MustParse("-1")

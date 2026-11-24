@@ -137,6 +137,63 @@ func intgTestsValidateCreate() {
 		}, true),
 	)
 
+	quantityRange := func(minimum, maximum, def string) *vmopv1.ResourceQuantityRange {
+		r := &vmopv1.ResourceQuantityRange{}
+		for _, b := range []struct {
+			value string
+			field **resource.Quantity
+		}{{minimum, &r.Min}, {maximum, &r.Max}, {def, &r.Default}} {
+			if b.value != "" {
+				*b.field = ptr.To(resource.MustParse(b.value))
+			}
+		}
+		return r
+	}
+
+	// An empty wantErr means the class is admitted.
+	validateAllocation := func(mutator func(*vmopv1.VirtualMachineClass), wantErr string) {
+		vmClass := ctx.vmClass.DeepCopy()
+		mutator(vmClass)
+		err := ctx.Client.Create(ctx, vmClass)
+		if wantErr == "" {
+			Expect(err).ToNot(HaveOccurred())
+		} else {
+			Expect(err).To(MatchError(ContainSubstring(wantErr)))
+		}
+	}
+
+	DescribeTable("class requests and limits schema", validateAllocation,
+		Entry("accepts an unlimited (-1) CPU limit with a request", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Limits.CPU = quantityRange("", "", "-1")
+		}, ""),
+		Entry("accepts a fixed unlimited (-1) memory limit", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Limits.Memory = quantityRange("-1", "-1", "-1")
+		}, ""),
+		Entry("accepts a zero limit", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Limits.CPU = quantityRange("", "", "0")
+		}, ""),
+		Entry("accepts a bounded limit", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Limits.Memory = quantityRange("4Gi", "16Gi", "8Gi")
+		}, ""),
+		Entry("rejects a negative CPU limit other than -1", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Limits.CPU = quantityRange("", "", "-2")
+		}, "limits must not be negative, except -1 for unlimited"),
+		Entry("rejects a fractional negative memory limit", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Limits.Memory = quantityRange("", "", "-500m")
+		}, "limits must not be negative, except -1 for unlimited"),
+		Entry("rejects an unlimited (-1) CPU default under a bounded max", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Limits.CPU = quantityRange("", "4", "-1")
+		}, "an unlimited (-1) CPU limit must be the default and every set bound"),
+		Entry("rejects an unlimited (-1) memory min with a bounded default", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Limits.Memory = quantityRange("-1", "", "8Gi")
+		}, "an unlimited (-1) memory limit must be the default and every set bound"),
+		Entry("rejects a negative CPU request", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Requests.CPU = quantityRange("", "", "-1")
+		}, "requests must not be negative"),
+		Entry("rejects a negative memory request bound", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Requests.Memory = quantityRange("-1Gi", "", "2Gi")
+		}, "requests must not be negative"),
+	)
 }
 
 func intgTestsValidateDelete() {

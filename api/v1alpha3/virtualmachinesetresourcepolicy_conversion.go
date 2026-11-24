@@ -5,6 +5,7 @@
 package v1alpha3
 
 import (
+	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
@@ -32,4 +33,22 @@ func (src *VirtualMachineSetResourcePolicyList) ConvertTo(dstRaw ctrlconversion.
 func (dst *VirtualMachineSetResourcePolicyList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	src := srcRaw.(*vmopv1.VirtualMachineSetResourcePolicyList)
 	return Convert_v1alpha6_VirtualMachineSetResourcePolicyList_To_v1alpha3_VirtualMachineSetResourcePolicyList(src, dst, nil)
+}
+
+// Convert_v1alpha3_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineResourceSpec maps the Cpu field to the hub's CPU field.
+func Convert_v1alpha3_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineResourceSpec(
+	in *VirtualMachineResourceSpec, out *vmopv1.VirtualMachineResourceSpec, _ apiconversion.Scope) error {
+
+	out.CPU = in.Cpu
+	out.Memory = in.Memory
+	return nil
+}
+
+// Convert_v1alpha6_VirtualMachineResourceSpec_To_v1alpha3_VirtualMachineResourceSpec maps the hub's CPU field to the Cpu field.
+func Convert_v1alpha6_VirtualMachineResourceSpec_To_v1alpha3_VirtualMachineResourceSpec(
+	in *vmopv1.VirtualMachineResourceSpec, out *VirtualMachineResourceSpec, _ apiconversion.Scope) error {
+
+	out.Cpu = in.CPU
+	out.Memory = in.Memory
+	return nil
 }

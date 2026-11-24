@@ -163,6 +163,46 @@ var _ = Describe("UnstructuredBases", func() {
 		Expect(err).ToNot(HaveOccurred())
 		assertCRDsConsistOf(crds, basesAll...)
 	})
+
+	// A printer column whose path is not in its version's schema prints
+	// nothing and is not reported by the API server.
+	It("should only print class size columns that are in the v1alpha6 schema", func() {
+		crds, err := pkgcrd.UnstructuredBases()
+		Expect(err).ToNot(HaveOccurred())
+		var missing []string
+		for _, obj := range crds {
+			if !slices.Contains([]string{
+				"virtualmachineclasses.vmoperator.vmware.com",
+				"virtualmachineclassinstances.vmoperator.vmware.com",
+			}, obj.GetName()) {
+				continue
+			}
+			crd := &apiextensionsv1.CustomResourceDefinition{}
+			Expect(runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, crd)).To(Succeed())
+			for _, version := range crd.Spec.Versions {
+				if version.Name != "v1alpha6" {
+					continue
+				}
+				for _, column := range version.AdditionalPrinterColumns {
+					if column.Name != "CPU" && column.Name != "Memory" {
+						continue
+					}
+					path := strings.TrimPrefix(column.JSONPath, ".")
+					schema := version.Schema.OpenAPIV3Schema
+					for _, name := range strings.Split(path, ".") {
+						next, ok := schema.Properties[name]
+						if !ok {
+							missing = append(missing, fmt.Sprintf("%s %s %s: %s",
+								crd.Name, version.Name, column.Name, column.JSONPath))
+							break
+						}
+						schema = &next
+					}
+				}
+			}
+		}
+		Expect(missing).To(BeEmpty())
+	})
 })
 
 var _ = Describe("UnstructuredExternal", func() {

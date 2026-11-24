@@ -11,9 +11,9 @@ import (
 
 // VirtualMachineResourceSpec describes scalar resource-pool allocations.
 type VirtualMachineResourceSpec struct {
-	// Cpu is the CPU allocation.
+	// CPU is the CPU allocation.
 	// +optional
-	Cpu resource.Quantity `json:"cpu,omitempty"` //nolint:revive
+	CPU resource.Quantity `json:"cpu,omitempty"`
 	// Memory is the memory allocation.
 	// +optional
 	Memory resource.Quantity `json:"memory,omitempty"`

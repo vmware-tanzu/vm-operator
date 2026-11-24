@@ -91,6 +91,8 @@ func unitTestsValidateCreate() {
 		invalidMemoryRequest bool
 		noCPULimit           bool
 		noMemoryLimit        bool
+		unlimitedCPULimit    bool
+		unlimitedMemoryLimit bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -109,6 +111,12 @@ func unitTestsValidateCreate() {
 		}
 		if args.noMemoryLimit {
 			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("0"))}
+		}
+		if args.unlimitedCPULimit {
+			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("-1"))}
+		}
+		if args.unlimitedMemoryLimit {
+			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("-1"))}
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmClass)
@@ -138,6 +146,8 @@ func unitTestsValidateCreate() {
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should allow no cpu limit", createArgs{noCPULimit: true}, true, nil, nil),
 		Entry("should allow no memory limit", createArgs{noMemoryLimit: true}, true, nil, nil),
+		Entry("should allow a cpu request with an unlimited (-1) cpu limit", createArgs{unlimitedCPULimit: true}, true, nil, nil),
+		Entry("should allow a memory request with an unlimited (-1) memory limit", createArgs{unlimitedMemoryLimit: true}, true, nil, nil),
 		Entry("should deny invalid cpu request", createArgs{invalidCPURequest: true}, false, invalidCPUField.Error(), nil),
 		Entry("should deny invalid memory request", createArgs{invalidMemoryRequest: true}, false, invalidMemField.Error(), nil),
 	)

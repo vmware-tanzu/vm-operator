@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -113,9 +114,8 @@ func CreateConfigSpec(
 		configSpec.ChangeTrackingEnabled = advanced.ChangeBlockTracking
 	}
 
-	// Populate the CPU reservation and limits in the ConfigSpec if VAPI fields specify any.
-	// VM Class VAPI does not support Limits, so they will never be non nil.
-	// TODO: Remove limits: issues/56
+	// Populate the CPU reservation and limits in the ConfigSpec if the class
+	// specifies any. An unset, zero or -1 limit is unlimited (-1).
 	requestsCPU := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Requests.CPU)
 	limitsCPU := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Limits.CPU)
 	if requestsCPU != nil || limitsCPU != nil {
@@ -130,7 +130,7 @@ func CreateConfigSpec(
 			rsv := CPUQuantityToMhz(*requestsCPU, minFreq)
 			configSpec.CpuAllocation.Reservation = &rsv
 		}
-		if limitsCPU != nil {
+		if limitsCPU != nil && !isUnlimitedLimit(*limitsCPU) {
 			lim := CPUQuantityToMhz(*limitsCPU, minFreq)
 			configSpec.CpuAllocation.Limit = &lim
 		} else {
@@ -140,8 +140,8 @@ func CreateConfigSpec(
 		initResourceAllocation(&configSpec.CpuAllocation)
 	}
 
-	// Populate the memory reservation and limits in the ConfigSpec if VAPI fields specify any.
-	// TODO: Remove limits: issues/56
+	// Populate the memory reservation and limits in the ConfigSpec if the
+	// class specifies any. An unset, zero or -1 limit is unlimited (-1).
 	requestsMemory := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Requests.Memory)
 	limitsMemory := vmopv1.ClassResourceNonZeroDefault(vmClassSpec.Resources.Limits.Memory)
 	if requestsMemory != nil || limitsMemory != nil {
@@ -156,7 +156,7 @@ func CreateConfigSpec(
 			rsv := MemoryQuantityToMb(*requestsMemory)
 			configSpec.MemoryAllocation.Reservation = &rsv
 		}
-		if limitsMemory != nil {
+		if limitsMemory != nil && !isUnlimitedLimit(*limitsMemory) {
 			lim := MemoryQuantityToMb(*limitsMemory)
 			configSpec.MemoryAllocation.Limit = &lim
 		} else {
@@ -168,6 +168,14 @@ func CreateConfigSpec(
 
 	return configSpec
 }
+
+// isUnlimitedLimit reports whether a class limit is exactly -1, which means
+// unlimited, as it does for the VM's spec.resources.limits.
+func isUnlimitedLimit(q resource.Quantity) bool {
+	return q.Cmp(unlimitedLimit) == 0
+}
+
+var unlimitedLimit = resource.MustParse("-1")
 
 // CreateConfigSpecForPlacement creates a ConfigSpec that is suitable for
 // Placement. configSpec will likely be - or at least derived from - the

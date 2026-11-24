@@ -146,6 +146,22 @@ var _ = Describe("CreateConfigSpec", func() {
 					Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeEquivalentTo(2048)))
 				})
 			})
+
+			Context("VM Class has request and unlimited (-1) limits", func() {
+				BeforeEach(func() {
+					vmClassSpec.Resources.Limits = vmopv1.VirtualMachineClassResourceSpec{
+						CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("-1"))},
+						Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("-1"))},
+					}
+				})
+
+				It("returns unlimited limits", func() {
+					Expect(configSpec.CpuAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
+					Expect(configSpec.CpuAllocation.Reservation).To(HaveValue(BeEquivalentTo(2684354560000)))
+					Expect(configSpec.MemoryAllocation.Limit).To(HaveValue(BeEquivalentTo(-1)))
+					Expect(configSpec.MemoryAllocation.Reservation).To(HaveValue(BeEquivalentTo(2048)))
+				})
+			})
 		})
 
 		When("ExtensionCompatConstraint capability is disabled", func() {

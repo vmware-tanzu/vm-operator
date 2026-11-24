@@ -550,11 +550,11 @@ func DummyVirtualMachineSetResourcePolicy() *vmopv1.VirtualMachineSetResourcePol
 			ResourcePool: vmopv1.ResourcePoolSpec{
 				Name: "dummy-resource-pool",
 				Reservations: vmopv1.VirtualMachineResourceSpec{
-					Cpu:    resource.MustParse("1Gi"),
+					CPU:    resource.MustParse("1Gi"),
 					Memory: resource.MustParse("2Gi"),
 				},
 				Limits: vmopv1.VirtualMachineResourceSpec{
-					Cpu:    resource.MustParse("2Gi"),
+					CPU:    resource.MustParse("2Gi"),
 					Memory: resource.MustParse("4Gi"),
 				},
 			},

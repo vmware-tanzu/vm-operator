@@ -121,7 +121,7 @@ func (v validator) validateResourcePool(ctx *pkgctx.WebhookRequestContext, fldPa
 	reservation, limits := rp.Reservations, rp.Limits
 	reservationsPath := fldPath.Child("reservations")
 
-	fieldErrs = append(fieldErrs, validateReservationAndLimit(reservationsPath.Child("cpu"), reservation.Cpu, limits.Cpu)...)
+	fieldErrs = append(fieldErrs, validateReservationAndLimit(reservationsPath.Child("cpu"), reservation.CPU, limits.CPU)...)
 	fieldErrs = append(fieldErrs, validateReservationAndLimit(reservationsPath.Child("memory"), reservation.Memory, limits.Memory)...)
 
 	return fieldErrs

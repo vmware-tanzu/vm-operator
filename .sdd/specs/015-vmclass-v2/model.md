@@ -104,7 +104,7 @@ Every other interface field is a per-VM input and not governed: `name`, `guestDe
 | `governs.existingVMs` | enum | `AllowOnViolation` or `DenyPowerOn`. Required on a governing class with no parent. In Milestone 2 only the top class sets it; children inherit it. |
 | `parentClassRefs` | list of `{name}` | Milestone 2. Rejected in Milestone 1. One entry; same namespace. |
 | `resources.size.{cpu,memory}` | Number | CPU is a whole vCPU count; memory in bytes. |
-| `resources.{requests,limits}.{cpu,memory}` | Number | Absolute only; no percentage form. CPU in cores, millicores allowed (`"2"`, `"1500m"`), as in v1alpha5; resolved to MHz as cores × the cluster's minimum host frequency. Memory in bytes. An unset limit is unlimited (`-1`), as today. Same unit as the VM's `spec.resources`. See "Size, requests and limits". |
+| `resources.{requests,limits}.{cpu,memory}` | Number | Absolute only; no percentage form. CPU in cores, millicores allowed (`"2"`, `"1500m"`), as in v1alpha5; resolved to MHz as cores × the cluster's minimum host frequency. Memory in bytes. Requests are not negative. An unset or zero limit is unlimited (`-1`), as today, and `-1` is an explicit unlimited limit, as on the VM's `spec.resources.limits`; no other negative limit is valid. A `-1` limit must be the `default` and every set bound (`{default: -1}` or `{min: -1, max: -1, default: -1}`), so a class cannot bound an unlimited limit (CEL). When a class bounds a limit, a VM's `-1` is above any `max`. Same unit as the VM's `spec.resources`. See "Size, requests and limits". |
 | `resources.shares.{cpu,memory}` | `{level: EnumPolicy, value: Number}` | Same path and shape as the VM's `spec.resources.shares`. `level` is `Low`, `Normal`, `High` or `Custom`; `value` is the custom share count, allowed only when `level` can be `Custom` (CEL on the class defaults and on the VM). [NEEDS CLARIFICATION: the number rule requires a `default` whenever `value` has a bound, so a class can't default to `Normal` while bounding custom values (T021).] Milestone 1 checks `value > 0` and leaves the upper bound to vCenter (`ResourcePool.QueryResourceConfigOption`, not in the environment-browser objects). |
 | `cpuAdvanced.*`, `memoryAdvanced.*`, `bootOptions.*`, `advanced.*` | per field | Same paths as `VirtualMachine.spec`, for fields the VM spec has. `bootOptions.firmware`: an image that declares firmware wins over the class default, as today, and must be in `allowed`; a VM value still wins over the image. `bootOptions.networkBootProtocol`: `allowed` only, no class default, because the VM API defaults it to `IP4`. `enterBootSetup` is a one-time request and not a class setting. `cpuAdvanced.topology.exposeVnumaOnCpuHotadd` stays in `configSpec` until the VM has the field [NEEDS CLARIFICATION: whether the observed value is the setting or the effective state]. |
 | `advanced.extraConfig` | `ListPolicy` | At the VM's path. |
@@ -137,9 +137,9 @@ Label: the schema-version label records the last CRD version that wrote the clas
 | `size.cpu` | whole vCPU count | `NumCPUs` |
 | `size.memory` | bytes | `MemoryMB` |
 | `requests.cpu` | cores (millicores allowed) | `CpuAllocation.Reservation` = ceil(cores × minimum host MHz) |
-| `limits.cpu` | cores (millicores allowed); unset = unlimited | `CpuAllocation.Limit`; unset = `-1` |
+| `limits.cpu` | cores (millicores allowed); unset, zero or `-1` = unlimited | `CpuAllocation.Limit`; unlimited = `-1` |
 | `requests.memory` | bytes | `MemoryAllocation.Reservation` (MB) |
-| `limits.memory` | bytes; unset = unlimited | `MemoryAllocation.Limit` (MB); unset = `-1` |
+| `limits.memory` | bytes; unset, zero or `-1` = unlimited | `MemoryAllocation.Limit` (MB); unlimited = `-1` |
 
 Relation rules, checked on the effective values (after defaulting):
 

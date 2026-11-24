@@ -95,14 +95,14 @@ func unitTestsValidateCreate() {
 		var err error
 
 		if args.noCPULimit {
-			ctx.vmRP.Spec.ResourcePool.Limits.Cpu = resource.MustParse("0")
+			ctx.vmRP.Spec.ResourcePool.Limits.CPU = resource.MustParse("0")
 		}
 		if args.noMemoryLimit {
 			ctx.vmRP.Spec.ResourcePool.Limits.Memory = resource.MustParse("0")
 		}
 		if args.invalidCPURequest {
-			ctx.vmRP.Spec.ResourcePool.Reservations.Cpu = resource.MustParse("2Gi")
-			ctx.vmRP.Spec.ResourcePool.Limits.Cpu = resource.MustParse("1Gi")
+			ctx.vmRP.Spec.ResourcePool.Reservations.CPU = resource.MustParse("2Gi")
+			ctx.vmRP.Spec.ResourcePool.Limits.CPU = resource.MustParse("1Gi")
 		}
 		if args.invalidMemoryRequest {
 			ctx.vmRP.Spec.ResourcePool.Reservations.Memory = resource.MustParse("4Gi")
@@ -156,8 +156,8 @@ func unitTestsValidateUpdate() {
 		var err error
 
 		if args.changeCPU {
-			ctx.vmRP.Spec.ResourcePool.Reservations.Cpu = resource.MustParse("5Gi")
-			ctx.vmRP.Spec.ResourcePool.Limits.Cpu = resource.MustParse("10Gi")
+			ctx.vmRP.Spec.ResourcePool.Reservations.CPU = resource.MustParse("5Gi")
+			ctx.vmRP.Spec.ResourcePool.Limits.CPU = resource.MustParse("10Gi")
 		}
 		if args.changeMemory {
 			ctx.vmRP.Spec.ResourcePool.Reservations.Memory = resource.MustParse("5Gi")

@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	capiutil "sigs.k8s.io/cluster-api/util"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -71,6 +72,29 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 	// (T912, vmop-4327): no supported path can author such a class today,
 	// because the standard E2E user cannot write classes through the Kubernetes
 	// API and the VI admin API cannot express ranges.
+
+	// New behavior: the installed class CRDs print the size defaults and
+	// accept -1 as an unlimited limit. Classes cannot be written by the E2E
+	// user, so this reads the installed schema; envtest covers admission.
+	ginkgo.It("publishes the v1alpha6 class size columns and limit rules", ginkgo.Label(FeatureLabel, "extended-functional", "experimental"), func() {
+		for _, name := range []string{"virtualmachineclasses", "virtualmachineclassinstances"} {
+			version := classCRDVersion(ctx, client, name+".vmoperator.vmware.com", "v1alpha6")
+			columns, _, err := unstructured.NestedSlice(version, "additionalPrinterColumns")
+			Expect(err).NotTo(HaveOccurred())
+			paths := map[string]any{}
+			for _, column := range columns {
+				column := column.(map[string]any)
+				paths[column["name"].(string)] = column["jsonPath"]
+			}
+			Expect(paths).To(HaveKeyWithValue("CPU", ".spec.resources.size.cpu.default"), name)
+			Expect(paths).To(HaveKeyWithValue("Memory", ".spec.resources.size.memory.default"), name)
+
+			rules, _, err := unstructured.NestedSlice(version,
+				"schema", "openAPIV3Schema", "properties", "spec", "properties", "resources", "properties", "limits", "x-kubernetes-validations")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rules).To(ContainElement(HaveKeyWithValue("message", "limits must not be negative, except -1 for unlimited")), name)
+		}
+	})
 
 	// Existing behavior: a class created through the VI admin API.
 	ginkgo.It("exposes a legacy VI admin class through v1alpha5 and v1alpha6 and realizes it for a v1alpha5 VirtualMachine", ginkgo.Label(FeatureLabel, "core-functional", "experimental"), func() {
@@ -134,4 +158,22 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 		Expect(s.MemoryReservation).To(BeEquivalentTo(memoryMB * reservationPC / 100))
 		Expect(s.MemoryLimit).To(BeEquivalentTo(-1))
 	})
+}
+
+// classCRDVersion returns one served version of an installed CRD.
+func classCRDVersion(ctx context.Context, client ctrlclient.Client, name, version string) map[string]any {
+	ginkgo.GinkgoHelper()
+	crd := &unstructured.Unstructured{}
+	crd.SetAPIVersion("apiextensions.k8s.io/v1")
+	crd.SetKind("CustomResourceDefinition")
+	Expect(client.Get(ctx, ctrlclient.ObjectKey{Name: name}, crd)).To(Succeed(), "failed to get CRD %s", name)
+	versions, _, err := unstructured.NestedSlice(crd.Object, "spec", "versions")
+	Expect(err).NotTo(HaveOccurred())
+	for _, entry := range versions {
+		if item := entry.(map[string]any); item["name"] == version {
+			return item
+		}
+	}
+	ginkgo.Fail("CRD " + name + " does not serve " + version)
+	return nil
 }

@@ -140,28 +140,27 @@ func OverwriteSpecComputeConfig(
 
 func cpuSizeField() computeFieldDef {
 	return computeFieldDef{
-		fieldName: "resources.size.cpu",
+		fieldName: "cpu",
 		hotPluggable: func(vm vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo) bool {
 			if !ptr.DerefWithDefault(ci.CpuHotAddEnabled, false) {
 				return false
 			}
-			if res := vm.Spec.Resources; res != nil && res.Size != nil && res.Size.CPU != nil {
-				return int32(res.Size.CPU.Value()) > ci.Hardware.NumCPU //nolint:gosec
+			if vm.Spec.CPU != nil {
+				return int32(vm.Spec.CPU.Value()) > ci.Hardware.NumCPU //nolint:gosec
 			}
 			return false
 		},
 		differs: func(vm vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo, cs *vimtypes.VirtualMachineConfigSpec) bool {
-			res := vm.Spec.Resources
-			if res == nil || res.Size == nil || res.Size.CPU == nil {
+			if vm.Spec.CPU == nil {
 				return false
 			}
-			specCPU := int32(res.Size.CPU.Value()) //nolint:gosec
+			specCPU := int32(vm.Spec.CPU.Value()) //nolint:gosec
 			return specCPU != ci.Hardware.NumCPU ||
 				(cs.NumCPUs != 0 && specCPU != cs.NumCPUs)
 		},
 		apply: func(vm vmopv1.VirtualMachine, _ vimtypes.VirtualMachineConfigInfo, cs *vimtypes.VirtualMachineConfigSpec) {
-			if res := vm.Spec.Resources; res != nil && res.Size != nil && res.Size.CPU != nil {
-				cs.NumCPUs = int32(res.Size.CPU.Value()) //nolint:gosec
+			if vm.Spec.CPU != nil {
+				cs.NumCPUs = int32(vm.Spec.CPU.Value()) //nolint:gosec
 			}
 		},
 	}
@@ -169,28 +168,27 @@ func cpuSizeField() computeFieldDef {
 
 func memorySizeField() computeFieldDef {
 	return computeFieldDef{
-		fieldName: "resources.size.memory",
+		fieldName: "memory",
 		hotPluggable: func(vm vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo) bool {
 			if !ptr.DerefWithDefault(ci.MemoryHotAddEnabled, false) {
 				return false
 			}
-			if res := vm.Spec.Resources; res != nil && res.Size != nil && res.Size.Memory != nil {
-				return res.Size.Memory.Value()/1024/1024 > int64(ci.Hardware.MemoryMB)
+			if vm.Spec.Memory != nil {
+				return vm.Spec.Memory.Value()/1024/1024 > int64(ci.Hardware.MemoryMB)
 			}
 			return false
 		},
 		differs: func(vm vmopv1.VirtualMachine, ci vimtypes.VirtualMachineConfigInfo, cs *vimtypes.VirtualMachineConfigSpec) bool {
-			res := vm.Spec.Resources
-			if res == nil || res.Size == nil || res.Size.Memory == nil {
+			if vm.Spec.Memory == nil {
 				return false
 			}
-			specMB := res.Size.Memory.Value() / 1024 / 1024
+			specMB := vm.Spec.Memory.Value() / 1024 / 1024
 			return specMB != int64(ci.Hardware.MemoryMB) ||
 				(cs.MemoryMB != 0 && specMB != cs.MemoryMB)
 		},
 		apply: func(vm vmopv1.VirtualMachine, _ vimtypes.VirtualMachineConfigInfo, cs *vimtypes.VirtualMachineConfigSpec) {
-			if res := vm.Spec.Resources; res != nil && res.Size != nil && res.Size.Memory != nil {
-				cs.MemoryMB = res.Size.Memory.Value() / 1024 / 1024
+			if vm.Spec.Memory != nil {
+				cs.MemoryMB = vm.Spec.Memory.Value() / 1024 / 1024
 			}
 		},
 	}
@@ -303,7 +301,7 @@ func latencySensitivityField() computeFieldDef {
 			if !FullMemReservationSpecMet(&vm) {
 				return true, "full memory reservation required: " +
 					"set spec.memoryAdvanced.reservationLockedToMax=true, " +
-					"or set spec.resources.requests.memory equal to spec.resources.size.memory"
+					"or set spec.resources.requests.memory equal to spec.memory"
 			}
 			// TODO: verify requests.cpu equals numCPUs × hostCpuMHz (full reservation).
 			// The host CPU MHz is not available in ci; a host property fetch would be
@@ -404,7 +402,7 @@ func vnumaNodeCountField() computeFieldDef {
 		minHWVer:     vimtypes.VMX20,
 		hotPluggable: neverHotPluggable,
 		// Defense-in-depth mirror of the webhook's validateComputeTopology.
-		// The webhook's divisibility check only runs when spec.resources.size.cpu
+		// The webhook's divisibility check only runs when spec.cpu
 		// is explicitly set, since it has no visibility into the class-derived
 		// CPU count. Here, numCPUs is resolved the same way differs/apply
 		// resolve it (cs.NumCPUs falling back to the live count), so this closes

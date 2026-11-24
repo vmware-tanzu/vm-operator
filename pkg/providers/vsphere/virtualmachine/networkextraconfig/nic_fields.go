@@ -62,7 +62,7 @@ var nicFields = []nicFieldDef{
 		fieldName: "interfaces[i].vmxnet3.uptv2Enabled",
 		minHWVer:  vimtypes.VMX20,
 		// UPTv2 requires full memory reservation (reservationLockedToMax or
-		// explicit requests.memory == size.memory).  Only block when the
+		// explicit requests.memory == spec.memory).  Only block when the
 		// desired value is true — disabling UPTv2 never requires reservation.
 		prerequisite: func(vm vmopv1.VirtualMachine, iface vmopv1.VirtualMachineNetworkInterfaceSpec, _ vimtypes.BaseVirtualDevice, _ vimtypes.VirtualMachineConfigInfo) (bool, string) {
 			if !desiredUPTv2Enabled(iface) {
@@ -73,7 +73,7 @@ var nicFields = []nicFieldDef{
 			}
 			return true, "full memory reservation required: " +
 				"set spec.memoryAdvanced.reservationLockedToMax=true, " +
-				"or set spec.resources.requests.memory equal to spec.resources.size.memory"
+				"or set spec.resources.requests.memory equal to spec.memory"
 		},
 		hotPluggable: func(_ vmopv1.VirtualMachine, _ vmopv1.VirtualMachineNetworkInterfaceSpec, _ vimtypes.BaseVirtualDevice, _ vimtypes.VirtualMachineConfigInfo) bool {
 			return true

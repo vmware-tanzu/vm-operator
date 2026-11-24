@@ -53,12 +53,10 @@ func SyncClassSizeAndAllocationToSpec(
 
 func syncClassSizeToSpec(vm *vmopv1.VirtualMachine, cs vimtypes.VirtualMachineConfigSpec) {
 	if cs.NumCPUs > 0 {
-		ensureSize(vm)
-		vm.Spec.Resources.Size.CPU = resource.NewQuantity(int64(cs.NumCPUs), resource.DecimalSI)
+		vm.Spec.CPU = resource.NewQuantity(int64(cs.NumCPUs), resource.DecimalSI)
 	}
 	if cs.MemoryMB > 0 {
-		ensureSize(vm)
-		vm.Spec.Resources.Size.Memory = resource.NewQuantity(
+		vm.Spec.Memory = resource.NewQuantity(
 			cs.MemoryMB*1024*1024, resource.BinarySI)
 	}
 }
@@ -133,13 +131,6 @@ func syncClassMemoryReservationLockToSpec(vm *vmopv1.VirtualMachine, cs vimtypes
 func ensureResources(vm *vmopv1.VirtualMachine) {
 	if vm.Spec.Resources == nil {
 		vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{}
-	}
-}
-
-func ensureSize(vm *vmopv1.VirtualMachine) {
-	ensureResources(vm)
-	if vm.Spec.Resources.Size == nil {
-		vm.Spec.Resources.Size = &vmopv1.VirtualMachineResourceQuantity{}
 	}
 }
 

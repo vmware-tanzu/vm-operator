@@ -802,14 +802,10 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			// 4 vCPUs, CoresPerSocket=1 → 4 sockets, VNUMANodeCount=4 → one
 			// vNUMA client per socket, giving each of sched.node0-3.affinity a
 			// distinct vNUMA client to bind to.
-			By("Patching size.cpu=4 and vnumaNodeCount=4/coresPerSocket=1 while powered off")
+			By("Patching spec.cpu=4 and vnumaNodeCount=4/coresPerSocket=1 while powered off")
 			latest := getExtraConfigVM(ctx, svClusterClient, vmKey)
 			patch := ctrlclient.MergeFrom(latest.DeepCopy())
-			latest.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{
-					CPU: ptr.To(resource.MustParse("4")),
-				},
-			}
+			latest.Spec.CPU = ptr.To(resource.MustParse("4"))
 			latest.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
 					CoresPerSocket: ptr.To(int32(1)),
@@ -863,7 +859,7 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			cpuStatusAfterResize := statusCPU(vm)
 			Expect(cpuStatusAfterResize).NotTo(BeNil())
 			Expect(cpuStatusAfterResize.Total).To(BeEquivalentTo(4),
-				"expected size.cpu=4 to be reflected in status")
+				"expected spec.cpu=4 to be reflected in status")
 
 			By("Looking up host CpuMhz via govmomi for full CPU reservation")
 			govVM := findVSphereVMByMOID(vCenterClient, vm.Status.UniqueID)

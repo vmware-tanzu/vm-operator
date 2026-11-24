@@ -29,7 +29,7 @@ The suite skips entirely when the `supports_vm_service_classless_vm` Supervisor 
 | applies iommuEnabled after power-off | `cpuAdvanced.iommuEnabled` power-off-required path |
 | clears hot-pluggable allocation immediately and defers hotAddEnabled clear via merge patch | A merge-patch nulling `spec.resources` + `spec.cpuAdvanced` clears the hot-pluggable reservation/limit immediately, but defers the `hotAddEnabled` nil→false transition as `PowerOffRequired` |
 | sets PrerequisiteNotMet condition when VM hardware version is below field minimum | `cpuAdvanced.hotAddEnabled` on a VM below vmx-11 sets `PrerequisiteNotMet`, naming the field and `hwVer`; skips if the environment's default image is already at vmx-11 or newer |
-| applies spec CPU and memory size overrides while powered off and verifies after power-on | `spec.resources.size.{cpu,memory}` applies while powered off, confirmed via `status.class.cpu.total` / `status.class.memory.total` after power-on |
+| applies spec CPU and memory size overrides while powered off and verifies after power-on | `spec.cpu` and `spec.memory` apply while powered off, confirmed via `status.class.cpu.total` / `status.class.memory.total` after power-on |
 
 ### US2 — diagnosing sync status from a single condition
 

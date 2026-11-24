@@ -62,8 +62,8 @@ var _ = Describe("SyncClassSizeAndAllocationToSpec", func() {
 			}
 		})
 		It("syncs only size and allocation — leaves topology and flags untouched", func() {
-			Expect(vm.Spec.Resources.Size.CPU.Value()).To(Equal(int64(16)))
-			Expect(vm.Spec.Resources.Size.Memory.Value()).To(Equal(int64(32768 * 1024 * 1024)))
+			Expect(vm.Spec.CPU.Value()).To(Equal(int64(16)))
+			Expect(vm.Spec.Memory.Value()).To(Equal(int64(32768 * 1024 * 1024)))
 			Expect(vm.Spec.Resources.Requests.CPU.Value()).To(Equal(int64(3200)))
 			Expect(vm.Spec.Resources.Requests.Memory.Value()).To(Equal(int64(16384 * 1024 * 1024)))
 			if vm.Spec.CPUAdvanced != nil && vm.Spec.CPUAdvanced.Topology != nil {
@@ -93,8 +93,8 @@ var _ = Describe("SyncClassSizeAndAllocationToSpec", func() {
 		})
 
 		It("sets size, full reservations, and memory reservation lock", func() {
-			Expect(vm.Spec.Resources.Size.CPU.Value()).To(Equal(int64(2)))
-			Expect(vm.Spec.Resources.Size.Memory.Value()).To(Equal(int64(2048 * 1024 * 1024)))
+			Expect(vm.Spec.CPU.Value()).To(Equal(int64(2)))
+			Expect(vm.Spec.Memory.Value()).To(Equal(int64(2048 * 1024 * 1024)))
 			Expect(vm.Spec.Resources.Requests.CPU.Value()).To(Equal(int64(2000)))
 			Expect(vm.Spec.Resources.Requests.Memory.Value()).To(Equal(int64(2048 * 1024 * 1024)))
 			Expect(vm.Spec.MemoryAdvanced.ReservationLockedToMax).To(Equal(ptr.To(true)))
@@ -105,11 +105,9 @@ var _ = Describe("SyncClassSizeAndAllocationToSpec", func() {
 
 	Context("resize from guaranteed-xsmall to best-effort-xsmall (VMResizeCPUMemory path)", func() {
 		BeforeEach(func() {
+			vm.Spec.CPU = ptr.To(resource.MustParse("2"))
+			vm.Spec.Memory = ptr.To(resource.MustParse("2Gi"))
 			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{
-					CPU:    ptr.To(resource.MustParse("2")),
-					Memory: ptr.To(resource.MustParse("2Gi")),
-				},
 				Requests: &vmopv1.VirtualMachineResourceQuantity{
 					CPU:    ptr.To(resource.MustParse("2000")),
 					Memory: ptr.To(resource.MustParse("2Gi")),
@@ -133,7 +131,7 @@ var _ = Describe("SyncClassSizeAndAllocationToSpec", func() {
 		})
 
 		It("clears CPU and memory reservations and the memory reservation lock", func() {
-			Expect(vm.Spec.Resources.Size.CPU.Value()).To(Equal(int64(2)))
+			Expect(vm.Spec.CPU.Value()).To(Equal(int64(2)))
 			Expect(vm.Spec.Resources.Requests.CPU).To(BeNil())
 			Expect(vm.Spec.Resources.Requests.Memory).To(BeNil())
 			Expect(vm.Spec.MemoryAdvanced.ReservationLockedToMax).To(Equal(ptr.To(false)))

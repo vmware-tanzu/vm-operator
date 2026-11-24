@@ -31,8 +31,8 @@ func isUnlimitedSentinel(q *resource.Quantity) bool {
 	return q.Cmp(unlimitedSentinel) == 0
 }
 
-// validateComputeConfig validates spec.resources, spec.cpuAdvanced, and
-// spec.memoryAdvanced. Called from both ValidateCreate and ValidateUpdate.
+// validateComputeConfig validates spec.cpu, spec.memory, spec.resources,
+// spec.cpuAdvanced, and spec.memoryAdvanced. Called from both ValidateCreate and ValidateUpdate.
 func (v validator) validateComputeConfig(
 	ctx *pkgctx.WebhookRequestContext,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
@@ -42,6 +42,14 @@ func (v validator) validateComputeConfig(
 
 	if !pkgcfg.FromContext(ctx).Features.VMServiceClasslessVM {
 		notEnabled := fmt.Sprintf(featureNotEnabled, "VM Compute Config (via VMServiceClasslessVM)")
+		if vm.Spec.CPU != nil {
+			allErrs = append(allErrs, field.Forbidden(
+				specPath.Child("cpu"), notEnabled))
+		}
+		if vm.Spec.Memory != nil {
+			allErrs = append(allErrs, field.Forbidden(
+				specPath.Child("memory"), notEnabled))
+		}
 		if vm.Spec.Resources != nil {
 			allErrs = append(allErrs, field.Forbidden(
 				specPath.Child("resources"), notEnabled))
@@ -57,6 +65,7 @@ func (v validator) validateComputeConfig(
 		return allErrs
 	}
 
+	allErrs = append(allErrs, validateComputeSize(specPath, vm)...)
 	allErrs = append(allErrs, validateComputeResourceFields(specPath, vm)...)
 	allErrs = append(allErrs, validateComputeLatencySensitivity(specPath, vm)...)
 	allErrs = append(allErrs, validateComputeReservationLockedToMax(specPath, vm)...)
@@ -66,8 +75,8 @@ func (v validator) validateComputeConfig(
 	return allErrs
 }
 
-// validateComputeConfigBackfilledFieldsNotChanged checks that spec.resources,
-// spec.cpuAdvanced, and spec.memoryAdvanced are unchanged during the schema
+// validateComputeConfigBackfilledFieldsNotChanged checks that spec.cpu,
+// spec.memory, spec.resources, spec.cpuAdvanced, and spec.memoryAdvanced are unchanged during the schema
 // upgrade window.
 //
 // Returns one field.Forbidden error per changed top-level field.
@@ -77,6 +86,14 @@ func validateComputeConfigBackfilledFieldsNotChanged(
 
 	var allErrs field.ErrorList
 
+	if !apiequality.Semantic.DeepEqual(vm.Spec.CPU, oldVM.Spec.CPU) {
+		allErrs = append(allErrs, field.Forbidden(
+			specPath.Child("cpu"), notUpgraded))
+	}
+	if !apiequality.Semantic.DeepEqual(vm.Spec.Memory, oldVM.Spec.Memory) {
+		allErrs = append(allErrs, field.Forbidden(
+			specPath.Child("memory"), notUpgraded))
+	}
 	if !apiequality.Semantic.DeepEqual(vm.Spec.Resources, oldVM.Spec.Resources) {
 		allErrs = append(allErrs, field.Forbidden(
 			specPath.Child("resources"), notUpgraded))
@@ -94,8 +111,8 @@ func validateComputeConfigBackfilledFieldsNotChanged(
 }
 
 // validateComputeResourceFields validates the spec.resources sub-fields:
-// zero/negative checks on size/requests/limits, and ordering constraints
-// between requests/size/limits.
+// zero/negative checks on requests/limits, and ordering constraints between
+// requests, spec.memory, and limits.
 func validateComputeResourceFields(specPath *field.Path, vm *vmopv1.VirtualMachine) field.ErrorList {
 	resources := vm.Spec.Resources
 	if resources == nil {
@@ -105,38 +122,33 @@ func validateComputeResourceFields(specPath *field.Path, vm *vmopv1.VirtualMachi
 	resPath := specPath.Child("resources")
 
 	var allErrs field.ErrorList
-	allErrs = append(allErrs, validateComputeSize(resPath.Child("size"), resources.Size)...)
 	allErrs = append(allErrs, validateComputeLimits(resPath.Child("limits"), resources.Limits)...)
 	allErrs = append(allErrs, validateComputeRequests(resPath.Child("requests"), resources.Requests)...)
-	allErrs = append(allErrs, validateComputeRequestBounds(resPath, resources)...)
+	allErrs = append(allErrs, validateComputeRequestBounds(specPath, vm)...)
 
 	return allErrs
 }
 
-// validateComputeSize checks that size.{cpu,memory} are greater than 0 when
-// set, and that size.cpu does not exceed the int32 range that
+// validateComputeSize checks that spec.cpu and spec.memory are greater than 0
+// when set, and that spec.cpu does not exceed the int32 range that
 // OverwriteSpecComputeConfig converts it into for ConfigSpec.NumCPUs.
-func validateComputeSize(sizePath *field.Path, size *vmopv1.VirtualMachineResourceQuantity) field.ErrorList {
-	if size == nil {
-		return nil
-	}
-
+func validateComputeSize(specPath *field.Path, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
-	if size.CPU != nil {
+	if cpu := vm.Spec.CPU; cpu != nil {
 		switch {
-		case size.CPU.IsZero() || size.CPU.Value() < 0:
+		case cpu.IsZero() || cpu.Value() < 0:
 			allErrs = append(allErrs, field.Invalid(
-				sizePath.Child("cpu"), size.CPU.String(),
+				specPath.Child("cpu"), cpu.String(),
 				"must be greater than 0 when set"))
-		case size.CPU.Value() > math.MaxInt32:
+		case cpu.Value() > math.MaxInt32:
 			allErrs = append(allErrs, field.Invalid(
-				sizePath.Child("cpu"), size.CPU.String(),
+				specPath.Child("cpu"), cpu.String(),
 				fmt.Sprintf("must not exceed %d", math.MaxInt32)))
 		}
 	}
-	if size.Memory != nil && (size.Memory.IsZero() || size.Memory.Value() < 0) {
+	if mem := vm.Spec.Memory; mem != nil && (mem.IsZero() || mem.Value() < 0) {
 		allErrs = append(allErrs, field.Invalid(
-			sizePath.Child("memory"), size.Memory.String(),
+			specPath.Child("memory"), mem.String(),
 			"must be greater than 0 when set"))
 	}
 	return allErrs
@@ -185,15 +197,15 @@ func validateComputeRequests(reqPath *field.Path, req *vmopv1.VirtualMachineReso
 }
 
 // validateComputeRequestBounds checks requests.cpu <= limits.cpu,
-// requests.memory <= size.memory, and requests.memory <= limits.memory.
+// requests.memory <= spec.memory, and requests.memory <= limits.memory.
 // A limits comparison is skipped when the limit is the -1 unlimited sentinel.
-func validateComputeRequestBounds(resPath *field.Path, resources *vmopv1.VirtualMachineResourcesSpec) field.ErrorList {
+func validateComputeRequestBounds(specPath *field.Path, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var (
 		allErrs field.ErrorList
-		reqPath = resPath.Child("requests")
-		size    = resources.Size
-		req     = resources.Requests
-		lim     = resources.Limits
+		reqPath = specPath.Child("resources", "requests")
+		mem     = vm.Spec.Memory
+		req     = vm.Spec.Resources.Requests
+		lim     = vm.Spec.Resources.Limits
 	)
 
 	if req != nil && lim != nil &&
@@ -204,12 +216,12 @@ func validateComputeRequestBounds(resPath *field.Path, resources *vmopv1.Virtual
 			"must be less than or equal to limits.cpu"))
 	}
 
-	if req != nil && size != nil &&
-		req.Memory != nil && size.Memory != nil &&
-		req.Memory.Cmp(*size.Memory) > 0 {
+	if req != nil && mem != nil &&
+		req.Memory != nil &&
+		req.Memory.Cmp(*mem) > 0 {
 		allErrs = append(allErrs, field.Invalid(
 			reqPath.Child("memory"), req.Memory.String(),
-			"must be less than or equal to size.memory"))
+			"must be less than or equal to spec.memory"))
 	}
 
 	if req != nil && lim != nil &&
@@ -227,7 +239,7 @@ func validateComputeRequestBounds(resPath *field.Path, resources *vmopv1.Virtual
 // when latencySensitivity is High or HighWithHyperthreading.
 //
 // Memory reservation invariant is satisfied when either:
-//   - requests.memory != nil AND size.memory != nil AND requests.memory == size.memory
+//   - requests.memory != nil AND spec.memory != nil AND requests.memory == spec.memory
 //   - OR memoryAdvanced.reservationLockedToMax == true
 //
 // CPU reservation invariant is satisfied when requests.cpu is set and > 0.
@@ -258,7 +270,7 @@ func validateComputeLatencySensitivity(specPath *field.Path, vm *vmopv1.VirtualM
 	if !vmopv1util.FullMemReservationSpecMet(vm) {
 		allErrs = append(allErrs, field.Invalid(lsPath, string(ls),
 			"requires full memory reservation: "+
-				"spec.resources.requests.memory must equal spec.resources.size.memory, "+
+				"spec.resources.requests.memory must equal spec.memory, "+
 				"or spec.memoryAdvanced.reservationLockedToMax must be true"))
 	}
 
@@ -285,9 +297,9 @@ func validateComputeLatencySensitivity(specPath *field.Path, vm *vmopv1.VirtualM
 //     subsequent reconciles the reservation-only ConfigSpec is validated by
 //     vSphere, causing an InvalidArgument error if the value differs from the
 //     locked size.
-//   - limits.memory, when set, must be >= size.memory: vSphere requires
+//   - limits.memory, when set, must be >= spec.memory: vSphere requires
 //     Limit >= Reservation, and the lock pins the effective Reservation to
-//     size.memory.
+//     spec.memory.
 func validateComputeReservationLockedToMax(specPath *field.Path, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var (
 		allErrs   field.ErrorList
@@ -309,15 +321,15 @@ func validateComputeReservationLockedToMax(specPath *field.Path, vm *vmopv1.Virt
 
 	if resources != nil &&
 		resources.Limits != nil && resources.Limits.Memory != nil &&
-		resources.Size != nil && resources.Size.Memory != nil &&
+		vm.Spec.Memory != nil &&
 		!isUnlimitedSentinel(resources.Limits.Memory) {
-		if resources.Limits.Memory.Cmp(*resources.Size.Memory) < 0 {
+		if resources.Limits.Memory.Cmp(*vm.Spec.Memory) < 0 {
 			allErrs = append(allErrs, field.Invalid(
 				specPath.Child("resources").Child("limits").Child("memory"),
 				resources.Limits.Memory.String(),
-				"must be greater than or equal to size.memory when "+
+				"must be greater than or equal to spec.memory when "+
 					"spec.memoryAdvanced.reservationLockedToMax is true: "+
-					"vSphere pins the reservation to size.memory and requires Limit >= Reservation"))
+					"vSphere pins the reservation to spec.memory and requires Limit >= Reservation"))
 		}
 	}
 
@@ -330,7 +342,7 @@ func validateComputeReservationLockedToMax(specPath *field.Path, vm *vmopv1.Virt
 //
 // Full reservation is satisfied when either:
 //   - spec.memoryAdvanced.reservationLockedToMax == true
-//   - spec.resources.requests.memory equals spec.resources.size.memory
+//   - spec.resources.requests.memory equals spec.memory
 func validateUPTv2MemoryReservation(specPath *field.Path, vm *vmopv1.VirtualMachine) field.ErrorList {
 	if vmopv1util.FullMemReservationSpecMet(vm) {
 		return nil
@@ -341,7 +353,7 @@ func validateUPTv2MemoryReservation(specPath *field.Path, vm *vmopv1.VirtualMach
 
 	const msg = "requires full guest memory reservation: " +
 		"set spec.memoryAdvanced.reservationLockedToMax=true, " +
-		"or set spec.resources.requests.memory equal to spec.resources.size.memory"
+		"or set spec.resources.requests.memory equal to spec.memory"
 
 	var allErrs field.ErrorList
 	ifacesPath := specPath.Child("network", "interfaces")
@@ -357,9 +369,9 @@ func validateUPTv2MemoryReservation(specPath *field.Path, vm *vmopv1.VirtualMach
 // validateComputeTopology validates spec.cpuAdvanced.topology constraints:
 //   - vnumaNodeCount > 0 requires coresPerSocket > 0 (auto/zero coresPerSocket
 //     is not allowed when vnumaNodeCount is explicit).
-//   - When vnumaNodeCount > 0 and coresPerSocket > 0 and size.cpu is set:
-//     size.cpu must be evenly divisible by vnumaNodeCount; the derived
-//     coresPerNumaNode (size.cpu / vnumaNodeCount) must be a multiple or
+//   - When vnumaNodeCount > 0 and coresPerSocket > 0 and spec.cpu is set:
+//     spec.cpu must be evenly divisible by vnumaNodeCount; the derived
+//     coresPerNumaNode (spec.cpu / vnumaNodeCount) must be a multiple or
 //     divisor of coresPerSocket.
 func validateComputeTopology(specPath *field.Path, vm *vmopv1.VirtualMachine) field.ErrorList {
 	cpuAdv := vm.Spec.CPUAdvanced
@@ -380,16 +392,15 @@ func validateComputeTopology(specPath *field.Path, vm *vmopv1.VirtualMachine) fi
 
 	if t.VNUMANodeCount != nil && *t.VNUMANodeCount > 0 &&
 		t.CoresPerSocket != nil && *t.CoresPerSocket > 0 {
-		resources := vm.Spec.Resources
-		if resources != nil && resources.Size != nil && resources.Size.CPU != nil {
-			numCPU := resources.Size.CPU.Value()
+		if vm.Spec.CPU != nil {
+			numCPU := vm.Spec.CPU.Value()
 			vnumaNodes := int64(*t.VNUMANodeCount)
 			coresPerSocket := int64(*t.CoresPerSocket)
 
 			if numCPU%vnumaNodes != 0 {
 				allErrs = append(allErrs, field.Invalid(
 					topoPath.Child("vnumaNodeCount"), *t.VNUMANodeCount,
-					"size.cpu must be evenly divisible by vnumaNodeCount"))
+					"spec.cpu must be evenly divisible by vnumaNodeCount"))
 			} else {
 				coresPerNode := numCPU / vnumaNodes
 				if coresPerNode%coresPerSocket != 0 && coresPerSocket%coresPerNode != 0 {

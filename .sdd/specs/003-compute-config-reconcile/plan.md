@@ -168,7 +168,7 @@ Unit, integration, and E2E coverage per the Testing strategy table below; see `t
 
 | Spec field | vSphere `ConfigSpec` path |
 |------------|---------------------------|
-| `resources.size.{cpu,memory}` | `NumCPUs`, `MemoryMB` |
+| `cpu`, `memory` | `NumCPUs`, `MemoryMB` |
 | `resources.requests.{cpu,memory}` | `CpuAllocation.Reservation`, `MemoryAllocation.Reservation` |
 | `resources.limits.{cpu,memory}` | `CpuAllocation.Limit`, `MemoryAllocation.Limit` (`-1` = unlimited) |
 | `cpuAdvanced.latencySensitivity` | `LatencySensitivity.Level`, `SimultaneousThreads` (for `HighWithHyperthreading`) |

@@ -435,23 +435,31 @@ If the condition is ever false, please refer first to the condition's `reason` f
 
 ### Compute Reconfiguration
 
-Three optional fields are available for workloads that require fine-grained, direct control over compute resources: `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced`. These fields allow compute allocation and advanced CPU/memory settings to be specified directly on the VM, independent of the `VirtualMachineClass`.
+Several optional fields are available for workloads that require fine-grained, direct control over compute resources: `spec.cpu`, `spec.memory`, `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced`. These fields allow the guest size, compute allocation, and advanced CPU/memory settings to be specified directly on the VM, independent of the `VirtualMachineClass`.
 
 When a VM is [resized](#resizing) onto a new `VirtualMachineClass`, the new class's compute values are written into these same fields, taking precedence over whatever was previously set. This keeps the class authoritative for a resize operation.
 
+#### spec.cpu and spec.memory
+
+`spec.cpu` and `spec.memory` control the guest-visible size of the VM.
+
+| Field | Description |
+|-------|-------------|
+| `spec.cpu` | Guest-visible vCPU count (whole number, e.g. `"4"`). Maps to `ConfigSpec.NumCPUs`. Overrides the corresponding `VirtualMachineClass` hardware value when set. |
+| `spec.memory` | Guest-visible memory (e.g. `"8Gi"`). Maps to `ConfigSpec.MemoryMB`. Overrides the corresponding `VirtualMachineClass` hardware value when set. |
+
 #### spec.resources
 
-`spec.resources` controls the guest-visible size and reservations and limits of the VM. It has three sub-fields:
+`spec.resources` controls the reservations and limits of the VM. It has two sub-fields:
 
 | Sub-field | Description |
 |-----------|-------------|
-| `spec.resources.size` | Guest-visible compute allocation. `cpu` is the vCPU count; `memory` is the guest RAM (e.g. `"8Gi"`). Maps to `ConfigSpec.NumCPUs` and `ConfigSpec.MemoryMB`. Overrides the corresponding `VirtualMachineClass` hardware values when set. |
 | `spec.resources.requests` | VM resource reservation (guaranteed). `cpu` is in MHz (e.g. `"2000"` for 2 GHz); `memory` is in bytes (e.g. `"4Gi"`). Maps to `CpuAllocation.Reservation` and `MemoryAllocation.Reservation`. Can be reconfigured while the VM is powered on. |
 | `spec.resources.limits` | VM resource limits. `cpu` is in MHz (`nil` or `-1` = unlimited); `memory` is in bytes (`nil` or `-1` = unlimited). Maps to `CpuAllocation.Limit` and `MemoryAllocation.Limit`. Can be reconfigured while the VM is powered on. |
 
-!!! note "CPU units differ between `size` and `requests`/`limits`"
+!!! note "CPU units differ between `spec.cpu` and `requests`/`limits`"
 
-    `spec.resources.size.cpu` is a **vCPU count** (whole number, e.g. `"4"`). `spec.resources.requests.cpu` and `spec.resources.limits.cpu` are **MHz** values (e.g. `"2000"` for 2 GHz). The `m` (milli) suffix is not supported for CPU in any sub-field.
+    `spec.cpu` is a **vCPU count** (whole number, e.g. `"4"`). `spec.resources.requests.cpu` and `spec.resources.limits.cpu` are **MHz** values (e.g. `"2000"` for 2 GHz). The `m` (milli) suffix is not supported for CPU in any of these fields.
 
 ```yaml
 apiVersion: vmoperator.vmware.com/v1alpha6
@@ -459,10 +467,9 @@ kind: VirtualMachine
 metadata:
   name: my-telco-vm
 spec:
+  cpu: "8"
+  memory: 16Gi
   resources:
-    size:
-      cpu: "8"
-      memory: 16Gi
     requests:
       cpu: "8000"
       memory: 16Gi
@@ -477,7 +484,7 @@ spec:
 
 | Sub-field | Description | Hot-reconfigurable |
 |-----------|-------------|--------------------|
-| `latencySensitivity` | vSphere CPU scheduler latency sensitivity. One of `Normal`, `High`, or `HighWithHyperthreading`. `High` and `HighWithHyperthreading` require full CPU reservation (`spec.resources.requests.cpu` set to 100% of the VM's vCPU capacity in MHz) and full memory reservation (`spec.resources.requests.memory == spec.resources.size.memory`, or `spec.memoryAdvanced.reservationLockedToMax: true`). `HighWithHyperthreading` also sets `ConfigSpec.SimultaneousThreads=2`. | Yes |
+| `latencySensitivity` | vSphere CPU scheduler latency sensitivity. One of `Normal`, `High`, or `HighWithHyperthreading`. `High` and `HighWithHyperthreading` require full CPU reservation (`spec.resources.requests.cpu` set to 100% of the VM's vCPU capacity in MHz) and full memory reservation (`spec.resources.requests.memory == spec.memory`, or `spec.memoryAdvanced.reservationLockedToMax: true`). `HighWithHyperthreading` also sets `ConfigSpec.SimultaneousThreads=2`. | Yes |
 | `topology.coresPerSocket` | Number of cores per virtual socket. Maps to `ConfigSpec.NumCoresPerSocket`. `0` is a sentinel for "auto" (equivalent to leaving the field unset). | No — requires power-off |
 | `topology.vnumaNodeCount` | Sets the number of virtual NUMA nodes. When set to a value > 0, `topology.coresPerSocket` must also be set to a non-zero value. The vCPU count should be evenly divisible by this value. `0` is a sentinel for "auto" (equivalent to leaving the field unset). Requires hardware version 20 or later. | No — requires power-off |
 | `hotAddEnabled` | Enables CPU hot-add (adding vCPUs while the VM is powered on). Maps to `ConfigSpec.CpuHotAddEnabled`. Requires hardware version 11 or later. | No — requires power-off |
@@ -499,13 +506,12 @@ spec:
 
     ```yaml
     spec:
+      cpu: "8"
+      memory: 16Gi
       resources:
-        size:
-          cpu: "8"
-          memory: 16Gi
         requests:
           cpu: "16000"     # 100% of an 8-vCPU class at 2GHz/core, illustrative
-          memory: 16Gi     # equals size.memory
+          memory: 16Gi     # equals spec.memory
       cpuAdvanced:
         latencySensitivity: HighWithHyperthreading
     ```

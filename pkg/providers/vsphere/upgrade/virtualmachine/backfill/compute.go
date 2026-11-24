@@ -54,28 +54,18 @@ func ComputeConfigFromMoVM(
 	return mutated
 }
 
-// backfillSize populates spec.resources.size.{cpu,memory} from hardware config.
+// backfillSize populates spec.cpu and spec.memory from hardware config.
 func backfillSize(vm *vmopv1.VirtualMachine, ci *vimtypes.VirtualMachineConfigInfo) bool {
 	mutated := false
 
-	if ci.Hardware.NumCPU > 0 &&
-		(vm.Spec.Resources == nil ||
-			vm.Spec.Resources.Size == nil ||
-			vm.Spec.Resources.Size.CPU == nil) {
-
-		initSize(vm)
-		vm.Spec.Resources.Size.CPU = resource.NewQuantity(
+	if ci.Hardware.NumCPU > 0 && vm.Spec.CPU == nil {
+		vm.Spec.CPU = resource.NewQuantity(
 			int64(ci.Hardware.NumCPU), resource.DecimalSI)
 		mutated = true
 	}
 
-	if ci.Hardware.MemoryMB > 0 &&
-		(vm.Spec.Resources == nil ||
-			vm.Spec.Resources.Size == nil ||
-			vm.Spec.Resources.Size.Memory == nil) {
-
-		initSize(vm)
-		vm.Spec.Resources.Size.Memory = resource.NewQuantity(
+	if ci.Hardware.MemoryMB > 0 && vm.Spec.Memory == nil {
+		vm.Spec.Memory = resource.NewQuantity(
 			int64(ci.Hardware.MemoryMB)*1024*1024, resource.BinarySI)
 		mutated = true
 	}
@@ -309,13 +299,6 @@ func backfillMemoryFlags(
 func initResources(vm *vmopv1.VirtualMachine) {
 	if vm.Spec.Resources == nil {
 		vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{}
-	}
-}
-
-func initSize(vm *vmopv1.VirtualMachine) {
-	initResources(vm)
-	if vm.Spec.Resources.Size == nil {
-		vm.Spec.Resources.Size = &vmopv1.VirtualMachineResourceQuantity{}
 	}
 }
 

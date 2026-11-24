@@ -7,43 +7,26 @@ package v1alpha6
 import "k8s.io/apimachinery/pkg/api/resource"
 
 // VirtualMachineResourceQuantity holds a pair of CPU and memory resource
-// quantities. It is used for spec.resources.size, spec.resources.requests,
-// and spec.resources.limits.
+// quantities. It is used for spec.resources.requests and
+// spec.resources.limits.
 type VirtualMachineResourceQuantity struct {
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="type(self) != string || !self.endsWith('m')",message="CPU must be a whole number (e.g. '4' for vCPUs or '2000' for 2000 MHz). The 'm' (milli) suffix is not supported."
+	// +kubebuilder:validation:XValidation:rule="type(self) != string || !self.endsWith('m')",message="CPU must be a whole number (e.g. '2000' for 2000 MHz). The 'm' (milli) suffix is not supported."
 
 	// CPU is a CPU resource quantity.
 	//
-	// For spec.resources.size, the value represents the guest-visible vCPU
-	// count and must be a whole number (e.g. "4"). Maps to
-	// ConfigSpec.NumCPUs.
-	//
-	// For spec.resources.requests and spec.resources.limits, the value
-	// represents a host-level CPU allocation in MHz (e.g. "2000" for
-	// 2 GHz). Maps to CpuAllocation.Reservation and CpuAllocation.Limit
+	// The value represents a host-level CPU allocation in MHz (e.g. "2000"
+	// for 2 GHz). For spec.resources.requests and spec.resources.limits, it
+	// maps to CpuAllocation.Reservation and CpuAllocation.Limit
 	// respectively.
-	//
-	// For spec.resources.size, an increase can be applied while the VM is
-	// powered on when cpuAdvanced.hotAddEnabled is already enabled on the
-	// live VM; a decrease always requires power-off.
 	CPU *resource.Quantity `json:"cpu,omitempty"`
 
 	// +optional
 
 	// Memory is a memory resource quantity in bytes (e.g. "8Gi").
 	//
-	// For spec.resources.size, maps to ConfigSpec.MemoryMB (guest-visible).
 	// For spec.resources.requests and spec.resources.limits, maps to
 	// MemoryAllocation.Reservation and MemoryAllocation.Limit respectively.
-	//
-	// For spec.resources.size, an increase can be applied while the VM is
-	// powered on when memoryAdvanced.hotAddEnabled is already enabled on the
-	// live VM; a decrease always requires power-off. Note that enabling
-	// memoryAdvanced.hotAddEnabled at the vSphere level is a necessary but
-	// not sufficient condition: the guest OS and its drivers must also
-	// support memory hot-add for the guest to recognize the additional
-	// memory. Not all guest operating systems support this capability.
 	Memory *resource.Quantity `json:"memory,omitempty"`
 }
 
@@ -51,14 +34,6 @@ type VirtualMachineResourceQuantity struct {
 // allocation for a VirtualMachine. All sub-fields are optional; a nil
 // sub-field defers to the VirtualMachineClass value via field-level merge.
 type VirtualMachineResourcesSpec struct {
-	// +optional
-
-	// Size is the guest-visible compute allocation.
-	// size.cpu is the vCPU count; size.memory is the guest RAM.
-	// Maps to ConfigSpec.NumCPUs and ConfigSpec.MemoryMB.
-	// When set, overrides the corresponding VMClass hardware values.
-	Size *VirtualMachineResourceQuantity `json:"size,omitempty"`
-
 	// +optional
 
 	// Requests is the host-level resource reservation (host guarantee).
@@ -93,7 +68,7 @@ const (
 
 	// VirtualMachineLatencySensitivityHigh minimizes scheduling latency at
 	// the cost of throughput. Requires full CPU and memory reservation
-	// (requests = size). Recommended for latency-sensitive Telco VNF
+	// (requests = spec.cpu and spec.memory). Recommended for latency-sensitive Telco VNF
 	// workloads.
 	VirtualMachineLatencySensitivityHigh VirtualMachineLatencySensitivityLevel = "High"
 
@@ -101,7 +76,7 @@ const (
 	// latency sensitivity with simultaneous multi-threading (HT). Sets
 	// ConfigSpec.LatencySensitivity.Level=High and
 	// ConfigSpec.SimultaneousThreads=2. Requires full CPU and memory
-	// reservation (requests = size).
+	// reservation (requests = spec.cpu and spec.memory).
 	VirtualMachineLatencySensitivityHighWithHyperthreading VirtualMachineLatencySensitivityLevel = "HighWithHyperthreading"
 )
 
@@ -147,7 +122,7 @@ type VirtualMachineCPUAdvancedSpec struct {
 	// LatencySensitivity sets the vSphere CPU scheduler latency sensitivity
 	// level. Maps to ConfigSpec.LatencySensitivity.Level and
 	// ConfigSpec.SimultaneousThreads (for HighWithHyperthreading).
-	// Requires full CPU and memory reservation (requests = size)
+	// Requires full CPU and memory reservation (requests = spec.cpu and spec.memory)
 	// when set to High or HighWithHyperthreading.
 	// When unset, the setting is cleared, reverting to the vSphere default.
 	// Can be reconfigured while the VM is powered on.

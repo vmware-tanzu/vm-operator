@@ -2349,7 +2349,7 @@ var _ = Describe("UpdateVirtualMachine", func() {
 			}
 		})
 
-		Context("when spec.resources.size.cpu is nil (no backfill)", func() {
+		Context("when spec.cpu is nil (no backfill)", func() {
 
 			BeforeEach(func() {
 				vm.Spec.Resources = nil
@@ -2366,20 +2366,16 @@ var _ = Describe("UpdateVirtualMachine", func() {
 			})
 		})
 
-		Context("when spec.resources.size.cpu is backfilled to the current live value", func() {
+		Context("when spec.cpu is backfilled to the current live value", func() {
 
 			BeforeEach(func() {
-				// Simulate backfill: spec.resources.size.cpu matches the live CPU count.
+				// Simulate backfill: spec.cpu matches the live CPU count.
 				// SyncClassSizeAndAllocationToSpec (called from resizeVMWhenPoweredStateOff
 				// else-branch) overwrites this with the class CPU count so that
 				// OverwriteSpecComputeConfig applies the class intent.
-				vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-					Size: &vmopv1.VirtualMachineResourceQuantity{
-						CPU: resource.NewQuantity(
-							int64(vmCtx.MoVM.Config.Hardware.NumCPU),
-							resource.DecimalSI),
-					},
-				}
+				vm.Spec.CPU = resource.NewQuantity(
+					int64(vmCtx.MoVM.Config.Hardware.NumCPU),
+					resource.DecimalSI)
 			})
 
 			It("class CPU count wins over the backfilled spec value", func() {

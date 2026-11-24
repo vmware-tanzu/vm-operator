@@ -1525,17 +1525,12 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 			}, config.GetIntervals("default", "wait-vm-compute-config-synced")...).
 				Should(Succeed())
 
-			By("Patching spec.resources.size while VM is powered off")
+			By("Patching spec.cpu and spec.memory while VM is powered off")
 			latest, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
 			Expect(err).ToNot(HaveOccurred())
 			patch := ctrlclient.MergeFrom(latest.DeepCopy())
-			if latest.Spec.Resources == nil {
-				latest.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{}
-			}
-			latest.Spec.Resources.Size = &vmopv1.VirtualMachineResourceQuantity{
-				CPU:    ptr.To(resource.MustParse("3")),
-				Memory: ptr.To(resource.MustParse("3Gi")),
-			}
+			latest.Spec.CPU = ptr.To(resource.MustParse("3"))
+			latest.Spec.Memory = ptr.To(resource.MustParse("3Gi"))
 			Expect(svClusterClient.Patch(ctx, latest, patch)).To(Succeed(),
 				"failed to patch size on %s/%s", vmNamespace, vmName)
 

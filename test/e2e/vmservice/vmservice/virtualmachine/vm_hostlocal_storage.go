@@ -102,7 +102,7 @@ func VMHostLocalStorageSpec(ctx context.Context, inputGetter func() VMHostLocalS
 			skipper.SkipIfEmpty(clusterResources.HostLocalImmediateStorageClassName, "HOST_LOCAL_IMMEDIATE_STORAGE_CLASS")
 		})
 
-		It("Should place a VM on the host of its Bound host-local PVC", Label("experimental"), func() {
+		It("Should place a VM on the host of its Bound host-local PVC", Label("extended-functional"), func() {
 			vmName := namePrefix + "-vm"
 			pvc := hostLocalPVC(input.WCPNamespaceName, vmName, clusterResources.HostLocalImmediateStorageClassName)
 
@@ -131,7 +131,7 @@ func VMHostLocalStorageSpec(ctx context.Context, inputGetter func() VMHostLocalS
 			vmgName = namePrefix + "-vmg"
 		})
 
-		It("Should place each member on the host of its own Bound host-local PVC", Label("experimental"), func() {
+		It("Should place each member on the host of its own Bound host-local PVC", Label("extended-functional"), func() {
 			skipper.SkipIfEmpty(clusterResources.HostLocalImmediateStorageClassName, "HOST_LOCAL_IMMEDIATE_STORAGE_CLASS")
 
 			vmNames := []string{namePrefix + "-vm1", namePrefix + "-vm2", namePrefix + "-vm3"}
@@ -165,7 +165,7 @@ func VMHostLocalStorageSpec(ctx context.Context, inputGetter func() VMHostLocalS
 			}
 		})
 
-		It("Should provision a member's WaitForFirstConsumer host-local PVC on the member's host", Label("experimental"), func() {
+		It("Should provision a member's WaitForFirstConsumer host-local PVC on the member's host", Label("extended-functional"), func() {
 			skipper.SkipIfEmpty(clusterResources.HostLocalStorageClassName, "HOST_LOCAL_STORAGE_CLASS")
 
 			vmName := namePrefix + "-vm1"

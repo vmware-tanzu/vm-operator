@@ -49,6 +49,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 016 | [byo-network-interface](specs/016-byo-network-interface/) | Bring Your Own Network Interface CR | In Progress | vmop-2530 |
 | 017 | [e2e-isolated-testbeds](specs/017-e2e-isolated-testbeds/) | E2E Support for Isolated Testbeds | In Progress | vmop-4430 |
 | 018 | [vmim-infra-migration-status](specs/018-vmim-infra-migration-status/) | VirtualMachineInfraMigration Status on VirtualMachine | Draft | vmop-3432 |
+| 019 | [vmi-no-cache](specs/019-vmi-no-cache/) | Reduce Controller Manager Memory at Image Scale — stop caching `VirtualMachineImage`, soft memory limit | Draft | TBD (vmop-4090) |
 
 ### Finding the right spec
 

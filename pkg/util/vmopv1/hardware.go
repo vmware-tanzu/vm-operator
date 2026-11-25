@@ -160,6 +160,55 @@ func GetControllerSharingMode(
 	return vmopv1.VirtualControllerSharingModeNone
 }
 
+// GetControllerSharingModeForBus returns the sharing mode of the controller
+// with the specified type and bus number in the provided hardware spec, and
+// whether that controller exists. A found controller whose type does not
+// support sharing, such as SATA or IDE, returns
+// VirtualControllerSharingModeNone. Bus numbers are unique per controller type,
+// as enforced by the API's list map key.
+//
+// Unlike NewControllerSpecs, this function does not allocate, so prefer it for
+// read-only lookups.
+func GetControllerSharingModeForBus(
+	hardware *vmopv1.VirtualMachineHardwareSpec,
+	controllerType vmopv1.VirtualControllerType,
+	busNumber int32,
+) (vmopv1.VirtualControllerSharingMode, bool) {
+
+	if hardware == nil {
+		return vmopv1.VirtualControllerSharingModeNone, false
+	}
+
+	switch controllerType {
+	case vmopv1.VirtualControllerTypeSCSI:
+		for i := range hardware.SCSIControllers {
+			if c := &hardware.SCSIControllers[i]; c.BusNumber == busNumber {
+				return c.SharingMode, true
+			}
+		}
+	case vmopv1.VirtualControllerTypeNVME:
+		for i := range hardware.NVMEControllers {
+			if c := &hardware.NVMEControllers[i]; c.BusNumber == busNumber {
+				return c.SharingMode, true
+			}
+		}
+	case vmopv1.VirtualControllerTypeSATA:
+		for i := range hardware.SATAControllers {
+			if hardware.SATAControllers[i].BusNumber == busNumber {
+				return vmopv1.VirtualControllerSharingModeNone, true
+			}
+		}
+	case vmopv1.VirtualControllerTypeIDE:
+		for i := range hardware.IDEControllers {
+			if hardware.IDEControllers[i].BusNumber == busNumber {
+				return vmopv1.VirtualControllerSharingModeNone, true
+			}
+		}
+	}
+
+	return vmopv1.VirtualControllerSharingModeNone, false
+}
+
 // CreateNewController creates a new controller with the specified
 // controller type, bus number, and sharing mode.
 // For SCSI controller type, the type is ParaVirtualSCSI by default.

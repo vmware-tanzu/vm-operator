@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 	vmopv1util "github.com/vmware-tanzu/vm-operator/pkg/util/vmopv1"
 )
 
@@ -335,6 +336,83 @@ var _ = Describe("GetControllerSharingMode", func() {
 		sharingMode := vmopv1util.GetControllerSharingMode(unsupportedController{})
 		Expect(sharingMode).To(Equal(vmopv1.VirtualControllerSharingModeNone))
 	})
+})
+
+var _ = Describe("GetControllerSharingModeForBus", Label(testlabels.API), func() {
+	hardware := &vmopv1.VirtualMachineHardwareSpec{
+		SCSIControllers: []vmopv1.SCSIControllerSpec{
+			{BusNumber: 0, SharingMode: vmopv1.VirtualControllerSharingModePhysical},
+			{BusNumber: 1, SharingMode: vmopv1.VirtualControllerSharingModeNone},
+		},
+		NVMEControllers: []vmopv1.NVMEControllerSpec{
+			{BusNumber: 0, SharingMode: vmopv1.VirtualControllerSharingModeVirtual},
+		},
+		SATAControllers: []vmopv1.SATAControllerSpec{
+			{BusNumber: 0},
+		},
+		IDEControllers: []vmopv1.IDEControllerSpec{
+			{BusNumber: 1},
+		},
+	}
+
+	DescribeTable("should match the ControllerSpecs lookup",
+		func(
+			hardware *vmopv1.VirtualMachineHardwareSpec,
+			controllerType vmopv1.VirtualControllerType,
+			busNumber int32,
+			expectedMode vmopv1.VirtualControllerSharingMode,
+			expectedFound bool) {
+
+			mode, found := vmopv1util.GetControllerSharingModeForBus(
+				hardware, controllerType, busNumber)
+			Expect(found).To(Equal(expectedFound))
+			Expect(mode).To(Equal(expectedMode))
+
+			// The result must agree with building the full ControllerSpecs,
+			// which the function replaces for read-only lookups.
+			specs := vmopv1util.NewControllerSpecs(vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{Hardware: hardware},
+			})
+			controller, specFound := specs.Get(controllerType, busNumber)
+			Expect(found).To(Equal(specFound))
+			if specFound {
+				Expect(mode).To(Equal(vmopv1util.GetControllerSharingMode(controller)))
+			}
+		},
+		Entry("nil hardware", nil,
+			vmopv1.VirtualControllerTypeSCSI, int32(0),
+			vmopv1.VirtualControllerSharingModeNone, false),
+		Entry("SCSI controller", hardware,
+			vmopv1.VirtualControllerTypeSCSI, int32(0),
+			vmopv1.VirtualControllerSharingModePhysical, true),
+		Entry("second SCSI controller", hardware,
+			vmopv1.VirtualControllerTypeSCSI, int32(1),
+			vmopv1.VirtualControllerSharingModeNone, true),
+		Entry("missing SCSI bus number", hardware,
+			vmopv1.VirtualControllerTypeSCSI, int32(2),
+			vmopv1.VirtualControllerSharingModeNone, false),
+		Entry("NVMe controller", hardware,
+			vmopv1.VirtualControllerTypeNVME, int32(0),
+			vmopv1.VirtualControllerSharingModeVirtual, true),
+		Entry("NVMe bus number used only by a SCSI controller", hardware,
+			vmopv1.VirtualControllerTypeNVME, int32(1),
+			vmopv1.VirtualControllerSharingModeNone, false),
+		Entry("SATA controller without sharing support", hardware,
+			vmopv1.VirtualControllerTypeSATA, int32(0),
+			vmopv1.VirtualControllerSharingModeNone, true),
+		Entry("missing SATA bus number", hardware,
+			vmopv1.VirtualControllerTypeSATA, int32(1),
+			vmopv1.VirtualControllerSharingModeNone, false),
+		Entry("IDE controller without sharing support", hardware,
+			vmopv1.VirtualControllerTypeIDE, int32(1),
+			vmopv1.VirtualControllerSharingModeNone, true),
+		Entry("missing IDE bus number", hardware,
+			vmopv1.VirtualControllerTypeIDE, int32(0),
+			vmopv1.VirtualControllerSharingModeNone, false),
+		Entry("unknown controller type", hardware,
+			vmopv1.VirtualControllerType("Unknown"), int32(0),
+			vmopv1.VirtualControllerSharingModeNone, false),
+	)
 })
 
 var _ = Describe("CreateNewController", func() {

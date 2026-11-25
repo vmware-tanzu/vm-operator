@@ -1044,8 +1044,9 @@ func ReconcileCurrentSnapshot(
 	// always runs before this function (step 12) in the same reconcile cycle,
 	// so the condition on vmCtx.VM is already up-to-date. The hasPendingCRVs
 	// check in the register reconciler keeps the condition False when a CRV
-	// exists but its disk has been filtered out by FilterOutLinkedClones (e.g.
-	// after a snapshot converted the backing to a delta chain). Checking
+	// exists but its disk has been skipped because its current backing is a
+	// snapshot delta (i.e. after a snapshot converted the backing to a delta
+	// chain). Checking
 	// VolumeTypeClassic entries directly would block snapshots permanently on
 	// VMs where promoteDiskMode is disabled, because those disks are always
 	// linked clones and their Classic status entries are never cleaned up.

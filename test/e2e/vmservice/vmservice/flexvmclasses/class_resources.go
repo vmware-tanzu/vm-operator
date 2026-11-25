@@ -77,7 +77,12 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 	// reject zero or negative limits. Classes cannot be written by the E2E
 	// user, so this reads the installed schema; envtest covers admission.
 	ginkgo.It("publishes the v1alpha6 class size columns and limit rule", ginkgo.Label(FeatureLabel, "extended-functional", "experimental"), func() {
-		for _, name := range []string{"virtualmachineclasses", "virtualmachineclassinstances"} {
+		names := []string{"virtualmachineclasses"}
+		// The class instance CRD is installed only with immutable classes.
+		if input.Config.SupervisorCapabilities[consts.VMServiceImmutableClassesCapabilityName] {
+			names = append(names, "virtualmachineclassinstances")
+		}
+		for _, name := range names {
 			version := classCRDVersion(ctx, client, name+".vmoperator.vmware.com", "v1alpha6")
 			columns, _, err := unstructured.NestedSlice(version, "additionalPrinterColumns")
 			Expect(err).NotTo(HaveOccurred())

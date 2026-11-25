@@ -28,7 +28,7 @@ The goal is an interim 2x–3x reduction in peak memory. A permanent design is o
 - The manager SHOULD limit Go heap growth to a fraction of its container memory limit, so that the garbage collector works harder before the kernel kills the process. An operator MUST be able to override the value with the `GOMEMLIMIT` environment variable.
 - The content library item sync for fast-deploy images SHOULD fetch only the vSphere properties that it uses.
 - The content library item controller SHOULD use fewer concurrent workers than the global default.
-- Peak heap on the scale testbed SHOULD be at most half of the 909 MB baseline.
+- Peak heap on the scale testbed SHOULD be at most half of the baseline measured on `main` at the same scale. The 909 MB profile came from an older build that still had the per-image metrics.
 
 ## Non-goals
 
@@ -42,25 +42,27 @@ The goal is an interim 2x–3x reduction in peak memory. A permanent design is o
 
 ## Acceptance criteria
 
-- With 52,000 `VirtualMachineImage` objects in the cluster, the manager heap profile has no informer for `VirtualMachineImage`, and the peak heap is at most half of the 909 MB baseline.
+- With 52,000 `VirtualMachineImage` objects in the cluster, the manager heap profile has no informer for `VirtualMachineImage`, and the peak heap is at most half of the baseline measured on `main` at the same scale.
 - Creating a VM with a friendly image name (not `vmi-…`) still resolves the image, and the VM is created.
 - Creating a VM with a `vmi-…` image name still works.
 - A `VirtualMachinePublishRequest` still reaches the image-available state.
 - Starting the manager with no `GOMEMLIMIT` and a container memory limit sets a Go soft memory limit below that container limit. Setting `GOMEMLIMIT` overrides it. Starting with no container limit sets no soft limit.
 - Fast-deploy image sync still fills the image status fields from the VM configuration.
 - A field selector on `status.name` or `status.providerItemID` of `VirtualMachineImage`, and on `status.name` of `ClusterVirtualMachineImage`, is accepted by the API server.
+- If the API server does not support the selectable fields, the manager reports it clearly at startup.
 
 ## Behavior differences
 
 - Each read of a `VirtualMachineImage` is now a call to the API server. Create-time paths make one call per VM create. Update-path callers make one call per reconcile: the policy reconciler when `VSpherePolicies` is on, the CD-ROM reconciler for image-backed CD-ROMs, the storage policy usage controller, and every content library item reconcile.
 - Image-available detection in a publish request can take up to 10 seconds longer.
-- The change needs selectable fields on the CRD. These need Kubernetes 1.30 or newer.
+- The change needs selectable fields on the CRD. These need Kubernetes 1.31 or newer (beta, on by default), or 1.30 with the `CustomResourceFieldSelectors` feature gate turned on.
 - Field selectors work only on API version `v1alpha6`.
 
 ## Open questions
 
-- [NEEDS CLARIFICATION: Which Kubernetes version does Supervisor ship? Selectable fields need 1.30 or newer. Owner: platform team. This blocks the cache change.]
+- [NEEDS CLARIFICATION: Which Kubernetes version does Supervisor ship? Selectable fields need 1.31 or newer. Owner: platform team. This blocks the cache change.]
 - [NEEDS CLARIFICATION: The heap profile shows the per-image metrics, but `main` has no such metrics. Which build was profiled? Owner: spec author.]
-- TODO: For release branches, #1989 (remove the per-image metrics) also reduces the memory footprint. Consider it for each release branch that still has `pkg/metrics/clitem_metrics.go`.
+- TODO: For release branches, #1989 (remove the per-image metrics) also reduces the memory footprint. Consider it for each release branch that still has the per-image metrics.
+- [NEEDS CLARIFICATION: When the API server does not support the selectable fields, should the manager exit, or fall back to a namespace list filtered in memory? The plan proposes the fallback.]
 - [NEEDS CLARIFICATION: What fraction of the container limit is right for the soft memory limit? The plan proposes 85%.]
 - [NEEDS CLARIFICATION: Assign the epic and the task tickets before merge.]

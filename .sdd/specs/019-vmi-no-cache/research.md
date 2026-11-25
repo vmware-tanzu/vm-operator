@@ -17,9 +17,10 @@ An idle worker is a parked goroutine and costs almost nothing. Only the content 
 ## Cache behavior that shaped the plan
 
 - `CacheOptions.DisableFor` stops client `Get` and `List` from using the cache. It does not stop an informer that is created by `Watches(...)` or `IndexField(...)`. Both `VirtualMachineImage` sites must go, or the memory is not saved.
-- An uncached `List` with `MatchingFields` sends a field selector to the API server. A CRD supports only `metadata.name` and `metadata.namespace` unless the CRD declares `selectableFields`. Selectable fields are beta (on by default) from Kubernetes 1.30 and GA in 1.32. The CRD declares them per version.
-- Checked with controller-gen v0.22.0 (`hack/tools/go.mod`) and a real kube-apiserver v1.34.1 from envtest: an uncached client filters by a declared field, and an undeclared field (`status.type`) returns `field label not supported`.
+- An uncached `List` with `MatchingFields` sends a field selector to the API server. A CRD supports only `metadata.name` and `metadata.namespace` unless the CRD declares `selectableFields`. Selectable fields (`CustomResourceFieldSelectors`) are alpha (off by default) in Kubernetes 1.30, beta (on by default) in 1.31 and GA in 1.32. Source: `k8s.io/apiextensions-apiserver@v0.37.1`, `pkg/features/kube_features.go`. The CRD declares them per version.
+- Checked on a prototype branch, not yet in this repository, with controller-gen v0.22.0 (`hack/tools/go.mod`) and a real kube-apiserver v1.34.1 from envtest. Task T009 checks it again here. Result: an uncached client filters by a declared field, and an undeclared field (`status.type`) returns `field label not supported`.
 - A CRD can have at most 8 selectable fields, and each must be a scalar.
+- The manager installs and updates its own CRDs at startup: `initCRDs` in `main.go` calls `pkgcrd.Install`, and `VirtualMachineImage` uses the `default` branch in `pkg/crd/crd.go`. `initCRDs` only logs an install failure and continues.
 
 ## Call sites that read `VirtualMachineImage`
 
@@ -29,11 +30,12 @@ An idle worker is a parked goroutine and costs almost nothing. Only the content 
 | Mutation webhook `ResolveImageNameOnCreate` | VM create | One GET for `vmi-…` names. A filtered LIST by `status.name` otherwise. |
 | Validation webhook `getVMImageConfigSpec` | VM create | One GET per create |
 | Unified storage quota webhook | VM create | One GET per create |
+| `GetImage` (`pkg/util/vmopv1/image.go`) when `spec.image.kind` is empty | VMs created before `kind` was backfilled, on every path that calls `GetImage` (including the policy and CD-ROM paths below) | `ResolveImageName`: a filtered LIST by `status.name` plus a CVMI lookup, not one GET |
 | Policy reconciler `getPolicyEvaluationResults` (`pkg/vmconfig/policy/policy_reconciler_util.go`) | Create, placement, and every VM update reconcile when `VSpherePolicies` is on | **Hot path.** One GET per VM reconcile. Only needs the image name and labels. |
 | CD-ROM reconciliation `processImage` (`pkg/providers/vsphere/virtualmachine/cdrom.go`) | Every update reconcile for VMs with image-backed CD-ROMs | Narrow but per reconcile |
 | Storage policy usage controller | Per VM per usage reconcile | Scales with VMs per policy per namespace. Measure. |
-| Content library controller (`controllers/contentlibrary/utils/controller_builder.go`) | Every item reconcile, including resyncs | One GET per item per reconcile. No watch, so no event amplification. |
-| Publish request controller | Watch | Replaced by polling |
+| Content library controller (`controllers/contentlibrary/utils/controller_builder.go`, or `controller_builder_v1a2.go` when a feature flag selects it; both are named `contentlibraryitem-controller`) | Every item reconcile, including resyncs | One GET per item per reconcile. No watch, so no event amplification. |
+| Publish request controller | Watch | Replaced by polling. The existing `requeueResult()` already requeues after 10 seconds while the image is missing. |
 
 These are call counts from reading the code. They are not measured. Possible later reductions: skip the policy image lookup when the VM already has policy tags, and cache the CD-ROM backing file name for the length of one reconcile.
 
@@ -46,6 +48,7 @@ These are call counts from reading the code. They are not measured. Possible lat
 - `GOMEMLIMIT` is not set anywhere in this repository.
 - `config/manager/manager.yaml` sets a 200Mi limit. The 1800Mi limit from the ticket comes from outside this repository.
 - Go reads `GOMEMLIMIT` as a byte count with a unit suffix. It does not accept a percentage, so a static value cannot follow a changing container limit. For this reason the plan reads the cgroup limit in-process.
+- The Go 1.27.4 runtime does not read cgroup memory limits (no `memory.max` reference in `$GOROOT/src/runtime`). Go does not set a memory limit by itself.
 
 ## Options considered and not chosen
 

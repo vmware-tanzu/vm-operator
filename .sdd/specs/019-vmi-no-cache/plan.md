@@ -27,6 +27,13 @@ File: `api/v1alpha6/virtualmachineimage_types.go`
 - On `VirtualMachineImage`, add `+kubebuilder:selectablefield:JSONPath=".status.name"` and `+kubebuilder:selectablefield:JSONPath=".status.providerItemID"`.
 - On `ClusterVirtualMachineImage`, add `+kubebuilder:selectablefield:JSONPath=".status.name"`.
 - Regenerate `config/crd/bases/vmoperator.vmware.com_virtualmachineimages.yaml` and `config/crd/bases/vmoperator.vmware.com_clustervirtualmachineimages.yaml`.
+- The manager installs and updates its own CRDs at startup (`initCRDs` in `main.go` calls `pkgcrd.Install`, and `VirtualMachineImage` uses the `default` branch in `pkg/crd/crd.go`). So the new CRD is applied before the manager starts its controllers. No separate rollout step is needed.
+
+### 1a. Startup check for selectable fields
+Files: `main.go`, `pkg/crd/crd.go`
+- `initCRDs` only logs an install failure and continues. An API server without the feature probably drops `selectableFields` from the CRD without an error (not yet verified). In both cases, `ResolveImageName` fails at runtime with "field label not supported".
+- After `initCRDs`, read back the `VirtualMachineImage` and `ClusterVirtualMachineImage` CRDs and check that version `v1alpha6` has the expected selectable fields. Log the result.
+- Proposed behavior when the check fails: fall back to a namespace list filtered in memory for the `status.name` and `status.providerItemID` lookups, and log a warning once. The other option is to exit. See the open question in the spec.
 
 ### 2. Stop caching `VirtualMachineImage`
 File: `pkg/manager/manager.go`
@@ -42,11 +49,12 @@ File: `webhooks/virtualmachine/mutation/virtualmachine_mutator.go`
 File: `controllers/virtualmachinepublishrequest/virtualmachinepublishrequest_controller.go`
 - Remove the `Watches(&vmopv1.VirtualMachineImage{}, …)` call and its mapper.
 - Find the published image with `MatchingFields{"status.providerItemID": <item ID>}`.
-- While the image is not yet available, requeue with the existing `requeueResult()` poll (10 seconds).
+- No requeue change is needed. When the image is missing, `Uploaded` is true, so the existing `requeueResult()` already returns a 10 second requeue. Only the lookup changes.
 
 ### 5. Fake client index for tests
 File: `test/builder/fake.go`
-- Register a `status.providerItemID` index for `VirtualMachineImage` on the shared fake client. The real API server handles this for the selectable field, and the fake client must do the same. Check that the existing `status.name` index is also registered there.
+- Register a `status.providerItemID` index for `VirtualMachineImage` on the shared fake client. The real API server handles this for the selectable field, and the fake client must do the same.
+- The shared fake client does not register a `status.name` index for `VirtualMachineImage`. The tests that need it (`pkg/util/vmopv1/vm_test.go` and the mutator unit test) register their own. Keep that as is.
 
 ### 6. Soft memory limit
 New file: `pkg/mem/limit.go`, in the existing `pkg/mem` package. `main.go` calls it from `initMemStats`, before the manager starts.
@@ -77,7 +85,7 @@ Files: `config/default/manager_max_concurrent_reconciles_patch.yaml`, `main.go`
 | Manager cache | No `VirtualMachineImage` informer |
 | VM mutation webhook | Index removed for `VirtualMachineImage`; lookup uses the API server |
 | Publish request controller | Watch removed; poll |
-| Content library item controller | Live GET per reconcile; fewer workers; smaller property fetch |
+| Content library item controller (both `controller_builder.go` and `controller_builder_v1a2.go`) | Live GET per reconcile; fewer workers; smaller property fetch |
 | Policy reconciler, CD-ROM reconciler, storage policy usage controller, VM create paths, quota and validation webhooks | Live GET instead of a cache read. No code change. |
 
 No new RBAC: the manager already has `get;list;watch` on `virtualmachineimages`. No new feature flag.
@@ -87,7 +95,8 @@ No new RBAC: the manager already has `get;list;watch` on `virtualmachineimages`.
 - **Unit and envtest** (`testlabels.Controller`, `testlabels.EnvTest`):
   - Publish request suite: image-available state is reached by polling, with no watch.
   - `ResolveImageName`: friendly name and `vmi-…` name, against envtest so the real selectable field is used.
-  - A test that a field selector on an undeclared field is rejected, to guard the CRD markers.
+  - A test that a field selector on a declared field filters correctly, and one on an undeclared field is rejected, to guard the CRD markers.
+  - The startup check and the fallback path.
   - Fake client tests keep working with the new index.
 - **Unit** for the memory limit helper (`pkg/mem/limit_test.go`): `GOMEMLIMIT` set, no cgroup limit, v1 and v2 files, value "max", ratio math. Read the cgroup path through a parameter so that tests can use a temp directory.
 - **Unit** for the fast-deploy sync: the image status is the same with the smaller property list (vcsim).
@@ -97,16 +106,16 @@ No new RBAC: the manager already has `get;list;watch` on `virtualmachineimages`.
 ## Rollout and migration
 
 - No feature flag. The cache change is on for all installs.
-- Needs Kubernetes 1.30 or newer on the Supervisor. This must be confirmed before merge.
-- The CRD with selectable fields must be applied before the manager that depends on it starts. If the old CRD is still installed, `ResolveImageName` fails with a "field label not supported" error. Confirm the CRD and manager ship together.
-- Release note: say that image reads now use the API server, that publish request detection can take up to 10 seconds longer, and that Kubernetes 1.30 or newer is needed.
+- Needs Kubernetes 1.31 or newer on the Supervisor (or 1.30 with the `CustomResourceFieldSelectors` feature gate turned on). This must be confirmed before merge.
+- The manager updates the CRD itself at startup (see change 1). The startup check in change 1a covers an install failure or an API server that drops the selectable fields.
+- Release note: say that image reads now use the API server, that publish request detection can take up to 10 seconds longer, and that Kubernetes 1.31 or newer is needed.
 
 ## Risks
 
 | Risk | Mitigation |
 |------|------------|
 | Live GETs increase API server load, mostly from content library item resyncs | Measure; lower concurrency (change 9) |
-| Selectable fields missing (old Kubernetes or old CRD) | Version check before merge; envtest guard |
+| Selectable fields missing (old Kubernetes or failed CRD install) | Version check before merge; startup check and fallback (change 1a); envtest guard |
 | Soft memory limit raises CPU use near the limit | Log the value; allow `GOMEMLIMIT` override |
 
 ## Complexity tracking

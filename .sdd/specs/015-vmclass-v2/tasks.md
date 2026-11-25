@@ -133,6 +133,7 @@ Blocked on a vSphere and govmomi release with the vmx-23 fields. Not a gate for 
 
 - [ ] T118 [US3/US6] [vmop-4428] VM API and class API: CPU `reservationLockedToMax` and `cpuAdvanced.numaFixedAutoAffinityEnabled` as VM spec fields, `BoolPolicy` class fields at the same paths, and observed status fields — `api/v1alpha6/virtualmachine_types.go`, `api/v1alpha6/virtualmachineclass_types.go`
 - [ ] T119 [US3/US6] [vmop-4428] Support check: reject both on a hardware version below vmx-23 and when the environment browser reports them unsupported; map them in the provider and report them in status — `pkg/providers/vsphere`, governance package
+- [ ] T119a [US3] [vmop-4508] With vCenter's latency-sensitive resource management on, a vmx-23 or later VM with latency sensitivity High must have the CPU reservation locked to max, and vCenter computes the reservation. The provider sets the lock for High and HighWithHyperthreading on vmx-23 or later (with T118's field). The compute config drift check accepts the computed reservation. The latency sensitivity E2E spec covers vmx-23 and older; it fails on today's UTS testbeds, which turn that vCenter switch on — `pkg/util/vmopv1/compute_overwrite.go`, `pkg/util/resize/configspec.go`, `test/e2e/vmservice/vmservice/virtualmachine/vm_compute_config.go`
 
 ---
 

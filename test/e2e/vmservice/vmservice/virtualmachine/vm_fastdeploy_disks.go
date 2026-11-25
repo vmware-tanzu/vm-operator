@@ -149,87 +149,88 @@ func VMFastDeployDisksSpec(ctx context.Context, inputGetter func() VMFastDeployD
 			input.WCPNamespaceName, imageName)
 	})
 
-	for _, mode := range []string{"direct", "linked"} {
-		It(fmt.Sprintf("binds each cached file to its own disk in %s mode", mode),
-			Label("extended-functional", "experimental"), func() {
+	DescribeTable("binds each cached file to its own disk",
+		Label("extended-functional", "experimental"),
+		func(mode string) {
+			vmName := fmt.Sprintf("%s-%s-%s", specName, mode, capiutil.RandomString(4))
+			vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
 
-				vmName := fmt.Sprintf("%s-%s-%s", specName, mode, capiutil.RandomString(4))
-				vmKey := types.NamespacedName{Name: vmName, Namespace: input.WCPNamespaceName}
-
-				By("Creating a fast deploy VM in " + mode + " mode")
-				vm := &vmopv1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      vmName,
-						Namespace: input.WCPNamespaceName,
-						Annotations: map[string]string{
-							"vmoperator.vmware.com/fast-deploy": mode,
-						},
+			By("Creating a fast deploy VM in " + mode + " mode")
+			vm := &vmopv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      vmName,
+					Namespace: input.WCPNamespaceName,
+					Annotations: map[string]string{
+						"vmoperator.vmware.com/fast-deploy": mode,
 					},
-					Spec: vmopv1.VirtualMachineSpec{
-						ClassName:    vmClassName,
-						ImageName:    imageName,
-						StorageClass: storageClass,
-						PowerState:   vmopv1.VirtualMachinePowerStateOff,
-						// Promoting the disks would flatten the linked clones
-						// before they are inspected.
-						PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
-						Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
-							Disabled: true,
-						},
+				},
+				Spec: vmopv1.VirtualMachineSpec{
+					ClassName:    vmClassName,
+					ImageName:    imageName,
+					StorageClass: storageClass,
+					PowerState:   vmopv1.VirtualMachinePowerStateOff,
+					// Promoting the disks would flatten the linked clones
+					// before they are inspected.
+					PromoteDisksMode: vmopv1.VirtualMachinePromoteDisksModeDisabled,
+					Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
+						Disabled: true,
 					},
+				},
+			}
+			Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
+			vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
+				vm.Namespace, vm.Name, input.SkipCleanup)
+
+			By("Waiting for the image cache to be ready, which only happens when fast deploy is used")
+			vmoperator.WaitForVirtualMachineImageCacheReady(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+			vmoperator.WaitForVirtualMachineConditionCreated(
+				ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
+
+			By("Checking Content Library listed the files in a different order than the OVF")
+			cachedOrder := cachedDiskFileOrder(ctx, svClusterClient,
+				config.GetVariable("VMOPNamespace"), imageName)
+			if equalStrings(cachedOrder, mixedDisksOVFFileOrder) {
+				Skip(fmt.Sprintf(
+					"Content Library listed the files in the OVF's order (%v), "+
+						"so matching disks by index would also pass", cachedOrder))
+			}
+			By(fmt.Sprintf("OVF order %v, cache order %v", mixedDisksOVFFileOrder, cachedOrder))
+
+			By("Reading the disks of the deployed VM")
+			vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
+			var vmMO mo.VirtualMachine
+			Expect(property.DefaultCollector(vCenterClient).RetrieveOne(
+				ctx,
+				vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID},
+				[]string{"config.hardware.device"},
+				&vmMO)).To(Succeed())
+			Expect(vmMO.Config).NotTo(BeNil())
+
+			disks := virtualDisksByUnit(vmMO.Config.Hardware.Device)
+			Expect(disks).To(HaveLen(len(mixedDisksExpected)),
+				"expected one VM disk per OVF disk")
+
+			for i, expected := range mixedDisksExpected {
+				disk := disks[i]
+
+				By(fmt.Sprintf("Checking disk %d (unit %d)", i+1, *disk.UnitNumber))
+				Expect(disk.CapacityInBytes).To(Equal(expected.capacityBytes),
+					"disk %d has the wrong capacity", i+1)
+
+				content := readDiskHead(ctx, vCenterClient, disk)
+				if expected.marker == "" {
+					Expect(content).NotTo(HavePrefix(mixedDisksMarkerPrefix),
+						"disk %d has no file in the OVF but holds the data of another disk", i+1)
+				} else {
+					Expect(content).To(Equal(expected.marker),
+						"disk %d holds the wrong disk's data", i+1)
 				}
-				Expect(svClusterClient.Create(ctx, vm)).To(Succeed(), "failed to create VM %s", vmName)
-				vmoperator.DeferCleanupVirtualMachine(config, svClusterClient, clusterProxy.GetKubeconfigPath(),
-					vm.Namespace, vm.Name, input.SkipCleanup)
-
-				By("Waiting for the image cache to be ready, which only happens when fast deploy is used")
-				vmoperator.WaitForVirtualMachineImageCacheReady(
-					ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-				vmoperator.WaitForVirtualMachineConditionCreated(
-					ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-
-				By("Checking Content Library listed the files in a different order than the OVF")
-				cachedOrder := cachedDiskFileOrder(ctx, svClusterClient,
-					config.GetVariable("VMOPNamespace"), imageName)
-				if equalStrings(cachedOrder, mixedDisksOVFFileOrder) {
-					Skip(fmt.Sprintf(
-						"Content Library listed the files in the OVF's order (%v), "+
-							"so matching disks by index would also pass", cachedOrder))
-				}
-				By(fmt.Sprintf("OVF order %v, cache order %v", mixedDisksOVFFileOrder, cachedOrder))
-
-				By("Reading the disks of the deployed VM")
-				vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, vmKey.Namespace, vmKey.Name)
-				var vmMO mo.VirtualMachine
-				Expect(property.DefaultCollector(vCenterClient).RetrieveOne(
-					ctx,
-					vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID},
-					[]string{"config.hardware.device"},
-					&vmMO)).To(Succeed())
-				Expect(vmMO.Config).NotTo(BeNil())
-
-				disks := virtualDisksByUnit(vmMO.Config.Hardware.Device)
-				Expect(disks).To(HaveLen(len(mixedDisksExpected)),
-					"expected one VM disk per OVF disk")
-
-				for i, expected := range mixedDisksExpected {
-					disk := disks[i]
-
-					By(fmt.Sprintf("Checking disk %d (unit %d)", i+1, *disk.UnitNumber))
-					Expect(disk.CapacityInBytes).To(Equal(expected.capacityBytes),
-						"disk %d has the wrong capacity", i+1)
-
-					content := readDiskHead(ctx, vCenterClient, disk)
-					if expected.marker == "" {
-						Expect(content).NotTo(HavePrefix(mixedDisksMarkerPrefix),
-							"disk %d has no file in the OVF but holds the data of another disk", i+1)
-					} else {
-						Expect(content).To(Equal(expected.marker),
-							"disk %d holds the wrong disk's data", i+1)
-					}
-				}
-			})
-	}
+			}
+		},
+		Entry("in direct mode", "direct"),
+		Entry("in linked mode", "linked"),
+	)
 }
 
 // cachedDiskFileOrder returns the original names of the disk files in the
@@ -300,7 +301,7 @@ func readDiskHead(ctx context.Context, c *vim25.Client, disk *vimtypes.VirtualDi
 	flat := strings.TrimSuffix(dsPath.Path, path.Ext(dsPath.Path)) + "-flat.vmdk"
 	rc, _, err := ds.Download(ctx, flat, &soap.DefaultDownload)
 	Expect(err).NotTo(HaveOccurred(), "failed to download [%s] %s", dsPath.Datastore, flat)
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	buf := make([]byte, 64)
 	n, err := io.ReadFull(rc, buf)

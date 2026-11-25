@@ -60,6 +60,6 @@ The goal is an interim 2x–3x reduction in peak memory. A permanent design is o
 
 - [NEEDS CLARIFICATION: Which Kubernetes version does Supervisor ship? Selectable fields need 1.30 or newer. Owner: platform team. This blocks the cache change.]
 - [NEEDS CLARIFICATION: Can the image metrics drop the `vmi_name` and `vmi_namespace` labels? Other teams may use them. Owner: spec author.]
-- [NEEDS CLARIFICATION: Which build was profiled? `vmi_name` metrics are not in this branch. Owner: spec author.]
+- [NEEDS CLARIFICATION: Which build was profiled? The `vmi_name` and `vmi_namespace` labels do not exist in this repository at the time of writing. Owner: spec author.]
 - [NEEDS CLARIFICATION: What fraction of the container limit is right for the soft memory limit? The plan proposes 85%.]
 - [NEEDS CLARIFICATION: Assign the epic and the task tickets before merge.]

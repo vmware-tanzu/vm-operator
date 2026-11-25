@@ -28,8 +28,8 @@ Format: `[T###] [P?] [vmop-NNN?] Description (paths)`. Task tickets are not yet 
 ## Phase 4: Content library item path
 
 - [ ] T015 Check all callers of `syncVirtualMachineImageFastDeployVM` and `UpdateVmiWithVirtualMachine`. Then fetch only `config`. Add a vcsim test that the image status is unchanged. (`pkg/providers/vsphere/vmprovider.go`, `pkg/providers/vsphere/contentlibrary/content_library_utils.go`)
-- [ ] T016 Remove or bound the `vmi_name` and `vmi_namespace` metric labels. Blocked on T003. (metrics registration; find with `git grep vmi_name`)
-- [ ] T017 Set a lower concurrency for `contentlibraryitem-controller` only. Check the flag syntax first. Use the numbers from T002 and T019. (`config/default/manager_max_concurrent_reconciles_patch.yaml`, `main.go`)
+- [ ] T016 Remove or bound the `vmi_name` and `vmi_namespace` metric labels. Blocked on T003. (the labels are not in this repository yet; find the build that has them first)
+- [ ] T017 Set a lower concurrency for `contentlibraryitem-controller` only. Use the `controller=value` form. Use the numbers from T002 and T019. (`config/default/manager_max_concurrent_reconciles_patch.yaml`, `main.go`)
 
 ## Phase Final: Verify and polish
 

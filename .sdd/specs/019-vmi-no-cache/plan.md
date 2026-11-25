@@ -67,7 +67,7 @@ Blocked on the open question in the spec. Preferred change: remove the `vmi_name
 
 ### 9. Content library item concurrency
 Files: `config/default/manager_max_concurrent_reconciles_patch.yaml`, `main.go`
-- Set a lower value only for `contentlibraryitem-controller`, with the existing `--controller-max-concurrent-reconciles` flag. Check the flag syntax at `main.go:376` first.
+- Set a lower value only for `contentlibraryitem-controller`, with the existing `--controller-max-concurrent-reconciles` flag. The flag takes comma-separated `controller=value` pairs (parser in `main.go`, `parseControllerMaxConcurrentReconciles`).
 - Pick the value from the goroutine profile and the API call rate measured on the scale testbed. After change 2, each reconcile also makes a live GET for the image, so too many workers makes API server load, not memory.
 
 ## Controller and webhook impact

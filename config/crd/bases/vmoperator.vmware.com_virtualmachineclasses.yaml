@@ -1480,8 +1480,9 @@ spec:
                         quantity(string(q)).compareTo(quantity(''0'')) > 0)'
                   requests:
                     description: |-
-                      Requests describes CPU and memory reservations. A zero request is no
-                      reservation.
+                      Requests describes CPU and memory reservations. A request default must
+                      be greater than 0; leave a request unset for no reservation from the
+                      class. A min of 0 lets a VM reserve anything from nothing up to max.
                     properties:
                       cpu:
                         description: CPU is measured in cores, where millicores are
@@ -1558,6 +1559,10 @@ spec:
                       rule: '[?self.?cpu.?min, ?self.?cpu.?max, ?self.?cpu.?default,
                         ?self.?memory.?min, ?self.?memory.?max, ?self.?memory.?default].all(q,
                         quantity(string(q)).compareTo(quantity(''0'')) >= 0)'
+                    - message: a request default must be greater than 0; leave the
+                        request unset for no reservation
+                      rule: '[?self.?cpu.?default, ?self.?memory.?default].all(q,
+                        quantity(string(q)).compareTo(quantity(''0'')) > 0)'
                 type: object
                 x-kubernetes-validations:
                 - message: the CPU request default must not exceed the CPU limit default

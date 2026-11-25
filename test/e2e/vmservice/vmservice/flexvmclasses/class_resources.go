@@ -74,9 +74,9 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 	// API and the VI admin API cannot express ranges.
 
 	// New behavior: the installed class CRDs print the size defaults and
-	// reject zero or negative limits. Classes cannot be written by the E2E
+	// reject zero or negative limits and zero request defaults. Classes cannot be written by the E2E
 	// user, so this reads the installed schema; envtest covers admission.
-	ginkgo.It("publishes the v1alpha6 class size columns and limit rule", ginkgo.Label(FeatureLabel, "extended-functional", "experimental"), func() {
+	ginkgo.It("publishes the v1alpha6 class size columns and request and limit rules", ginkgo.Label(FeatureLabel, "extended-functional", "experimental"), func() {
 		names := []string{"virtualmachineclasses"}
 		// The class instance CRD is installed only with immutable classes.
 		if input.Config.SupervisorCapabilities[consts.VMServiceImmutableClassesCapabilityName] {
@@ -98,6 +98,12 @@ func ClassResourcesSpec(ctx context.Context, inputGetter func() SpecInput) {
 				"schema", "openAPIV3Schema", "properties", "spec", "properties", "resources", "properties", "limits", "x-kubernetes-validations")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rules).To(ContainElement(HaveKeyWithValue("message", "limits must be greater than 0")), name)
+
+			rules, _, err = unstructured.NestedSlice(version,
+				"schema", "openAPIV3Schema", "properties", "spec", "properties", "resources", "properties", "requests", "x-kubernetes-validations")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rules).To(ContainElement(HaveKeyWithValue("message",
+				"a request default must be greater than 0; leave the request unset for no reservation")), name)
 		}
 	})
 

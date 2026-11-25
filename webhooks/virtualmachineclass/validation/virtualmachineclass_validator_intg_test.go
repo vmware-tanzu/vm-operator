@@ -208,9 +208,19 @@ func intgTestsValidateCreate() {
 		Entry("accepts a bounded limit", func(class *vmopv1.VirtualMachineClass) {
 			class.Spec.Resources.Limits.Memory = quantityRange("4Gi", "16Gi", "8Gi")
 		}, ""),
-		Entry("accepts a zero request", func(class *vmopv1.VirtualMachineClass) {
-			class.Spec.Resources.Requests.CPU = quantityRange("0", "2", "0")
+		Entry("accepts an unset request", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Requests.CPU = nil
+			class.Spec.Resources.Requests.Memory = nil
 		}, ""),
+		Entry("accepts a zero request min with a non-zero default", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Requests.CPU = quantityRange("0", "2", "1")
+		}, ""),
+		Entry("rejects a zero CPU request default", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Requests.CPU = quantityRange("0", "2", "0")
+		}, "a request default must be greater than 0"),
+		Entry("rejects a zero memory request default", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Resources.Requests.Memory = quantityRange("", "", "0")
+		}, "a request default must be greater than 0"),
 		Entry("accepts a request default equal to the limit default", func(class *vmopv1.VirtualMachineClass) {
 			class.Spec.Resources.Requests.CPU = quantityRange("", "", "2")
 			class.Spec.Resources.Limits.CPU = quantityRange("", "", "2")

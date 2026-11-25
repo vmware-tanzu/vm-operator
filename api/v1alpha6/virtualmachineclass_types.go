@@ -90,8 +90,10 @@ type VirtualMachineClassResourceSpec struct {
 // +kubebuilder:validation:XValidation:rule="!self.?requests.?memory.?default.hasValue() || !self.?limits.?memory.?default.hasValue() || quantity(string(self.requests.memory.default)).compareTo(quantity(string(self.limits.memory.default))) <= 0",message="the memory request default must not exceed the memory limit default"
 type VirtualMachineClassResources struct {
 	// +kubebuilder:validation:XValidation:rule="[?self.?cpu.?min, ?self.?cpu.?max, ?self.?cpu.?default, ?self.?memory.?min, ?self.?memory.?max, ?self.?memory.?default].all(q, quantity(string(q)).compareTo(quantity('0')) >= 0)",message="requests must not be negative"
-	// Requests describes CPU and memory reservations. A zero request is no
-	// reservation.
+	// +kubebuilder:validation:XValidation:rule="[?self.?cpu.?default, ?self.?memory.?default].all(q, quantity(string(q)).compareTo(quantity('0')) > 0)",message="a request default must be greater than 0; leave the request unset for no reservation"
+	// Requests describes CPU and memory reservations. A request default must
+	// be greater than 0; leave a request unset for no reservation from the
+	// class. A min of 0 lets a VM reserve anything from nothing up to max.
 	// +optional
 	Requests VirtualMachineClassResourceSpec `json:"requests,omitempty"`
 

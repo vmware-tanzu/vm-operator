@@ -10,21 +10,13 @@ const (
 	ComputePolicyCapabilityVMToVMGroupsAntiAffinity ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm.placement.vm_to_vm_groups_anti_affinity"
 	ComputePolicyCapabilityVMHostAffinity           ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_host_affinity"
 	ComputePolicyCapabilityVMHostAntiAffinity       ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm_host_anti_affinity"
-	AutomaticVMEvictionCapability                   ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.host.evacuation.automatic_vm_eviction"
-	BestEffortRestartCapability                     ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.vm.evacuation.best_effort_restart"
-	// ControlledRebalancingCapability backs the ControlledRebalancingPolicy
-	// CRD. It is gated behind the vCenter FSS LatencySensitiveVmsResourceMgmt,
-	// same as the Supervisor capability that mirrors the CR down
-	// (consts.ControlledRebalancingPolicyCapabilityName).
-	ControlledRebalancingCapability ComputePolicyCapability = "com.vmware.vcenter.compute.policies.capabilities.disable_drs_vmotion"
 )
 
 type ComputePolicySpec struct {
 	Name        string
 	Description string
 	// HostTagID is optional: capabilities that don't act on a specific host
-	// (e.g. AutomaticVMEvictionCapability, BestEffortRestartCapability) can
-	// omit it.
+	// can omit it.
 	HostTagID  string
 	VMTagID    string
 	Capability ComputePolicyCapability

@@ -11,13 +11,10 @@ replace (
 	github.com/vmware-tanzu/vm-operator/external/byok => ../../external/byok
 	github.com/vmware-tanzu/vm-operator/external/capabilities => ../../external/capabilities
 	github.com/vmware-tanzu/vm-operator/external/image-registry-operator => ../../external/image-registry-operator
-	github.com/vmware-tanzu/vm-operator/external/infra => ../../external/infra
-	github.com/vmware-tanzu/vm-operator/external/lifecycle => ../../external/lifecycle
 	github.com/vmware-tanzu/vm-operator/external/mobility-operator => ../../external/mobility-operator
 	github.com/vmware-tanzu/vm-operator/external/ncp => ../../external/ncp
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota => ../../external/storage-policy-quota
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology => ../../external/tanzu-topology
-	github.com/vmware-tanzu/vm-operator/external/vim/api => ../../external/vim/api
 	github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver => ../../external/vsphere-csi-driver
 	github.com/vmware-tanzu/vm-operator/external/vsphere-policy => ../../external/vsphere-policy
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api => ../../pkg/backup/api
@@ -63,12 +60,10 @@ require (
 	github.com/vmware-tanzu/vm-operator/external/byok v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/capabilities v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/image-registry-operator v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/external/infra v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/mobility-operator v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-20260414073537-dff710623a20
 	github.com/vmware-tanzu/vm-operator/external/storage-policy-quota v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
-	github.com/vmware-tanzu/vm-operator/external/vim/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/vsphere-policy v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/pkg/backup/api v0.0.0-00010101000000-000000000000
@@ -89,7 +84,6 @@ require (
 require (
 	github.com/go-openapi/swag/pools v0.27.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/stoewer/go-strcase v1.3.1 // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
 	sigs.k8s.io/cluster-api/api v1.14.0 // indirect
 )
@@ -99,7 +93,7 @@ require (
 	github.com/antchfx/xpath v1.3.9 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect

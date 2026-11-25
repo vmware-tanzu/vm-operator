@@ -6,7 +6,7 @@
 |------|------|------|
 | Informer LIST decode | 384 MB | A short-lived decode of the full LIST. It is not the steady-state store. Which type owns it is not yet measured. `VirtualMachineImage` is the likely largest part. |
 | Cache store and indexes | about 60 MB | An LRU can save at most this much, so it is not worth the work. |
-| Content library item `ReconcileNormal` | 192 MB | 107 MB is the property fetch in the fast-deploy sync. 50 MB is image metrics labeled by name and namespace. |
+| Content library item `ReconcileNormal` | 192 MB | 107 MB is the property fetch in the fast-deploy sync. 50 MB is image metrics labeled by name and namespace. These metrics were removed from `main` by #1989, so the profiled build is older than that change. |
 | vSphere watcher | 44 MB | |
 | Conversion webhook | 17 MB heap | In a second run, 55% of CPU. Out of scope here. |
 
@@ -57,5 +57,6 @@ These are call counts from reading the code. They are not measured. Possible lat
 ## Open items
 
 - Supervisor Kubernetes version.
-- Profiled build, and whether it has the `vmi_name` metric.
+- Profiled build. It has the `vmi_name` metrics, which `main` does not have.
+- TODO: For release branches, #1989 also reduces the memory footprint. A release branch such as `release/vc-9.1.0` still has `pkg/metrics/clitem_metrics.go`.
 - Owner of the 384 MB LIST decode, after the cache change.

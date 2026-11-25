@@ -28,7 +28,6 @@ The goal is an interim 2x–3x reduction in peak memory. A permanent design is o
 - The manager SHOULD limit Go heap growth to a fraction of its container memory limit, so that the garbage collector works harder before the kernel kills the process. An operator MUST be able to override the value with the `GOMEMLIMIT` environment variable.
 - The content library item sync for fast-deploy images SHOULD fetch only the vSphere properties that it uses.
 - The content library item controller SHOULD use fewer concurrent workers than the global default.
-- The image metrics SHOULD NOT create one series for every image name and namespace.
 - Peak heap on the scale testbed SHOULD be at most half of the 909 MB baseline.
 
 ## Non-goals
@@ -38,6 +37,8 @@ The goal is an interim 2x–3x reduction in peak memory. A permanent design is o
 - No change to the `VirtualMachineImage` schema other than selectable fields.
 - No change to the memory limit set by the Supervisor.
 - No change to other controllers' concurrency.
+- No release branch work. This spec covers `main` only.
+- No metrics change. The per-image metrics (`vmi_name`, `vmi_namespace` labels) were already removed from `main` by #1989.
 
 ## Acceptance criteria
 
@@ -59,7 +60,7 @@ The goal is an interim 2x–3x reduction in peak memory. A permanent design is o
 ## Open questions
 
 - [NEEDS CLARIFICATION: Which Kubernetes version does Supervisor ship? Selectable fields need 1.30 or newer. Owner: platform team. This blocks the cache change.]
-- [NEEDS CLARIFICATION: Can the image metrics drop the `vmi_name` and `vmi_namespace` labels? Other teams may use them. Owner: spec author.]
-- [NEEDS CLARIFICATION: Which build was profiled? The `vmi_name` and `vmi_namespace` labels do not exist in this repository at the time of writing. Owner: spec author.]
+- [NEEDS CLARIFICATION: The heap profile shows the per-image metrics, but `main` has no such metrics. Which build was profiled? Owner: spec author.]
+- TODO: For release branches, #1989 (remove the per-image metrics) also reduces the memory footprint. Consider it for each release branch that still has `pkg/metrics/clitem_metrics.go`.
 - [NEEDS CLARIFICATION: What fraction of the container limit is right for the soft memory limit? The plan proposes 85%.]
 - [NEEDS CLARIFICATION: Assign the epic and the task tickets before merge.]

@@ -49,7 +49,7 @@ File: `test/builder/fake.go`
 - Register a `status.providerItemID` index for `VirtualMachineImage` on the shared fake client. The real API server handles this for the selectable field, and the fake client must do the same. Check that the existing `status.name` index is also registered there.
 
 ### 6. Soft memory limit
-New file: `pkg/util/memlimit/memlimit.go` (name can change), called from `main.go` before the manager starts.
+New file: `pkg/mem/limit.go`, in the existing `pkg/mem` package. `main.go` calls it from `initMemStats`, before the manager starts.
 - If the `GOMEMLIMIT` environment variable is set, do nothing. The Go runtime already uses it.
 - Otherwise, read the container memory limit from the cgroup (`/sys/fs/cgroup/memory.max` on cgroup v2, `/sys/fs/cgroup/memory/memory.limit_in_bytes` on v1). If there is no limit, or the value is "max" or very large, set nothing.
 - Otherwise, call `debug.SetMemoryLimit` with 85% of the limit. For an 1800Mi limit this is about 1530Mi.
@@ -63,7 +63,7 @@ File: `pkg/providers/vsphere/vmprovider.go` (`syncVirtualMachineImageFastDeployV
 - First check every caller of `syncVirtualMachineImageFastDeployVM` and of `contentlibrary.UpdateVmiWithVirtualMachine` in `pkg/providers/vsphere/contentlibrary/content_library_utils.go`, to confirm that nothing reads the other three properties. The heap profile shows 107 MB for this fetch.
 
 ### 8. Image metrics cardinality
-Blocked on the open question in the spec. Preferred change: remove the `vmi_name` and `vmi_namespace` labels. If other teams need them, delete the series when the image is deleted.
+No change on `main`. The per-image metrics were removed by #1989. Before that change, the content library item controller deleted the series when an item was deleted, so the 50 MB was the live series count and not a leak. TODO: For release branches, #1989 is also useful to reduce the memory footprint.
 
 ### 9. Content library item concurrency
 Files: `config/default/manager_max_concurrent_reconciles_patch.yaml`, `main.go`
@@ -89,7 +89,7 @@ No new RBAC: the manager already has `get;list;watch` on `virtualmachineimages`.
   - `ResolveImageName`: friendly name and `vmi-…` name, against envtest so the real selectable field is used.
   - A test that a field selector on an undeclared field is rejected, to guard the CRD markers.
   - Fake client tests keep working with the new index.
-- **Unit** for the memory limit helper: `GOMEMLIMIT` set, no cgroup limit, v1 and v2 files, value "max", ratio math. Read the cgroup path through a parameter so that tests can use a temp directory.
+- **Unit** for the memory limit helper (`pkg/mem/limit_test.go`): `GOMEMLIMIT` set, no cgroup limit, v1 and v2 files, value "max", ratio math. Read the cgroup path through a parameter so that tests can use a temp directory.
 - **Unit** for the fast-deploy sync: the image status is the same with the smaller property list (vcsim).
 - **E2E** (`test/e2e/`, per [`e2e-sync-with-changes.md`](../../memory/e2e-sync-with-changes.md)): create a VM by friendly image name, and check that a publish request reaches the image-available state.
 - **Scale check** (not a CI test): on the scale testbed, take heap profiles before and after each change, and a goroutine profile in the OOM window.
@@ -108,7 +108,6 @@ No new RBAC: the manager already has `get;list;watch` on `virtualmachineimages`.
 | Live GETs increase API server load, mostly from content library item resyncs | Measure; lower concurrency (change 9) |
 | Selectable fields missing (old Kubernetes or old CRD) | Version check before merge; envtest guard |
 | Soft memory limit raises CPU use near the limit | Log the value; allow `GOMEMLIMIT` override |
-| Dropping metric labels breaks a dashboard | Open question; get an owner decision |
 
 ## Complexity tracking
 

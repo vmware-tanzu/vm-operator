@@ -33,7 +33,7 @@ File: `api/v1alpha6/virtualmachineimage_types.go`
 Files: `main.go`, `pkg/crd/crd.go`
 - `initCRDs` only logs an install failure and continues. An API server without the feature probably drops `selectableFields` from the CRD without an error (not yet verified). In both cases, `ResolveImageName` fails at runtime with "field label not supported".
 - After `initCRDs`, read back the `VirtualMachineImage` and `ClusterVirtualMachineImage` CRDs and check that version `v1alpha6` has the expected selectable fields. Log the result.
-- Proposed behavior when the check fails: fall back to a namespace list filtered in memory for the `status.name` and `status.providerItemID` lookups, and log a warning once. The other option is to exit. See the open question in the spec.
+- When the check fails, fall back to a namespace list filtered in memory for the `status.name` and `status.providerItemID` lookups, and log a warning once. The manager does not exit.
 
 ### 2. Stop caching `VirtualMachineImage`
 File: `pkg/manager/manager.go`

@@ -10,7 +10,7 @@ Format: `[T###] [P?] [vmop-NNN?] Description (paths)`. Task tickets are not yet 
 ## Phase 2: Stop caching VirtualMachineImage (user story: cache removal)
 
 - [ ] T003 Add selectable field markers for `.status.name` and `.status.providerItemID` on `VirtualMachineImage`, and `.status.name` on `ClusterVirtualMachineImage`. Run `make generate-manifests`. (`api/v1alpha6/virtualmachineimage_types.go`, `config/crd/bases/vmoperator.vmware.com_virtualmachineimages.yaml`, `config/crd/bases/vmoperator.vmware.com_clustervirtualmachineimages.yaml`)
-- [ ] T004 After `initCRDs`, check that the image CRDs have the selectable fields. On failure, log a warning and use the in-memory filter fallback (pending the spec open question). (`main.go`, `pkg/crd/crd.go`, `pkg/util/vmopv1/vm.go`, `controllers/virtualmachinepublishrequest/virtualmachinepublishrequest_controller.go`)
+- [ ] T004 After `initCRDs`, check that the image CRDs have the selectable fields. On failure, log a warning and use the in-memory filter fallback. The manager does not exit. (`main.go`, `pkg/crd/crd.go`, `pkg/util/vmopv1/vm.go`, `controllers/virtualmachinepublishrequest/virtualmachinepublishrequest_controller.go`)
 - [ ] T005 Add `&vmopv1.VirtualMachineImage{}` to `DisableFor`, with an explanatory comment. (`pkg/manager/manager.go`)
 - [ ] T006 [P] Remove the `VirtualMachineImage` `status.name` field index. Keep the `ClusterVirtualMachineImage` one. (`webhooks/virtualmachine/mutation/virtualmachine_mutator.go`)
 - [ ] T007 [P] Remove the `VirtualMachineImage` watch and mapper from the publish request controller. Look up the image by `status.providerItemID`. The existing 10 second requeue stays as is. (`controllers/virtualmachinepublishrequest/virtualmachinepublishrequest_controller.go`)

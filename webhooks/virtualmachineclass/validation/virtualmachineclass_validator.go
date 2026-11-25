@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -86,13 +87,27 @@ func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Respo
 }
 
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
-	// TODO: ValidateUpdate does not call validatePolicies like ValidateCreate
-	// does, so policy validation is currently skipped on update. Tracked
-	// separately; not fixed here since it's a behavior change unrelated to
-	// this lint pass.
+	vmClass, err := v.vmClassFromUnstructured(ctx.Obj)
+	if err != nil {
+		return webhook.Errored(http.StatusBadRequest, err)
+	}
+
+	oldVMClass, err := v.vmClassFromUnstructured(ctx.OldObj)
+	if err != nil {
+		return webhook.Errored(http.StatusBadRequest, err)
+	}
+
 	var fieldErrs field.ErrorList
+
+	// Check requests and limits only when they change, so an update that
+	// leaves them alone, such as vCenter re-syncing a class, is not rejected
+	// for values the class already had.
+	if !apiequality.Semantic.DeepEqual(vmClass.Spec.Resources, oldVMClass.Spec.Resources) {
+		fieldErrs = append(fieldErrs, v.validatePolicies(ctx, vmClass)...)
+	}
+
 	validationErrs := make([]string, 0, len(fieldErrs))
-	for _, fieldErr := range fieldErrs { //nolint:gosec // fieldErrs is always empty; ranging over it is a no-op, not an out-of-range access.
+	for _, fieldErr := range fieldErrs {
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 

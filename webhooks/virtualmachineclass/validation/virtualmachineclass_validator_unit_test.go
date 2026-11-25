@@ -154,11 +154,31 @@ func unitTestsValidateUpdate() {
 		changeHwMemory bool
 		changeCPU      bool
 		changeMemory   bool
+
+		invalidCPURequest    bool
+		invalidMemoryRequest bool
+		oldInvalidCPURequest bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
+		if args.oldInvalidCPURequest {
+			// The stored class already has a CPU request above its limit.
+			ctx.oldVMClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2"))}
+			ctx.oldVMClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1"))}
+			ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVMClass)
+			Expect(err).ToNot(HaveOccurred())
+			ctx.vmClass.Spec.Resources = *ctx.oldVMClass.Spec.Resources.DeepCopy()
+		}
+		if args.invalidCPURequest {
+			ctx.vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2"))}
+			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1"))}
+		}
+		if args.invalidMemoryRequest {
+			ctx.vmClass.Spec.Resources.Requests.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))}
+		}
 		if args.changeHwCPU {
 			ctx.vmClass.Spec.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("64"))}
 		}
@@ -180,9 +200,7 @@ func unitTestsValidateUpdate() {
 		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 		if expectedReason != "" {
-			// Construct the complete reason here as ctx.vmClass.Spec is nil when initializing the DescribeTable below.
-			completeReason := field.Invalid(field.NewPath("spec"), ctx.vmClass.Spec, expectedReason).Error()
-			Expect(string(response.Result.Reason)).To(ContainSubstring(completeReason))
+			Expect(string(response.Result.Reason)).To(Equal(expectedReason))
 		}
 		if expectedErr != nil {
 			Expect(response.Result.Message).To(ContainSubstring(expectedErr.Error()))
@@ -204,12 +222,14 @@ func unitTestsValidateUpdate() {
 		Entry("should allow policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
 	)
 
-	DescribeTable("update table", validateUpdate,
-		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny hw cpu change", updateArgs{changeHwCPU: true}, true, nil, nil),
-		Entry("should deny hw memory change", updateArgs{changeHwMemory: true}, true, nil, nil),
-		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, true, nil, nil),
-		Entry("should deny policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
+	reqPath := field.NewPath("spec", "resources", "requests")
+	invalidCPUField := field.Invalid(reqPath.Child("cpu"), "2", "CPU request must not be larger than the CPU limit")
+	invalidMemField := field.Invalid(reqPath.Child("memory"), "2Gi", "memory request must not be larger than the memory limit")
+	DescribeTable("update requests and limits", validateUpdate,
+		Entry("should deny a CPU request raised above its limit", updateArgs{invalidCPURequest: true}, false, invalidCPUField.Error(), nil),
+		Entry("should deny a memory request raised above its limit", updateArgs{invalidMemoryRequest: true}, false, invalidMemField.Error(), nil),
+		Entry("should allow an update that leaves an existing invalid request unchanged", updateArgs{oldInvalidCPURequest: true, changeHwMemory: true}, true, nil, nil),
+		Entry("should deny an existing invalid request when resources change", updateArgs{oldInvalidCPURequest: true, invalidMemoryRequest: true}, false, nil, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -380,6 +381,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="events.k8s.io",resources=events,verbs=create;update;patch
 // +kubebuilder:rbac:groups="",resources=resourcequotas;namespaces,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=encryption.vmware.com,resources=encryptionclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;patch
 // +kubebuilder:rbac:groups=vsphere.policy.vmware.com,resources=tags,verbs=get;list;watch;create;update;patch;delete
@@ -847,6 +849,27 @@ func (r *Reconciler) isVMICacheReady(ctx *pkgctx.VirtualMachineContext) bool {
 				locStatus = &l
 				break
 			}
+		}
+
+		if locStatus == nil && !slices.ContainsFunc(
+			vmic.Spec.Locations,
+			func(l vmopv1.VirtualMachineImageCacheLocationSpec) bool {
+				return l.DatacenterID == dcID &&
+					l.DatastoreID == dsID &&
+					l.ProfileID == pID
+			}) {
+
+			// The location this VM is waiting on is not requested in the
+			// VMI cache spec, so it would never become ready. Remove the
+			// label and annotation so the provider adds the location again.
+			delete(ctx.VM.Labels, pkgconst.VMICacheLabelKey)
+			delete(ctx.VM.Annotations, pkgconst.VMICacheLocationAnnotationKey)
+
+			ctx.Logger.Info(
+				"Re-adding VMIC location missing from spec",
+				"vmicName", vmicName,
+				"location", location)
+			return true
 		}
 	}
 

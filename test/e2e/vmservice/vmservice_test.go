@@ -242,6 +242,17 @@ var _ = Describe("Testing VM Services", Label("devops"), Label("viadmin"), Label
 			})
 		})
 
+		Context("VM-HOSTLOCAL-STORAGE", func() {
+			virtualmachine.VMHostLocalStorageSpec(context.TODO(), func() virtualmachine.VMHostLocalStorageSpecInput {
+				return virtualmachine.VMHostLocalStorageSpecInput{
+					ClusterProxy:     svClusterProxy,
+					Config:           config,
+					ArtifactFolder:   artifactFolder,
+					WCPNamespaceName: wcpNamespaceName,
+				}
+			})
+		})
+
 		Context("VM-SNAPSHOT", func() {
 			virtualmachine.VMSnapshotSpec(context.TODO(), func() virtualmachine.VMSnapshotSpecInput {
 				return virtualmachine.VMSnapshotSpecInput{

@@ -1238,3 +1238,234 @@ var _ = Describe("VirtualMachineImageCacheToItemMapper", func() {
 		})
 	})
 })
+
+var _ = Describe("EnsureImageCacheLocation", func() {
+	const (
+		namespace = "vmop-system"
+		name      = "vmi-1"
+		itemID    = "item-1"
+		itemVer   = "version-1"
+		dcID      = "datacenter-1"
+		dsID      = "datastore-1"
+		profileID = "profile-1"
+	)
+
+	var (
+		ctx       context.Context
+		k8sClient ctrlclient.Client
+		withFuncs interceptor.Funcs
+		withObjs  []ctrlclient.Object
+		key       ctrlclient.ObjectKey
+		obj       vmopv1.VirtualMachineImageCache
+		err       error
+	)
+
+	location := func(dsID string) vmopv1.VirtualMachineImageCacheLocationSpec {
+		return vmopv1.VirtualMachineImageCacheLocationSpec{
+			DatacenterID: dcID,
+			DatastoreID:  dsID,
+			ProfileID:    profileID,
+		}
+	}
+
+	existingVMIC := func(locations ...vmopv1.VirtualMachineImageCacheLocationSpec) *vmopv1.VirtualMachineImageCache {
+		return &vmopv1.VirtualMachineImageCache{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      name,
+			},
+			Spec: vmopv1.VirtualMachineImageCacheSpec{
+				ProviderID:      itemID,
+				ProviderVersion: itemVer,
+				Locations:       locations,
+			},
+		}
+	}
+
+	// addLocationOutOfBand simulates another VM adding a location between
+	// this call's read and its write.
+	addLocationOutOfBand := func(
+		ctx context.Context,
+		c ctrlclient.Client,
+		dsID string) {
+
+		var other vmopv1.VirtualMachineImageCache
+		ExpectWithOffset(1, c.Get(ctx, key, &other)).To(Succeed())
+		other.AddLocation(dcID, dsID, profileID)
+		ExpectWithOffset(1, c.Update(ctx, &other)).To(Succeed())
+	}
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		withFuncs = interceptor.Funcs{}
+		withObjs = nil
+		key = ctrlclient.ObjectKey{Namespace: namespace, Name: name}
+	})
+
+	JustBeforeEach(func() {
+		k8sClient = builder.NewFakeClientWithInterceptors(withFuncs, withObjs...)
+		obj, err = vmopv1util.EnsureImageCacheLocation(
+			ctx, k8sClient, key, itemID, itemVer, dcID, dsID, profileID)
+	})
+
+	getVMIC := func() vmopv1.VirtualMachineImageCache {
+		var vmic vmopv1.VirtualMachineImageCache
+		ExpectWithOffset(1, k8sClient.Get(ctx, key, &vmic)).To(Succeed())
+		return vmic
+	}
+
+	When("the resource does not exist", func() {
+		It("creates it with the location", func() {
+			Expect(err).ToNot(HaveOccurred())
+			vmic := getVMIC()
+			Expect(vmic.Spec.ProviderID).To(Equal(itemID))
+			Expect(vmic.Spec.ProviderVersion).To(Equal(itemVer))
+			Expect(vmic.Spec.Locations).To(ConsistOf(location(dsID)))
+			Expect(obj.Spec.Locations).To(ConsistOf(location(dsID)))
+		})
+	})
+
+	When("the resource exists without the location", func() {
+		BeforeEach(func() {
+			withObjs = append(withObjs, existingVMIC(location("datastore-0")))
+		})
+
+		It("adds the location and keeps the existing ones", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getVMIC().Spec.Locations).To(ConsistOf(
+				location("datastore-0"),
+				location(dsID)))
+		})
+	})
+
+	When("the resource already has the location", func() {
+		var patchCalls int
+
+		BeforeEach(func() {
+			patchCalls = 0
+			withObjs = append(withObjs, existingVMIC(location(dsID)))
+			withFuncs.Patch = func(
+				ctx context.Context,
+				c ctrlclient.WithWatch,
+				obj ctrlclient.Object,
+				patch ctrlclient.Patch,
+				opts ...ctrlclient.PatchOption) error {
+
+				patchCalls++
+				return c.Patch(ctx, obj, patch, opts...)
+			}
+		})
+
+		It("does not write the resource", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(patchCalls).To(BeZero())
+			Expect(obj.Spec.Locations).To(ConsistOf(location(dsID)))
+		})
+	})
+
+	When("another writer adds a location concurrently", func() {
+		var patchCalls int
+
+		BeforeEach(func() {
+			patchCalls = 0
+			withObjs = append(withObjs, existingVMIC(location("datastore-0")))
+			withFuncs.Patch = func(
+				ctx context.Context,
+				c ctrlclient.WithWatch,
+				obj ctrlclient.Object,
+				patch ctrlclient.Patch,
+				opts ...ctrlclient.PatchOption) error {
+
+				patchCalls++
+				if patchCalls == 1 {
+					addLocationOutOfBand(ctx, c, "datastore-2")
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			}
+		})
+
+		It("retries after the conflict and keeps both locations", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(patchCalls).To(Equal(2))
+			Expect(getVMIC().Spec.Locations).To(ConsistOf(
+				location("datastore-0"),
+				location("datastore-2"),
+				location(dsID)))
+		})
+	})
+
+	When("another writer creates the resource concurrently", func() {
+		var createCalls int
+
+		BeforeEach(func() {
+			createCalls = 0
+			withFuncs.Create = func(
+				ctx context.Context,
+				c ctrlclient.WithWatch,
+				obj ctrlclient.Object,
+				opts ...ctrlclient.CreateOption) error {
+
+				createCalls++
+				if createCalls == 1 {
+					ExpectWithOffset(1, c.Create(
+						ctx,
+						existingVMIC(location("datastore-2")))).To(Succeed())
+				}
+				return c.Create(ctx, obj, opts...)
+			}
+		})
+
+		It("patches the created resource and keeps both locations", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getVMIC().Spec.Locations).To(ConsistOf(
+				location("datastore-2"),
+				location(dsID)))
+		})
+	})
+
+	When("getting the resource fails", func() {
+		BeforeEach(func() {
+			withFuncs.Get = func(
+				ctx context.Context,
+				c ctrlclient.WithWatch,
+				key ctrlclient.ObjectKey,
+				obj ctrlclient.Object,
+				opts ...ctrlclient.GetOption) error {
+
+				return errors.New("fake get error")
+			}
+		})
+
+		It("returns the error", func() {
+			Expect(err).To(MatchError("fake get error"))
+		})
+	})
+
+	DescribeTable("panics on invalid arguments",
+		func(
+			nilCtx, nilClient bool,
+			key ctrlclient.ObjectKey,
+			expPanic string) {
+
+			callCtx, callClient := ctx, k8sClient
+			if nilCtx {
+				callCtx = nil
+			}
+			if nilClient {
+				callClient = nil
+			}
+			Expect(func() {
+				_, _ = vmopv1util.EnsureImageCacheLocation(
+					callCtx, callClient, key, itemID, itemVer, dcID, dsID, profileID)
+			}).To(PanicWith(expPanic))
+		},
+		Entry("nil context", true, false,
+			ctrlclient.ObjectKey{Namespace: namespace, Name: name}, "context is nil"),
+		Entry("nil client", false, true,
+			ctrlclient.ObjectKey{Namespace: namespace, Name: name}, "k8sClient is nil"),
+		Entry("empty namespace", false, false,
+			ctrlclient.ObjectKey{Name: name}, "key.Namespace is empty"),
+		Entry("empty name", false, false,
+			ctrlclient.ObjectKey{Namespace: namespace}, "key.Name is empty"),
+	)
+})

@@ -53,6 +53,14 @@ func SkipUnlessSupervisorCapabilityEnabled(capabilities map[string]bool, capabil
 	}
 }
 
+// SkipIfEmpty skips the test when value is empty, naming the setting that
+// provides it in the skip message.
+func SkipIfEmpty(value, settingName string) {
+	if value == "" {
+		framework.SkipInternalf(1, "skip the test due to %s not being set", settingName)
+	}
+}
+
 func SkipUnlessSupervisorHasAtleastOneZoneWithHostCount(ctx context.Context, vmSvcClusterProxy framework.ClusterProxyInterface, minHostCount int) {
 	zoneHostInfos, err := utils.GetHostsPerZone(ctx, vmSvcClusterProxy.GetClient(), vmSvcClusterProxy.GetKubeconfigPath())
 	Expect(err).NotTo(HaveOccurred(), "failed to list zones with hosts")

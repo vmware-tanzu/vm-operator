@@ -12,9 +12,12 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/util/retry"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -257,6 +260,85 @@ func GetStorageURIsForLibraryItemDisks(
 			item.Status)
 	}
 	return storageURIs, nil
+}
+
+// EnsureImageCacheLocation creates the VirtualMachineImageCache resource
+// identified by key if it does not exist, and ensures its spec.locations
+// includes the provided location. The resulting object is returned.
+//
+// Several VMs may add locations to the same resource concurrently, and
+// spec.locations is a list, which a JSON merge patch replaces wholesale.
+// Therefore the patch carries an optimistic lock so a concurrent write fails
+// with a conflict, and the update is retried against a fresh read instead of
+// silently dropping the other writer's location.
+func EnsureImageCacheLocation(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	key ctrlclient.ObjectKey,
+	providerID, providerVersion string,
+	datacenterID, datastoreID, profileID string) (
+	vmopv1.VirtualMachineImageCache, error) {
+
+	if pkgnil.IsNil(ctx) {
+		panic("context is nil")
+	}
+	if pkgnil.IsNil(k8sClient) {
+		panic("k8sClient is nil")
+	}
+	if key.Namespace == "" {
+		panic("key.Namespace is empty")
+	}
+	if key.Name == "" {
+		panic("key.Name is empty")
+	}
+
+	var obj vmopv1.VirtualMachineImageCache
+
+	err := retry.OnError(
+		retry.DefaultBackoff,
+		func(err error) bool {
+			// A concurrent create of the same resource fails with
+			// AlreadyExists, which is resolved by patching it instead.
+			return apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err)
+		},
+		func() error {
+			obj = vmopv1.VirtualMachineImageCache{}
+			if err := k8sClient.Get(ctx, key, &obj); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return err
+				}
+				obj = vmopv1.VirtualMachineImageCache{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: key.Namespace,
+						Name:      key.Name,
+					},
+					Spec: vmopv1.VirtualMachineImageCacheSpec{
+						ProviderID:      providerID,
+						ProviderVersion: providerVersion,
+					},
+				}
+				obj.AddLocation(datacenterID, datastoreID, profileID)
+				return k8sClient.Create(ctx, &obj)
+			}
+
+			base := obj.DeepCopy()
+			obj.Spec.ProviderID = providerID
+			obj.Spec.ProviderVersion = providerVersion
+			obj.AddLocation(datacenterID, datastoreID, profileID)
+
+			if apiequality.Semantic.DeepEqual(base.Spec, obj.Spec) {
+				return nil
+			}
+
+			return k8sClient.Patch(
+				ctx,
+				&obj,
+				ctrlclient.MergeFromWithOptions(
+					base,
+					ctrlclient.MergeFromWithOptimisticLock{}))
+		})
+
+	return obj, err
 }
 
 // VirtualMachineImageCacheToItemMapper returns a mapper function used to

@@ -300,11 +300,21 @@ func (vs *vSphereVMProvider) vmGroupGetVMPlacementConfigSpec(
 			}
 		}
 
-		placementConfigSpec, err := virtualmachine.CreateConfigSpecForPlacement(
-			vmCtx,
-			createArgs.ConfigSpec,
-			createArgs.Storage.StorageClassToPolicyID,
-			vs.labelDerivedTags(vmCtx))
+		if pkgcfg.FromContext(vmCtx).Features.HostLocalStorage {
+			// This only checks that no host-local PVC is waiting to bind to a
+			// host it was already given. Group placement always asks for a
+			// host recommendation, so whether one is needed does not matter.
+			if _, err := hostLocalPlacementNeeded(
+				vmCtx, vs.k8sClient, createArgs.Storage); err != nil {
+				return nil, err
+			}
+		}
+
+		// The same ConfigSpec as for a VM placed on its own. PlaceVmsXCluster
+		// keeps a disk named by its existing datastore path where it is and
+		// only recommends hosts that can reach it (CRM-4964).
+		placementConfigSpec, err := vs.vmCreatePlacementConfigSpec(
+			vmCtx, vcClient, createArgs)
 		if err != nil {
 			return nil, err
 		}

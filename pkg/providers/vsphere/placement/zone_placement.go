@@ -41,11 +41,25 @@ type Constraints struct {
 	// will further be filtered by.
 	Zones sets.Set[string]
 
+	// NeedHostLocalPlacement is true when the VM has a host-local StorageClass
+	// PVC, so placement must force a DRS host recommendation compliant with
+	// that PVC's storage.
+	//
+	// Placement is not told which host. Each PVC is represented by a disk in
+	// the placement ConfigSpec (see virtualmachine.CreateConfigSpecForPlacement)
+	// and DRS derives the host from those disks: a provisioned volume carries
+	// its real datastore path, which PlaceVmsXCluster pins in place and only
+	// lets hosts that can reach it be chosen; an unprovisioned one carries only
+	// its storage policy, so any compliant host will do and the caller
+	// publishes DRS's choice back to the PVC.
+	NeedHostLocalPlacement bool
+
 	// TODO: ClusterModules?
 }
 
 type Result struct {
 	InstanceStoragePlacement bool
+	HostLocalPlacement       bool
 	ZoneName                 string
 	HostMoRef                *vimtypes.ManagedObjectReference
 	PoolMoRef                vimtypes.ManagedObjectReference
@@ -53,6 +67,7 @@ type Result struct {
 
 	needInstanceStoragePlacement bool
 	needDatastorePlacement       bool
+	needHostLocalPlacement       bool
 }
 
 type DatastoreResult struct {
@@ -74,7 +89,7 @@ var (
 	ErrGroupPlacementZoneMismatch = errors.New("group placement recommended zone different than requested zone")
 )
 
-func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
+func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext, constraints Constraints) (res Result) {
 	if zoneName := vmCtx.VM.Labels[corev1.LabelTopologyZone]; zoneName != "" {
 		// Zone has already been selected.
 		res.ZoneName = zoneName
@@ -97,6 +112,10 @@ func doesVMNeedPlacement(vmCtx pkgctx.VirtualMachineContext) (res Result) {
 				res.needInstanceStoragePlacement = true
 			}
 		}
+	}
+
+	if constraints.NeedHostLocalPlacement && res.HostMoRef == nil {
+		res.needHostLocalPlacement = true
 	}
 
 	return
@@ -320,7 +339,7 @@ func getPlacementRecommendation(
 	finder *find.Finder,
 	candidates map[string][]string,
 	configSpec vimtypes.VirtualMachineConfigSpec,
-	needsInstanceStoragePlacement, needDatastorePlacement bool) (Recommendation, error) {
+	curResult Result) (Recommendation, error) {
 
 	candidateRPMoRefs := make([]vimtypes.ManagedObjectReference, 0, len(candidates))
 	for _, rpMoIDs := range candidates {
@@ -336,17 +355,37 @@ func getPlacementRecommendation(
 	var recommendation Recommendation
 
 	switch {
-	case needsInstanceStoragePlacement:
-		// PlaceVmsXCluster does not support the magic instance storage disk ID, so
-		// fallback to PlaceVm. Note PlaceVm will always return a host recommendation
-		// which is required for instance storage.
+	case curResult.needInstanceStoragePlacement:
+		// PlaceVmsXCluster does not support the magic instance storage disk
+		// ID, so fall back to PlaceVm. PlaceVm always returns a host
+		// recommendation, which instance storage requires.
 		rec, err := getPlaceVMRecommendation(vmCtx, vcClient, candidates, configSpec)
 		if err != nil {
 			return Recommendation{}, fmt.Errorf("PlaceVM failed: %w", err)
 		}
 		recommendation = rec
 
-	case len(candidates) > 1 || needDatastorePlacement:
+	case len(candidates) > 1 ||
+		curResult.needDatastorePlacement ||
+		curResult.needHostLocalPlacement:
+		//
+		// Host-local storage asks for a host recommendation, because the VM
+		// must land on a host that can reach its volumes. PlaceVmsXCluster
+		// treats each disk whose backing names a full datastore path as an
+		// existing disk that stays where it is, and only recommends hosts that
+		// can reach all of them (CRM-4964).
+		//
+		// TODO: requesting a host recommendation only when a specific feature
+		// needs one has been called out as a false optimization, and this
+		// should always ask for one. Doing so is not a self-contained change:
+		// processPlacementResult copies any recommended host into
+		// createArgs.HostMoID unconditionally, and a non-empty HostMoID pins
+		// the create to that host for both the fast-deploy and
+		// content-library paths. Making the request unconditional therefore
+		// also has to separate "a host was recommended" from "the VM must be
+		// created on that host", which affects every VM rather than only those
+		// with host-local or instance storage.
+		//
 		recs, err := getClusterPlacementRecommendations(
 			vmCtx,
 			vcClient,
@@ -357,8 +396,8 @@ func getPlacementRecommendation(
 				// We do not set ZoneName here as the candidateRPMorefs limited to
 				// the required zone.
 			}},
-			false,
-			needDatastorePlacement)
+			curResult.needHostLocalPlacement,
+			curResult.needDatastorePlacement)
 		if err != nil {
 			return Recommendation{}, fmt.Errorf("PlaceVmsXCluster failed: %w", err)
 		}
@@ -390,10 +429,11 @@ func Placement(
 	configSpec vimtypes.VirtualMachineConfigSpec,
 	constraints Constraints) (*Result, error) {
 
-	curResult := doesVMNeedPlacement(vmCtx)
+	curResult := doesVMNeedPlacement(vmCtx, constraints)
 	if curResult.ZoneName != "" &&
 		!curResult.needDatastorePlacement &&
-		!curResult.needInstanceStoragePlacement {
+		!curResult.needInstanceStoragePlacement &&
+		!curResult.needHostLocalPlacement {
 		// VM does not require any type of placement, so we can return early.
 		return &curResult, nil
 	}
@@ -446,8 +486,7 @@ func Placement(
 		finder,
 		candidates,
 		configSpec,
-		curResult.needInstanceStoragePlacement,
-		curResult.needDatastorePlacement)
+		curResult)
 	if err != nil {
 		return nil, err
 	}
@@ -479,6 +518,7 @@ func Placement(
 
 	result := Result{
 		InstanceStoragePlacement: curResult.InstanceStoragePlacement,
+		HostLocalPlacement:       curResult.needHostLocalPlacement,
 		ZoneName:                 zoneName,
 		PoolMoRef:                recommendation.PoolMoRef,
 		HostMoRef:                recommendation.HostMoRef,

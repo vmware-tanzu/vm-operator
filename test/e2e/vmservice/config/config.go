@@ -70,6 +70,16 @@ type Resources struct {
 	StorageClassName              string `json:"storageClassName,omitempty"`
 	VMClassName                   string `json:"vmClassName,omitempty"`
 	ContentLibrarySubscriptionURL string `json:"contentLibrarySubscriptionURL,omitempty"`
+
+	// HostLocalStorageClassName is a WaitForFirstConsumer storage class whose
+	// policy requires host-local storage. Specs that need it are skipped
+	// when it is empty.
+	HostLocalStorageClassName string `json:"hostLocalStorageClassName,omitempty"`
+
+	// HostLocalImmediateStorageClassName is an Immediate storage class whose
+	// policy requires host-local storage. Specs that need it are skipped
+	// when it is empty.
+	HostLocalImmediateStorageClassName string `json:"hostLocalImmediateStorageClassName,omitempty"`
 }
 
 func (c *E2EConfig) GetInfraConfig() *InfraConfig {

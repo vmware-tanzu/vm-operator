@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -71,7 +72,7 @@ func (v validator) ValidateCreate(ctx *pkgctx.WebhookRequestContext) admission.R
 
 	var fieldErrs field.ErrorList
 
-	fieldErrs = append(fieldErrs, v.validatePolicies(ctx, vmClass, field.NewPath("spec", "policies"))...)
+	fieldErrs = append(fieldErrs, v.validatePolicies(ctx, vmClass)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -86,34 +87,49 @@ func (v validator) ValidateDelete(*pkgctx.WebhookRequestContext) admission.Respo
 }
 
 func (v validator) ValidateUpdate(ctx *pkgctx.WebhookRequestContext) admission.Response {
-	// TODO: ValidateUpdate does not call validatePolicies like ValidateCreate
-	// does, so policy validation is currently skipped on update. Tracked
-	// separately; not fixed here since it's a behavior change unrelated to
-	// this lint pass.
+	vmClass, err := v.vmClassFromUnstructured(ctx.Obj)
+	if err != nil {
+		return webhook.Errored(http.StatusBadRequest, err)
+	}
+
+	oldVMClass, err := v.vmClassFromUnstructured(ctx.OldObj)
+	if err != nil {
+		return webhook.Errored(http.StatusBadRequest, err)
+	}
+
 	var fieldErrs field.ErrorList
+
+	// Check requests and limits only when they change, so an update that
+	// leaves them alone, such as vCenter re-syncing a class, is not rejected
+	// for values the class already had.
+	if !apiequality.Semantic.DeepEqual(vmClass.Spec.Resources, oldVMClass.Spec.Resources) {
+		fieldErrs = append(fieldErrs, v.validatePolicies(ctx, vmClass)...)
+	}
+
 	validationErrs := make([]string, 0, len(fieldErrs))
-	for _, fieldErr := range fieldErrs { //nolint:gosec // fieldErrs is always empty; ranging over it is a no-op, not an out-of-range access.
+	for _, fieldErr := range fieldErrs {
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
 	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
-func (v validator) validatePolicies(ctx *pkgctx.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass,
-	polPath *field.Path) field.ErrorList {
+func (v validator) validatePolicies(ctx *pkgctx.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass) field.ErrorList {
 	var allErrs field.ErrorList
 
-	request, limits := vmClass.Spec.Policies.Resources.Requests, vmClass.Spec.Policies.Resources.Limits
-	reqPath := polPath.Child("resources", "requests")
+	request, limits := vmClass.Spec.Resources.Requests, vmClass.Spec.Resources.Limits
+	reqPath := field.NewPath("spec", "resources", "requests")
 
 	// Validate the CPU request.
-	if !isRequestLimitValid(request.Cpu, limits.Cpu) {
-		allErrs = append(allErrs, field.Invalid(reqPath.Child("cpu"), request.Cpu.String(), invalidCPUReqMsg))
+	cpuRequest, cpuLimit := vmopv1.ClassResourceDefault(request.CPU), vmopv1.ClassResourceDefault(limits.CPU)
+	if !isRequestLimitValid(cpuRequest, cpuLimit) {
+		allErrs = append(allErrs, field.Invalid(reqPath.Child("cpu"), cpuRequest.String(), invalidCPUReqMsg))
 	}
 
 	// Validate the memory request.
-	if !isRequestLimitValid(request.Memory, limits.Memory) {
-		allErrs = append(allErrs, field.Invalid(reqPath.Child("memory"), request.Memory.String(), invalidMemoryReqMsg))
+	memoryRequest, memoryLimit := vmopv1.ClassResourceDefault(request.Memory), vmopv1.ClassResourceDefault(limits.Memory)
+	if !isRequestLimitValid(memoryRequest, memoryLimit) {
+		allErrs = append(allErrs, field.Invalid(reqPath.Child("memory"), memoryRequest.String(), invalidMemoryReqMsg))
 	}
 
 	// TODO: Validate req and limit against hardware configuration of the class
@@ -131,5 +147,5 @@ func (v validator) vmClassFromUnstructured(obj runtime.Unstructured) (*vmopv1.Vi
 }
 
 func isRequestLimitValid(request, limit resource.Quantity) bool {
-	return request.IsZero() || limit.IsZero() || request.Value() <= limit.Value()
+	return request.IsZero() || limit.IsZero() || request.Cmp(limit) <= 0
 }

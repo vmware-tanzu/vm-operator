@@ -61,45 +61,48 @@ type VirtualDevices struct {
 	DynamicDirectPathIODevices []DynamicDirectPathIODevice `json:"dynamicDirectPathIODevices,omitempty"`
 }
 
-// VirtualMachineClassHardware describes a virtual hardware resource
-// specification.
+// VirtualMachineClassHardware describes hardware presets for a class.
 type VirtualMachineClassHardware struct {
-	// +optional
-	Cpus int64 `json:"cpus,omitempty"`
-
-	// +optional
-	Memory resource.Quantity `json:"memory,omitempty"`
-
+	// Devices describes the class's device configuration.
 	// +optional
 	Devices VirtualDevices `json:"devices,omitempty"`
 
+	// InstanceStorage describes instance storage volumes.
 	// +optional
 	InstanceStorage InstanceStorage `json:"instanceStorage,omitempty"`
 }
 
-// VirtualMachineResourceSpec describes a virtual hardware policy specification.
-type VirtualMachineResourceSpec struct {
+// VirtualMachineClassResourceSpec describes CPU and memory value ranges for
+// requests or limits.
+type VirtualMachineClassResourceSpec struct {
+	// CPU is measured in cores, where millicores are allowed.
 	// +optional
-	Cpu resource.Quantity `json:"cpu,omitempty"` //nolint:revive
+	CPU *ResourceQuantityRange `json:"cpu,omitempty"`
 
+	// Memory is measured in bytes.
 	// +optional
-	Memory resource.Quantity `json:"memory,omitempty"`
+	Memory *ResourceQuantityRange `json:"memory,omitempty"`
 }
 
-// VirtualMachineClassResources describes the virtual hardware resource
-// reservations and limits configuration to be used by a VirtualMachineClass.
+// VirtualMachineClassResources describes reservations and limits.
+//
+// +kubebuilder:validation:XValidation:rule="!self.?requests.?cpu.?default.hasValue() || !self.?limits.?cpu.?default.hasValue() || quantity(string(self.requests.cpu.default)).compareTo(quantity(string(self.limits.cpu.default))) <= 0",message="the CPU request default must not exceed the CPU limit default"
+// +kubebuilder:validation:XValidation:rule="!self.?requests.?memory.?default.hasValue() || !self.?limits.?memory.?default.hasValue() || quantity(string(self.requests.memory.default)).compareTo(quantity(string(self.limits.memory.default))) <= 0",message="the memory request default must not exceed the memory limit default"
 type VirtualMachineClassResources struct {
+	// +kubebuilder:validation:XValidation:rule="[?self.?cpu.?min, ?self.?cpu.?max, ?self.?cpu.?default, ?self.?memory.?min, ?self.?memory.?max, ?self.?memory.?default].all(q, quantity(string(q)).compareTo(quantity('0')) >= 0)",message="requests must not be negative"
+	// +kubebuilder:validation:XValidation:rule="[?self.?cpu.?default, ?self.?memory.?default].all(q, quantity(string(q)).compareTo(quantity('0')) > 0)",message="a request default must be greater than 0; leave the request unset for no reservation"
+	// Requests describes CPU and memory reservations. A request default must
+	// be greater than 0; leave a request unset for no reservation from the
+	// class. A min of 0 lets a VM reserve anything from nothing up to max.
 	// +optional
-	Requests VirtualMachineResourceSpec `json:"requests,omitempty"`
+	Requests VirtualMachineClassResourceSpec `json:"requests,omitempty"`
 
+	// +kubebuilder:validation:XValidation:rule="[?self.?cpu.?min, ?self.?cpu.?max, ?self.?cpu.?default, ?self.?memory.?min, ?self.?memory.?max, ?self.?memory.?default].all(q, quantity(string(q)).compareTo(quantity('0')) > 0)",message="limits must be greater than 0"
+	// Limits describes CPU and memory limits. A limit without a default is
+	// unlimited, and a limit without a max lets a VM choose any limit,
+	// including unlimited.
 	// +optional
-	Limits VirtualMachineResourceSpec `json:"limits,omitempty"`
-}
-
-// VirtualMachineClassPolicies describes the policy configuration to be used by
-// a VirtualMachineClass.
-type VirtualMachineClassPolicies struct {
-	Resources VirtualMachineClassResources `json:"resources,omitempty"`
+	Limits VirtualMachineClassResourceSpec `json:"limits,omitempty"`
 }
 
 // VirtualMachineClassSpec defines the desired state of VirtualMachineClass.
@@ -128,12 +131,22 @@ type VirtualMachineClassSpec struct {
 	Hardware VirtualMachineClassHardware `json:"hardware,omitempty"`
 
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="[?self.?min, ?self.?max, ?self.?default].all(q, quantity(string(q)).isInteger() && quantity(string(q)).asInteger() >= 1 && quantity(string(q)).asInteger() <= 2147483647)",message="CPU must be a whole number of vCPUs between 1 and 2147483647"
 
-	// Policies describes the configuration of the VirtualMachineClass
-	// attributes related to virtual infrastructure policy. The configuration
-	// specified in this field is used to customize various policies related to
-	// infrastructure resource consumption.
-	Policies VirtualMachineClassPolicies `json:"policies,omitempty"`
+	// CPU is the guest-visible vCPU count.
+	CPU *ResourceQuantityRange `json:"cpu,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="[?self.?min, ?self.?max, ?self.?default].all(q, quantity(string(q)).isInteger() && quantity(string(q)).asInteger() >= 4194304 && quantity(string(q)).asInteger() % 4194304 == 0)",message="memory must be a multiple of 4Mi and at least 4Mi"
+
+	// Memory is the guest-visible memory, in bytes. vSphere requires a
+	// multiple of 4 MiB.
+	Memory *ResourceQuantityRange `json:"memory,omitempty"`
+
+	// +optional
+
+	// Resources describes reservations and limits.
+	Resources VirtualMachineClassResources `json:"resources,omitempty"`
 
 	// +optional
 
@@ -177,8 +190,8 @@ type VirtualMachineClassStatus struct {
 // +kubebuilder:resource:scope=Namespaced,shortName=vmclass
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".spec.hardware.cpus"
-// +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".spec.hardware.memory"
+// +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".spec.cpu.default"
+// +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".spec.memory.default"
 // +kubebuilder:printcolumn:name="Capabilities",type="string",priority=1,JSONPath=".status.capabilities"
 
 // VirtualMachineClass is the schema for the virtualmachineclasses API and

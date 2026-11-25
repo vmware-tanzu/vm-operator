@@ -17,6 +17,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -96,18 +97,18 @@ func unitTestsValidateCreate() {
 		var err error
 
 		if args.invalidCPURequest {
-			ctx.vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("2Gi")
-			ctx.vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("1Gi")
+			ctx.vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))}
 		}
 		if args.invalidMemoryRequest {
-			ctx.vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("2Gi")
-			ctx.vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("1Gi")
+			ctx.vmClass.Spec.Resources.Requests.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))}
 		}
 		if args.noCPULimit {
-			ctx.vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("0")
+			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("0"))}
 		}
 		if args.noMemoryLimit {
-			ctx.vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("0")
+			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("0"))}
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmClass)
@@ -130,7 +131,7 @@ func unitTestsValidateCreate() {
 		ctx = nil
 	})
 
-	reqPath := field.NewPath("spec", "policies", "resources", "requests")
+	reqPath := field.NewPath("spec", "resources", "requests")
 	invalidCPUField := field.Invalid(reqPath.Child("cpu"), "2Gi", "CPU request must not be larger than the CPU limit")
 	invalidMemField := field.Invalid(reqPath.Child("memory"), "2Gi", "memory request must not be larger than the memory limit")
 	DescribeTable("create table", validateCreate,
@@ -153,24 +154,44 @@ func unitTestsValidateUpdate() {
 		changeHwMemory bool
 		changeCPU      bool
 		changeMemory   bool
+
+		invalidCPURequest    bool
+		invalidMemoryRequest bool
+		oldInvalidCPURequest bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
+		if args.oldInvalidCPURequest {
+			// The stored class already has a CPU request above its limit.
+			ctx.oldVMClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2"))}
+			ctx.oldVMClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1"))}
+			ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVMClass)
+			Expect(err).ToNot(HaveOccurred())
+			ctx.vmClass.Spec.Resources = *ctx.oldVMClass.Spec.Resources.DeepCopy()
+		}
+		if args.invalidCPURequest {
+			ctx.vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2"))}
+			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1"))}
+		}
+		if args.invalidMemoryRequest {
+			ctx.vmClass.Spec.Resources.Requests.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))}
+		}
 		if args.changeHwCPU {
-			ctx.vmClass.Spec.Hardware.Cpus = 64
+			ctx.vmClass.Spec.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("64"))}
 		}
 		if args.changeHwMemory {
-			ctx.vmClass.Spec.Hardware.Memory = resource.MustParse("5Gi")
+			ctx.vmClass.Spec.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("5Gi"))}
 		}
 		if args.changeCPU {
-			ctx.vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("5Gi")
-			ctx.vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("10Gi")
+			ctx.vmClass.Spec.Resources.Requests.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("5Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("10Gi"))}
 		}
 		if args.changeMemory {
-			ctx.vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("5Gi")
-			ctx.vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("10Gi")
+			ctx.vmClass.Spec.Resources.Requests.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("5Gi"))}
+			ctx.vmClass.Spec.Resources.Limits.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("10Gi"))}
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmClass)
@@ -179,9 +200,7 @@ func unitTestsValidateUpdate() {
 		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 		if expectedReason != "" {
-			// Construct the complete reason here as ctx.vmClass.Spec is nil when initializing the DescribeTable below.
-			completeReason := field.Invalid(field.NewPath("spec"), ctx.vmClass.Spec, expectedReason).Error()
-			Expect(string(response.Result.Reason)).To(ContainSubstring(completeReason))
+			Expect(string(response.Result.Reason)).To(Equal(expectedReason))
 		}
 		if expectedErr != nil {
 			Expect(response.Result.Message).To(ContainSubstring(expectedErr.Error()))
@@ -203,12 +222,14 @@ func unitTestsValidateUpdate() {
 		Entry("should allow policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
 	)
 
-	DescribeTable("update table", validateUpdate,
-		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny hw cpu change", updateArgs{changeHwCPU: true}, true, nil, nil),
-		Entry("should deny hw memory change", updateArgs{changeHwMemory: true}, true, nil, nil),
-		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, true, nil, nil),
-		Entry("should deny policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
+	reqPath := field.NewPath("spec", "resources", "requests")
+	invalidCPUField := field.Invalid(reqPath.Child("cpu"), "2", "CPU request must not be larger than the CPU limit")
+	invalidMemField := field.Invalid(reqPath.Child("memory"), "2Gi", "memory request must not be larger than the memory limit")
+	DescribeTable("update requests and limits", validateUpdate,
+		Entry("should deny a CPU request raised above its limit", updateArgs{invalidCPURequest: true}, false, invalidCPUField.Error(), nil),
+		Entry("should deny a memory request raised above its limit", updateArgs{invalidMemoryRequest: true}, false, invalidMemField.Error(), nil),
+		Entry("should allow an update that leaves an existing invalid request unchanged", updateArgs{oldInvalidCPURequest: true, changeHwMemory: true}, true, nil, nil),
+		Entry("should deny an existing invalid request when resources change", updateArgs{oldInvalidCPURequest: true, invalidMemoryRequest: true}, false, nil, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

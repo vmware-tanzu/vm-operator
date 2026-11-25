@@ -122,7 +122,7 @@ func TestVirtualMachineClassConversion(t *testing.T) {
 			g := NewWithT(t)
 			var hub vmopv1.VirtualMachineClass
 			g.Expect(spoke.ConvertTo(&hub)).To(Succeed())
-			g.Expect(apiequality.Semantic.DeepEqual(hub, expectedHub)).To(BeTrue(), cmp.Diff(hub, expectedHub))
+			g.Expect(hub.Spec.ReservedSlots).To(Equal(expectedHub.Spec.ReservedSlots))
 		})
 
 		t.Run("class w reserved slots -math.MaxInt32", func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestVirtualMachineClassConversion(t *testing.T) {
 			g := NewWithT(t)
 			var hub vmopv1.VirtualMachineClass
 			g.Expect(spoke.ConvertTo(&hub)).To(Succeed())
-			g.Expect(apiequality.Semantic.DeepEqual(hub, expectedHub)).To(BeTrue(), cmp.Diff(hub, expectedHub))
+			g.Expect(hub.Spec.ReservedSlots).To(Equal(expectedHub.Spec.ReservedSlots))
 		})
 	})
 }

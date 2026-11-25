@@ -53,6 +53,7 @@ const (
 	VMUnmanagedVolumesRegisteredCondition = "VirtualMachineUnmanagedVolumesRegistered"
 
 	VMGroupsCapabilityName                  = "supports_VM_service_VM_groups"
+	VMServiceImmutableClassesCapabilityName = "supports_VM_service_immutable_VM_classes"
 	VirtualMachineSnapshotCapabilityName    = "supports_VM_service_VM_snapshots"
 	VMPlacementPoliciesCapabilityName       = "supports_VM_service_VM_placement_policies"
 	VMAffinityDuringExecutionCapabilityName = "supports_VM_service_VM_affinity_during_execution"

@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -157,7 +158,7 @@ func unitTestsReconcile() {
 					Expect(instance.Labels).To(HaveKey(vmopv1.VMClassInstanceActiveLabelKey))
 
 					// Modify the VM class config
-					vmClass.Spec.Hardware.Cpus = 8
+					vmClass.Spec.CPU = vmopv1.FixedClassResource(resource.MustParse("8"))
 					setConfigSpec(vmClass)
 					Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
 

@@ -56,3 +56,21 @@ func (dst *VirtualMachineSetResourcePolicyList) ConvertFrom(srcRaw ctrlconversio
 	src := srcRaw.(*vmopv1.VirtualMachineSetResourcePolicyList)
 	return Convert_v1alpha6_VirtualMachineSetResourcePolicyList_To_v1alpha1_VirtualMachineSetResourcePolicyList(src, dst, nil)
 }
+
+// Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineResourceSpec maps the Cpu field to the hub's CPU field.
+func Convert_v1alpha1_VirtualMachineResourceSpec_To_v1alpha6_VirtualMachineResourceSpec(
+	in *VirtualMachineResourceSpec, out *vmopv1.VirtualMachineResourceSpec, _ apiconversion.Scope) error {
+
+	out.CPU = in.Cpu
+	out.Memory = in.Memory
+	return nil
+}
+
+// Convert_v1alpha6_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec maps the hub's CPU field to the Cpu field.
+func Convert_v1alpha6_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(
+	in *vmopv1.VirtualMachineResourceSpec, out *VirtualMachineResourceSpec, _ apiconversion.Scope) error {
+
+	out.Cpu = in.CPU
+	out.Memory = in.Memory
+	return nil
+}

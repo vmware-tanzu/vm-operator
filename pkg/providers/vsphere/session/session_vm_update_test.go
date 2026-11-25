@@ -79,8 +79,8 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		Context("Updates Hardware", func() {
 			BeforeEach(func() {
-				vmClassSpec.Hardware.Cpus = 42
-				vmClassSpec.Hardware.Memory = resource.MustParse("2000Mi")
+				vmClassSpec.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("42"))}
+				vmClassSpec.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2000Mi"))}
 			})
 
 			It("config spec is not empty", func() {
@@ -92,9 +92,9 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("config already matches", func() {
 			BeforeEach(func() {
 				config.Hardware.NumCPU = 42
-				vmClassSpec.Hardware.Cpus = int64(config.Hardware.NumCPU)
+				vmClassSpec.CPU = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse(fmt.Sprintf("%d", config.Hardware.NumCPU)))}
 				config.Hardware.MemoryMB = 1500
-				vmClassSpec.Hardware.Memory = resource.MustParse(fmt.Sprintf("%dMi", config.Hardware.MemoryMB))
+				vmClassSpec.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse(fmt.Sprintf("%dMi", config.Hardware.MemoryMB)))}
 			})
 
 			It("config spec show no changes", func() {

@@ -1,0 +1,236 @@
+// © Broadcom. All Rights Reserved.
+// The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
+
+package v1alpha6
+
+import (
+	"fmt"
+
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiconversion "k8s.io/apimachinery/pkg/conversion"
+
+	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
+)
+
+// FixedClassResource converts a legacy scalar into a fixed class range.
+func FixedClassResource(value resource.Quantity) *ResourceQuantityRange {
+	minimum, maximum, def := value.DeepCopy(), value.DeepCopy(), value.DeepCopy()
+	return &ResourceQuantityRange{Min: &minimum, Max: &maximum, Default: &def}
+}
+
+// LegacyClassAllocation converts a legacy request or limit into a fixed class
+// range. A zero or empty legacy value means no reservation or limit, so it
+// converts to an unset range rather than a range fixed at zero.
+func LegacyClassAllocation(value resource.Quantity) *ResourceQuantityRange {
+	if value.IsZero() {
+		return nil
+	}
+	return FixedClassResource(value)
+}
+
+// LegacyClassLimit converts a legacy limit into a fixed class range. A zero or
+// empty legacy limit means no limit, so it converts to an unset range. A -1
+// legacy limit also means no limit; it converts to an empty range, which has
+// no default and so is unlimited, so that ClassLimitDefault reads it back as -1.
+func LegacyClassLimit(value resource.Quantity) *ResourceQuantityRange {
+	if value.Cmp(legacyUnlimited) == 0 {
+		return &ResourceQuantityRange{}
+	}
+	return LegacyClassAllocation(value)
+}
+
+var legacyUnlimited = resource.MustParse("-1")
+
+// LegacyClassLimitPair converts legacy CPU and memory limits to class ranges.
+// See LegacyClassLimit.
+func LegacyClassLimitPair(cpu, memory resource.Quantity) VirtualMachineClassResourceSpec {
+	return VirtualMachineClassResourceSpec{
+		CPU:    LegacyClassLimit(cpu),
+		Memory: LegacyClassLimit(memory),
+	}
+}
+
+// ClassLimitDefault projects a class limit into a legacy limit. An unset limit
+// projects to zero and a limit without a default, which is unlimited, projects
+// to -1, so a legacy -1 or zero limit reads back unchanged.
+func ClassLimitDefault(value *ResourceQuantityRange) resource.Quantity {
+	if value != nil && value.Default == nil {
+		return legacyUnlimited.DeepCopy()
+	}
+	return ClassResourceDefault(value)
+}
+
+// ClassLimitPairDefaults projects CPU and memory limits into independent
+// legacy quantities. See ClassLimitDefault.
+func ClassLimitPairDefaults(in VirtualMachineClassResourceSpec) (cpu, memory resource.Quantity) {
+	return ClassLimitDefault(in.CPU), ClassLimitDefault(in.Memory)
+}
+
+// LegacyClassAllocationPair converts legacy CPU and memory requests or limits
+// to class ranges, leaving zero or empty values unset.
+func LegacyClassAllocationPair(cpu, memory resource.Quantity) VirtualMachineClassResourceSpec {
+	return VirtualMachineClassResourceSpec{
+		CPU:    LegacyClassAllocation(cpu),
+		Memory: LegacyClassAllocation(memory),
+	}
+}
+
+// ClassResourceDefault returns a class range's default for an older API.
+func ClassResourceDefault(value *ResourceQuantityRange) resource.Quantity {
+	if value == nil || value.Default == nil {
+		return resource.Quantity{}
+	}
+	return value.Default.DeepCopy()
+}
+
+// ClassResourceDefaultOrNil returns a pointer to a copy of a class range's
+// default, or nil when the range or its default is unset.
+func ClassResourceDefaultOrNil(value *ResourceQuantityRange) *resource.Quantity {
+	if value == nil || value.Default == nil {
+		return nil
+	}
+	q := value.Default.DeepCopy()
+	return &q
+}
+
+// ClassResourceNonZeroDefault returns a pointer to a copy of a class range's
+// default, or nil when the range or its default is unset or zero.
+func ClassResourceNonZeroDefault(value *ResourceQuantityRange) *resource.Quantity {
+	if q := ClassResourceDefaultOrNil(value); q != nil && !q.IsZero() {
+		return q
+	}
+	return nil
+}
+
+// FixedClassResourcePair converts legacy CPU and memory quantities to fixed
+// ranges with independent copies of their bounds and defaults.
+func FixedClassResourcePair(cpu, memory resource.Quantity) VirtualMachineClassResourceSpec {
+	return VirtualMachineClassResourceSpec{
+		CPU:    FixedClassResource(cpu),
+		Memory: FixedClassResource(memory),
+	}
+}
+
+// ClassResourcePairDefaults projects CPU and memory defaults into independent
+// legacy quantities. Missing defaults project to zero quantities.
+func ClassResourcePairDefaults(in VirtualMachineClassResourceSpec) (cpu, memory resource.Quantity) {
+	return ClassResourceDefault(in.CPU), ClassResourceDefault(in.Memory)
+}
+
+// RestoreClassPolicies restores fields an older API cannot represent unless
+// that API's writer changed their projected value. Projected is the preserved
+// class converted down and back up without its conversion annotation.
+func RestoreClassPolicies(dst, preserved, projected *VirtualMachineClassSpec) {
+	restoreUnchangedClassPolicy(&dst.CPU, preserved.CPU, projected.CPU)
+	restoreUnchangedClassPolicy(&dst.Memory, preserved.Memory, projected.Memory)
+	for _, group := range []struct {
+		dst, preserved, projected *VirtualMachineClassResourceSpec
+	}{
+		{&dst.Resources.Requests, &preserved.Resources.Requests, &projected.Resources.Requests},
+		{&dst.Resources.Limits, &preserved.Resources.Limits, &projected.Resources.Limits},
+	} {
+		restoreUnchangedClassPolicy(&group.dst.CPU, group.preserved.CPU, group.projected.CPU)
+		restoreUnchangedClassPolicy(&group.dst.Memory, group.preserved.Memory, group.projected.Memory)
+	}
+}
+
+func restoreUnchangedClassPolicy[T any](dst *T, preserved, projected T) {
+	if apiequality.Semantic.DeepEqual(*dst, projected) {
+		*dst = preserved
+	}
+}
+
+// RestoreClassConversionData restores class policies preserved by an older API.
+// The version-specific converters project each policy into that API's fields so
+// an older writer's edits take precedence over the preserved policy.
+func RestoreClassConversionData[S any](
+	inMeta *metav1.ObjectMeta,
+	out *VirtualMachineClass,
+	down func(*VirtualMachineClassSpec, *S, apiconversion.Scope) error,
+	up func(*S, *VirtualMachineClassSpec, apiconversion.Scope) error,
+	s apiconversion.Scope,
+) error {
+	var preserved VirtualMachineClass
+	ok, err := restoreClassData(inMeta, &out.ObjectMeta, &preserved, "VMClass")
+	if err != nil || !ok {
+		return err
+	}
+	return restoreClassSpec(&out.Spec, &preserved.Spec, down, up, s)
+}
+
+// RestoreClassInstanceConversionData restores the class policies in an older
+// API's immutable class snapshot, honoring edits to its projected fields.
+func RestoreClassInstanceConversionData[S any](
+	inMeta *metav1.ObjectMeta,
+	out *VirtualMachineClassInstance,
+	down func(*VirtualMachineClassSpec, *S, apiconversion.Scope) error,
+	up func(*S, *VirtualMachineClassSpec, apiconversion.Scope) error,
+	s apiconversion.Scope,
+) error {
+	var preserved VirtualMachineClassInstance
+	ok, err := restoreClassData(inMeta, &out.ObjectMeta, &preserved, "VMClassInstance")
+	if err != nil || !ok {
+		return err
+	}
+	return restoreClassSpec(&out.Spec.VirtualMachineClassSpec, &preserved.Spec.VirtualMachineClassSpec, down, up, s)
+}
+
+// PreserveClassConversionData preserves policies missing from an older API and
+// copies metadata before adding the conversion annotation. Only the resources
+// that restore reads are stored, which keeps the annotation small.
+func PreserveClassConversionData(in *VirtualMachineClass, outMeta *metav1.ObjectMeta) error {
+	data := &VirtualMachineClass{}
+	data.Spec.CPU, data.Spec.Memory = in.Spec.CPU, in.Spec.Memory
+	data.Spec.Resources = in.Spec.Resources
+	return preserveClassData(data, &in.ObjectMeta, outMeta, "VMClass")
+}
+
+// PreserveClassInstanceConversionData preserves the resources of the immutable
+// class snapshot for an older API without modifying the source metadata.
+func PreserveClassInstanceConversionData(in *VirtualMachineClassInstance, outMeta *metav1.ObjectMeta) error {
+	data := &VirtualMachineClassInstance{}
+	data.Spec.CPU, data.Spec.Memory = in.Spec.CPU, in.Spec.Memory
+	data.Spec.Resources = in.Spec.Resources
+	return preserveClassData(data, &in.ObjectMeta, outMeta, "VMClassInstance")
+}
+
+func preserveClassData(in metav1.Object, inMeta, outMeta *metav1.ObjectMeta, kind string) error {
+	*outMeta = *inMeta.DeepCopy()
+	if err := utilconversion.MarshalData(in, outMeta); err != nil {
+		return fmt.Errorf("preserve %s conversion data: %w", kind, err)
+	}
+	return nil
+}
+
+func restoreClassData(inMeta, outMeta *metav1.ObjectMeta, preserved any, kind string) (bool, error) {
+	*outMeta = *inMeta.DeepCopy()
+	ok, err := utilconversion.UnmarshalData(outMeta, preserved)
+	if len(outMeta.Annotations) == 0 {
+		outMeta.Annotations = nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("restore %s conversion data: %w", kind, err)
+	}
+	return ok, nil
+}
+
+func restoreClassSpec[S any](
+	out, preserved *VirtualMachineClassSpec,
+	down func(*VirtualMachineClassSpec, *S, apiconversion.Scope) error,
+	up func(*S, *VirtualMachineClassSpec, apiconversion.Scope) error,
+	s apiconversion.Scope,
+) error {
+	var spoke S
+	if err := down(preserved, &spoke, s); err != nil {
+		return err
+	}
+	var projected VirtualMachineClassSpec
+	if err := up(&spoke, &projected, s); err != nil {
+		return err
+	}
+	RestoreClassPolicies(out, preserved, &projected)
+	return nil
+}

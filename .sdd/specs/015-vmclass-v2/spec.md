@@ -59,7 +59,7 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 
 **Acceptance scenarios**:
 
-1. **Given** a class with `resources.size.cpu: {min: 2, max: 16, default: 4}`, **when** a VM names it without setting CPU, **then** the VM spec gets 4 CPUs at admission.
+1. **Given** a class with `cpu: {min: 2, max: 16, default: 4}`, **when** a VM names it without setting CPU, **then** the VM spec gets 4 CPUs at admission.
 2. **Given** a class that sets `min` or `max` for a number field, **when** it is written without `default`, **then** it is rejected because `default` is required.
 3. **Given** a class that sets only `min` and `default`, **when** it is stored, **then** `max` stays unset and is bounded only by the hardware (or by a parent class in Milestone 2).
 4. **Given** a fixed size, **when** it is written, **then** it is expressed as `min == max == default`; the class mutating webhook does not fill missing bounds.
@@ -100,7 +100,8 @@ Personas are those in [`constitution.md`](../../memory/constitution.md). Everyth
 3. **Given** that VM, **when** `spec.className` is removed, **then** the VM keeps its values and is governed as a classless VM.
 4. **Given** `large` is edited, **when** the VM carries the same-class resize annotation, **then** the VM reconciler rewrites the class-supplied fields; without the annotation, the VM keeps its values.
 5. **Given** VM resize is allowed, as today, **when** `spec.className` changes from `large` to `small`, **then** no annotation is needed: every class-supplied field is replaced from `small`, and fields `small` doesn't set are cleared and re-defaulted from the next source (the governing class, the image, or vpxd).
-6. **Given** a class edit that changes a typed field, **when** the class controller reconciles, **then** the class's `ClassInstance` hash changes, so VMs of the class see the new instance.
+6. **Given** a class edit that changes a typed field that shapes a VM, **when** the class controller reconciles, **then** the class's `ClassInstance` hash changes, so VMs of the class see the new instance. The hash covers the typed fields that shape a VM and excludes governance (`zones`, `governs`, `parentClassRefs`) and metadata (`description`, `externalID`) (T122).
+7. **Given** the immutable VM classes capability is on, **when** a VM is resized within the same class, **then** it is done by setting `spec.class` to the new active instance; with the capability off, the same-class resize annotation (scenario 4) applies (T122).
 
 ### US5 — DevOps user: a VM without a zone gets one only when it is unambiguous (P1)
 

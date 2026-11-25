@@ -2072,15 +2072,15 @@ var _ = Describe("Power state requests", Label(testlabels.Controller, testlabels
 			vm2 = newVM(vm2Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
 		})
 
-		It("should power off every member, including one released by a reconcile with the old group", func() {
+		It("should power off every member, and not release one for the old power-on from a reconcile with the old group", func() {
 			staleGroup = getGroup()
 			updateGroup(func(g *vmopv1.VirtualMachineGroup) {
 				setRequest(g, vmopv1.VirtualMachinePowerStateOff, t1)
 			})
 
-			By("reconciling with the old view of the group, which releases vm-2 for power-on")
+			By("reconciling with the old view of the group, which the API server shows is for an older request")
 			Expect(reconcile()).To(Succeed())
-			Expect(getVM(vm2Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+			Expect(getVM(vm2Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
 			Expect(isPending()).To(BeTrue())
 
 			By("reconciling with the latest view of the group")
@@ -2159,6 +2159,28 @@ var _ = Describe("Power state requests", Label(testlabels.Controller, testlabels
 			setVMPowerState(vm1Name, vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn)
 			Expect(reconcile()).To(Succeed())
 			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+		})
+	})
+
+	When("a member is powered on directly after the request completed, and a reconcile sees the group from before it completed", func() {
+		BeforeEach(func() {
+			setRequest(group, vmopv1.VirtualMachinePowerStateOff, t1)
+			vm1 = newVM(vm1Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+			vm2 = newVM(vm2Name, vmopv1.VirtualMachinePowerStateOff, vmopv1.VirtualMachinePowerStateOff)
+		})
+
+		It("should not power off the member again", func() {
+			beforeCompletion := getGroup()
+			completeRequest()
+			setVMPowerState(vm1Name, vmopv1.VirtualMachinePowerStateOn, vmopv1.VirtualMachinePowerStateOn)
+
+			By("reconciling with the group as the cache had it before the request completed")
+			staleGroup = beforeCompletion
+			// Patching the stale group's conditions can conflict with the
+			// latest group. The next reconcile retries, so ignore the error.
+			_ = reconcile()
+			Expect(getVM(vm1Name).Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+			Expect(isPending()).To(BeFalse())
 		})
 	})
 

@@ -157,6 +157,8 @@ var _ = Describe("GOSC", func() {
 				Expect(ipv6Spec).ToNot(BeNil())
 				Expect(ipv6Spec.Ip).To(HaveLen(1))
 				Expect(ipv6Spec.Ip[0]).To(BeAssignableToTypeOf(&vimtypes.CustomizationDhcpIpV6Generator{}))
+				// On Windows, this overrides the DNS servers from DHCP.
+				Expect(adapter.DnsServerList).To(Equal([]string{dnsServer1}))
 			})
 		})
 

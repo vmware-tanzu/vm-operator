@@ -173,6 +173,12 @@ const (
 
 	// CapabilityKeyBringYourOwnNetworkInterface enables externally owned interfaces.
 	CapabilityKeyBringYourOwnNetworkInterface = "supports_vm_service_byo_network_interface"
+
+	// CapabilityKeyScopedDNSDefaults is the name of the capability key defined
+	// in the Supervisor capabilities CRD for applying the Supervisor's default
+	// DNS configuration to a VM's guest networking only when it is required,
+	// instead of to every interface.
+	CapabilityKeyScopedDNSDefaults = "supports_vm_service_scoped_dns_defaults"
 )
 
 var (
@@ -367,6 +373,8 @@ func updateCapabilitiesFeaturesFromCRD(
 			fs.BringYourOwnNetworkInterface = capStatus.Activated
 		case CapabilityKeyLifecycleHooks:
 			fs.LifecycleHooks = capStatus.Activated
+		case CapabilityKeyScopedDNSDefaults:
+			fs.ScopedDNSDefaults = capStatus.Activated
 		}
 	}
 	return fs

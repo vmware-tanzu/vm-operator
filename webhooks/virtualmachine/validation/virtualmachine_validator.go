@@ -2065,7 +2065,11 @@ func (v validator) validateSharedVolumesOrControllers(
 		vm,
 		vol,
 	)
+	// A controller without a bus number has not been assigned yet, so it
+	// cannot be shared. validateControllerFields reports the missing bus
+	// number.
 	controllerShared = vol.ControllerType == vmopv1.VirtualControllerTypeSCSI &&
+		vol.ControllerBusNumber != nil &&
 		(controllerSharingMode == vmopv1.VirtualControllerSharingModePhysical ||
 			controllerSharingMode == vmopv1.VirtualControllerSharingModeVirtual)
 
@@ -2124,14 +2128,16 @@ func (v validator) validateSharedVolumesOrControllers(
 	//           shared.
 	//
 	// Skip this check until a controller has actually been assigned to the
-	// volume (vol.ControllerType != ""). Controller placement is computed
-	// by the mutation webhook only after schema-upgrade backfill has
-	// populated spec.hardware.*Controllers from the VM's real,
-	// already-created state, so an unset ControllerType means placement is
-	// still pending, not invalid. Once a controller has been assigned,
-	// this rule still applies -- e.g. the user explicitly referenced an
-	// existing, non-shared controller.
-	if pvcShared && !volShared && vol.ControllerType != "" && !controllerShared {
+	// volume (vol.ControllerType != "" and vol.ControllerBusNumber != nil).
+	// Controller placement is computed by the mutation webhook only after
+	// schema-upgrade backfill has populated spec.hardware.*Controllers from
+	// the VM's real, already-created state, so an unset ControllerType or
+	// ControllerBusNumber means placement is still pending, not invalid.
+	// Once a controller has been assigned, this rule still applies -- e.g.
+	// the user explicitly referenced an existing, non-shared controller.
+	if pvcShared && !volShared && vol.ControllerType != "" &&
+		vol.ControllerBusNumber != nil && !controllerShared {
+
 		allErrs = append(allErrs,
 			field.Invalid(
 				volPath.Child("sharingMode"),

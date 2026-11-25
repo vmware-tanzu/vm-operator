@@ -65,6 +65,17 @@ const (
 	WorkloadIPv6CapabilityName              = "supports_workload_ipv6"
 	CSIBackupAPICapabilityName              = "supports_CSI_Backup_API"
 
+	// VMNetworkInterfaceUnitNumbersCapabilityName gates the
+	// spec.network.interfaces[].unitNumber field, its schema-upgrade backfill,
+	// and its admission-time assignment. Must match
+	// pkg/config/capabilities.CapabilityKeyVMServiceNetworkInterfaceUnitNumbers.
+	VMNetworkInterfaceUnitNumbersCapabilityName = "supports_vm_service_network_interface_unit_numbers"
+
+	// MutableNetworksCapabilityName gates adding, removing, and changing
+	// spec.network.interfaces after a VM is created. Must match
+	// pkg/config/capabilities.CapabilityKeyMutableNetworks.
+	MutableNetworksCapabilityName = "supports_VM_service_mutable_networks"
+
 	// VMEvictionCapabilityName gates the AutomaticVMEvictionPolicy and
 	// BestEffortRestartPolicy CRDs; must match
 	// pkg/config/capabilities.CapabilityKeyVMEviction.
@@ -91,7 +102,4 @@ const (
 
 	// BringYourOwnNetworkInterfaceCapabilityName gates externally managed NICs.
 	BringYourOwnNetworkInterfaceCapabilityName = "supports_vm_service_byo_network_interface"
-
-	// MutableNetworksCapabilityName gates changes to existing VM interfaces.
-	MutableNetworksCapabilityName = "supports_VM_service_mutable_networks"
 )

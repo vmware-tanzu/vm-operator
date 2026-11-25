@@ -101,8 +101,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
 
 		vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())
@@ -127,9 +126,9 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 
 			Expect(vm.Spec.Network).ToNot(BeNil())
 			Expect(vm.Spec.Network.Interfaces).To(HaveLen(1))
-			vm.Spec.Network.Interfaces = append(vm.Spec.Network.Interfaces, vm.Spec.Network.Interfaces[0])
-
-			vm.Spec.Network.Interfaces[1].Name = "eth1"
+			vm.Spec.Network.Interfaces = append(vm.Spec.Network.Interfaces, vmopv1.VirtualMachineNetworkInterfaceSpec{
+				Name: "eth1",
+			})
 
 			err = svClusterClient.Update(ctx, vm)
 			if err != nil {
@@ -196,8 +195,7 @@ func VMNetworkSpec(ctx context.Context, inputGetter func() VMNetworkSpecInput) {
 		vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vmToCreate, false)
 
 		vmoperator.WaitForVirtualMachineToExist(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
-		vmMoID := vmoperator.GetVirtualMachineMOID(ctx, svClusterClient, input.WCPNamespaceName, vmName)
+		vmMoID := vmoperator.WaitForVirtualMachineMOID(ctx, config, svClusterClient, input.WCPNamespaceName, vmName)
 		vmMoRef := types.ManagedObjectReference{Type: "VirtualMachine", Value: vmMoID}
 
 		vCenterClient := vcenter.NewVimClientFromKubeconfig(ctx, clusterProxy.GetKubeconfigPath())

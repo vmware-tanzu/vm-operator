@@ -5,6 +5,7 @@
 package v1alpha5_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -18,6 +19,10 @@ import (
 	ctrlconversion "sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/test/utilconversion"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1a2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1a3 "github.com/vmware-tanzu/vm-operator/api/v1alpha3"
+	vmopv1a4 "github.com/vmware-tanzu/vm-operator/api/v1alpha4"
 	vmopv1a5 "github.com/vmware-tanzu/vm-operator/api/v1alpha5"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
@@ -841,4 +846,143 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(hubAfter.Spec.Network.Interfaces[1].ExternalRef).To(Equal(hub.Spec.Network.Interfaces[0].ExternalRef))
 		g.Expect(hubAfter.Spec.Network.Interfaces[1].Network).To(BeNil())
 	})
+}
+
+func TestVirtualMachineFlexAPIRoundTrip(t *testing.T) {
+	for _, profile := range []*string{nil, ptr.To(""), ptr.To("reserved-small")} {
+		profileName := "nil"
+		if profile != nil {
+			profileName = "value-" + *profile
+		}
+		for name, newSpoke := range map[string]func() ctrlconversion.Convertible{
+			"v1alpha1": func() ctrlconversion.Convertible { return &vmopv1a1.VirtualMachine{} },
+			"v1alpha2": func() ctrlconversion.Convertible { return &vmopv1a2.VirtualMachine{} },
+			"v1alpha3": func() ctrlconversion.Convertible { return &vmopv1a3.VirtualMachine{} },
+			"v1alpha4": func() ctrlconversion.Convertible { return &vmopv1a4.VirtualMachine{} },
+			"v1alpha5": func() ctrlconversion.Convertible { return &vmopv1a5.VirtualMachine{} },
+		} {
+			t.Run(name+"/reservedProfileName="+profileName, func(t *testing.T) {
+				spoke := newSpoke()
+				g := NewWithT(t)
+				original := &vmopv1.VirtualMachine{
+					Spec: vmopv1.VirtualMachineSpec{
+						ReservedProfileName: profile,
+						Hardware: &vmopv1.VirtualMachineHardwareSpec{
+							VGPUs: []vmopv1.VirtualMachineVGPUDevice{
+								{Name: "gpu-0", Type: vmopv1.VirtualMachineVGPUTypeNVIDIA, ProfileName: "gpu-small", EnableUVM: ptr.To(false)},
+								{Name: "gpu-1", ProfileName: "gpu-small"},
+							},
+							DynamicDirectPathIODevices: []vmopv1.VirtualMachineDynamicDirectPathIODevice{
+								{Name: "pci-0", VendorID: ptr.To[int64](4318), DeviceID: ptr.To[int64](0), CustomLabel: "device"},
+								{Name: "pci-1"},
+							},
+						},
+					},
+					Status: vmopv1.VirtualMachineStatus{
+						ChangeBlockTracking: ptr.To(false),
+						Hardware: &vmopv1.VirtualMachineHardwareStatus{
+							Firmware:   vmopv1.VirtualMachineBootOptionsFirmwareTypeEFI,
+							SEVEnabled: ptr.To(false), SEVSNPEnabled: ptr.To(true), TDXEnabled: ptr.To(false), SMCPresent: ptr.To(true),
+							CPU: &vmopv1.VirtualMachineCPUAllocationStatus{
+								HotRemoveEnabled: ptr.To(false),
+							},
+						},
+					},
+				}
+				g.Expect(spoke.ConvertFrom(original)).To(Succeed())
+				// Exercise the actual wire format, including the conversion annotation.
+				wire, err := json.Marshal(spoke)
+				g.Expect(err).NotTo(HaveOccurred())
+				fromWire := newSpoke()
+				g.Expect(json.Unmarshal(wire, fromWire)).To(Succeed())
+				restored := &vmopv1.VirtualMachine{}
+				g.Expect(fromWire.ConvertTo(restored)).To(Succeed())
+				g.Expect(restored.Spec.ReservedProfileName).To(Equal(profile))
+				g.Expect(restored.Spec.Hardware.VGPUs).To(Equal(original.Spec.Hardware.VGPUs))
+				g.Expect(restored.Spec.Hardware.DynamicDirectPathIODevices).To(Equal(original.Spec.Hardware.DynamicDirectPathIODevices))
+				g.Expect(restored.Status).To(Equal(original.Status))
+			})
+		}
+	}
+}
+
+func TestVirtualMachineFlexAPIDeepCopy(t *testing.T) {
+	g := NewWithT(t)
+	original := &vmopv1.VirtualMachine{
+		Spec: vmopv1.VirtualMachineSpec{ReservedProfileName: ptr.To(""), Hardware: &vmopv1.VirtualMachineHardwareSpec{
+			VGPUs:                      []vmopv1.VirtualMachineVGPUDevice{{Name: "gpu-0", ProfileName: "gpu", EnableUVM: ptr.To(false)}},
+			DynamicDirectPathIODevices: []vmopv1.VirtualMachineDynamicDirectPathIODevice{{Name: "pci-0", VendorID: ptr.To[int64](1)}},
+		}},
+		Status: vmopv1.VirtualMachineStatus{Hardware: &vmopv1.VirtualMachineHardwareStatus{
+			SEVEnabled: ptr.To(false), CPU: &vmopv1.VirtualMachineCPUAllocationStatus{HotRemoveEnabled: ptr.To(false)},
+		}},
+	}
+	copied := original.DeepCopy()
+	*copied.Spec.ReservedProfileName = "changed"
+	copied.Spec.Hardware.VGPUs[0].ProfileName = "changed"
+	*copied.Spec.Hardware.VGPUs[0].EnableUVM = true
+	*copied.Spec.Hardware.DynamicDirectPathIODevices[0].VendorID = 2
+	*copied.Status.Hardware.SEVEnabled = true
+	*copied.Status.Hardware.CPU.HotRemoveEnabled = true
+	g.Expect(*original.Spec.ReservedProfileName).To(BeEmpty())
+	g.Expect(original.Spec.Hardware.VGPUs[0].ProfileName).To(Equal("gpu"))
+	g.Expect(*original.Spec.Hardware.VGPUs[0].EnableUVM).To(BeFalse())
+	g.Expect(*original.Spec.Hardware.DynamicDirectPathIODevices[0].VendorID).To(Equal(int64(1)))
+	g.Expect(*original.Status.Hardware.SEVEnabled).To(BeFalse())
+	g.Expect(*original.Status.Hardware.CPU.HotRemoveEnabled).To(BeFalse())
+	wire, err := json.Marshal(original.Spec)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(string(wire)).To(ContainSubstring(`"reservedProfileName":""`))
+	original.Spec.ReservedProfileName = nil
+	wire, err = json.Marshal(original.Spec)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(string(wire)).NotTo(ContainSubstring("reservedProfileName"))
+}
+
+func TestVirtualMachineReplicaSetFlexAPIRoundTrip(t *testing.T) {
+	for _, profile := range []*string{nil, ptr.To(""), ptr.To("reserved-small")} {
+		profileName := "nil"
+		if profile != nil {
+			profileName = "value-" + *profile
+		}
+		for name, newSpoke := range map[string]func() ctrlconversion.Convertible{
+			"v1alpha3": func() ctrlconversion.Convertible { return &vmopv1a3.VirtualMachineReplicaSet{} }, //nolint:staticcheck // Deprecated spokes are still served.
+			"v1alpha4": func() ctrlconversion.Convertible { return &vmopv1a4.VirtualMachineReplicaSet{} }, //nolint:staticcheck // Deprecated spokes are still served.
+			"v1alpha5": func() ctrlconversion.Convertible { return &vmopv1a5.VirtualMachineReplicaSet{} },
+		} {
+			t.Run(name+"/reservedProfileName="+profileName, func(t *testing.T) {
+				g := NewWithT(t)
+				original := &vmopv1.VirtualMachineReplicaSet{
+					Spec: vmopv1.VirtualMachineReplicaSetSpec{
+						Template: vmopv1.VirtualMachineTemplateSpec{
+							Spec: vmopv1.VirtualMachineSpec{
+								ReservedProfileName: profile,
+								Hardware: &vmopv1.VirtualMachineHardwareSpec{
+									VGPUs: []vmopv1.VirtualMachineVGPUDevice{
+										{Name: "gpu-0", Type: vmopv1.VirtualMachineVGPUTypeNVIDIA, ProfileName: "gpu-small", EnableUVM: ptr.To(false)},
+									},
+									DynamicDirectPathIODevices: []vmopv1.VirtualMachineDynamicDirectPathIODevice{
+										{Name: "pci-0", VendorID: ptr.To[int64](4318), DeviceID: ptr.To[int64](0), CustomLabel: "device"},
+									},
+								},
+							},
+						},
+					},
+				}
+				spoke := newSpoke()
+				g.Expect(spoke.ConvertFrom(original)).To(Succeed())
+				wire, err := json.Marshal(spoke)
+				g.Expect(err).NotTo(HaveOccurred())
+				fromWire := newSpoke()
+				g.Expect(json.Unmarshal(wire, fromWire)).To(Succeed())
+				restored := &vmopv1.VirtualMachineReplicaSet{}
+				g.Expect(fromWire.ConvertTo(restored)).To(Succeed())
+				tmpl := restored.Spec.Template.Spec
+				g.Expect(tmpl.ReservedProfileName).To(Equal(profile))
+				g.Expect(tmpl.Hardware).NotTo(BeNil())
+				g.Expect(tmpl.Hardware.VGPUs).To(Equal(original.Spec.Template.Spec.Hardware.VGPUs))
+				g.Expect(tmpl.Hardware.DynamicDirectPathIODevices).To(Equal(original.Spec.Template.Spec.Hardware.DynamicDirectPathIODevices))
+			})
+		}
+	}
 }

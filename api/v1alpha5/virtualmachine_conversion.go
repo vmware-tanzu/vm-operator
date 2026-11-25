@@ -212,6 +212,23 @@ func restore_v1alpha6_VirtualMachineNetworkVLANs(dst, src *vmopv1.VirtualMachine
 	dst.Spec.Network.VLANs = src.Spec.Network.VLANs
 }
 
+func restore_v1alpha6_VirtualMachineHardwareDevices(dst, src *vmopv1.VirtualMachine) {
+	if src.Spec.Hardware == nil {
+		return
+	}
+	if len(src.Spec.Hardware.VGPUs) == 0 &&
+		len(src.Spec.Hardware.DynamicDirectPathIODevices) == 0 {
+
+		return
+	}
+	hw := src.Spec.Hardware.DeepCopy()
+	if dst.Spec.Hardware == nil {
+		dst.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+	}
+	dst.Spec.Hardware.VGPUs = hw.VGPUs
+	dst.Spec.Hardware.DynamicDirectPathIODevices = hw.DynamicDirectPathIODevices
+}
+
 func restore_v1alpha6_VirtualMachineResources(dst, src *vmopv1.VirtualMachine) {
 	dst.Spec.Resources = src.Spec.Resources
 }
@@ -270,6 +287,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 
 	// BEGIN RESTORE
 
+	dst.Spec.ReservedProfileName = restored.Spec.ReservedProfileName
+
 	restore_v1alpha6_VirtualMachineBootstrapDisabled(dst, restored)
 	restore_v1alpha6_VirtualMachineVolumeAttributesClassName(dst, restored)
 	restore_v1alpha6_VirtualMachineNetworkVLANs(dst, restored)
@@ -279,6 +298,8 @@ func (src *VirtualMachine) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	restore_v1alpha6_VirtualMachineCPUAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineMemoryAdvanced(dst, restored)
 	restore_v1alpha6_VirtualMachineAffinityRequiredDuringExecution(dst, restored)
+
+	restore_v1alpha6_VirtualMachineHardwareDevices(dst, restored)
 
 	// END RESTORE
 
@@ -308,4 +329,18 @@ func (src *VirtualMachineList) ConvertTo(dstRaw ctrlconversion.Hub) error {
 func (dst *VirtualMachineList) ConvertFrom(srcRaw ctrlconversion.Hub) error {
 	src := srcRaw.(*vmopv1.VirtualMachineList)
 	return Convert_v1alpha6_VirtualMachineList_To_v1alpha5_VirtualMachineList(src, dst, nil)
+}
+
+// Convert_v1alpha6_VirtualMachineHardwareSpec_To_v1alpha5_VirtualMachineHardwareSpec drops
+// hub-only fields, which ConvertTo restores from the conversion annotation.
+func Convert_v1alpha6_VirtualMachineHardwareSpec_To_v1alpha5_VirtualMachineHardwareSpec(
+	in *vmopv1.VirtualMachineHardwareSpec, out *VirtualMachineHardwareSpec, s apiconversion.Scope) error {
+	return autoConvert_v1alpha6_VirtualMachineHardwareSpec_To_v1alpha5_VirtualMachineHardwareSpec(in, out, s)
+}
+
+// Convert_v1alpha6_VirtualMachineHardwareStatus_To_v1alpha5_VirtualMachineHardwareStatus drops
+// hub-only fields, which ConvertTo restores from the conversion annotation.
+func Convert_v1alpha6_VirtualMachineHardwareStatus_To_v1alpha5_VirtualMachineHardwareStatus(
+	in *vmopv1.VirtualMachineHardwareStatus, out *VirtualMachineHardwareStatus, s apiconversion.Scope) error {
+	return autoConvert_v1alpha6_VirtualMachineHardwareStatus_To_v1alpha5_VirtualMachineHardwareStatus(in, out, s)
 }

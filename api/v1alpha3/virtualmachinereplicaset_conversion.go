@@ -11,6 +11,28 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 )
 
+func restore_v1alpha6_VirtualMachineReplicaSetTemplateFlex(dst, src *vmopv1.VirtualMachineReplicaSet) {
+	dstSpec := &dst.Spec.Template.Spec
+	srcSpec := &src.Spec.Template.Spec
+
+	dstSpec.ReservedProfileName = srcSpec.ReservedProfileName
+
+	if srcSpec.Hardware == nil {
+		return
+	}
+	if len(srcSpec.Hardware.VGPUs) == 0 &&
+		len(srcSpec.Hardware.DynamicDirectPathIODevices) == 0 {
+
+		return
+	}
+	hw := srcSpec.Hardware.DeepCopy()
+	if dstSpec.Hardware == nil {
+		dstSpec.Hardware = &vmopv1.VirtualMachineHardwareSpec{}
+	}
+	dstSpec.Hardware.VGPUs = hw.VGPUs
+	dstSpec.Hardware.DynamicDirectPathIODevices = hw.DynamicDirectPathIODevices
+}
+
 // ConvertTo converts this VirtualMachineReplicaSet to the Hub version.
 func (src *VirtualMachineReplicaSet) ConvertTo(dstRaw ctrlconversion.Hub) error {
 	dst := dstRaw.(*vmopv1.VirtualMachineReplicaSet)
@@ -23,6 +45,12 @@ func (src *VirtualMachineReplicaSet) ConvertTo(dstRaw ctrlconversion.Hub) error 
 	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
 		return err
 	}
+
+	// BEGIN RESTORE
+
+	restore_v1alpha6_VirtualMachineReplicaSetTemplateFlex(dst, restored)
+
+	// END RESTORE
 
 	dst.Status = restored.Status
 

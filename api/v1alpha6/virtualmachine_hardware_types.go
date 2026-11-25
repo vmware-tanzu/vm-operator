@@ -329,6 +329,22 @@ type VirtualMachineHardwareSpec struct {
 	// +listType=map
 	// +listMapKey=name
 
+	// VGPUs describes the desired vGPU devices attached to the VM. Each item
+	// is one device; two GPUs of the same profile are two items.
+	VGPUs []VirtualMachineVGPUDevice `json:"vGPUs,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+
+	// DynamicDirectPathIODevices describes the desired Dynamic DirectPath I/O
+	// devices attached to the VM. Each item is one device.
+	DynamicDirectPathIODevices []VirtualMachineDynamicDirectPathIODevice `json:"dynamicDirectPathIODevices,omitempty"`
+
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+
 	// Cdrom describes the desired state of the VM's CD-ROM devices.
 	//
 	// Each CD-ROM device requires a reference to an ISO-type
@@ -408,6 +424,11 @@ type VirtualMachineVNUMATopologyStatus struct {
 // and limit fields), this struct covers the full observed CPU configuration as surfaced
 // in the VM's status under status.hardware.cpu.
 type VirtualMachineCPUAllocationStatus struct {
+	// +optional
+
+	// HotRemoveEnabled reports whether CPU hot-remove is enabled.
+	HotRemoveEnabled *bool `json:"hotRemoveEnabled,omitempty"`
+
 	// +optional
 
 	// Total describes the observed number of processors.
@@ -548,6 +569,32 @@ type VirtualMachineHardwareVGPUStatus struct {
 
 type VirtualMachineHardwareStatus struct {
 	// +optional
+	// +kubebuilder:validation:Enum=bios;efi
+
+	// Firmware describes the observed VM firmware.
+	Firmware VirtualMachineBootOptionsFirmwareType `json:"firmware,omitempty"`
+
+	// +optional
+
+	// SEVEnabled reports whether AMD Secure Encrypted Virtualization is enabled.
+	SEVEnabled *bool `json:"sevEnabled,omitempty"`
+
+	// +optional
+
+	// SEVSNPEnabled reports whether AMD SEV Secure Nested Paging is enabled.
+	SEVSNPEnabled *bool `json:"sevSnpEnabled,omitempty"`
+
+	// +optional
+
+	// TDXEnabled reports whether Intel Trust Domain Extensions is enabled.
+	TDXEnabled *bool `json:"tdxEnabled,omitempty"`
+
+	// +optional
+
+	// SMCPresent reports whether the virtual System Management Controller is present.
+	SMCPresent *bool `json:"smcPresent,omitempty"`
+
+	// +optional
 	// +listType=map
 	// +listMapKey=busNumber
 	// +listMapKey=type
@@ -570,4 +617,66 @@ type VirtualMachineHardwareStatus struct {
 
 	// VGPUs describes the observed vGPUs used by this VM.
 	VGPUs []VirtualMachineHardwareVGPUStatus `json:"vGPUs,omitempty"`
+}
+
+// VirtualMachineVGPUDevice describes one desired vGPU device.
+type VirtualMachineVGPUDevice struct {
+	// +required
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+
+	// Name uniquely identifies the device within the VM's vGPU list. It must be
+	// a DNS-1123 label.
+	Name string `json:"name"`
+
+	// +required
+	// +kubebuilder:validation:MinLength=1
+
+	// ProfileName identifies the vGPU profile in the environment browser.
+	ProfileName string `json:"profileName"`
+
+	// +optional
+	// +kubebuilder:default=Nvidia
+	// +kubebuilder:validation:Enum=Nvidia
+
+	// Type identifies the vGPU vendor plugin. Only Nvidia is supported. It
+	// matches status.hardware.vGPUs[].type.
+	Type VirtualMachineVGPUType `json:"type,omitempty"`
+
+	// +optional
+
+	// EnableUVM controls whether Unified Virtual Memory is enabled for the
+	// device. A change is applied only while the VM is powered off.
+	EnableUVM *bool `json:"enableUVM,omitempty" vmx:"pciPassthru%d.cfg.enable_uvm" vmxmode:"poweroff"`
+}
+
+// VirtualMachineDynamicDirectPathIODevice describes one desired Dynamic
+// DirectPath I/O device.
+type VirtualMachineDynamicDirectPathIODevice struct {
+	// +required
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+
+	// Name uniquely identifies the device within the VM's Dynamic DirectPath
+	// I/O device list. It must be a DNS-1123 label.
+	Name string `json:"name"`
+
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=65535
+
+	// VendorID is the PCI vendor ID, matching the environment-browser entry.
+	VendorID *int64 `json:"vendorID,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=65535
+
+	// DeviceID is the PCI device ID, matching the environment-browser entry.
+	DeviceID *int64 `json:"deviceID,omitempty"`
+
+	// +optional
+
+	// CustomLabel selects the device backing.
+	CustomLabel string `json:"customLabel,omitempty"`
 }

@@ -4250,6 +4250,7 @@ func autoConvert_v1alpha4_VirtualMachineSpec_To_v1alpha6_VirtualMachineSpec(in *
 }
 
 func autoConvert_v1alpha6_VirtualMachineSpec_To_v1alpha4_VirtualMachineSpec(in *v1alpha6.VirtualMachineSpec, out *VirtualMachineSpec, s conversion.Scope) error {
+	// WARNING: in.ReservedProfileName requires manual conversion: does not exist in peer-type
 	out.Image = (*VirtualMachineImageRef)(unsafe.Pointer(in.Image))
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName

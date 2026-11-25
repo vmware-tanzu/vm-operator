@@ -189,7 +189,7 @@ func (r *Reconciler) ReconcileNormal(
 	ctx.Logger.Info("Reconciling VirtualMachineGroup",
 		"resourceVersion", ctx.VMGroup.ResourceVersion,
 		"requestTime", ctx.VMGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation],
-		"lastUpdatedPowerStateTime", ctx.VMGroup.Status.LastUpdatedPowerStateTime)
+		"lastUpdatedPowerStateTime", formatTime(ctx.VMGroup.Status.LastUpdatedPowerStateTime))
 
 	defer func(beforeVMGroupStatus *vmopv1.VirtualMachineGroupStatus) {
 		if !apiequality.Semantic.DeepEqual(beforeVMGroupStatus, &ctx.VMGroup.Status) {
@@ -1129,6 +1129,15 @@ func findMemberStatus(
 	return -1, nil
 }
 
+// formatTime returns the time in RFC3339 format with nanoseconds, or an empty
+// string if the time is nil. It is safe to use as a log value.
+func formatTime(t *metav1.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format(time.RFC3339Nano)
+}
+
 // isPowerStateRequestClosed returns true if the last updated power state time
 // in the status is after the time of the request in the annotation.
 func isPowerStateRequestClosed(
@@ -1214,7 +1223,7 @@ func (r *Reconciler) isRequestStillOpen(
 			"Power state request is closed on the API server, but not in the cache, skipping",
 			"cachedResourceVersion", ctx.VMGroup.ResourceVersion,
 			"resourceVersion", fresh.ResourceVersion,
-			"lastUpdatedPowerStateTime", fresh.Status.LastUpdatedPowerStateTime)
+			"lastUpdatedPowerStateTime", formatTime(fresh.Status.LastUpdatedPowerStateTime))
 		return false, nil
 	}
 

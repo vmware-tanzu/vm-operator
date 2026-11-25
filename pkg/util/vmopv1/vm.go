@@ -666,7 +666,7 @@ func GetVNUMANodeCount(vm *vmopv1.VirtualMachine) int32 {
 // FullMemReservationSpecMet returns true when the VM spec describes full
 // guest memory reservation via either mechanism accepted by vSphere:
 //   - spec.memoryAdvanced.reservationLockedToMax == true
-//   - spec.resources.requests.memory equals spec.resources.size.memory
+//   - spec.resources.requests.memory equals spec.memory
 //
 // Note: this checks only spec-declared intent. Callers that have access
 // to the live vSphere ConfigInfo should additionally check
@@ -677,9 +677,9 @@ func FullMemReservationSpecMet(vm *vmopv1.VirtualMachine) bool {
 		return true
 	}
 	res := vm.Spec.Resources
-	if res != nil && res.Requests != nil && res.Size != nil &&
-		res.Requests.Memory != nil && res.Size.Memory != nil &&
-		res.Requests.Memory.Cmp(*res.Size.Memory) == 0 {
+	if res != nil && res.Requests != nil && vm.Spec.Memory != nil &&
+		res.Requests.Memory != nil &&
+		res.Requests.Memory.Cmp(*vm.Spec.Memory) == 0 {
 		return true
 	}
 	return false

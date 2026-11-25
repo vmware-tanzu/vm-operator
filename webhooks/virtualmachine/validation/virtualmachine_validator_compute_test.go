@@ -51,6 +51,30 @@ var _ = Describe(
 		Context("capability gate — VMServiceClasslessVM required", func() {
 			DescribeTable("fields require the VMServiceClasslessVM supervisor capability",
 				doTest,
+				Entry("spec.cpu non-nil without capability → rejected",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+								c.Features.VMServiceClasslessVM = false
+							})
+							ctx.vm.Spec.CPU = q("4")
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.cpu: Forbidden: the VM Compute Config (via VMServiceClasslessVM) feature is not enabled"),
+					},
+				),
+				Entry("spec.memory non-nil without capability → rejected",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							pkgcfg.SetContext(ctx, func(c *pkgcfg.Config) {
+								c.Features.VMServiceClasslessVM = false
+							})
+							ctx.vm.Spec.Memory = q("4Gi")
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.memory: Forbidden: the VM Compute Config (via VMServiceClasslessVM) feature is not enabled"),
+					},
+				),
 				Entry("spec.resources non-nil without capability → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
@@ -97,51 +121,43 @@ var _ = Describe(
 		Context("size field validations", func() {
 			DescribeTable("size.{cpu,memory} must be > 0 when set",
 				doTest,
-				Entry("size.cpu = 0 → rejected",
+				Entry("spec.cpu = 0 → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{CPU: q("0")},
-							}
+							ctx.vm.Spec.CPU = q("0")
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.size.cpu: Invalid value", "must be greater than 0 when set"),
+						validate:      doValidateWithMsg("spec.cpu: Invalid value", "must be greater than 0 when set"),
 					},
 				),
-				Entry("size.memory = 0 → rejected",
+				Entry("spec.memory = 0 → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{Memory: q("0")},
-							}
+							ctx.vm.Spec.Memory = q("0")
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.size.memory: Invalid value", "must be greater than 0 when set"),
+						validate:      doValidateWithMsg("spec.memory: Invalid value", "must be greater than 0 when set"),
 					},
 				),
 			)
 
-			DescribeTable("size.cpu must not exceed the int32 range OverwriteSpecComputeConfig converts it into",
+			DescribeTable("spec.cpu must not exceed the int32 range OverwriteSpecComputeConfig converts it into",
 				doTest,
-				Entry("size.cpu = math.MaxInt32 → allowed",
+				Entry("spec.cpu = math.MaxInt32 → allowed",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{CPU: q("2147483647")},
-							}
+							ctx.vm.Spec.CPU = q("2147483647")
 						},
 						expectAllowed: true,
 					},
 				),
-				Entry("size.cpu = math.MaxInt32 + 1 → rejected",
+				Entry("spec.cpu = math.MaxInt32 + 1 → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{CPU: q("2147483648")},
-							}
+							ctx.vm.Spec.CPU = q("2147483648")
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.size.cpu: Invalid value", "must not exceed 2147483647"),
+						validate:      doValidateWithMsg("spec.cpu: Invalid value", "must not exceed 2147483647"),
 					},
 				),
 			)
@@ -292,16 +308,16 @@ var _ = Describe(
 						validate:      doValidateWithMsg("spec.resources.requests.cpu: Invalid value", "must be less than or equal to limits.cpu"),
 					},
 				),
-				Entry("requests.memory > size.memory → rejected",
+				Entry("requests.memory > spec.memory → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("4Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: q("4Gi")},
 								Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.resources.requests.memory: Invalid value", "must be less than or equal to size.memory"),
+						validate:      doValidateWithMsg("spec.resources.requests.memory: Invalid value", "must be less than or equal to spec.memory"),
 					},
 				),
 				Entry("requests.memory > limits.memory → rejected",
@@ -316,11 +332,11 @@ var _ = Describe(
 						validate:      doValidateWithMsg("spec.resources.requests.memory: Invalid value", "must be less than or equal to limits.memory"),
 					},
 				),
-				Entry("size.memory > limits.memory → accepted (size and limits are independent)",
+				Entry("spec.memory > limits.memory → accepted (size and limits are independent)",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("16Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:   &vmopv1.VirtualMachineResourceQuantity{Memory: q("16Gi")},
 								Limits: &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 							}
 						},
@@ -359,11 +375,11 @@ var _ = Describe(
 		Context("LatencySensitivity full reservation", func() {
 			DescribeTable("High/HighWithHyperthreading requires full CPU and memory reservation",
 				doTest,
-				Entry("High + requests.memory != size.memory + no reservationLockedToMax → rejected",
+				Entry("High + requests.memory != spec.memory + no reservationLockedToMax → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("8Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 								Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: q("4Gi")},
 							}
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
@@ -374,11 +390,11 @@ var _ = Describe(
 						validate:      doValidateWithMsg("spec.cpuAdvanced.latencySensitivity: Invalid value", "requires full memory reservation"),
 					},
 				),
-				Entry("High + requests.memory == size.memory + requests.cpu > 0 → accepted",
+				Entry("High + requests.memory == spec.memory + requests.cpu > 0 → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("8Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 								Requests: &vmopv1.VirtualMachineResourceQuantity{
 									Memory: q("8Gi"),
 									CPU:    q("2000"),
@@ -407,12 +423,10 @@ var _ = Describe(
 						expectAllowed: true,
 					},
 				),
-				Entry("High + requests.memory nil + size.memory set + no reservationLockedToMax → rejected",
+				Entry("High + requests.memory nil + spec.memory set + no reservationLockedToMax → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
-							}
+							ctx.vm.Spec.Memory = q("8Gi")
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 								LatencySensitivity: ptr.To(vmopv1.VirtualMachineLatencySensitivityHigh),
 							}
@@ -421,11 +435,11 @@ var _ = Describe(
 						validate:      doValidateWithMsg("spec.cpuAdvanced.latencySensitivity: Invalid value", "requires full memory reservation"),
 					},
 				),
-				Entry("HighWithHyperthreading + requests.memory != size.memory → rejected",
+				Entry("HighWithHyperthreading + requests.memory != spec.memory → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("8Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 								Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: q("4Gi")},
 							}
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
@@ -439,8 +453,8 @@ var _ = Describe(
 				Entry("High + memory satisfied + no CPU reservation → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("8Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 								Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 							}
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
@@ -462,11 +476,11 @@ var _ = Describe(
 			DescribeTable("requests.memory and limits.memory rules",
 				doTest,
 				// requests.memory is unconditionally forbidden when lock is set.
-				Entry("lock=true + requests.memory != size.memory → rejected",
+				Entry("lock=true + requests.memory != spec.memory → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("8Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 								Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: q("4Gi")},
 							}
 							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
@@ -479,11 +493,11 @@ var _ = Describe(
 							"must not be set when spec.memoryAdvanced.reservationLockedToMax is true"),
 					},
 				),
-				Entry("lock=true + requests.memory == size.memory → rejected",
+				Entry("lock=true + requests.memory == spec.memory → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("8Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 								Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 							}
 							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
@@ -496,7 +510,7 @@ var _ = Describe(
 							"must not be set when spec.memoryAdvanced.reservationLockedToMax is true"),
 					},
 				),
-				Entry("lock=true + requests.memory set + size.memory nil → rejected",
+				Entry("lock=true + requests.memory set + spec.memory nil → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
@@ -522,12 +536,12 @@ var _ = Describe(
 						expectAllowed: true,
 					},
 				),
-				// limits.memory must be >= size.memory when lock is set.
-				Entry("lock=true + limits.memory < size.memory → rejected",
+				// limits.memory must be >= spec.memory when lock is set.
+				Entry("lock=true + limits.memory < spec.memory → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("16Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:   &vmopv1.VirtualMachineResourceQuantity{Memory: q("16Gi")},
 								Limits: &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 							}
 							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
@@ -537,14 +551,14 @@ var _ = Describe(
 						expectAllowed: false,
 						validate: doValidateWithMsg(
 							"spec.resources.limits.memory: Invalid value",
-							"must be greater than or equal to size.memory when spec.memoryAdvanced.reservationLockedToMax is true"),
+							"must be greater than or equal to spec.memory when spec.memoryAdvanced.reservationLockedToMax is true"),
 					},
 				),
-				Entry("lock=true + limits.memory == size.memory → accepted",
+				Entry("lock=true + limits.memory == spec.memory → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("16Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:   &vmopv1.VirtualMachineResourceQuantity{Memory: q("16Gi")},
 								Limits: &vmopv1.VirtualMachineResourceQuantity{Memory: q("16Gi")},
 							}
 							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
@@ -554,11 +568,11 @@ var _ = Describe(
 						expectAllowed: true,
 					},
 				),
-				Entry("lock=true + limits.memory > size.memory → accepted",
+				Entry("lock=true + limits.memory > spec.memory → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("8Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:   &vmopv1.VirtualMachineResourceQuantity{Memory: q("8Gi")},
 								Limits: &vmopv1.VirtualMachineResourceQuantity{Memory: q("16Gi")},
 							}
 							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
@@ -571,8 +585,8 @@ var _ = Describe(
 				Entry("lock=true + limits.memory = -1 (unlimited) → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("16Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size:   &vmopv1.VirtualMachineResourceQuantity{Memory: q("16Gi")},
 								Limits: &vmopv1.VirtualMachineResourceQuantity{Memory: q("-1")},
 							}
 							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
@@ -582,12 +596,10 @@ var _ = Describe(
 						expectAllowed: true,
 					},
 				),
-				Entry("lock=true + limits.memory nil + size.memory set → accepted",
+				Entry("lock=true + limits.memory nil + spec.memory set → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{Memory: q("16Gi")},
-							}
+							ctx.vm.Spec.Memory = q("16Gi")
 							ctx.vm.Spec.MemoryAdvanced = &vmopv1.VirtualMachineMemoryAdvancedSpec{
 								ReservationLockedToMax: ptr.To(true),
 							}
@@ -595,7 +607,7 @@ var _ = Describe(
 						expectAllowed: true,
 					},
 				),
-				Entry("lock=true + limits set + size.memory nil → accepted",
+				Entry("lock=true + limits set + spec.memory nil → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
@@ -658,12 +670,10 @@ var _ = Describe(
 						expectAllowed: true,
 					},
 				),
-				Entry("size.cpu % vnumaNodeCount != 0 → rejected (uneven division)",
+				Entry("spec.cpu % vnumaNodeCount != 0 → rejected (uneven division)",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{CPU: q("7")},
-							}
+							ctx.vm.Spec.CPU = q("7")
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 								Topology: &vmopv1.VirtualMachineCPUTopologySpec{
 									CoresPerSocket: ptr.To(int32(1)),
@@ -672,16 +682,14 @@ var _ = Describe(
 							}
 						},
 						expectAllowed: false,
-						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount: Invalid value", "size.cpu must be evenly divisible by vnumaNodeCount"),
+						validate:      doValidateWithMsg("spec.cpuAdvanced.topology.vnumaNodeCount: Invalid value", "spec.cpu must be evenly divisible by vnumaNodeCount"),
 					},
 				),
 				Entry("coresPerNumaNode neither multiple nor divisor of coresPerSocket → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							// size.cpu=8, vnumaNodeCount=4 → coresPerNode=2; coresPerSocket=3: 2%3!=0 and 3%2!=0
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{CPU: q("8")},
-							}
+							// spec.cpu=8, vnumaNodeCount=4 → coresPerNode=2; coresPerSocket=3: 2%3!=0 and 3%2!=0
+							ctx.vm.Spec.CPU = q("8")
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 								Topology: &vmopv1.VirtualMachineCPUTopologySpec{
 									CoresPerSocket: ptr.To(int32(3)),
@@ -696,10 +704,8 @@ var _ = Describe(
 				Entry("coresPerNumaNode is a divisor of coresPerSocket → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							// size.cpu=8, vnumaNodeCount=4 → coresPerNode=2; coresPerSocket=4: 4%2==0
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{CPU: q("8")},
-							}
+							// spec.cpu=8, vnumaNodeCount=4 → coresPerNode=2; coresPerSocket=4: 4%2==0
+							ctx.vm.Spec.CPU = q("8")
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 								Topology: &vmopv1.VirtualMachineCPUTopologySpec{
 									CoresPerSocket: ptr.To(int32(4)),
@@ -713,10 +719,8 @@ var _ = Describe(
 				Entry("coresPerNumaNode is a multiple of coresPerSocket → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
-							// size.cpu=8, vnumaNodeCount=2 → coresPerNode=4; coresPerSocket=2: 4%2==0
-							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{CPU: q("8")},
-							}
+							// spec.cpu=8, vnumaNodeCount=2 → coresPerNode=4; coresPerSocket=2: 4%2==0
+							ctx.vm.Spec.CPU = q("8")
 							ctx.vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 								Topology: &vmopv1.VirtualMachineCPUTopologySpec{
 									CoresPerSocket: ptr.To(int32(2)),
@@ -793,12 +797,12 @@ var _ = Describe(
 						expectAllowed: true,
 					},
 				),
-				Entry("uptv2Enabled=true with requests.memory == size.memory → accepted",
+				Entry("uptv2Enabled=true with requests.memory == spec.memory → accepted",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
+							ctx.vm.Spec.Memory = q("4Gi")
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
 								Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: q("4Gi")},
-								Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: q("4Gi")},
 							}
 							ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 								Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
@@ -873,13 +877,37 @@ var _ = Describe(
 
 			DescribeTable("changes to compute fields are rejected during upgrade window",
 				doTest,
+				Entry("spec.cpu changed → rejected",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							markNotUpgraded(ctx)
+							ctx.oldVM.Spec.CPU = nil
+							ctx.vm.Spec.CPU = q("4")
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.cpu: Forbidden: modifying this VM is not allowed until it is upgraded"),
+					},
+				),
+				Entry("spec.memory changed → rejected",
+					testParams{
+						setup: func(ctx *unitValidatingWebhookContext) {
+							markNotUpgraded(ctx)
+							ctx.oldVM.Spec.Memory = nil
+							ctx.vm.Spec.Memory = q("4Gi")
+						},
+						expectAllowed: false,
+						validate:      doValidateWithMsg("spec.memory: Forbidden: modifying this VM is not allowed until it is upgraded"),
+					},
+				),
 				Entry("spec.resources changed → rejected",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
 							markNotUpgraded(ctx)
 							ctx.oldVM.Spec.Resources = nil
 							ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-								Size: &vmopv1.VirtualMachineResourceQuantity{CPU: q("4")},
+								Requests: &vmopv1.VirtualMachineResourceQuantity{
+									Memory: q("4Gi"),
+								},
 							}
 						},
 						expectAllowed: false,
@@ -937,14 +965,12 @@ var _ = Describe(
 			It("accepts all compute fields set to valid values", func() {
 				doTest(testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						// size.cpu=16 / size.memory=32Gi
+						// spec.cpu=16 / spec.memory=32Gi
 						// requests < size, requests < limits, limits > requests
-						// size.memory (32Gi) > limits.memory (16Gi) — independent fields
+						// spec.memory (32Gi) > limits.memory (16Gi) — independent fields
+						ctx.vm.Spec.CPU = q("16")
+						ctx.vm.Spec.Memory = q("32Gi")
 						ctx.vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-							Size: &vmopv1.VirtualMachineResourceQuantity{
-								CPU:    q("16"),
-								Memory: q("32Gi"),
-							},
 							Requests: &vmopv1.VirtualMachineResourceQuantity{
 								CPU:    q("4000"),
 								Memory: q("8Gi"),

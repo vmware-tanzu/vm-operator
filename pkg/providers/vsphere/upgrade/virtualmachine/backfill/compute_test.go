@@ -48,47 +48,39 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 	})
 
 	// ------------------------------------------------------------------ //
-	// Group A — spec.resources.size (guest-visible CPU and memory)
+	// Group A — spec.cpu and spec.memory (guest-visible CPU and memory)
 	// ------------------------------------------------------------------ //
 
-	Context("Group A — spec.resources.size", func() {
+	Context("Group A — spec.cpu and spec.memory", func() {
 
-		DescribeTable("size.cpu backfilled from Hardware.NumCPU",
+		DescribeTable("spec.cpu backfilled from Hardware.NumCPU",
 			func(numCPU int32, expectCPU *int64) {
 				moVM.Config.Hardware.NumCPU = numCPU
 				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if expectCPU == nil {
-					if vm.Spec.Resources != nil && vm.Spec.Resources.Size != nil {
-						Expect(vm.Spec.Resources.Size.CPU).To(BeNil())
-					}
+					Expect(vm.Spec.CPU).To(BeNil())
 					Expect(mutated).To(BeFalse())
 				} else {
-					Expect(vm.Spec.Resources).ToNot(BeNil())
-					Expect(vm.Spec.Resources.Size).ToNot(BeNil())
-					Expect(vm.Spec.Resources.Size.CPU).ToNot(BeNil())
-					Expect(vm.Spec.Resources.Size.CPU.Value()).To(Equal(*expectCPU))
+					Expect(vm.Spec.CPU).ToNot(BeNil())
+					Expect(vm.Spec.CPU.Value()).To(Equal(*expectCPU))
 					Expect(mutated).To(BeTrue())
 				}
 			},
-			Entry("NumCPU=4 → size.cpu=4", int32(4), ptr.To(int64(4))),
-			Entry("NumCPU=1 → size.cpu=1", int32(1), ptr.To(int64(1))),
+			Entry("NumCPU=4 → spec.cpu=4", int32(4), ptr.To(int64(4))),
+			Entry("NumCPU=1 → spec.cpu=1", int32(1), ptr.To(int64(1))),
 			Entry("NumCPU=0 → no backfill", int32(0), nil),
 		)
 
-		DescribeTable("size.memory backfilled from Hardware.MemoryMB (MiB → bytes)",
+		DescribeTable("spec.memory backfilled from Hardware.MemoryMB (MiB → bytes)",
 			func(memoryMB int32, expectBytes *int64) {
 				moVM.Config.Hardware.MemoryMB = memoryMB
 				mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 				if expectBytes == nil {
-					if vm.Spec.Resources != nil && vm.Spec.Resources.Size != nil {
-						Expect(vm.Spec.Resources.Size.Memory).To(BeNil())
-					}
+					Expect(vm.Spec.Memory).To(BeNil())
 					Expect(mutated).To(BeFalse())
 				} else {
-					Expect(vm.Spec.Resources).ToNot(BeNil())
-					Expect(vm.Spec.Resources.Size).ToNot(BeNil())
-					Expect(vm.Spec.Resources.Size.Memory).ToNot(BeNil())
-					Expect(vm.Spec.Resources.Size.Memory.Value()).To(Equal(*expectBytes))
+					Expect(vm.Spec.Memory).ToNot(BeNil())
+					Expect(vm.Spec.Memory.Value()).To(Equal(*expectBytes))
 					Expect(mutated).To(BeTrue())
 				}
 			},
@@ -96,26 +88,22 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 			Entry("MemoryMB=0 → no backfill", int32(0), nil),
 		)
 
-		It("spec.resources.size.cpu already set → not overwritten (spec wins)", func() {
+		It("spec.cpu already set → not overwritten (spec wins)", func() {
 			q := resource.MustParse("2")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
-			}
+			vm.Spec.CPU = &q
 			moVM.Config.Hardware.NumCPU = 8
 			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
-			Expect(vm.Spec.Resources.Size.CPU.Value()).To(Equal(int64(2)))
+			Expect(vm.Spec.CPU.Value()).To(Equal(int64(2)))
 		})
 
-		It("spec.resources.size.memory already set → not overwritten (spec wins)", func() {
+		It("spec.memory already set → not overwritten (spec wins)", func() {
 			q := resource.MustParse("4Gi")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{Memory: &q},
-			}
+			vm.Spec.Memory = &q
 			moVM.Config.Hardware.MemoryMB = 8192
 			mutated := backfill.ComputeConfigFromMoVM(ctx, vm, moVM)
 			Expect(mutated).To(BeFalse())
-			Expect(vm.Spec.Resources.Size.Memory.Value()).To(Equal(int64(4 * 1024 * 1024 * 1024)))
+			Expect(vm.Spec.Memory.Value()).To(Equal(int64(4 * 1024 * 1024 * 1024)))
 		})
 	})
 
@@ -431,11 +419,9 @@ var _ = Describe("ComputeConfigFromMoVM", func() {
 		})
 
 		It("spec.cpuAdvanced.topology.vnumaNodeCount already set → not overwritten (spec wins)", func() {
-			// Pre-set size.cpu to suppress the size backfill that NumCPU=8 would otherwise trigger.
+			// Pre-set spec.cpu to suppress the size backfill that NumCPU=8 would otherwise trigger.
 			cpu := resource.MustParse("8")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &cpu},
-			}
+			vm.Spec.CPU = &cpu
 			vm.Spec.CPUAdvanced = &vmopv1.VirtualMachineCPUAdvancedSpec{
 				Topology: &vmopv1.VirtualMachineCPUTopologySpec{
 					VNUMANodeCount: ptr.To(int32(2)),

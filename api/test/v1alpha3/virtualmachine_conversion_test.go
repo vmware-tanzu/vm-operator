@@ -569,15 +569,11 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "spec.resources.size",
+				name: "spec.cpu and spec.memory",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
-						Resources: &vmopv1.VirtualMachineResourcesSpec{
-							Size: &vmopv1.VirtualMachineResourceQuantity{
-								CPU:    ptrOf(resource.MustParse("4")),
-								Memory: ptrOf(resource.MustParse("8Gi")),
-							},
-						},
+						CPU:    ptrOf(resource.MustParse("4")),
+						Memory: ptrOf(resource.MustParse("8Gi")),
 					},
 				},
 			},
@@ -611,11 +607,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 				name: "spec.resources full",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
+						CPU:    ptrOf(resource.MustParse("8")),
+						Memory: ptrOf(resource.MustParse("16Gi")),
 						Resources: &vmopv1.VirtualMachineResourcesSpec{
-							Size: &vmopv1.VirtualMachineResourceQuantity{
-								CPU:    ptrOf(resource.MustParse("8")),
-								Memory: ptrOf(resource.MustParse("16Gi")),
-							},
 							Requests: &vmopv1.VirtualMachineResourceQuantity{
 								CPU:    ptrOf(resource.MustParse("2000")),
 								Memory: ptrOf(resource.MustParse("8Gi")),

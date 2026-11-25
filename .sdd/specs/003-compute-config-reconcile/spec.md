@@ -12,7 +12,7 @@
 
 ## Summary
 
-VM Operator introduces a compute configuration surface — `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` — that lets a DevOps user directly control a VM's CPU/memory sizing, reservations and limits, CPU topology, and advanced settings, independently of what a `VirtualMachineClass` provides. This surface exists to serve class-less VM workloads, such as Telco VNF workloads, that require precise, per-VM control over vCPU count, guaranteed memory reservation, latency sensitivity, and NUMA topology.
+VM Operator introduces a compute configuration surface — `spec.cpu`, `spec.memory`, `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` — that lets a DevOps user directly control a VM's CPU/memory sizing, reservations and limits, CPU topology, and advanced settings, independently of what a `VirtualMachineClass` provides. This surface exists to serve class-less VM workloads, such as Telco VNF workloads, that require precise, per-VM control over vCPU count, guaranteed memory reservation, latency sensitivity, and NUMA topology.
 
 The feature:
 
@@ -61,9 +61,9 @@ A DevOps user sets CPU/memory sizing, reservation and limits, and advanced CPU/m
 
 **Acceptance scenarios**:
 
-1. **Given** a powered-off VM, **when** the DevOps user sets `spec.resources.size.cpu` to a new value, **then** VM Operator applies the change on the next reconfigure and `VirtualMachineComputeConfigSynced` becomes `True`.
-2. **Given** a powered-on VM with `cpuAdvanced.hotAddEnabled` already `true` on the live config, **when** the DevOps user increases `spec.resources.size.cpu`, **then** VM Operator applies the change immediately, without requiring a power cycle.
-3. **Given** a powered-on VM, **when** the DevOps user decreases `spec.resources.size.cpu` (or increases it without hot-add enabled), **then** VM Operator defers the change until the VM is next powered off, and the condition reports `PowerOffRequired`, naming the field.
+1. **Given** a powered-off VM, **when** the DevOps user sets `spec.cpu` to a new value, **then** VM Operator applies the change on the next reconfigure and `VirtualMachineComputeConfigSynced` becomes `True`.
+2. **Given** a powered-on VM with `cpuAdvanced.hotAddEnabled` already `true` on the live config, **when** the DevOps user increases `spec.cpu`, **then** VM Operator applies the change immediately, without requiring a power cycle.
+3. **Given** a powered-on VM, **when** the DevOps user decreases `spec.cpu` (or increases it without hot-add enabled), **then** VM Operator defers the change until the VM is next powered off, and the condition reports `PowerOffRequired`, naming the field.
 4. **Given** a VM below the hardware version a field requires (e.g. `cpuAdvanced.hotAddEnabled` needs vmx-11), **when** the DevOps user sets that field, **then** VM Operator leaves the field unapplied on the live VM, retains the requested value in spec, and reports `PrerequisiteNotMet`, naming the field and the required hardware version.
 5. **Given** the `supports_vm_service_classless_vm` capability is disabled, **when** the DevOps user attempts to set any of `spec.resources`, `spec.cpuAdvanced`, or `spec.memoryAdvanced`, **then** the admission webhook rejects the request.
 
@@ -125,7 +125,7 @@ The table below distinguishes two layers: the spec-level sentinels (`nil`/`0`) t
 
 | Field | `nil` | `0` | explicit positive | `-1` |
 |-------|-------|-----|--------------------|------|
-| `resources.size.cpu` / `.memory` | defer to class-derived value; no override | invalid — rejected (`must be greater than 0 when set`) | override; sets guest-visible vCPU count / memory | invalid — negative sizes are always rejected |
+| `cpu` / `memory` | defer to class-derived value; no override | invalid — rejected (`must be greater than 0 when set`) | override; sets guest-visible vCPU count / memory | invalid — negative sizes are always rejected |
 | `resources.requests.cpu` / `.memory` | defer to class/vSphere default reservation | valid; explicit reservation of zero | override reservation | invalid — negative reservations are always rejected |
 | `resources.limits.cpu` / `.memory` | unlimited — no ceiling set | invalid — rejected (`must be greater than 0 or -1 (unlimited) when set`) | override; explicit ceiling | valid; explicit "unlimited" request, semantically identical to `nil` |
 | `cpuAdvanced.topology.coresPerSocket` | defer / clear explicit setting, vSphere auto-sizes | sentinel for "auto," equivalent to `nil` | override; explicit cores-per-socket | invalid — rejected (`Minimum=0`) |
@@ -225,7 +225,7 @@ flowchart TD
 
 - `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` cannot be changed as a whole while a VM is mid schema-upgrade (before the one-time backfill populates them from the live vSphere config); the validating webhook rejects any change to any of the three top-level fields during that window.
 - `spec.resources.limits.{cpu,memory}` accept exactly one negative value, `-1`, meaning "no ceiling," semantically identical to leaving the field `nil`; any other negative value (e.g. `-2`) is rejected. The `requests`-vs-`limits` and `reservationLockedToMax`-vs-`limits` ordering checks treat `-1` as unlimited rather than comparing it numerically — a naive comparison against `-1` would otherwise reject any positive `requests` value.
-- `spec.resources.requests.{cpu,memory}` MUST reject a negative value directly, the same way `size` does, independent of the `requests`-vs-`size`/`limits` ordering checks — a negative request MUST NOT be admitted even when there is no `size` or `limits` set to compare it against.
+- `spec.resources.requests.{cpu,memory}` MUST reject a negative value directly, the same way `spec.cpu` and `spec.memory` do, independent of the `requests`-vs-`spec.memory`/`limits` ordering checks — a negative request MUST NOT be admitted even when there is no `spec.memory` or `limits` set to compare it against.
 - When both a hardware-version/prerequisite block and a power-off-required block exist on the same reconcile, `PrerequisiteNotMet` takes full precedence in the condition's reason and message; the power-off-required fields are not separately listed until the prerequisite is resolved.
 - `PowerCyclePending` is a reason reserved for changes that need a guest power cycle after being applied; it is not used by `VirtualMachineComputeConfigSynced` today — only by other conditions (e.g. network extra config).
 - `spec.resources`, `spec.cpuAdvanced`, and `spec.memoryAdvanced` are `v1alpha6`-only; on down-conversion to an older API version they are preserved via an annotation (`utilconversion.MarshalData`) and restored on up-conversion (see `model.md` "Conversion strategy") — a client that strips unknown annotations on the older version would lose them.

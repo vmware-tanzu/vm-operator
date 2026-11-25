@@ -139,6 +139,8 @@ func restore_v1alpha6_VirtualMachineAdvanced(dst, src *vmopv1.VirtualMachine) {
 }
 
 func restore_v1alpha6_VirtualMachineResources(dst, src *vmopv1.VirtualMachine) {
+	dst.Spec.CPU = src.Spec.CPU
+	dst.Spec.Memory = src.Spec.Memory
 	dst.Spec.Resources = src.Spec.Resources
 }
 

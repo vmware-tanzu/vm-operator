@@ -200,15 +200,11 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "spec.resources.size",
+				name: "spec.cpu and spec.memory",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
-						Resources: &vmopv1.VirtualMachineResourcesSpec{
-							Size: &vmopv1.VirtualMachineResourceQuantity{
-								CPU:    ptr.To(resource.MustParse("4")),
-								Memory: ptr.To(resource.MustParse("8Gi")),
-							},
-						},
+						CPU:    ptr.To(resource.MustParse("4")),
+						Memory: ptr.To(resource.MustParse("8Gi")),
 					},
 				},
 			},
@@ -239,14 +235,12 @@ func TestVirtualMachineConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "spec.resources size + requests + limits",
+				name: "spec.cpu, spec.memory, and spec.resources requests + limits",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
+						CPU:    ptr.To(resource.MustParse("8")),
+						Memory: ptr.To(resource.MustParse("16Gi")),
 						Resources: &vmopv1.VirtualMachineResourcesSpec{
-							Size: &vmopv1.VirtualMachineResourceQuantity{
-								CPU:    ptr.To(resource.MustParse("8")),
-								Memory: ptr.To(resource.MustParse("16Gi")),
-							},
 							Requests: &vmopv1.VirtualMachineResourceQuantity{
 								CPU:    ptr.To(resource.MustParse("2000")),
 								Memory: ptr.To(resource.MustParse("8Gi")),
@@ -354,11 +348,9 @@ func TestVirtualMachineConversion(t *testing.T) {
 				name: "spec.resources + spec.cpuAdvanced + spec.memoryAdvanced combined",
 				hub: &vmopv1.VirtualMachine{
 					Spec: vmopv1.VirtualMachineSpec{
+						CPU:    ptr.To(resource.MustParse("4")),
+						Memory: ptr.To(resource.MustParse("8Gi")),
 						Resources: &vmopv1.VirtualMachineResourcesSpec{
-							Size: &vmopv1.VirtualMachineResourceQuantity{
-								CPU:    ptr.To(resource.MustParse("4")),
-								Memory: ptr.To(resource.MustParse("8Gi")),
-							},
 							Requests: &vmopv1.VirtualMachineResourceQuantity{
 								Memory: ptr.To(resource.MustParse("8Gi")),
 							},

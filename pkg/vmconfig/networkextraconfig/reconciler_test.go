@@ -239,11 +239,11 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 				"expected no DeviceChange when memory reservation prerequisite is unmet")
 		})
 
-		It("unblocks when spec.resources.requests.memory equals spec.resources.size.memory", func() {
+		It("unblocks when spec.resources.requests.memory equals spec.memory", func() {
 			mem := resource.MustParse("4Gi")
+			vm.Spec.Memory = &mem
 			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
 				Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: &mem},
-				Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: &mem},
 			}
 			vm.Status.PowerState = vmopv1.VirtualMachinePowerStateOn
 
@@ -254,12 +254,12 @@ var _ = Describe("networkextraconfig.Reconcile", func() {
 			Expect(edits[0].Device.(*vimtypes.VirtualVmxnet3).Uptv2Enabled).To(Equal(ptr.To(true)))
 		})
 
-		It("still blocks when spec requests.memory != size.memory (partial reservation)", func() {
+		It("still blocks when spec requests.memory != spec.memory (partial reservation)", func() {
 			req := resource.MustParse("2Gi")
 			size := resource.MustParse("4Gi")
+			vm.Spec.Memory = &size
 			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
 				Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: &req},
-				Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: &size},
 			}
 
 			Expect(r.Reconcile(ctx, nil, nil, vm, moVM, configSpec)).To(Succeed())

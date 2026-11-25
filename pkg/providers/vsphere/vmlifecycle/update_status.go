@@ -279,7 +279,7 @@ func reconcileStatusHardware(
 		// virtualmachine.MbToBytes to match every other MemoryMB conversion
 		// in this codebase (e.g. pkg/util/vmopv1/compute_overwrite.go's
 		// desiredMemoryAllocation and the ConfigSpec.MemoryMB assignment), so
-		// status round-trips to the same byte value as spec.resources.size.memory.
+		// status round-trips to the same byte value as spec.memory.
 		memStatus.Total = kubeutil.BytesToResource(virtualmachine.MbToBytes(memTotal))
 
 		if a := config.MemoryAllocation; a != nil {

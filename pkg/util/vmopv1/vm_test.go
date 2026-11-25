@@ -1906,30 +1906,30 @@ var _ = Describe("FullMemReservationSpecMet", func() {
 		})
 	})
 
-	When("resources.requests.memory equals resources.size.memory", func() {
+	When("resources.requests.memory equals spec.memory", func() {
 		It("returns true", func() {
 			mem := resource.MustParse("4Gi")
+			vm.Spec.Memory = &mem
 			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
 				Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: &mem},
-				Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: &mem},
 			}
 			Expect(vmopv1util.FullMemReservationSpecMet(vm)).To(BeTrue())
 		})
 	})
 
-	When("resources.requests.memory is less than resources.size.memory", func() {
+	When("resources.requests.memory is less than spec.memory", func() {
 		It("returns false", func() {
 			req := resource.MustParse("2Gi")
 			size := resource.MustParse("4Gi")
+			vm.Spec.Memory = &size
 			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
 				Requests: &vmopv1.VirtualMachineResourceQuantity{Memory: &req},
-				Size:     &vmopv1.VirtualMachineResourceQuantity{Memory: &size},
 			}
 			Expect(vmopv1util.FullMemReservationSpecMet(vm)).To(BeFalse())
 		})
 	})
 
-	When("resources.requests.memory is set but size.memory is nil", func() {
+	When("resources.requests.memory is set but spec.memory is nil", func() {
 		It("returns false", func() {
 			mem := resource.MustParse("4Gi")
 			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{

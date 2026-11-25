@@ -54,15 +54,13 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		blocked, blockedPO = vmopv1util.OverwriteSpecComputeConfig(vm, liveCI, poweredOn, &cs)
 	})
 
-	// ───────────────────── resources.size.cpu ─────────────────────
+	// ───────────────────── spec.cpu ─────────────────────
 
-	Context("resources.size.cpu — powered-off", func() {
+	Context("spec.cpu — powered-off", func() {
 		BeforeEach(func() {
 			poweredOn = false
 			q := resource.MustParse("8")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
-			}
+			vm.Spec.CPU = &q
 		})
 		It("writes NumCPUs to cs", func() {
 			Expect(cs.NumCPUs).To(Equal(int32(8)))
@@ -72,134 +70,120 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 	})
 
-	Context("resources.size.cpu — powered-on, no CpuHotAddEnabled", func() {
+	Context("spec.cpu — powered-on, no CpuHotAddEnabled", func() {
 		BeforeEach(func() {
 			poweredOn = true
 			liveCI.CpuHotAddEnabled = ptr.To(false)
 			q := resource.MustParse("8")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
-			}
+			vm.Spec.CPU = &q
 		})
 		It("does not write NumCPUs", func() {
 			Expect(cs.NumCPUs).To(Equal(int32(0)))
 		})
-		It("adds resources.size.cpu to blockedPowerOff", func() {
-			Expect(blockedPO).To(ContainElement("resources.size.cpu"))
+		It("adds spec.cpu to blockedPowerOff", func() {
+			Expect(blockedPO).To(ContainElement("cpu"))
 		})
 	})
 
-	Context("resources.size.cpu — powered-on, CpuHotAddEnabled, increasing", func() {
+	Context("spec.cpu — powered-on, CpuHotAddEnabled, increasing", func() {
 		BeforeEach(func() {
 			poweredOn = true
 			liveCI.Hardware.NumCPU = 4
 			liveCI.CpuHotAddEnabled = ptr.To(true)
 			q := resource.MustParse("8") // 8 > 4 → increase
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
-			}
+			vm.Spec.CPU = &q
 		})
 		It("writes NumCPUs (hot-add allowed)", func() {
 			Expect(cs.NumCPUs).To(Equal(int32(8)))
 		})
-		It("does not add resources.size.cpu to blockedPowerOff", func() {
-			Expect(blockedPO).NotTo(ContainElement("resources.size.cpu"))
+		It("does not add spec.cpu to blockedPowerOff", func() {
+			Expect(blockedPO).NotTo(ContainElement("cpu"))
 		})
 	})
 
-	Context("resources.size.cpu — powered-on, CpuHotAddEnabled, decreasing", func() {
+	Context("spec.cpu — powered-on, CpuHotAddEnabled, decreasing", func() {
 		BeforeEach(func() {
 			poweredOn = true
 			liveCI.Hardware.NumCPU = 8
 			liveCI.CpuHotAddEnabled = ptr.To(true)
 			q := resource.MustParse("4") // 4 < 8 → decrease, not hot-pluggable
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
-			}
+			vm.Spec.CPU = &q
 		})
 		It("does not write NumCPUs", func() {
 			Expect(cs.NumCPUs).To(Equal(int32(0)))
 		})
-		It("adds resources.size.cpu to blockedPowerOff", func() {
-			Expect(blockedPO).To(ContainElement("resources.size.cpu"))
+		It("adds spec.cpu to blockedPowerOff", func() {
+			Expect(blockedPO).To(ContainElement("cpu"))
 		})
 	})
 
-	Context("resources.size.cpu — nil spec, powered-off", func() {
+	Context("spec.cpu — nil spec, powered-off", func() {
 		BeforeEach(func() {
 			poweredOn = false
-			// spec.resources.size is nil → don't manage
+			// spec.cpu and spec.memory is nil → don't manage
 		})
 		It("does not write NumCPUs (class/zero preserved)", func() {
 			Expect(cs.NumCPUs).To(Equal(int32(0)))
 		})
 	})
 
-	Context("resources.size.cpu — same as live, powered-on", func() {
+	Context("spec.cpu — same as live, powered-on", func() {
 		BeforeEach(func() {
 			poweredOn = true
 			liveCI.Hardware.NumCPU = 4
 			liveCI.CpuHotAddEnabled = ptr.To(true)
 			q := resource.MustParse("4") // same as live
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
-			}
+			vm.Spec.CPU = &q
 		})
 		It("does not write NumCPUs (no diff)", func() {
 			Expect(cs.NumCPUs).To(Equal(int32(0)))
 		})
-		It("does not add resources.size.cpu to blockedPowerOff (not differing)", func() {
-			Expect(blockedPO).NotTo(ContainElement("resources.size.cpu"))
+		It("does not add spec.cpu to blockedPowerOff (not differing)", func() {
+			Expect(blockedPO).NotTo(ContainElement("cpu"))
 		})
 	})
 
-	// ───────────────────── resources.size.memory ─────────────────────
+	// ───────────────────── spec.memory ─────────────────────
 
-	Context("resources.size.memory — powered-off", func() {
+	Context("spec.memory — powered-off", func() {
 		BeforeEach(func() {
 			poweredOn = false
 			q := resource.MustParse("8Gi")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{Memory: &q},
-			}
+			vm.Spec.Memory = &q
 		})
 		It("writes MemoryMB to cs", func() {
 			Expect(cs.MemoryMB).To(Equal(int64(8192)))
 		})
 	})
 
-	Context("resources.size.memory — powered-on, no MemoryHotAddEnabled", func() {
+	Context("spec.memory — powered-on, no MemoryHotAddEnabled", func() {
 		BeforeEach(func() {
 			poweredOn = true
 			liveCI.MemoryHotAddEnabled = ptr.To(false)
 			q := resource.MustParse("8Gi")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{Memory: &q},
-			}
+			vm.Spec.Memory = &q
 		})
 		It("does not write MemoryMB", func() {
 			Expect(cs.MemoryMB).To(Equal(int64(0)))
 		})
-		It("adds resources.size.memory to blockedPowerOff", func() {
-			Expect(blockedPO).To(ContainElement("resources.size.memory"))
+		It("adds spec.memory to blockedPowerOff", func() {
+			Expect(blockedPO).To(ContainElement("memory"))
 		})
 	})
 
-	Context("resources.size.memory — powered-on, MemoryHotAddEnabled, increasing", func() {
+	Context("spec.memory — powered-on, MemoryHotAddEnabled, increasing", func() {
 		BeforeEach(func() {
 			poweredOn = true
 			liveCI.Hardware.MemoryMB = 4096
 			liveCI.MemoryHotAddEnabled = ptr.To(true)
 			q := resource.MustParse("8Gi") // 8192 MB > 4096 MB
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{Memory: &q},
-			}
+			vm.Spec.Memory = &q
 		})
 		It("writes MemoryMB (hot-add allowed)", func() {
 			Expect(cs.MemoryMB).To(Equal(int64(8192)))
 		})
-		It("does not add resources.size.memory to blockedPowerOff", func() {
-			Expect(blockedPO).NotTo(ContainElement("resources.size.memory"))
+		It("does not add spec.memory to blockedPowerOff", func() {
+			Expect(blockedPO).NotTo(ContainElement("memory"))
 		})
 	})
 
@@ -908,14 +892,12 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 
 	// ───────────────────── class ConfigSpec override (differsCS) ─────────────────────
 
-	Context("resources.size.cpu — spec=live=4, class wrote 8 to CS (powered-off)", func() {
+	Context("spec.cpu — spec=live=4, class wrote 8 to CS (powered-off)", func() {
 		BeforeEach(func() {
 			poweredOn = false
 			liveCI.Hardware.NumCPU = 4
 			q := resource.MustParse("4")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
-			}
+			vm.Spec.CPU = &q
 			cs.NumCPUs = 8 // class wrote 8
 		})
 		It("overrides class value: writes spec's 4 to CS", func() {
@@ -923,11 +905,11 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 	})
 
-	Context("resources.size.cpu — nil spec, class wrote 8 to CS (powered-off)", func() {
+	Context("spec.cpu — nil spec, class wrote 8 to CS (powered-off)", func() {
 		BeforeEach(func() {
 			poweredOn = false
 			liveCI.Hardware.NumCPU = 4
-			// spec.resources.size.cpu is nil — no opinion
+			// spec.cpu is nil — no opinion
 			cs.NumCPUs = 8 // class wrote 8
 		})
 		It("does not override class: CS keeps 8", func() {
@@ -935,14 +917,12 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 	})
 
-	Context("resources.size.cpu — spec=4, live=4, class matches spec (powered-off)", func() {
+	Context("spec.cpu — spec=4, live=4, class matches spec (powered-off)", func() {
 		BeforeEach(func() {
 			poweredOn = false
 			liveCI.Hardware.NumCPU = 4
 			q := resource.MustParse("4")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
-			}
+			vm.Spec.CPU = &q
 			cs.NumCPUs = 4 // class already agrees with spec
 		})
 		It("does not re-write CS (spec==live==class, no-op)", func() {
@@ -950,14 +930,12 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 	})
 
-	Context("resources.size.cpu — spec=4, live=4, no class change (powered-off)", func() {
+	Context("spec.cpu — spec=4, live=4, no class change (powered-off)", func() {
 		BeforeEach(func() {
 			poweredOn = false
 			liveCI.Hardware.NumCPU = 4
 			q := resource.MustParse("4")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{CPU: &q},
-			}
+			vm.Spec.CPU = &q
 			// cs.NumCPUs=0 (class did not change CPU)
 		})
 		It("does not write NumCPUs (spec==live, class uninvolved — no-op, no spurious reconfigure)", func() {
@@ -999,26 +977,24 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 	})
 
-	// ───────────────────── resources.size.memory — nil spec / class override ─────────────────────
+	// ───────────────────── spec.memory — nil spec / class override ─────────────────────
 
-	Context("resources.size.memory — nil spec, powered-off", func() {
+	Context("spec.memory — nil spec, powered-off", func() {
 		BeforeEach(func() {
 			poweredOn = false
-			// spec.resources.size.memory is nil → don't manage
+			// spec.memory is nil → don't manage
 		})
 		It("does not write MemoryMB (class/zero preserved)", func() {
 			Expect(cs.MemoryMB).To(Equal(int64(0)))
 		})
 	})
 
-	Context("resources.size.memory — spec=live=4096MB, class wrote 8192MB to CS (powered-off)", func() {
+	Context("spec.memory — spec=live=4096MB, class wrote 8192MB to CS (powered-off)", func() {
 		BeforeEach(func() {
 			poweredOn = false
 			liveCI.Hardware.MemoryMB = 4096
 			q := resource.MustParse("4Gi")
-			vm.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{
-				Size: &vmopv1.VirtualMachineResourceQuantity{Memory: &q},
-			}
+			vm.Spec.Memory = &q
 			cs.MemoryMB = 8192
 		})
 		It("overrides class value: writes spec's 4096MB to CS", func() {
@@ -1026,7 +1002,7 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 	})
 
-	Context("resources.size.memory — nil spec, class wrote 8192MB to CS (powered-off)", func() {
+	Context("spec.memory — nil spec, class wrote 8192MB to CS (powered-off)", func() {
 		BeforeEach(func() {
 			poweredOn = false
 			liveCI.Hardware.MemoryMB = 4096
@@ -1150,8 +1126,8 @@ var _ = Describe("OverwriteSpecComputeConfig", func() {
 		})
 	})
 
-	Context("cpuAdvanced.topology.vnumaNodeCount — numCPUs not evenly divisible by vnumaNodeCount, size.cpu deferred to class", func() {
-		// Gap scenario: spec.resources.size.cpu is left nil (deferring to the
+	Context("cpuAdvanced.topology.vnumaNodeCount — numCPUs not evenly divisible by vnumaNodeCount, spec.cpu deferred to class", func() {
+		// Gap scenario: spec.cpu is left nil (deferring to the
 		// class), so the webhook's validateComputeTopology skips its
 		// divisibility check entirely. numCPUs is only known via cs.NumCPUs
 		// (class-derived) or the live count — 6 CPUs / 4 nodes doesn't divide

@@ -1284,6 +1284,35 @@ type VirtualMachineSpec struct {
 	Policies []PolicySpec `json:"policies,omitempty"`
 
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="type(self) != string || !self.endsWith('m')",message="CPU must be a whole number of vCPUs (e.g. '4'). The 'm' (milli) suffix is not supported."
+
+	// CPU is the guest-visible vCPU count and must be a whole number
+	// (e.g. "4"). Maps to ConfigSpec.NumCPUs.
+	// When set, overrides the corresponding VirtualMachineClass hardware
+	// value.
+	//
+	// An increase can be applied while the VM is powered on when
+	// cpuAdvanced.hotAddEnabled is already enabled on the live VM; a
+	// decrease always requires power-off.
+	CPU *resource.Quantity `json:"cpu,omitempty"`
+
+	// +optional
+
+	// Memory is the guest-visible memory in bytes (e.g. "8Gi"). Maps to
+	// ConfigSpec.MemoryMB.
+	// When set, overrides the corresponding VirtualMachineClass hardware
+	// value.
+	//
+	// An increase can be applied while the VM is powered on when
+	// memoryAdvanced.hotAddEnabled is already enabled on the live VM; a
+	// decrease always requires power-off. Note that enabling
+	// memoryAdvanced.hotAddEnabled at the vSphere level is a necessary but
+	// not sufficient condition: the guest OS and its drivers must also
+	// support memory hot-add for the guest to recognize the additional
+	// memory. Not all guest operating systems support this capability.
+	Memory *resource.Quantity `json:"memory,omitempty"`
+
+	// +optional
 
 	// Resources describes the desired compute resource allocation for this VM.
 	// When set, these values override the corresponding fields from the

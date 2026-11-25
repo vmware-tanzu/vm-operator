@@ -883,6 +883,11 @@ func VMExtraConfigSpec(ctx context.Context, inputGetter func() VMExtraConfigSpec
 			By("Patching full CPU reservation and full memory limit")
 			latest = getExtraConfigVM(ctx, svClusterClient, vmKey)
 			patch = ctrlclient.MergeFrom(latest.DeepCopy())
+			// Size now lives in spec.cpu and spec.memory, so the resize above
+			// no longer sets spec.resources.
+			if latest.Spec.Resources == nil {
+				latest.Spec.Resources = &vmopv1.VirtualMachineResourcesSpec{}
+			}
 			latest.Spec.Resources.Requests = &vmopv1.VirtualMachineResourceQuantity{
 				CPU: ptr.To(resource.MustParse(fmt.Sprintf("%d", fullCPURes))),
 			}

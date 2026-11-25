@@ -11079,8 +11079,9 @@ spec:
                               limits.cpu is in MHz (e.g. "2000"); limits.memory is in bytes
                               (e.g. "8Gi").
                               Each must be either greater than 0, or -1 to explicitly request no
-                              ceiling; a nil value also means unlimited, deferring to the VM Class
-                              or vSphere default. No other negative value is valid.
+                              ceiling. No other negative value is valid.
+                              When nil, the VM Class limit applies at create and on a class resize;
+                              afterwards, a nil limit is enforced as unlimited (-1).
                               Maps to CpuAllocation.Limit and MemoryAllocation.Limit.
                               Can be reconfigured while the VM is powered on.
                             properties:

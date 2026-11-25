@@ -220,6 +220,60 @@ func VMComputeConfigSpec(ctx context.Context, inputGetter func() VMComputeConfig
 				Should(Succeed(), "phase 2 status assertions failed for %s/%s", vmNamespace, vmName)
 		})
 
+	It("creates VM with limits.cpu and limits.memory of -1 and leaves vSphere allocation limits unlimited",
+		Label("extended-functional", "experimental"), func() {
+
+			if vimClient == nil {
+				Skip("govmomi vimClient not available — skipping vSphere allocation verification")
+			}
+
+			vmName := fmt.Sprintf("cc-unlimited-%s", capiutil.RandomString(4))
+			vm := buildComputeConfigVM(vmName, vmNamespace, vmClassName, linuxVMIName, storageClass,
+				&vmopv1.VirtualMachineResourcesSpec{
+					Limits: &vmopv1.VirtualMachineResourceQuantity{
+						CPU:    ptr.To(resource.MustParse("-1")),
+						Memory: ptr.To(resource.MustParse("-1")),
+					},
+				},
+				nil, nil,
+			)
+
+			vmoperator.CreateVirtualMachine(ctx, config, clusterProxy, vm, input.SkipCleanup)
+
+			By("Waiting for VM to be created")
+			vmoperator.WaitForVirtualMachineConditionCreated(ctx, config, svClusterClient,
+				vmNamespace, vmName)
+
+			By("Waiting for ComputeConfigSynced=True")
+			waitForComputeConfigSynced(ctx, svClusterClient, config,
+				types.NamespacedName{Namespace: vmNamespace, Name: vmName},
+				metav1.ConditionTrue, "")
+
+			By("Verifying vSphere CPU and memory allocation limits are -1 (unlimited)")
+			latest, err := utils.GetVirtualMachine(ctx, svClusterClient, vmNamespace, vmName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(latest.Status.UniqueID).ToNot(BeEmpty())
+			govVM := findVSphereVMByMOID(vimClient, latest.Status.UniqueID)
+			Expect(govVM).ToNot(BeNil(), "govmomi VM not found for MOID %s", latest.Status.UniqueID)
+
+			Eventually(func(g Gomega) {
+				var moVM mo.VirtualMachine
+				g.Expect(property.DefaultCollector(vimClient).RetrieveOne(
+					ctx, govVM.Reference(), []string{"config"}, &moVM,
+				)).To(Succeed())
+				g.Expect(moVM.Config).ToNot(BeNil())
+				g.Expect(moVM.Config.CpuAllocation).ToNot(BeNil())
+				g.Expect(moVM.Config.CpuAllocation.Limit).ToNot(BeNil())
+				g.Expect(*moVM.Config.CpuAllocation.Limit).To(BeEquivalentTo(-1),
+					"vSphere cpuAllocation.limit should be -1 (unlimited)")
+				g.Expect(moVM.Config.MemoryAllocation).ToNot(BeNil())
+				g.Expect(moVM.Config.MemoryAllocation.Limit).ToNot(BeNil())
+				g.Expect(*moVM.Config.MemoryAllocation.Limit).To(BeEquivalentTo(-1),
+					"vSphere memoryAllocation.limit should be -1 (unlimited), not capped at 0 MB")
+			}, config.GetIntervals("default", "wait-vm-compute-config-synced")...).
+				Should(Succeed(), "vSphere allocation limits not -1 for %s/%s", vmNamespace, vmName)
+		})
+
 	It("sets PowerOffRequired condition for multiple power-off-required fields while VM is powered on",
 		Label("core-functional", "experimental"), func() {
 

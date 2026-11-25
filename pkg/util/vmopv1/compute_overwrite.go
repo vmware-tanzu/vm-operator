@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -624,6 +625,18 @@ func memReservationLockedField() computeFieldDef {
 // Desired-value helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// unlimited is the vSphere ResourceAllocationInfo.Limit value for "no fixed
+// limit", and the quantity used by spec.resources.limits.{cpu,memory} to
+// request it explicitly.
+const unlimited int64 = -1
+
+// isUnlimited reports whether q is exactly the -1 unlimited sentinel. It uses
+// Cmp rather than Value, since Value rounds fractional quantities away from
+// zero (e.g., "-500m" would become -1).
+func isUnlimited(q *resource.Quantity) bool {
+	return q.Cmp(*resource.NewQuantity(unlimited, resource.DecimalSI)) == 0
+}
+
 func desiredCPUAllocation(vm vmopv1.VirtualMachine) (reservation, limit int64) {
 	reservation = 0
 	limit = -1
@@ -632,7 +645,11 @@ func desiredCPUAllocation(vm vmopv1.VirtualMachine) (reservation, limit int64) {
 			reservation = req.CPU.Value()
 		}
 		if lim := res.Limits; lim != nil && lim.CPU != nil {
-			limit = lim.CPU.Value()
+			if isUnlimited(lim.CPU) {
+				limit = unlimited
+			} else {
+				limit = lim.CPU.Value()
+			}
 		}
 	}
 	return
@@ -646,7 +663,13 @@ func desiredMemoryAllocation(vm vmopv1.VirtualMachine) (reservation, limit int64
 			reservation = req.Memory.Value() / 1024 / 1024
 		}
 		if lim := res.Limits; lim != nil && lim.Memory != nil {
-			limit = lim.Memory.Value() / 1024 / 1024
+			if isUnlimited(lim.Memory) {
+				// Do not convert the sentinel to MB: integer division would
+				// truncate -1 to 0 and cap the VM at 0 MB.
+				limit = unlimited
+			} else {
+				limit = lim.Memory.Value() / 1024 / 1024
+			}
 		}
 	}
 	return

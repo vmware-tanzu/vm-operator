@@ -6824,6 +6824,56 @@ func unitTestsValidateUpdate() {
 					`spec.volumeAttributesClassName: Invalid value: "vac-b": VolumeAttributesClass "vac-b" object is specified but capability is not enabled`),
 			},
 		),
+		Entry("should allow leaving a VAC unchanged when the StoragePolicyMutability feature is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.StoragePolicyMutability = false
+					})
+					ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+					ctx.vm.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+				},
+				expectAllowed: true,
+			},
+		),
+		Entry("should deny removing a VAC once it is set",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+					ctx.vm.Spec.VolumeAttributesClassName = ""
+				},
+				validate: doValidateWithMsg(
+					`spec.volumeAttributesClassName: Forbidden: removing the volume attributes class is not allowed once it is set`),
+			},
+		),
+		Entry("should deny removing a VAC once it is set for a privileged user",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					ctx.IsPrivilegedAccount = true
+					ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+					ctx.vm.Spec.VolumeAttributesClassName = ""
+				},
+				validate: doValidateWithMsg(
+					`spec.volumeAttributesClassName: Forbidden: removing the volume attributes class is not allowed once it is set`),
+			},
+		),
+		Entry("should deny removing a VAC when the StoragePolicyMutability feature is disabled",
+			testParams{
+				setup: func(ctx *unitValidatingWebhookContext) {
+					setupVACUpdate(ctx)
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.StoragePolicyMutability = false
+					})
+					ctx.oldVM.Spec.VolumeAttributesClassName = builder.DummyVolumeAttributesClassName
+					ctx.vm.Spec.VolumeAttributesClassName = ""
+				},
+				validate: doValidateWithMsg(
+					`spec.volumeAttributesClassName: Forbidden: removing the volume attributes class is not allowed once it is set`),
+			},
+		),
 	)
 
 	DescribeTable(

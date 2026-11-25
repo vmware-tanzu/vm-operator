@@ -76,6 +76,7 @@ const (
 	addingNewCdromNotAllowedWhenPowerOn                         = "adding new CD-ROMs is not allowed when VM is powered on"
 	removingCdromNotAllowedWhenPowerOn                          = "removing CD-ROMs is not allowed when VM is powered on"
 	removingBackfilledVolumeNotAllowed                          = "removing volume backfilled from classic disk is not allowed"
+	removingVolumeAttributesClassNotAllowed                     = "removing the volume attributes class is not allowed once it is set"
 	storagePolicyNotAssociatedOnNSFmt                           = "Storage policy is not associated with the namespace %s by object %s"
 	vSphereVolumeSizeNotMBMultiple                              = "value must be a multiple of MB"
 	addingModifyingInstanceVolumesNotAllowed                    = "adding or modifying instance storage volume claim(s) is not allowed"
@@ -304,6 +305,11 @@ func (v validator) validateImageOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 //   - StorageClass
 //   - ResourcePolicyName
 //   - Minimum VM Hardware Version
+//
+// VolumeAttributesClassName cannot be removed once it has been set. Setting it
+// or changing it to another value requires the StoragePolicyMutability
+// capability to be enabled and the new class to be valid for the VM's
+// namespace. Leaving it unchanged is always allowed.
 //
 // Following fields can only be changed when the VM is powered off.
 //   - GuestID
@@ -761,13 +767,24 @@ func (v validator) validateClassOnUpdate(ctx *pkgctx.WebhookRequestContext, vm, 
 
 // validateStorageFieldsOnUpdate validates the storage fields when the
 // VolumeAttributesClass changes. Unlike spec.storageClass, which is immutable,
-// the VolumeAttributesClass can be set, changed, or cleared after create.
+// the VolumeAttributesClass can be set or changed after create, but it cannot
+// be removed once it is set. The VolumeAttributesClass policy ID takes
+// precedence over the StorageClass policy ID, so removing the field would
+// silently change the VM's effective storage policy.
 func (v validator) validateStorageFieldsOnUpdate(
 	ctx *pkgctx.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 
 	if vm.Spec.VolumeAttributesClassName == oldVM.Spec.VolumeAttributesClassName {
 		return nil
+	}
+
+	if vm.Spec.VolumeAttributesClassName == "" {
+		return field.ErrorList{
+			field.Forbidden(
+				field.NewPath("spec", "volumeAttributesClassName"),
+				removingVolumeAttributesClassNotAllowed),
+		}
 	}
 
 	return v.validateStorageFields(ctx, vm)

@@ -32,6 +32,7 @@ type VirtualMachineNetworkRouteSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.externalRef) || !has(self.network)",message="network and externalRef are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="!has(self.externalRef) || (size(self.externalRef.apiVersion) > 0 && size(self.externalRef.kind) > 0 && size(self.externalRef.name) > 0)",message="externalRef requires apiVersion, kind, and name"
 // +kubebuilder:validation:XValidation:rule="!has(self.externalRef) || !has(self.macAddr)",message="macAddr and externalRef are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="!has(self.externalRef) || !has(self.portSettingName)",message="portSettingName and externalRef are mutually exclusive"
 
 // VirtualMachineNetworkInterfaceSpec describes the desired state of a VM's
 // network interface.
@@ -84,6 +85,23 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// crd.nsx.vmware.com.
 	//
 	MACAddr string `json:"macAddr,omitempty"`
+
+	// +optional
+
+	// PortSettingName is the name of the SubnetPortSetting, in the VM's
+	// namespace, that is applied to the VPC SubnetPort backing this interface.
+	// The value is set as the SubnetPort's spec.portSettingName.
+	//
+	// When this field is unset, the SubnetPort's spec.portSettingName is also
+	// unset, which selects the default port setting. Removing the field from
+	// an interface therefore reverts the interface to the default.
+	//
+	// Please note this field is only supported when the Network API Group is
+	// crd.nsx.vmware.com and the Network Kind is Subnet. It is not supported
+	// for a SubnetSet, which includes the default network used when Network
+	// is not specified. It is mutually exclusive with ExternalRef, since an
+	// externally owned SubnetPort is not modified by VM Operator.
+	PortSettingName string `json:"portSettingName,omitempty"`
 
 	// +optional
 

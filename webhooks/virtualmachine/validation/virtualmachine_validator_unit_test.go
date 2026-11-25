@@ -3423,6 +3423,127 @@ func unitTestsValidateCreate() {
 				},
 			),
 
+			Entry("allow creating a VM with network interface with a portSettingName for the VPC network provider",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											Kind:       "Subnet",
+										},
+										Name: "vpc-subnet",
+									},
+									PortSettingName: "my-port-setting",
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow creating a VM with network interface with a portSettingName for not supported network providers",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "netoperator.vmware.com/v1alpha1",
+										},
+										Name: "vds-network",
+									},
+									PortSettingName: "my-port-setting",
+								},
+								{
+									Name: "eth1",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "vmware.com/v1alpha1",
+										},
+										Name: "nsxt-network",
+									},
+									PortSettingName: "my-port-setting",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].portSettingName: Invalid value: "my-port-setting": portSettingName is available only with the following network providers: crd.nsx.vmware.com`,
+						`spec.network.interfaces[1].portSettingName: Invalid value: "my-port-setting": portSettingName is available only with the following network providers: crd.nsx.vmware.com`,
+					),
+				},
+			),
+
+			Entry("disallow creating a VM with network interface with a portSettingName for a VPC network that is not a Subnet",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "crd.nsx.vmware.com/v1alpha1",
+											Kind:       "SubnetSet",
+										},
+										Name: "vpc-subnet-set",
+									},
+									PortSettingName: "my-port-setting",
+								},
+								{
+									Name: "eth1",
+									Network: &common.PartialObjectRef{
+										TypeMeta: metav1.TypeMeta{
+											APIVersion: "crd.nsx.vmware.com/v1alpha1",
+										},
+										Name: "vpc-no-kind",
+									},
+									PortSettingName: "my-port-setting",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].portSettingName: Invalid value: "my-port-setting": portSettingName is available only with the following network kinds: Subnet`,
+						`spec.network.interfaces[1].portSettingName: Invalid value: "my-port-setting": portSettingName is available only with the following network kinds: Subnet`,
+					),
+				},
+			),
+
+			Entry("disallow portSettingName with externalRef",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.NetworkProviderType = pkgcfg.NetworkProviderTypeVPC
+							config.Features.BringYourOwnNetworkInterface = true
+						})
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									ExternalRef: &common.LocalObjectRef{
+										APIVersion: "crd.nsx.vmware.com/v1alpha1",
+										Kind:       "SubnetPort",
+										Name:       "my-subnetport",
+									},
+									PortSettingName: "my-port-setting",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].externalRef: Forbidden: portSettingName and externalRef are mutually exclusive`,
+					),
+				},
+			),
+
 			Entry("disallow spec.crypto when FeatureGate VMVlanSubinterface is disabled (by default)",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -8966,6 +9087,27 @@ func unitTestsValidateUpdate() {
 					},
 				),
 			)
+
+			DescribeTable("allow updates", doTest,
+				Entry("allow Network Interface port setting name to be set",
+					testParams{
+						setup:         portSettingNameUpdateSetup("", "my-port-setting"),
+						expectAllowed: true,
+					},
+				),
+				Entry("allow Network Interface port setting name to be changed",
+					testParams{
+						setup:         portSettingNameUpdateSetup("my-port-setting", "other-port-setting"),
+						expectAllowed: true,
+					},
+				),
+				Entry("allow Network Interface port setting name to be cleared",
+					testParams{
+						setup:         portSettingNameUpdateSetup("my-port-setting", ""),
+						expectAllowed: true,
+					},
+				),
+			)
 		})
 
 		Context("MutableNetworks is enabled", func() {
@@ -8978,7 +9120,6 @@ func unitTestsValidateUpdate() {
 
 			DescribeTable("allow updates", doTest,
 
-				// When Mutable_Networks Enabled
 				Entry("allow adding Network Interface",
 					testParams{
 						setup: func(ctx *unitValidatingWebhookContext) {
@@ -9113,6 +9254,27 @@ func unitTestsValidateUpdate() {
 						validate: doValidateWithMsg(
 							`spec.network.interfaces[0].macAddr: Invalid value: "bar": field is immutable`,
 							`spec.network.interfaces[2].macAddr: Invalid value: "my-new-mac": field is immutable`),
+					},
+				),
+
+				Entry("allow Network Interface port setting name to be set",
+					testParams{
+						setup:         portSettingNameUpdateSetup("", "my-port-setting"),
+						expectAllowed: true,
+					},
+				),
+
+				Entry("allow Network Interface port setting name to be changed",
+					testParams{
+						setup:         portSettingNameUpdateSetup("my-port-setting", "other-port-setting"),
+						expectAllowed: true,
+					},
+				),
+
+				Entry("allow Network Interface port setting name to be cleared",
+					testParams{
+						setup:         portSettingNameUpdateSetup("my-port-setting", ""),
+						expectAllowed: true,
 					},
 				),
 			)
@@ -12802,4 +12964,34 @@ func commonCreateAndUpdateValidations(
 			),
 		)
 	})
+}
+
+// portSettingNameUpdateSetup returns a setup function for an update of a VM's
+// only network interface, which is connected to a VPC network, from the old to
+// the new port setting name. An empty name leaves the field unset.
+func portSettingNameUpdateSetup(
+	oldName, newName string) func(*unitValidatingWebhookContext) {
+
+	newSpec := func(portSettingName string) *vmopv1.VirtualMachineNetworkSpec {
+		return &vmopv1.VirtualMachineNetworkSpec{
+			Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+				{
+					Name: "eth0",
+					Network: &common.PartialObjectRef{
+						TypeMeta: metav1.TypeMeta{
+							APIVersion: "crd.nsx.vmware.com/v1alpha1",
+							Kind:       "Subnet",
+						},
+						Name: "vpc-subnet",
+					},
+					PortSettingName: portSettingName,
+				},
+			},
+		}
+	}
+
+	return func(ctx *unitValidatingWebhookContext) {
+		ctx.oldVM.Spec.Network = newSpec(oldName)
+		ctx.vm.Spec.Network = newSpec(newName)
+	}
 }

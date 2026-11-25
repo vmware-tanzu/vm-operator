@@ -1099,4 +1099,45 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(hubAfter.Spec.Network.Interfaces[1].ExternalRef).To(Equal(hub.Spec.Network.Interfaces[0].ExternalRef))
 		g.Expect(hubAfter.Spec.Network.Interfaces[1].Network).To(BeNil())
 	})
+
+	t.Run("spec.network.interfaces portSettingName restored by name", func(t *testing.T) {
+		// The hub-only portSettingName is restored by interface name from the
+		// annotation, so an old-version UPDATE that reorders interfaces keeps
+		// each value with its interface, and an interface without a value
+		// remains unset.
+		g := NewWithT(t)
+
+		hub := vmopv1.VirtualMachine{
+			Spec: vmopv1.VirtualMachineSpec{
+				Network: &vmopv1.VirtualMachineNetworkSpec{
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:            "eth0",
+							PortSettingName: "my-port-setting",
+						},
+						{
+							Name: "eth1",
+						},
+					},
+				},
+			},
+		}
+
+		// Down-convert hub -> spoke (stores hub data in the annotation).
+		var spoke vmopv1a3.VirtualMachine
+		g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+
+		// Simulate the old-version UPDATE: reorder the interfaces.
+		ifaces := spoke.Spec.Network.Interfaces
+		ifaces[0], ifaces[1] = ifaces[1], ifaces[0]
+
+		// Up-convert spoke -> hub: portSettingName must follow eth0.
+		var hubAfter vmopv1.VirtualMachine
+		g.Expect(spoke.ConvertTo(&hubAfter)).To(Succeed())
+		g.Expect(hubAfter.Spec.Network.Interfaces).To(HaveLen(2))
+		g.Expect(hubAfter.Spec.Network.Interfaces[0].Name).To(Equal("eth1"))
+		g.Expect(hubAfter.Spec.Network.Interfaces[0].PortSettingName).To(BeEmpty())
+		g.Expect(hubAfter.Spec.Network.Interfaces[1].Name).To(Equal("eth0"))
+		g.Expect(hubAfter.Spec.Network.Interfaces[1].PortSettingName).To(Equal("my-port-setting"))
+	})
 }

@@ -134,6 +134,7 @@ func restore_v1alpha6_VirtualMachineNetworkInterfaces(dst, src *vmopv1.VirtualMa
 		}
 		dstIface := &dst.Spec.Network.Interfaces[i]
 		dstIface.ExternalRef = srcIface.ExternalRef
+		dstIface.PortSettingName = srcIface.PortSettingName
 		dstIface.IPAMModes = append([]corev1.IPFamily(nil), srcIface.IPAMModes...)
 		dstIface.Type = srcIface.Type
 		dstIface.VNUMANodeID = srcIface.VNUMANodeID

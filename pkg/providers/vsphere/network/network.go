@@ -1140,6 +1140,8 @@ func createVPCNetworkInterface(
 			}
 		}
 
+		subnetPort.Spec.PortSettingName = interfaceSpec.PortSettingName
+
 		return nil
 	})
 

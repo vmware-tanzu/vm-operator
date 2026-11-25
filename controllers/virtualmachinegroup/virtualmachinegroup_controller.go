@@ -186,7 +186,10 @@ func (r *Reconciler) ReconcileNormal(
 		return nil
 	}
 
-	ctx.Logger.Info("Reconciling VirtualMachineGroup")
+	ctx.Logger.Info("Reconciling VirtualMachineGroup",
+		"resourceVersion", ctx.VMGroup.ResourceVersion,
+		"requestTime", ctx.VMGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation],
+		"lastUpdatedPowerStateTime", ctx.VMGroup.Status.LastUpdatedPowerStateTime)
 
 	defer func(beforeVMGroupStatus *vmopv1.VirtualMachineGroupStatus) {
 		if !apiequality.Semantic.DeepEqual(beforeVMGroupStatus, &ctx.VMGroup.Status) {
@@ -274,7 +277,7 @@ func (r *Reconciler) reconcileMembers(
 		existingStatuses[key] = ms
 	}
 
-	updatePowerState, requestTime, err := shouldUpdatePowerState(ctx)
+	updatePowerState, requestTime, err := r.shouldUpdatePowerState(ctx)
 	if err != nil {
 		return err
 	}
@@ -1126,10 +1129,20 @@ func findMemberStatus(
 	return -1, nil
 }
 
+// isPowerStateRequestClosed returns true if the last updated power state time
+// in the status is after the time of the request in the annotation.
+func isPowerStateRequestClosed(
+	lastUpdated *metav1.Time, requestTime time.Time) bool {
+
+	return lastUpdated != nil && lastUpdated.After(requestTime)
+}
+
 // shouldUpdatePowerState returns true if the group's power state is set and
 // the last updated power state time in annotation is after the status.
 // It also returns the last updated power state time of the group in annotation.
-func shouldUpdatePowerState(
+// When the cached group shows the request as open, the group is read again
+// from the API server before the request is reported as open.
+func (r *Reconciler) shouldUpdatePowerState(
 	ctx *pkgctx.VirtualMachineGroupContext) (bool, time.Time, error) {
 
 	if ctx.VMGroup.Spec.PowerState == "" {
@@ -1152,14 +1165,60 @@ func shouldUpdatePowerState(
 		}
 	}
 
-	if t := ctx.VMGroup.Status.LastUpdatedPowerStateTime; t != nil &&
-		t.After(lastUpdateAnnotation) {
+	if isPowerStateRequestClosed(
+		ctx.VMGroup.Status.LastUpdatedPowerStateTime, lastUpdateAnnotation) {
 		ctx.Logger.V(4).Info(
 			"Last updated time in status is after the annotation, skipping")
 		return false, lastUpdateAnnotation, nil
 	}
 
-	return true, lastUpdateAnnotation, nil
+	// The cached group can lag behind this controller's own writes. Confirm
+	// the request is still open before any member is changed.
+	open, err := r.isRequestStillOpen(ctx, lastUpdateAnnotation)
+	if err != nil {
+		return false, time.Time{}, err
+	}
+
+	return open, lastUpdateAnnotation, nil
+}
+
+// isRequestStillOpen reads the group from the API server, bypassing the cache,
+// and returns true if the power state request made at requestTime, which the
+// cached group shows as open, is still open. The cache can lag behind the
+// status write that closed the request, and acting on the stale group would
+// reset members that were changed directly after the request closed. Only the
+// request time annotation and the last updated power state time in the status
+// are used from the group that was read. If the annotation differs from the
+// cached one, a newer request exists, and the update event for it starts
+// another reconcile, so this returns false.
+func (r *Reconciler) isRequestStillOpen(
+	ctx *pkgctx.VirtualMachineGroupContext,
+	requestTime time.Time) (bool, error) {
+
+	fresh := &vmopv1.VirtualMachineGroup{}
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(ctx.VMGroup), fresh); err != nil {
+		return false, client.IgnoreNotFound(
+			fmt.Errorf("failed to get group from API reader: %w", err))
+	}
+
+	if fresh.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] !=
+		ctx.VMGroup.Annotations[constants.LastUpdatedPowerStateTimeAnnotation] {
+
+		ctx.Logger.V(4).Info(
+			"Power state request changed since the cached read, skipping")
+		return false, nil
+	}
+
+	if isPowerStateRequestClosed(fresh.Status.LastUpdatedPowerStateTime, requestTime) {
+		ctx.Logger.Info(
+			"Power state request is closed on the API server, but not in the cache, skipping",
+			"cachedResourceVersion", ctx.VMGroup.ResourceVersion,
+			"resourceVersion", fresh.ResourceVersion,
+			"lastUpdatedPowerStateTime", fresh.Status.LastUpdatedPowerStateTime)
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // releaseMemberPowerState updates the power state fields on a member released

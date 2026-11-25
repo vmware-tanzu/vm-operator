@@ -344,15 +344,16 @@ func Spec(ctx context.Context, inputGetter func() SpecInput) {
 				Expect(err).ToNot(HaveOccurred(), "failed to get admin client for VirtualMachineConfigOptions creation")
 
 				// A ConfigTarget's real vSphere cluster will never report this
-				// hardware version, so once the owning ConfigTarget's next
+				// hardware version (it must still match the webhook's
+				// vmx-<number> format), so once the owning ConfigTarget's next
 				// reconcile runs, this object should be garbage-collected as
 				// stale. Creating it with owner as an owner reference (rather
 				// than a controller reference, matching reconcileConfigOptions)
 				// also triggers that reconcile via the controller's
 				// Owns(..., builder.MatchEveryOwner) watch.
 				stale := &vimv1.VirtualMachineConfigOptions{
-					ObjectMeta: metav1.ObjectMeta{Name: "vmx-e2e-stale-vmop-3760"},
-					Spec:       vimv1.VirtualMachineConfigOptionsSpec{HardwareVersion: "vmx-e2e-stale-vmop-3760"},
+					ObjectMeta: metav1.ObjectMeta{Name: "vmx-9999"},
+					Spec:       vimv1.VirtualMachineConfigOptionsSpec{HardwareVersion: "vmx-9999"},
 				}
 				Expect(controllerutil.SetOwnerReference(owner, stale, svClusterClient.Scheme())).To(Succeed())
 				Expect(adminClient.Create(ctx, stale)).To(Succeed())

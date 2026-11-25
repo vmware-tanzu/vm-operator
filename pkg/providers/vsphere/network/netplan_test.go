@@ -5,6 +5,7 @@
 package network_test
 
 import (
+	"context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,6 +20,61 @@ import (
 )
 
 var _ = Describe("Netplan", Label(testlabels.API), func() {
+	DescribeTable("DHCP overrides",
+		func(dhcp4, dhcp6, ignore4, ignore6, expectIgnore4, expectIgnore6 bool) {
+			b := network.Bootstrap{
+				Name: "eth0", DHCP4: dhcp4, DHCP6: dhcp6,
+				IgnoreDHCP4Routes: ignore4, IgnoreDHCP6Routes: ignore6,
+				Routes: []network.NetworkInterfaceRoute{{To: "198.51.100.0/24", Via: "192.0.2.1"}},
+			}
+			config, err := network.NetPlanCustomization(context.Background(), []network.Bootstrap{b}, nil)
+			Expect(err).ToNot(HaveOccurred())
+			eth := config.Ethernets["eth0"]
+			for i, overrides := range []*netplan.DHCPOverrides{eth.Dhcp4Overrides, eth.Dhcp6Overrides} {
+				enabled := []bool{dhcp4, dhcp6}[i]
+				ignoreRoutes := []bool{expectIgnore4, expectIgnore6}[i]
+				if !enabled || !ignoreRoutes {
+					Expect(overrides).To(BeNil())
+					continue
+				}
+				Expect(overrides).To(Equal(&netplan.DHCPOverrides{UseRoutes: new(false)}))
+			}
+			if dhcp4 && dhcp6 {
+				Expect(eth.Dhcp4Overrides).To(Equal(eth.Dhcp6Overrides))
+			}
+			Expect(eth.Routes).To(HaveLen(1))
+			Expect(eth.Routes[0].To).To(HaveValue(Equal("198.51.100.0/24")))
+			Expect(eth.Routes[0].Via).To(HaveValue(Equal("192.0.2.1")))
+		},
+		Entry("IPv4 routes", true, false, true, false, true, false),
+		Entry("IPv6 routes", false, true, false, true, false, true),
+		Entry("dual-stack routes", true, true, true, true, true, true),
+		Entry("static interfaces omit overrides", false, false, true, true, false, false),
+		Entry("DHCP defaults and additional static routes", true, true, false, false, false, false),
+		Entry("IPv4-only suppression on dual-stack keeps DHCP routes", true, true, true, false, false, false),
+		Entry("IPv6-only suppression on dual-stack keeps DHCP routes", true, true, false, true, false, false),
+	)
+
+	It("renders gateway overrides from the interface spec without overriding DHCP DNS", func() {
+		vm := &vmopv1.VirtualMachine{Spec: vmopv1.VirtualMachineSpec{
+			Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{}},
+		}}
+		b := network.InterfaceBootstrap(context.Background(), vm,
+			network.Bootstrap{DHCP4: true, DHCP6: true},
+			vmopv1.VirtualMachineNetworkInterfaceSpec{
+				Name: "eth0", Nameservers: []string{"192.0.2.53"},
+				Gateway4: "None", Gateway6: "None",
+			})
+		config, err := network.NetPlanCustomization(context.Background(), []network.Bootstrap{b}, nil)
+		Expect(err).ToNot(HaveOccurred())
+		data, err := netplan.MarshalYAML(netplan.Config{Network: *config})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring("dhcp4-overrides:\n        use-routes: false\n"))
+		Expect(string(data)).To(ContainSubstring("dhcp6-overrides:\n        use-routes: false\n"))
+		Expect(string(data)).ToNot(ContainSubstring("use-dns"))
+		Expect(config.Ethernets["eth0"].Nameservers.Addresses).To(Equal([]string{"192.0.2.53"}))
+	})
+
 	const (
 		ifName        = "my-interface"
 		guestDevName  = "eth42"
@@ -50,7 +106,7 @@ var _ = Describe("Netplan", Label(testlabels.API), func() {
 		})
 
 		JustBeforeEach(func() {
-			config, err = network.NetPlanCustomization(bootstraps, vlans)
+			config, err = network.NetPlanCustomization(context.Background(), bootstraps, vlans)
 		})
 
 		Context("IPv4/6 Static adapter", func() {

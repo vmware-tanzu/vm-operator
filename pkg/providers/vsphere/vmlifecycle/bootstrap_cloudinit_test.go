@@ -21,6 +21,7 @@ import (
 	pkgctx "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/internal"
+	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/providers/vsphere/vmlifecycle"
 	pkgutil "github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
@@ -175,6 +176,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				BeforeEach(func() {
 					cloudInitSpec.CloudConfig.DefaultUserEnabled = true
 				})
+
 				It("Should return valid data", func() {
 					Expect(custSpec).To(BeNil())
 
@@ -198,6 +200,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 				BeforeEach(func() {
 					cloudInitSpec.CloudConfig.RunCmd = []byte(`["ls /",["ls","-a","-l","/"],["echo","hello, world."]]`)
 				})
+
 				It("Should return valid data", func() {
 					Expect(custSpec).To(BeNil())
 
@@ -298,6 +301,170 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					})
 				})
 			})
+		})
+
+		Context("DHCP overrides", func() {
+			// noGateway is the Gateway4/Gateway6 value that, with CloudInit,
+			// ignores the gateway and all routes supplied by DHCP for that
+			// family.
+			const noGateway = "None"
+
+			type testCase struct {
+				// Inputs on the eth0 interface spec. A nil DHCP4/DHCP6 keeps
+				// the provider-derived value, which is dual-stack DHCP.
+				dhcp4, dhcp6       *bool
+				gateway4, gateway6 string
+				nameservers        []string
+
+				// Expected DHCP overrides in the eth0 netplan config.
+				expectedOverrides4, expectedOverrides6 *netplan.DHCPOverrides
+			}
+
+			ignoreRoutes := &netplan.DHCPOverrides{UseRoutes: new(false)}
+			nameservers := []string{"192.0.2.53"}
+
+			DescribeTableSubtree("with a transport",
+				func(transport string) {
+					DescribeTableSubtree("with an interface spec",
+						func(tc testCase) {
+							BeforeEach(func() {
+								vm.Annotations[constants.CloudInitTypeAnnotation] = transport
+								vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+									CloudInit: cloudInitSpec,
+								}
+
+								iface := vmopv1.VirtualMachineNetworkInterfaceSpec{
+									Name:        "eth0",
+									DHCP4:       tc.dhcp4,
+									DHCP6:       tc.dhcp6,
+									Gateway4:    tc.gateway4,
+									Gateway6:    tc.gateway6,
+									Nameservers: tc.nameservers,
+									Routes: []vmopv1.VirtualMachineNetworkRouteSpec{
+										{To: "default", Via: "fe80::1", Metric: 100},
+									},
+								}
+								vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+									Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{iface},
+								}
+
+								// Layer the interface spec over a provider-derived
+								// dual-stack DHCP bootstrap.
+								bsArgs.NetBootstraps = []network.Bootstrap{
+									network.InterfaceBootstrap(vmCtx, vm, network.Bootstrap{
+										MacAddress: "00:50:56:aa:bb:cc",
+										DHCP4:      true,
+										DHCP6:      true,
+										AcceptRA:   true,
+									}, iface),
+								}
+							})
+
+							It("generates the expected network metadata", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec).ToNot(BeNil())
+
+								var rawMetadata []byte
+								switch transport {
+								case constants.CloudInitTypeValueGuestInfo:
+									Expect(custSpec).To(BeNil())
+									extraConfig := pkgutil.OptionValues(configSpec.ExtraConfig).StringMap()
+									Expect(extraConfig).To(HaveKeyWithValue(constants.CloudInitGuestInfoMetadataEncoding, "gzip+base64"))
+									decoded, err := pkgutil.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoMetadata]))
+									Expect(err).ToNot(HaveOccurred())
+									rawMetadata = []byte(decoded)
+								case constants.CloudInitTypeValueCloudInitPrep:
+									Expect(custSpec).ToNot(BeNil())
+									Expect(custSpec.Identity).To(BeAssignableToTypeOf(&internal.CustomizationCloudinitPrep{}))
+									rawMetadata = []byte(custSpec.Identity.(*internal.CustomizationCloudinitPrep).Metadata)
+								}
+
+								var metadata vmlifecycle.CloudInitMetadata
+								Expect(yaml.Unmarshal(rawMetadata, &metadata)).To(Succeed())
+								Expect(metadata.Network.Version).To(Equal(int64(2)))
+								Expect(metadata.Network.Ethernets).To(HaveKey("eth0"))
+								eth0 := metadata.Network.Ethernets["eth0"]
+
+								Expect(eth0.Dhcp4Overrides).To(Equal(tc.expectedOverrides4))
+								Expect(eth0.Dhcp6Overrides).To(Equal(tc.expectedOverrides6))
+								if len(tc.nameservers) == 0 {
+									Expect(eth0.Nameservers).To(BeNil())
+								} else {
+									Expect(eth0.Nameservers).ToNot(BeNil())
+									Expect(eth0.Nameservers.Addresses).To(Equal(tc.nameservers))
+								}
+
+								// The remaining fields do not vary by case: the
+								// spec's static route is always kept, and a gateway
+								// is never rendered since none is set to an address.
+								Expect(eth0.Routes).To(Equal([]netplan.Route{
+									{To: new("default"), Via: new("fe80::1"), Metric: new(int64(100))},
+								}))
+								Expect(eth0.AcceptRa).To(HaveValue(BeTrue()))
+								Expect(eth0.Gateway4).To(BeNil())
+								Expect(eth0.Gateway6).To(BeNil())
+							})
+						},
+						Entry("DHCPv4-only with no IPv4 gateway ignores DHCPv4 routes", testCase{
+							dhcp4:              new(true),
+							dhcp6:              new(false),
+							gateway4:           noGateway,
+							expectedOverrides4: ignoreRoutes,
+						}),
+						Entry("DHCPv6-only with no IPv6 gateway ignores DHCPv6 routes", testCase{
+							dhcp4:              new(false),
+							dhcp6:              new(true),
+							gateway6:           noGateway,
+							expectedOverrides6: ignoreRoutes,
+						}),
+						Entry("dual-stack with no gateways ignores DHCP routes", testCase{
+							gateway4:           noGateway,
+							gateway6:           noGateway,
+							expectedOverrides4: ignoreRoutes,
+							expectedOverrides6: ignoreRoutes,
+						}),
+						// Interface nameservers are rendered but do not override
+						// DHCP DNS.
+						Entry("dual-stack with interface nameservers has no DHCP overrides", testCase{
+							nameservers: nameservers,
+						}),
+						Entry("dual-stack with interface nameservers and no gateways ignores only DHCP routes", testCase{
+							gateway4:           noGateway,
+							gateway6:           noGateway,
+							nameservers:        nameservers,
+							expectedOverrides4: ignoreRoutes,
+							expectedOverrides6: ignoreRoutes,
+						}),
+						Entry("dual-stack without gateways has no DHCP overrides", testCase{}),
+						Entry("static IPv4 and IPv6 has no DHCP overrides", testCase{
+							dhcp4:       new(false),
+							dhcp6:       new(false),
+							gateway4:    noGateway,
+							gateway6:    noGateway,
+							nameservers: nameservers,
+						}),
+						Entry("DHCPv6-only with no IPv4 gateway has no DHCP overrides", testCase{
+							dhcp4:    new(false),
+							gateway4: noGateway,
+						}),
+						Entry("DHCPv4-only with no IPv6 gateway has no DHCP overrides", testCase{
+							dhcp6:    new(false),
+							gateway6: noGateway,
+						}),
+						// networkd requires identical overrides for both DHCP
+						// families, so DHCP routes are kept unless both gateways
+						// are "None".
+						Entry("dual-stack with only no IPv4 gateway keeps DHCP routes", testCase{
+							gateway4: noGateway,
+						}),
+						Entry("dual-stack with only no IPv6 gateway keeps DHCP routes", testCase{
+							gateway6: noGateway,
+						}),
+					)
+				},
+				Entry("Via CloudInitPrep", constants.CloudInitTypeValueCloudInitPrep),
+				Entry("Via GuestInfo", constants.CloudInitTypeValueGuestInfo),
+			)
 		})
 	})
 

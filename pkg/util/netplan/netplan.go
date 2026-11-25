@@ -18,6 +18,9 @@ type Network = schema.NetworkConfig
 
 type Ethernet = schema.EthernetConfig
 
+// DHCPOverrides contains overrides for the options supplied by DHCP.
+type DHCPOverrides = schema.DHCPOverrides
+
 type Match = schema.MatchConfig
 
 type Nameserver = schema.NameserverConfig

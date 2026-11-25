@@ -49,6 +49,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 016 | [byo-network-interface](specs/016-byo-network-interface/) | Bring Your Own Network Interface CR | In Progress | vmop-2530 |
 | 017 | [e2e-isolated-testbeds](specs/017-e2e-isolated-testbeds/) | E2E Support for Isolated Testbeds | In Progress | vmop-4430 |
 | 018 | [vmim-infra-migration-status](specs/018-vmim-infra-migration-status/) | VirtualMachineInfraMigration Status on VirtualMachine | Draft | vmop-3432 |
+| 019 | [dhcp-overrides](specs/019-dhcp-overrides/) | CloudInit DHCP Route Overrides | Draft | TBD |
 
 ### Finding the right spec
 

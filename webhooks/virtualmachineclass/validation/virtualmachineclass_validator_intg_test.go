@@ -146,6 +146,22 @@ func intgTestsValidateCreate() {
 		Entry("rejects a zero memory size", func(class *vmopv1.VirtualMachineClass) {
 			class.Spec.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("0"))}
 		}, true),
+		Entry("accepts a memory size of exactly 4Mi", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4Mi"))}
+			class.Spec.Resources.Requests.Memory = nil
+			class.Spec.Resources.Limits.Memory = nil
+		}, false),
+		Entry("rejects a memory size below 4Mi", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("2Mi"))}
+		}, true),
+		Entry("rejects a memory size that is not a multiple of 4Mi", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Memory = &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4097Mi"))}
+		}, true),
+		Entry("rejects a memory size max that is not a multiple of 4Mi", func(class *vmopv1.VirtualMachineClass) {
+			class.Spec.Memory = &vmopv1.ResourceQuantityRange{
+				Min: ptr.To(resource.MustParse("4Gi")), Max: ptr.To(resource.MustParse("8G")), Default: ptr.To(resource.MustParse("4Gi")),
+			}
+		}, true),
 		Entry("rejects a negative memory size min", func(class *vmopv1.VirtualMachineClass) {
 			class.Spec.Memory = &vmopv1.ResourceQuantityRange{
 				Min: ptr.To(resource.MustParse("-1Gi")), Default: ptr.To(resource.MustParse("2Gi")),

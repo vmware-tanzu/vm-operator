@@ -49,7 +49,7 @@ func intgTestsReconcile() {
 			},
 			Spec: vmopv1.VirtualMachineClassSpec{
 				CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("4"))},
-				Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Mi"))},
+				Memory: &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1Gi"))},
 				Resources: vmopv1.VirtualMachineClassResources{
 					Requests: vmopv1.VirtualMachineClassResourceSpec{
 						CPU:    &vmopv1.ResourceQuantityRange{Default: ptr.To(resource.MustParse("1000m"))},

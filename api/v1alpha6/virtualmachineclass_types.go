@@ -135,9 +135,10 @@ type VirtualMachineClassSpec struct {
 	CPU *ResourceQuantityRange `json:"cpu,omitempty"`
 
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="[?self.?min, ?self.?max, ?self.?default].all(q, quantity(string(q)).compareTo(quantity('0')) > 0)",message="memory must be greater than 0"
+	// +kubebuilder:validation:XValidation:rule="[?self.?min, ?self.?max, ?self.?default].all(q, quantity(string(q)).isInteger() && quantity(string(q)).asInteger() >= 4194304 && quantity(string(q)).asInteger() % 4194304 == 0)",message="memory must be a multiple of 4Mi and at least 4Mi"
 
-	// Memory is the guest-visible memory, in bytes.
+	// Memory is the guest-visible memory, in bytes. vSphere requires a
+	// multiple of 4 MiB.
 	Memory *ResourceQuantityRange `json:"memory,omitempty"`
 
 	// +optional

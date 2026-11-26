@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -173,6 +174,200 @@ func unitTestsReconcile() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
 				Expect(res.RequeueAfter).To(Equal(pkgcfg.FromContext(ctx).CreateVMRequeueDelay))
+			})
+		})
+
+		// Without BYOK a VM cannot be encrypted, so fast-deploy is disabled for
+		// a VM whose storage policy is encrypted. The VM's storage policy comes
+		// from spec.volumeAttributesClassName when it is set, otherwise from
+		// spec.storageClass.
+		When("fast-deploy is enabled and BYOK is disabled", func() {
+			const (
+				vacName      = "my-vac"
+				scProfileID  = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+				vacProfileID = "c1d3a5b7-9e2f-4a68-8b0d-7f6e5d4c3b2a"
+			)
+
+			var (
+				// Whether or not the storage policy of the StorageClass and of
+				// the VolumeAttributesClass is encrypted.
+				scEncrypted, vacEncrypted bool
+
+				// fastDeployEnabled is nil until the provider is called to
+				// create or update the VM. Then it is whether or not fast-deploy
+				// is enabled in the context the provider is called with.
+				fastDeployEnabled *bool
+			)
+
+			reconcile := func() error {
+				_, err := reconciler.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKeyFromObject(vm),
+				})
+				return err
+			}
+
+			BeforeEach(func() {
+				scEncrypted, vacEncrypted = false, false
+				fastDeployEnabled = nil
+			})
+
+			JustBeforeEach(func() {
+				pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+					config.Features.FastDeploy = true
+					config.Features.BringYourOwnEncryptionKey = false
+					config.Features.StoragePolicyMutability = true
+
+					// Without a mode fast-deploy is disabled for every VM.
+					config.FastDeployMode = pkgconst.FastDeployModeLinked
+				})
+
+				sc := builder.DummyStorageClassWithID(scProfileID)
+				sc.Name = vm.Spec.StorageClass
+				Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+				Expect(kubeutil.MarkEncryptedStorageClass(
+					ctx, ctx.Client, *sc, scEncrypted)).To(Succeed())
+
+				vac := builder.DummyVolumeAttributesClassWithID(vacProfileID)
+				vac.Name = vacName
+				Expect(ctx.Client.Create(ctx, vac)).To(Succeed())
+
+				// The StorageClass that is used to mark the
+				// VolumeAttributesClass's storage policy is not created since
+				// only its name and UID are used to own the StoragePolicy.
+				vacOwner := builder.DummyStorageClassWithID(vacProfileID)
+				vacOwner.Name = "owner-of-" + vacName
+				Expect(kubeutil.MarkEncryptedStorageClass(
+					ctx, ctx.Client, *vacOwner, vacEncrypted)).To(Succeed())
+
+				providerfake.SetCreateOrUpdateFunction(
+					ctx,
+					fakeVMProvider,
+					func(ctx context.Context, _ *vmopv1.VirtualMachine) error {
+						enabled := pkgcfg.FromContext(ctx).Features.FastDeploy
+						fastDeployEnabled = &enabled
+						return nil
+					},
+				)
+			})
+
+			When("the VM does not specify a VolumeAttributesClass", func() {
+				When("the StorageClass's storage policy is encrypted", func() {
+					BeforeEach(func() {
+						scEncrypted = true
+					})
+					It("should disable fast-deploy", func() {
+						Expect(reconcile()).To(Succeed())
+						Expect(fastDeployEnabled).ToNot(BeNil())
+						Expect(*fastDeployEnabled).To(BeFalse())
+					})
+				})
+
+				When("the StorageClass's storage policy is not encrypted", func() {
+					It("should not disable fast-deploy", func() {
+						Expect(reconcile()).To(Succeed())
+						Expect(fastDeployEnabled).ToNot(BeNil())
+						Expect(*fastDeployEnabled).To(BeTrue())
+					})
+				})
+			})
+
+			When("the VM specifies a VolumeAttributesClass", func() {
+				BeforeEach(func() {
+					vm.Spec.VolumeAttributesClassName = vacName
+				})
+
+				When("the VolumeAttributesClass's storage policy is encrypted and the StorageClass's is not", func() {
+					BeforeEach(func() {
+						vacEncrypted = true
+					})
+					It("should disable fast-deploy", func() {
+						Expect(reconcile()).To(Succeed())
+						Expect(fastDeployEnabled).ToNot(BeNil())
+						Expect(*fastDeployEnabled).To(BeFalse())
+					})
+				})
+
+				When("the VolumeAttributesClass's storage policy is not encrypted and the StorageClass's is", func() {
+					BeforeEach(func() {
+						scEncrypted = true
+					})
+					It("should not disable fast-deploy", func() {
+						Expect(reconcile()).To(Succeed())
+						Expect(fastDeployEnabled).ToNot(BeNil())
+						Expect(*fastDeployEnabled).To(BeTrue())
+					})
+				})
+
+				// A VolumeAttributesClass that cannot be resolved to a storage
+				// policy is an error, which is logged and returned as is. It fails
+				// the reconcile, which includes the one of a VM that is being
+				// deleted, so that VM keeps its finalizer until it is resolved.
+				When("the StoragePolicyMutability feature is disabled", func() {
+					BeforeEach(func() {
+						scEncrypted = true
+					})
+					JustBeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.StoragePolicyMutability = false
+						})
+					})
+					It("should return the error", func() {
+						Expect(reconcile()).To(MatchError(
+							`failed to get storage policy ID from VolumeAttributesClass "my-vac": ` +
+								`VolumeAttributesClass "my-vac" object is specified but capability is not enabled`))
+						Expect(fastDeployEnabled).To(BeNil())
+					})
+
+					When("the VM is being deleted", func() {
+						BeforeEach(func() {
+							now := metav1.Now()
+							vm.DeletionTimestamp = &now
+						})
+						It("should return the error and keep the finalizer", func() {
+							Expect(reconcile()).To(MatchError(
+								ContainSubstring("capability is not enabled")))
+
+							obj := &vmopv1.VirtualMachine{}
+							Expect(ctx.Client.Get(
+								ctx,
+								client.ObjectKeyFromObject(vm),
+								obj)).To(Succeed())
+							Expect(obj.Finalizers).To(ContainElement(finalizer))
+						})
+					})
+				})
+
+				When("the VolumeAttributesClass does not exist", func() {
+					BeforeEach(func() {
+						vm.Spec.VolumeAttributesClassName = vacName + "-not-found"
+					})
+					It("should return the error as is", func() {
+						err := reconcile()
+						Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+						// The controller does not wrap the error.
+						Expect(err).To(MatchError(HavePrefix(
+							`failed to get storage policy ID from VolumeAttributesClass "my-vac-not-found": `)))
+						Expect(fastDeployEnabled).To(BeNil())
+					})
+
+					When("the VM is being deleted", func() {
+						BeforeEach(func() {
+							now := metav1.Now()
+							vm.DeletionTimestamp = &now
+						})
+						It("should return the error and keep the finalizer", func() {
+							Expect(apierrors.IsNotFound(reconcile())).To(BeTrue())
+
+							obj := &vmopv1.VirtualMachine{}
+							Expect(ctx.Client.Get(
+								ctx,
+								client.ObjectKeyFromObject(vm),
+								obj)).To(Succeed())
+							Expect(obj.Finalizers).To(ContainElement(finalizer))
+						})
+					})
+				})
 			})
 		})
 	})

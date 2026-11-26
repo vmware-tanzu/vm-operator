@@ -49,13 +49,94 @@ type reconcileArgs struct {
 	configSpec            ptrCfgSpec
 	curKey                cryptoKey
 	newKey                cryptoKey
-	isEncStorClass        bool
+	isEncStorPolicy       bool
 	profileID             string
 	hasVTPM               bool
 	addVTPM               bool
 	remVTPM               bool
 	encryptionClassName   string
 	useDefaultKeyProvider bool
+
+	// underVAC is true when the VM already exists and specifies a
+	// VolumeAttributesClass, i.e. spec.volumeAttributesClassName is set.
+	//
+	// The storage policy of such a VM, and the encryption that policy
+	// requires, is applied by the VirtualMachineInfraMigration (VMIM) that
+	// moves the VM to the VolumeAttributesClass's storage policy. It is not
+	// applied by this reconciler. So, for a VM that is under a
+	// VolumeAttributesClass, this reconciler:
+	//
+	//   - Does not encrypt the VM because the VolumeAttributesClass's storage
+	//     policy is encrypted, since the VMIM encrypts it with the resolved
+	//     key, see encryptForStorage.
+	//   - Writes no storage profile on the VM's disks. The VMIM applies the
+	//     storage policy to the VM home and to PVC-backed disks, but it does not
+	//     cover a disk with no PVC, such as a fast-deploy disk, which is left as
+	//     it is.
+	//
+	// Whether the VM's storage policy is encrypted is still taken from the
+	// VolumeAttributesClass letting the VMIM encrypted pass validation without
+	//  a vTPM or an encrypted StorageClass.
+	//
+	// A VM that is being created is never under a VolumeAttributesClass. No
+	// VMIM exists for it yet, so this reconciler encrypts it, as it does for
+	//  a VM that is not under a VolumeAttributesClass.
+	//
+	// Re-keying an encrypted VM is not skipped for a VM that is under a
+	// VolumeAttributesClass. A VMIM that moves the VM to another datastore keeps
+	// the VM's current key, and so can leave the VM with a key other than the
+	// one this reconciler resolves. This reconciler re-keys the VM to the
+	// resolved key, as it does for a VM that is not under a
+	// VolumeAttributesClass, and writes no storage profile with it. It does so
+	// only once the change to the VolumeAttributesClass is complete, see
+	// vacChangeInProgress.
+	underVAC bool
+}
+
+// encryptForStorage returns true if this reconciler should encrypt the VM
+// because the VM's storage policy requires encryption. It never does for a VM
+// that is under a VolumeAttributesClass, since the VMIM encrypts that VM, see
+// underVAC.
+func (a reconcileArgs) encryptForStorage() bool {
+	return a.isEncStorPolicy && !a.underVAC
+}
+
+// vacChangeInProgress returns true if the VM is under a VolumeAttributesClass,
+// see underVAC, and the VMIM has not yet finished moving the VM to it, see
+// isVACChangeInProgress. This reconciler does not re-key the VM until then, or
+// else the re-key could race with the VMIM.
+func (a reconcileArgs) vacChangeInProgress() bool {
+	return a.underVAC && isVACChangeInProgress(
+		a.vm.Spec.VolumeAttributesClassName,
+		a.vm.Status.VolumeAttributesClassName)
+}
+
+// isVACChangeInProgress returns true if an object is being moved to the
+// VolumeAttributesClass it specifies, i.e. the VolumeAttributesClass that the
+// object is observed to have is not the one it specifies. The observed
+// VolumeAttributesClass is status.volumeAttributesClassName for a VM, and
+// status.currentVolumeAttributesClassName for a PVC.
+//
+// An empty observed VolumeAttributesClass counts as in sync. Nothing records
+// one for an object that has never been moved, such as a VM that was created
+// with a VolumeAttributesClass, and treating that as a change in progress would
+// mean the object is never re-keyed. The consequence is that the first move of
+// an object to a VolumeAttributesClass is not seen as in progress, since
+// nothing is recorded until that move completes.
+func isVACChangeInProgress(specName, observedName string) bool {
+	return observedName != "" && observedName != specName
+}
+
+// isPVCVACChangeInProgress returns true if the PVC is under a
+// VolumeAttributesClass, see kubeutil.IsPVCUnderVAC, and is being moved to it,
+// see isVACChangeInProgress.
+func isPVCVACChangeInProgress(
+	ctx context.Context,
+	pvc corev1.PersistentVolumeClaim) bool {
+
+	return kubeutil.IsPVCUnderVAC(ctx, pvc) && isVACChangeInProgress(
+		ptr.Deref(pvc.Spec.VolumeAttributesClassName),
+		ptr.Deref(pvc.Status.CurrentVolumeAttributesClassName))
 }
 
 var (
@@ -136,11 +217,13 @@ func (r reconciler) Reconcile(
 	// ID and key ID.
 	args.curKey = getCurCryptoKey(moVM)
 
-	// Check whether or not the StorageClass supports encryption.
-	args.isEncStorClass, args.profileID, err = kubeutil.IsEncryptedStorageClass(
+	// Check whether or not the VM's storage policy supports encryption. The
+	// policy comes from spec.volumeAttributesClassName when it is set, since it
+	// takes precedence over spec.storageClass.
+	args.isEncStorPolicy, args.profileID, err = kubeutil.IsEncryptedStoragePolicyForVM(
 		ctx,
 		k8sClient,
-		vm.Spec.StorageClass)
+		*vm)
 	if err != nil {
 		return err
 	}
@@ -155,6 +238,11 @@ func (r reconciler) Reconcile(
 
 	// Record whether the VM has, is adding, or is removing a vTPM.
 	args.hasVTPM, args.addVTPM, args.remVTPM = hasVTPM(moVM, configSpec)
+
+	// Record whether the existing VM is under a VolumeAttributesClass, in which
+	// case the VMIM, not this reconciler, applies its storage policy and
+	// encryption, see reconcileArgs.underVAC. A new VM is never under one.
+	args.underVAC = vm.Spec.VolumeAttributesClassName != "" && moVM.Config != nil
 
 	if args.moVM.Config == nil {
 		// A new VM is being created.
@@ -183,7 +271,7 @@ func (r reconciler) reconcileCreate(
 			return setConditionAndReturnErr(args, err, ReasonInternalError)
 		}
 
-		if !args.hasVTPM && !args.addVTPM && !args.isEncStorClass {
+		if !args.hasVTPM && !args.addVTPM && !args.isEncStorPolicy {
 			// The VM does not meet the requirements for encryption.
 			return setConditionAndReturnErr(
 				args,
@@ -204,7 +292,7 @@ func (r reconciler) reconcileCreate(
 		// There is no default key provider.
 		//
 
-		if args.hasVTPM || args.addVTPM || args.isEncStorClass {
+		if args.hasVTPM || args.addVTPM || args.isEncStorPolicy {
 
 			// The VM has a configuration that requires encryption.
 			return setConditionAndReturnErr(
@@ -219,7 +307,7 @@ func (r reconciler) reconcileCreate(
 		// There is a default key provider.
 		//
 
-		if args.hasVTPM || args.addVTPM || args.isEncStorClass {
+		if args.hasVTPM || args.addVTPM || args.isEncStorPolicy {
 
 			//
 			// The new VM meets the requirements to be encrypted.
@@ -294,6 +382,17 @@ func (r reconciler) reconcileUpdateEncryptionClass(
 		// The existing VM is not encrypted.
 		//
 
+		if args.underVAC && !args.hasVTPM && !args.addVTPM {
+
+			//
+			// The VM is under a VolumeAttributesClass and does not have a
+			// vTPM, so the VMIM, not this reconciler, encrypts it. See
+			// reconcileArgs.underVAC.
+			//
+
+			return false, nil
+		}
+
 		// Encrypt the existing VM.
 		return true, doOp(ctx, args, doEncrypt)
 	}
@@ -310,7 +409,7 @@ func (r reconciler) reconcileUpdateEncryptionClass(
 		//
 
 		// Recrypt the existing VM.
-		return true, doOp(ctx, args, doRecrypt)
+		return recryptVM(ctx, args)
 
 	}
 
@@ -335,7 +434,7 @@ func (r reconciler) reconcileUpdateEncryptionClass(
 			//
 
 			// Recrypt the existing VM.
-			return true, doOp(ctx, args, doRecrypt)
+			return recryptVM(ctx, args)
 		}
 	}
 
@@ -361,10 +460,12 @@ func (r reconciler) reconcileUpdateDefaultKeyProvider(
 			// There is a default key provider.
 			//
 
-			if args.hasVTPM || args.addVTPM || args.isEncStorClass {
+			if args.hasVTPM || args.addVTPM || args.encryptForStorage() {
 
 				//
-				// The existing VM meets the requirements to be encrypted.
+				// The existing VM meets the requirements to be encrypted. Please
+				// note, a VM that is under a VolumeAttributesClass does not meet
+				// them because of its storage policy, only because of a vTPM.
 				//
 
 				// Encrypt the existing VM.
@@ -398,11 +499,29 @@ func (r reconciler) reconcileUpdateDefaultKeyProvider(
 			//
 
 			// Recrypt the existing VM.
-			return true, doOp(ctx, args, doRecrypt)
+			return recryptVM(ctx, args)
 		}
 	}
 
 	return false, nil
+}
+
+// recryptVM recrypts the existing VM with the key in args.newKey and returns
+// true, unless the change to the VM's VolumeAttributesClass is in progress.
+func recryptVM(ctx context.Context, args reconcileArgs) (bool, error) {
+	if args.vacChangeInProgress() {
+		// TODO: Update EncryptionSynced, which is not touched here and still reports from the crypto state.
+		pkglog.FromContextOrDefault(ctx).V(4).Info(
+			"Skipping VM recrypt while the VolumeAttributesClass change is in progress",
+			"volumeAttributesClassName", args.vm.Spec.VolumeAttributesClassName,
+			"observedVolumeAttributesClassName", args.vm.Status.VolumeAttributesClassName,
+			"currentProviderID", args.curKey.provider,
+			"currentKeyID", args.curKey.id,
+			"newProviderID", args.newKey.provider,
+			"newKeyID", args.newKey.id)
+		return false, nil
+	}
+	return true, doOp(ctx, args, doRecrypt)
 }
 
 func (r reconciler) reconcileUpdateFCDs(
@@ -473,22 +592,41 @@ func (r reconciler) reconcileUpdateFCDs(
 		// status and match the disk UUID and target ID here with the diskInfo.UUID.
 
 		storageClassName := ptr.Deref(pvc.Spec.StorageClassName)
-		if storageClassName == "" {
+		vacName := ptr.Deref(pvc.Spec.VolumeAttributesClassName)
+		if storageClassName == "" && vacName == "" {
 			// NB: Elsewhere we don't support the k8s default StorageClass label.
 			logger.V(4).Info("Skipping PVC with no storage class name")
 			continue
 		}
 
-		isEncStorClass, profileID, err := kubeutil.IsEncryptedStorageClass(
+		// NB: The VM's storage policy does not apply to a PVC, so check the
+		// PVC's own storage policy. It comes from the PVC's
+		// VolumeAttributesClass when it specifies one and the
+		// StoragePolicyMutability capability is enabled, otherwise from the
+		// PVC's StorageClass.
+		isEncStorPolicy, profileID, err := kubeutil.IsEncryptedStoragePolicyForPVC(
 			ctx,
 			args.k8sClient,
-			storageClassName)
+			*pvc)
 		if err != nil {
-			logger.Error(err, "Failed to get encrypted storage class", "storageClassName", storageClassName)
+			logger.Error(err, "Failed to get encrypted storage policy")
 			return false, err
 		}
-		if !isEncStorClass {
-			logger.V(4).Info("Skipping volume with non-encrypted storage class", "storageClassName", storageClassName)
+		if !isEncStorPolicy {
+			logger.V(4).Info("Skipping volume with non-encrypted storage policy",
+				"storage policy", profileID)
+			continue
+		}
+
+		// An FCD that is not encrypted, and whose PVC is under a
+		// VolumeAttributesClass, is encrypted by the VMIM, not by this
+		// reconciler, just as for a VM, see reconcileArgs.underVAC. So there is
+		// nothing to encrypt, and no storage profile to write. This precedes
+		// resolving the key since there is no key to apply.
+		if diskInfo.CryptoKey == nil && kubeutil.IsPVCUnderVAC(ctx, *pvc) {
+			logger.V(4).Info("Skipping unencrypted FCD of PVC under a VAC",
+				"disk", diskInfo.FileName,
+				"volumeAttributesClassName", vacName)
 			continue
 		}
 
@@ -552,6 +690,20 @@ func (r reconciler) reconcileUpdateFCDs(
 			}
 
 			if needsRecrypt {
+				// The FCD of a PVC that is under a VolumeAttributesClass is not
+				// recrypted until the change to it is complete, just as for the VM,
+				// see reconcileArgs.vacChangeInProgress. The recrypt writes no
+				// storage profile.
+				if isPVCVACChangeInProgress(ctx, *pvc) {
+					logger.V(4).Info(
+						"Skipping FCD recrypt while the VolumeAttributesClass change is in progress",
+						"disk", diskInfo.FileName,
+						"volumeAttributesClassName", vacName,
+						"observedVolumeAttributesClassName",
+						ptr.Deref(pvc.Status.CurrentVolumeAttributesClassName))
+					continue
+				}
+
 				if updateFCDBackingForRecrypt(args, disk, desiredKey) {
 					logger.Info(
 						"Recrypt FCD",
@@ -890,7 +1042,13 @@ func onUpdateEncrypted(
 
 	if pkgcfg.FromContext(ctx).Features.FastDeploy {
 		var encryptedDisks []string
-		if args.isEncStorClass {
+
+		// Encrypting the disks writes the storage profile of the VM's storage
+		// policy on them. These are disks with no PVC, which the VMIM does not
+		// cover. A VM under a VolumeAttributesClass gets no storage profile
+		// from this reconciler, so they are left as they are, see
+		// reconcileArgs.underVAC.
+		if args.encryptForStorage() {
 			encryptedDisks = onEncryptDisks(args)
 		}
 		if len(encryptedDisks) > 0 {
@@ -1158,7 +1316,7 @@ func validateStorageClassAndVTPM(args reconcileArgs) (Reason, []string) {
 		reason |= ReasonInvalidChanges
 		msgs = append(msgs, "not remove vTPM")
 	}
-	if !args.hasVTPM && !args.addVTPM && !args.isEncStorClass {
+	if !args.hasVTPM && !args.addVTPM && !args.isEncStorPolicy {
 		reason |= ReasonInvalidState
 		msgs = append(msgs, "use encryption storage class or have vTPM")
 	}

@@ -861,21 +861,28 @@ func (v validator) validateCrypto(
 		encClassNamePath = cryptoPath.Child("encryptionClassName")
 	)
 
-	if ok, _, err := kubeutil.IsEncryptedStorageClass(
+	// The VM's storage policy comes from spec.volumeAttributesClassName when it
+	// is set, otherwise from spec.storageClass.
+	if ok, _, err := kubeutil.IsEncryptedStoragePolicyForVM(
 		ctx,
 		v.client,
-		vm.Spec.StorageClass); err != nil {
+		*vm); err != nil {
 
 		allErrs = append(allErrs, field.InternalError(encClassNamePath, err))
 
 	} else if !ok {
 		// Return an error on the "vm.Spec.Crypto.EncryptionClassName" path
-		// instead of "vm.Spec.StorageClass" because the storage class is
+		// instead of "vm.Spec.StorageClass" or
+		// "vm.Spec.VolumeAttributesClassName" because the storage policy is
 		// invalid due to the user's choice of encryption class name.
+		msg := "requires spec.storageClass specify an encryption storage class"
+		if vm.Spec.VolumeAttributesClassName != "" {
+			msg = "requires spec.volumeAttributesClassName specify an encryption storage policy"
+		}
 		allErrs = append(allErrs, field.Invalid(
 			encClassNamePath,
 			vm.Spec.Crypto.EncryptionClassName,
-			"requires spec.storageClass specify an encryption storage class"))
+			msg))
 	}
 
 	return allErrs

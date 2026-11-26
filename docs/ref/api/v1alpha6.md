@@ -1542,20 +1542,21 @@ Please note, this field is not required to encrypt the VM. If the
 underlying platform has a default key provider, the VM may still be fully
 or partially encrypted depending on the specified storage and VM classes.
 
-If there is a default key provider and an encryption storage class is
-selected, the files in the VM's home directory and non-PVC virtual disks
-will be encrypted
+If there is a default key provider and an encryption storage class, or an
+encryption volume attributes class, is selected, the files in the VM's
+home directory and non-PVC virtual disks will be encrypted
 
 If there is a default key provider and a VM Class with a virtual, trusted
 platform module (vTPM) is selected, the files in the VM's home directory,
 minus any virtual disks, will be encrypted.
 
 If the underlying vSphere platform does not have a default key provider,
-then this field is required when specifying an encryption storage class
-and/or a VM Class with a vTPM.
+then this field is required when specifying an encryption storage class,
+an encryption volume attributes class, and/or a VM Class with a vTPM.
 
-If this field is set, spec.storageClass must use an encryption-enabled
-storage class. |
+If this field is set, the VM's storage policy must be encryption-enabled.
+That is the storage policy of spec.volumeAttributesClassName when it is
+set, otherwise the storage policy of spec.storageClass. |
 | `useDefaultKeyProvider` _boolean_ | UseDefaultKeyProvider describes the desired behavior for when an explicit
 EncryptionClass is not provided.
 

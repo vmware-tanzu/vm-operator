@@ -27,6 +27,7 @@ import (
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkglog "github.com/vmware-tanzu/vm-operator/pkg/log"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
 )
 
 const (
@@ -339,6 +340,11 @@ func SetStoragePolicyID(obj *storagev1.StorageClass, id string) {
 // IsEncryptedStorageClass returns true if the provided StorageClass name was
 // marked as encrypted. If encryption is supported, the StorageClass's profile
 // ID is also returned.
+//
+// This function only knows about StorageClasses. To check the storage policy of
+// a VM, use IsEncryptedStoragePolicyForVM, which also honors the VM's
+// VolumeAttributesClass, and to check the storage policy of a PVC, use
+// IsEncryptedStoragePolicyForPVC.
 func IsEncryptedStorageClass(
 	ctx context.Context,
 	k8sClient ctrlclient.Client,
@@ -360,6 +366,110 @@ func IsEncryptedStorageClass(
 
 	// The profile ID was just read from the StorageClass, so there is no need
 	// to list all StorageClasses and VolumeAttributesClasses to find it again.
+	ok, err := IsEncryptedStoragePolicy(ctx, k8sClient, profileID)
+	if err != nil {
+		return false, "", err
+	}
+
+	return ok, profileID, nil
+}
+
+// IsEncryptedStoragePolicyForVM returns true if the storage policy that
+// applies to the provided VM is marked as encrypted. If the policy is
+// resolved, its profile ID is also returned.
+//
+// When the VM does not specify spec.volumeAttributesClassName, the policy is
+// the one of spec.storageClass. A StorageClass that does not exist, or that
+// does not specify a storage policy ID, is not an error. The VM is simply not
+// encrypted.
+//
+// When the VM specifies spec.volumeAttributesClassName, the policy is resolved
+// with GetStoragePolicyIDAndSource, so the VolumeAttributesClass's policy takes
+// precedence over the StorageClass's.
+func IsEncryptedStoragePolicyForVM(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	vm vmopv1.VirtualMachine) (bool, string, error) {
+
+	if vm.Spec.VolumeAttributesClassName == "" {
+		return IsEncryptedStorageClass(ctx, k8sClient, vm.Spec.StorageClass)
+	}
+
+	profileID, src, err := GetStoragePolicyIDAndSource(ctx, k8sClient, vm)
+	if err != nil {
+		return false, "", fmt.Errorf(
+			"failed to get storage policy ID from %s %q: %w",
+			src.Kind, src.Name, err)
+	}
+
+	// The profile ID was just resolved from the VolumeAttributesClass, so there
+	// is no need to list all of them again to find it.
+	ok, err := IsEncryptedStoragePolicy(ctx, k8sClient, profileID)
+	if err != nil {
+		return false, "", err
+	}
+
+	return ok, profileID, nil
+}
+
+// IsPVCUnderVAC returns true if the provided PVC specifies a
+// VolumeAttributesClass and the StoragePolicyMutability capability is enabled.
+// The PVC's storage policy then comes from the VolumeAttributesClass, not the
+// StorageClass, and the PVC's storage policy, and the encryption that policy
+// requires, is applied by the migration CR that moves the PVC to it (the
+// VirtualMachineInfraMigration for an attached PVC), not by VM Operator.
+func IsPVCUnderVAC(
+	ctx context.Context,
+	pvc corev1.PersistentVolumeClaim) bool {
+
+	return ptr.Deref(pvc.Spec.VolumeAttributesClassName) != "" &&
+		pkgcfg.FromContext(ctx).Features.StoragePolicyMutability
+}
+
+// IsEncryptedStoragePolicyForPVC returns true if the storage policy that
+// applies to the provided PVC is marked as encrypted. If the policy is
+// resolved, its profile ID is also returned.
+//
+// When the PVC specifies spec.volumeAttributesClassName and the
+// StoragePolicyMutability capability is enabled, the policy is the one of the
+// VolumeAttributesClass, which takes precedence over the StorageClass's.
+// Similar behavior as the VM.
+func IsEncryptedStoragePolicyForPVC(
+	ctx context.Context,
+	k8sClient ctrlclient.Client,
+	pvc corev1.PersistentVolumeClaim) (bool, string, error) {
+
+	vacName := ptr.Deref(pvc.Spec.VolumeAttributesClassName)
+	if !IsPVCUnderVAC(ctx, pvc) {
+		storageClassName := ptr.Deref(pvc.Spec.StorageClassName)
+		if storageClassName == "" {
+			return false, "", nil
+		}
+		return IsEncryptedStorageClass(ctx, k8sClient, storageClassName)
+	}
+
+	// VolumeAttributeClass's policyID trumps StorageClass's policyID.
+
+	var vac storagev1.VolumeAttributesClass
+	if err := k8sClient.Get(
+		ctx,
+		ctrlclient.ObjectKey{Name: vacName},
+		&vac); err != nil {
+
+		return false, "", fmt.Errorf(
+			"failed to get storage policy ID from %s %q: %w",
+			internal.VolumeAttributesClassKind, vacName, err)
+	}
+
+	profileID, err := GetStoragePolicyIDFromVAC(vac)
+	if err != nil {
+		return false, "", fmt.Errorf(
+			"failed to get storage policy ID from %s %q: %w",
+			internal.VolumeAttributesClassKind, vacName, err)
+	}
+
+	// The profile ID was just resolved from the VolumeAttributesClass, so there
+	// is no need to list all of them again to find it.
 	ok, err := IsEncryptedStoragePolicy(ctx, k8sClient, profileID)
 	if err != nil {
 		return false, "", err

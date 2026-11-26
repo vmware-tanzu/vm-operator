@@ -1035,6 +1035,571 @@ var _ = Describe("IsEncryptedStorageClass", func() {
 	})
 })
 
+var _ = Describe("IsEncryptedStoragePolicyForVM", func() {
+	var (
+		ok               bool
+		ctx              context.Context
+		err              error
+		client           ctrlclient.Client
+		vm               vmopv1.VirtualMachine
+		storageClass     storagev1.StorageClass
+		scStoragePolicy  infrav1.StoragePolicy
+		vac              storagev1.VolumeAttributesClass
+		vacStoragePolicy infrav1.StoragePolicy
+		withObjs         []ctrlclient.Object
+		scProfileID      string
+		vacProfileID     string
+		id               string
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			PodNamespace: fakeString,
+			Features:     pkgcfg.FeatureStates{StoragePolicyMutability: true},
+		})
+
+		scProfileID = uuid.NewString()
+		vacProfileID = uuid.NewString()
+
+		storageClass = storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "my-storage-class",
+				UID:  types.UID(uuid.NewString()),
+			},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: scProfileID,
+			},
+		}
+		scStoragePolicy = infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(scProfileID),
+			},
+			Status: infrav1.StoragePolicyStatus{Encrypted: false},
+		}
+
+		vac = storagev1.VolumeAttributesClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "my-vac",
+				UID:  types.UID(uuid.NewString()),
+			},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: vacProfileID,
+			},
+		}
+		vacStoragePolicy = infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(vacProfileID),
+			},
+			Status: infrav1.StoragePolicyStatus{Encrypted: true},
+		}
+
+		vm = vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-vm",
+				Namespace: "my-ns",
+			},
+			Spec: vmopv1.VirtualMachineSpec{
+				StorageClass: storageClass.Name,
+			},
+		}
+
+		withObjs = []ctrlclient.Object{
+			&storageClass,
+			&scStoragePolicy,
+			&vac,
+			&vacStoragePolicy,
+		}
+	})
+
+	JustBeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(infrav1.AddToScheme(scheme)).To(Succeed())
+		Expect(storagev1.AddToScheme(scheme)).To(Succeed())
+
+		client = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(withObjs...).
+			Build()
+
+		ok, id, err = kubeutil.IsEncryptedStoragePolicyForVM(ctx, client, vm)
+	})
+
+	When("the VM does not specify a VolumeAttributesClass", func() {
+		When("the StorageClass's StoragePolicy is encrypted", func() {
+			BeforeEach(func() {
+				scStoragePolicy.Status.Encrypted = true
+			})
+			It("should return true and the StorageClass's profile ID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeTrue())
+				Expect(id).To(Equal(scProfileID))
+			})
+		})
+
+		When("the StorageClass's StoragePolicy is not encrypted", func() {
+			It("should return false and the StorageClass's profile ID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeFalse())
+				Expect(id).To(Equal(scProfileID))
+			})
+		})
+
+		When("the StorageClass does not exist", func() {
+			BeforeEach(func() {
+				withObjs = []ctrlclient.Object{&scStoragePolicy}
+			})
+			It("should not return an error", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeFalse())
+				Expect(id).To(BeEmpty())
+			})
+		})
+
+		When("the StoragePolicyMutability feature is disabled", func() {
+			BeforeEach(func() {
+				ctx = pkgcfg.WithConfig(pkgcfg.Config{
+					PodNamespace: fakeString,
+				})
+				scStoragePolicy.Status.Encrypted = true
+			})
+			It("should use the StorageClass", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeTrue())
+				Expect(id).To(Equal(scProfileID))
+			})
+		})
+	})
+
+	When("the VM specifies a VolumeAttributesClass", func() {
+		BeforeEach(func() {
+			vm.Spec.VolumeAttributesClassName = vac.Name
+		})
+
+		When("the VolumeAttributesClass's StoragePolicy is encrypted and the StorageClass's is not", func() {
+			It("should return true and the VolumeAttributesClass's profile ID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeTrue())
+				Expect(id).To(Equal(vacProfileID))
+			})
+		})
+
+		When("the VolumeAttributesClass's StoragePolicy is not encrypted and the StorageClass's is", func() {
+			BeforeEach(func() {
+				vacStoragePolicy.Status.Encrypted = false
+				scStoragePolicy.Status.Encrypted = true
+			})
+			It("should return false and the VolumeAttributesClass's profile ID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeFalse())
+				Expect(id).To(Equal(vacProfileID))
+			})
+		})
+
+		When("the VM does not specify a StorageClass", func() {
+			BeforeEach(func() {
+				vm.Spec.StorageClass = ""
+			})
+			It("should return true and the VolumeAttributesClass's profile ID", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeTrue())
+				Expect(id).To(Equal(vacProfileID))
+			})
+		})
+
+		When("the StoragePolicyMutability feature is disabled", func() {
+			BeforeEach(func() {
+				ctx = pkgcfg.WithConfig(pkgcfg.Config{
+					PodNamespace: fakeString,
+				})
+			})
+			It("should return the capability error naming the VolumeAttributesClass", func() {
+				Expect(err).To(MatchError(ContainSubstring(fmt.Sprintf(
+					"failed to get storage policy ID from %s %q: %s %q object is specified but capability is not enabled",
+					internal.VolumeAttributesClassKind, vac.Name,
+					internal.VolumeAttributesClassKind, vac.Name))))
+				Expect(ok).To(BeFalse())
+				Expect(id).To(BeEmpty())
+			})
+		})
+
+		When("the VolumeAttributesClass does not exist", func() {
+			BeforeEach(func() {
+				withObjs = []ctrlclient.Object{
+					&storageClass,
+					&scStoragePolicy,
+					&vacStoragePolicy,
+				}
+			})
+			It("should return a not-found error naming the VolumeAttributesClass", func() {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				Expect(err).To(MatchError(ContainSubstring(fmt.Sprintf(
+					"failed to get storage policy ID from %s %q",
+					internal.VolumeAttributesClassKind, vac.Name))))
+				Expect(ok).To(BeFalse())
+				Expect(id).To(BeEmpty())
+			})
+		})
+
+		When("the VolumeAttributesClass has no profile ID", func() {
+			BeforeEach(func() {
+				vac.Parameters = nil
+			})
+			It("should return an error naming the VolumeAttributesClass", func() {
+				Expect(err).To(MatchError(ContainSubstring(fmt.Sprintf(
+					"failed to get storage policy ID from %s %q",
+					internal.VolumeAttributesClassKind, vac.Name))))
+				Expect(ok).To(BeFalse())
+				Expect(id).To(BeEmpty())
+			})
+		})
+
+		When("there is no StoragePolicy for the VolumeAttributesClass", func() {
+			BeforeEach(func() {
+				withObjs = []ctrlclient.Object{
+					&storageClass,
+					&scStoragePolicy,
+					&vac,
+				}
+			})
+			It("should return a not-found error and an empty profile ID", func() {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				Expect(ok).To(BeFalse())
+				Expect(id).To(BeEmpty())
+			})
+		})
+	})
+})
+
+var _ = DescribeTable("IsPVCUnderVAC",
+	func(
+		vacName *string,
+		storagePolicyMutability bool,
+		expected bool) {
+
+		ctx := pkgcfg.WithConfig(pkgcfg.Config{
+			Features: pkgcfg.FeatureStates{
+				StoragePolicyMutability: storagePolicyMutability,
+			},
+		})
+		pvc := corev1.PersistentVolumeClaim{
+			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName:          ptr.To("my-storage-class"),
+				VolumeAttributesClassName: vacName,
+			},
+		}
+		Expect(kubeutil.IsPVCUnderVAC(ctx, pvc)).To(Equal(expected))
+	},
+	Entry("a VolumeAttributesClass and the capability enabled",
+		ptr.To("my-vac"), true, true),
+	Entry("a VolumeAttributesClass and the capability disabled",
+		ptr.To("my-vac"), false, false),
+	Entry("an empty VolumeAttributesClass and the capability enabled",
+		ptr.To(""), true, false),
+	Entry("no VolumeAttributesClass and the capability enabled",
+		nil, true, false),
+	Entry("no VolumeAttributesClass and the capability disabled",
+		nil, false, false),
+)
+
+var _ = Describe("IsEncryptedStoragePolicyForPVC", func() {
+	var (
+		ok            bool
+		ctx           context.Context
+		err           error
+		client        ctrlclient.Client
+		pvc           corev1.PersistentVolumeClaim
+		storageClass  storagev1.StorageClass
+		storagePolicy infrav1.StoragePolicy
+		vac           storagev1.VolumeAttributesClass
+		vacPolicy     infrav1.StoragePolicy
+		withObjs      []ctrlclient.Object
+		profileID     string
+		vacProfileID  string
+		id            string
+	)
+
+	BeforeEach(func() {
+		ctx = pkgcfg.WithConfig(pkgcfg.Config{
+			PodNamespace: fakeString,
+		})
+
+		profileID = uuid.NewString()
+		storageClass = storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "my-storage-class",
+				UID:  types.UID(uuid.NewString()),
+			},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: profileID,
+			},
+		}
+		storagePolicy = infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(profileID),
+			},
+			Status: infrav1.StoragePolicyStatus{Encrypted: true},
+		}
+
+		vacProfileID = uuid.NewString()
+		vac = storagev1.VolumeAttributesClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "my-vac",
+				UID:  types.UID(uuid.NewString()),
+			},
+			Parameters: map[string]string{
+				internal.StoragePolicyIDParameter: vacProfileID,
+			},
+		}
+		vacPolicy = infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: fakeString,
+				Name:      kubeutil.GetStoragePolicyObjectName(vacProfileID),
+			},
+			Status: infrav1.StoragePolicyStatus{Encrypted: false},
+		}
+
+		pvc = corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-pvc",
+				Namespace: "my-ns",
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: ptr.To(storageClass.Name),
+			},
+		}
+
+		withObjs = []ctrlclient.Object{
+			&storageClass,
+			&storagePolicy,
+			&vac,
+			&vacPolicy,
+		}
+	})
+
+	JustBeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(infrav1.AddToScheme(scheme)).To(Succeed())
+		Expect(storagev1.AddToScheme(scheme)).To(Succeed())
+
+		client = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(withObjs...).
+			Build()
+
+		ok, id, err = kubeutil.IsEncryptedStoragePolicyForPVC(ctx, client, pvc)
+	})
+
+	When("the PVC's StorageClass has an encrypted StoragePolicy", func() {
+		It("should return true and the profile ID", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(id).To(Equal(profileID))
+		})
+	})
+
+	When("the PVC's StorageClass has a StoragePolicy that is not encrypted", func() {
+		BeforeEach(func() {
+			storagePolicy.Status.Encrypted = false
+		})
+		It("should return false and the profile ID", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+			Expect(id).To(Equal(profileID))
+		})
+	})
+
+	When("the PVC does not specify a StorageClass", func() {
+		BeforeEach(func() {
+			pvc.Spec.StorageClassName = nil
+		})
+		It("should return false without an error", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+			Expect(id).To(BeEmpty())
+		})
+	})
+
+	When("the PVC specifies an empty StorageClass", func() {
+		BeforeEach(func() {
+			pvc.Spec.StorageClassName = ptr.To("")
+		})
+		It("should return false without an error", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+			Expect(id).To(BeEmpty())
+		})
+	})
+
+	When("the PVC's StorageClass does not exist", func() {
+		BeforeEach(func() {
+			pvc.Spec.StorageClassName = ptr.To(storageClass.Name + fakeString)
+		})
+		It("should return false without an error", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ok).To(BeFalse())
+			Expect(id).To(BeEmpty())
+		})
+	})
+
+	When("the PVC's StorageClass has no StoragePolicy", func() {
+		BeforeEach(func() {
+			withObjs = []ctrlclient.Object{&storageClass}
+		})
+		It("should return a not-found error and an empty profile ID", func() {
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			Expect(ok).To(BeFalse())
+			Expect(id).To(BeEmpty())
+		})
+	})
+
+	When("the PVC specifies a VolumeAttributesClass", func() {
+		BeforeEach(func() {
+			pvc.Spec.VolumeAttributesClassName = ptr.To(vac.Name)
+		})
+
+		When("the StoragePolicyMutability feature is enabled", func() {
+			BeforeEach(func() {
+				ctx = pkgcfg.WithConfig(pkgcfg.Config{
+					PodNamespace: fakeString,
+					Features:     pkgcfg.FeatureStates{StoragePolicyMutability: true},
+				})
+			})
+
+			// The VolumeAttributesClass's storage policy takes precedence over
+			// the StorageClass's.
+			When("the VolumeAttributesClass's storage policy is encrypted and the StorageClass's is not", func() {
+				BeforeEach(func() {
+					vacPolicy.Status.Encrypted = true
+					storagePolicy.Status.Encrypted = false
+				})
+				It("should return true and the VolumeAttributesClass's profile ID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ok).To(BeTrue())
+					Expect(id).To(Equal(vacProfileID))
+				})
+			})
+
+			When("the VolumeAttributesClass's storage policy is not encrypted and the StorageClass's is", func() {
+				It("should return false and the VolumeAttributesClass's profile ID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ok).To(BeFalse())
+					Expect(id).To(Equal(vacProfileID))
+				})
+			})
+
+			When("the PVC does not specify a StorageClass", func() {
+				BeforeEach(func() {
+					pvc.Spec.StorageClassName = nil
+					vacPolicy.Status.Encrypted = true
+				})
+				It("should return true and the VolumeAttributesClass's profile ID", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ok).To(BeTrue())
+					Expect(id).To(Equal(vacProfileID))
+				})
+			})
+
+			When("the PVC specifies an empty VolumeAttributesClass", func() {
+				BeforeEach(func() {
+					pvc.Spec.VolumeAttributesClassName = ptr.To("")
+					vacPolicy.Status.Encrypted = false
+				})
+				It("should return the StorageClass's storage policy", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ok).To(BeTrue())
+					Expect(id).To(Equal(profileID))
+				})
+			})
+
+			When("the VolumeAttributesClass does not exist", func() {
+				BeforeEach(func() {
+					withObjs = []ctrlclient.Object{
+						&storageClass,
+						&storagePolicy,
+						&vacPolicy,
+					}
+				})
+				It("should return a not-found error naming the VolumeAttributesClass", func() {
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+					Expect(err).To(MatchError(ContainSubstring(fmt.Sprintf(
+						"failed to get storage policy ID from %s %q",
+						internal.VolumeAttributesClassKind, vac.Name))))
+					Expect(ok).To(BeFalse())
+					Expect(id).To(BeEmpty())
+				})
+			})
+
+			When("the VolumeAttributesClass has no profile ID", func() {
+				BeforeEach(func() {
+					vac.Parameters = nil
+				})
+				It("should return an error naming the VolumeAttributesClass", func() {
+					Expect(err).To(MatchError(ContainSubstring(fmt.Sprintf(
+						"failed to get storage policy ID from %s %q",
+						internal.VolumeAttributesClassKind, vac.Name))))
+					Expect(ok).To(BeFalse())
+					Expect(id).To(BeEmpty())
+				})
+			})
+
+			When("there is no StoragePolicy for the VolumeAttributesClass", func() {
+				BeforeEach(func() {
+					withObjs = []ctrlclient.Object{
+						&storageClass,
+						&storagePolicy,
+						&vac,
+					}
+				})
+				It("should return a not-found error and an empty profile ID", func() {
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+					Expect(ok).To(BeFalse())
+					Expect(id).To(BeEmpty())
+				})
+			})
+		})
+
+		// The VolumeAttributesClass of a PVC is a field of the Kubernetes API,
+		// not of VM Operator's, so unlike a VM it is not an error to specify one
+		// when the capability is not enabled. It is not considered.
+		When("the StoragePolicyMutability feature is disabled", func() {
+			BeforeEach(func() {
+				vacPolicy.Status.Encrypted = true
+				storagePolicy.Status.Encrypted = false
+			})
+			It("should return the StorageClass's storage policy", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ok).To(BeFalse())
+				Expect(id).To(Equal(profileID))
+			})
+
+			When("the VolumeAttributesClass does not exist", func() {
+				BeforeEach(func() {
+					withObjs = []ctrlclient.Object{&storageClass, &storagePolicy}
+				})
+				It("should not return an error", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ok).To(BeFalse())
+					Expect(id).To(Equal(profileID))
+				})
+			})
+
+			When("the PVC does not specify a StorageClass", func() {
+				BeforeEach(func() {
+					pvc.Spec.StorageClassName = nil
+				})
+				It("should return false without an error", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ok).To(BeFalse())
+					Expect(id).To(BeEmpty())
+				})
+			})
+		})
+	})
+})
+
 var _ = Describe("IsEncryptedStorageProfile", func() {
 	var (
 		ok            bool

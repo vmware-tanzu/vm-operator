@@ -48,6 +48,11 @@ Design notes:
 - It is written only when the migration's `Ready` condition is `True` and its `observedGeneration` is at least the migration's `metadata.generation`. The mirrored condition follows its own rule, it is mirrored when `Ready` describes the current generation, so it is written whether or not the migration is ready.
 - It is never cleared, including when the migration is deleted. Only VM Operator writes it, and it is the durable record of the outcome, while the migration and the mirrored condition are short-lived.
 - Older API versions do not carry it. Each older version's `ConvertTo` restores the whole hub `status` from the conversion annotation, so no per-field restore function is needed, and the generated conversion code only gains a `does not exist in peer-type` warning line.
+- The crypto reconciler reads it to tell whether the VirtualMachine's change to `spec.volumeAttributesClassName` is in progress: it is when this field is not empty and differs from the spec. An empty value counts as in sync, because only a completed migration records it, so it stays empty for a VirtualMachine that was created with a VolumeAttributesClass and never migrated. The observed counterpart for a PVC is Kubernetes' `status.currentVolumeAttributesClassName`, read the same way.
+
+## `spec.crypto` under a VolumeAttributesClass
+
+No field is added. The documentation of `spec.crypto.encryptionClassName` now says that the storage policy that must be encryption-enabled is the one of `spec.volumeAttributesClassName` when it is set, and otherwise the one of `spec.storageClass`. The behavior is described in the spec and the plan.
 
 ## Mapping between the two resources
 

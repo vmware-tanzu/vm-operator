@@ -428,16 +428,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 		reason := "unsupported mode"
 		if !pkgcfg.FromContext(ctx).Features.BringYourOwnEncryptionKey {
-			isEncStorClass, _, err := kubeutil.IsEncryptedStorageClass(
-				ctx, r.Client, vm.Spec.StorageClass)
+			// The VM's storage policy comes from spec.volumeAttributesClassName
+			// when it is set, otherwise from spec.storageClass.
+			isEncStorPolicy, profileID, err := kubeutil.IsEncryptedStoragePolicyForVM(
+				ctx, r.Client, *vm)
 			if err != nil {
-				return ctrl.Result{}, fmt.Errorf(
-					"failed to check if storage class %q is encrypted: %w",
-					vm.Spec.StorageClass, err)
+				logger.Error(err,
+					"Failed to check if the storage policy of the VM is encrypted",
+					"profileID", profileID)
+				return ctrl.Result{}, err
 			}
-			if isEncStorClass {
+			if isEncStorPolicy {
 				mode = ""
 				reason = "encrypted storage class sans byok"
+				if vm.Spec.VolumeAttributesClassName != "" {
+					reason = "encrypted volume attributes class sans byok"
+				}
 			}
 		}
 

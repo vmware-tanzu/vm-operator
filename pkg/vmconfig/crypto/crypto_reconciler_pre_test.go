@@ -66,6 +66,11 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 
 		storageClass1 *storagev1.StorageClass
 		storageClass2 *storagev1.StorageClass
+
+		// vacEncrypted refers to an encrypted storage policy and vacPlain to a
+		// storage policy that is not encrypted.
+		vacEncrypted *storagev1.VolumeAttributesClass
+		vacPlain     *storagev1.VolumeAttributesClass
 	)
 
 	BeforeEach(func() {
@@ -191,8 +196,57 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 			},
 		}
 
+		var (
+			vacEncryptedProfileID = uuid.NewString()
+			vacPlainProfileID     = uuid.NewString()
+		)
+		vacEncrypted = &storagev1.VolumeAttributesClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "my-vac-encrypted",
+				UID:  types.UID(uuid.NewString()),
+			},
+			Parameters: map[string]string{
+				"storagePolicyID": vacEncryptedProfileID,
+			},
+		}
+		vacPlain = &storagev1.VolumeAttributesClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "my-vac-plain",
+				UID:  types.UID(uuid.NewString()),
+			},
+			Parameters: map[string]string{
+				"storagePolicyID": vacPlainProfileID,
+			},
+		}
+
+		// A StoragePolicy must exist for every profile ID in order to determine
+		// whether or not it is encrypted.
+		vacEncryptedPolicy := &infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+				Name:      kubeutil.GetStoragePolicyObjectName(vacEncryptedProfileID),
+			},
+			Status: infrav1.StoragePolicyStatus{Encrypted: true},
+		}
+		vacPlainPolicy := &infrav1.StoragePolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: pkgcfg.FromContext(ctx).PodNamespace,
+				Name:      kubeutil.GetStoragePolicyObjectName(vacPlainProfileID),
+			},
+			Status: infrav1.StoragePolicyStatus{Encrypted: false},
+		}
+
 		withFuncs = interceptor.Funcs{}
-		withObjs = []ctrlclient.Object{encClass, storageClass1, storageClass2, vm}
+		withObjs = []ctrlclient.Object{
+			encClass,
+			storageClass1,
+			storageClass2,
+			vacEncrypted,
+			vacPlain,
+			vacEncryptedPolicy,
+			vacPlainPolicy,
+			vm,
+		}
 	})
 	JustBeforeEach(func() {
 		k8sClient = builder.NewFakeClientWithInterceptors(withFuncs, withObjs...)
@@ -471,6 +525,71 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 							Expect(configSpec.Crypto).To(BeNil())
 						})
 					})
+
+					When("the vm uses a VolumeAttributesClass", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.StoragePolicyMutability = true
+							})
+							configSpec.DeviceChange = nil
+						})
+
+						When("the VolumeAttributesClass uses an encrypted storage policy but the StorageClass does not", func() {
+							BeforeEach(func() {
+								vm.Spec.StorageClass = storageClass1.Name
+								vm.Spec.VolumeAttributesClassName = vacEncrypted.Name
+							})
+							It("should deploy an encrypted vm", func() {
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+								Expect(c).To(BeNil())
+								cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+								Expect(ok).To(BeTrue())
+								Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
+								Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+							})
+						})
+
+						When("the VolumeAttributesClass uses a storage policy that is not encrypted but the StorageClass does", func() {
+							BeforeEach(func() {
+								vm.Spec.StorageClass = storageClass2.Name
+								vm.Spec.VolumeAttributesClassName = vacPlain.Name
+							})
+							It("should deploy an unencrypted vm", func() {
+								Expect(err).ToNot(HaveOccurred())
+								c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+								Expect(c).To(BeNil())
+								Expect(configSpec.Crypto).To(BeNil())
+							})
+						})
+
+						When("the VolumeAttributesClass does not exist", func() {
+							BeforeEach(func() {
+								vm.Spec.StorageClass = storageClass2.Name
+								vm.Spec.VolumeAttributesClassName = vacEncrypted.Name + fakeString
+							})
+							It("should return an error", func() {
+								Expect(err).To(HaveOccurred())
+								Expect(apierrors.IsNotFound(err)).To(BeTrue())
+								Expect(err).To(MatchError(ContainSubstring(vm.Spec.VolumeAttributesClassName)))
+								Expect(configSpec.Crypto).To(BeNil())
+							})
+						})
+
+						When("the StoragePolicyMutability feature is disabled", func() {
+							BeforeEach(func() {
+								pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+									config.Features.StoragePolicyMutability = false
+								})
+								vm.Spec.StorageClass = storageClass1.Name
+								vm.Spec.VolumeAttributesClassName = vacEncrypted.Name
+							})
+							It("should return an error", func() {
+								Expect(err).To(MatchError(ContainSubstring("capability is not enabled")))
+								Expect(configSpec.Crypto).To(BeNil())
+							})
+						})
+					})
 				})
 
 				When("there is not a default key provider", func() {
@@ -552,6 +671,79 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 								Expect(err).ToNot(HaveOccurred())
 								Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
 							})
+							// The storage policy of a VM that is under a VolumeAttributesClass is the
+							// VolumeAttributesClass's. So a VM that the VMIM encrypted is in sync when
+							// its StorageClass is not encrypted and it has no vTPM, and it does not get
+							// an InvalidState.
+							When("the vm is under a VolumeAttributesClass whose storage policy is encrypted but the StorageClass's is not", func() {
+								BeforeEach(func() {
+									pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+										config.Features.StoragePolicyMutability = true
+									})
+									vm.Spec.StorageClass = storageClass1.Name
+									vm.Spec.VolumeAttributesClassName = vacEncrypted.Name
+								})
+								It("should set EncryptionSynced=true", func() {
+									Expect(err).ToNot(HaveOccurred())
+									Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeTrue())
+									Expect(configSpec.Crypto).To(BeNil())
+								})
+							})
+
+							// Encrypting the vm's disks writes the storage profile of the vm's storage
+							// policy on them. The VMIM does that for a vm that is under a
+							// VolumeAttributesClass, so this reconciler must not.
+							When("fast deploy is enabled and the vm has a disk that is not encrypted", func() {
+								BeforeEach(func() {
+									pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+										config.Features.FastDeploy = true
+									})
+									moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+										&vimtypes.VirtualDisk{
+											VirtualDevice: vimtypes.VirtualDevice{
+												Key: 2000,
+												Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+													VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+														FileName: "[datastore1] my-vm/my-vm.vmdk",
+													},
+												},
+											},
+										},
+									}
+								})
+
+								When("the vm is not under a VolumeAttributesClass and its StorageClass is encrypted", func() {
+									It("should encrypt the disk with the storage profile", func() {
+										Expect(err).ToNot(HaveOccurred())
+										Expect(configSpec.DeviceChange).To(HaveLen(1))
+										devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+										Expect(devSpec).ToNot(BeNil())
+										cryptoSpec, ok := devSpec.Backing.Crypto.(*vimtypes.CryptoSpecEncrypt)
+										Expect(ok).To(BeTrue())
+										Expect(cryptoSpec.CryptoKeyId.KeyId).To(Equal(provider1Key2ID))
+										Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+										Expect(devSpec.Profile).To(HaveLen(1))
+										profileSpec, ok := devSpec.Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec)
+										Expect(ok).To(BeTrue())
+										Expect(profileSpec.ProfileId).To(Equal(simulator.DefaultEncryptionProfileID))
+									})
+								})
+
+								When("the vm is under a VolumeAttributesClass whose storage policy is encrypted but the StorageClass's is not", func() {
+									BeforeEach(func() {
+										pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+											config.Features.StoragePolicyMutability = true
+										})
+										vm.Spec.StorageClass = storageClass1.Name
+										vm.Spec.VolumeAttributesClassName = vacEncrypted.Name
+									})
+									It("should not encrypt the disk or write a storage profile", func() {
+										Expect(err).ToNot(HaveOccurred())
+										Expect(configSpec.DeviceChange).To(BeEmpty())
+									})
+								})
+							})
+
 							When("the vm does not have an encrypted storage class", func() {
 								BeforeEach(func() {
 									vm.Spec.StorageClass = storageClass1.Name
@@ -624,6 +816,116 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 							c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
 							Expect(c).To(BeNil())
 							Expect(configSpec.Crypto).To(BeNil())
+						})
+						When("the vm uses a VolumeAttributesClass", func() {
+							BeforeEach(func() {
+								pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+									config.Features.StoragePolicyMutability = true
+								})
+							})
+
+							// The VMIM, not this reconciler, encrypts an existing VM that is under a
+							// VolumeAttributesClass whose storage policy is encrypted, unless the VM has
+							// a vTPM. See reconcileArgs.underVAC.
+							When("the VolumeAttributesClass uses an encrypted storage policy but the StorageClass does not", func() {
+								BeforeEach(func() {
+									vm.Spec.VolumeAttributesClassName = vacEncrypted.Name
+								})
+								It("should not encrypt the vm", func() {
+									Expect(err).ToNot(HaveOccurred())
+									Expect(conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeNil())
+									Expect(configSpec.Crypto).To(BeNil())
+									Expect(configSpec.DeviceChange).To(BeEmpty())
+								})
+
+								// This reconciler does not encrypt the vm, so there is nothing for the
+								// power state to hold, and no InvalidState.
+								When("the vm is powered on", func() {
+									BeforeEach(func() {
+										moVM.Summary.Runtime.PowerState = vimtypes.VirtualMachinePowerStatePoweredOn
+									})
+									It("should not set EncryptionSynced", func() {
+										Expect(err).ToNot(HaveOccurred())
+										Expect(conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeNil())
+										Expect(configSpec.Crypto).To(BeNil())
+									})
+								})
+
+								// A vTPM encrypts the vm as it does when the vm is not under a
+								// VolumeAttributesClass.
+								When("the vm has a vtpm", func() {
+									BeforeEach(func() {
+										moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+											&vimtypes.VirtualTPM{},
+										}
+									})
+									It("should encrypt the vm with the default key provider", func() {
+										Expect(err).ToNot(HaveOccurred())
+										Expect(conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeNil())
+										cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+										Expect(ok).To(BeTrue())
+										Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
+										Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+									})
+								})
+
+								When("the vm is adding a vtpm", func() {
+									BeforeEach(func() {
+										configSpec.DeviceChange = []vimtypes.BaseVirtualDeviceConfigSpec{
+											&vimtypes.VirtualDeviceConfigSpec{
+												Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+												Device:    &vimtypes.VirtualTPM{},
+											},
+										}
+									})
+									It("should encrypt the vm with the default key provider", func() {
+										Expect(err).ToNot(HaveOccurred())
+										Expect(conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeNil())
+										cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+										Expect(ok).To(BeTrue())
+										Expect(cryptoSpec.CryptoKeyId.KeyId).To(BeEmpty())
+										Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+									})
+								})
+							})
+
+							When("the VolumeAttributesClass uses a storage policy that is not encrypted but the StorageClass does", func() {
+								BeforeEach(func() {
+									vm.Spec.StorageClass = storageClass2.Name
+									vm.Spec.VolumeAttributesClassName = vacPlain.Name
+								})
+								It("should not encrypt the vm", func() {
+									Expect(err).ToNot(HaveOccurred())
+									c := conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)
+									Expect(c).To(BeNil())
+									Expect(configSpec.Crypto).To(BeNil())
+								})
+							})
+
+							When("the VolumeAttributesClass does not exist", func() {
+								BeforeEach(func() {
+									vm.Spec.VolumeAttributesClassName = vacEncrypted.Name + fakeString
+								})
+								It("should return an error", func() {
+									Expect(err).To(HaveOccurred())
+									Expect(apierrors.IsNotFound(err)).To(BeTrue())
+									Expect(err).To(MatchError(ContainSubstring(vm.Spec.VolumeAttributesClassName)))
+									Expect(configSpec.Crypto).To(BeNil())
+								})
+							})
+
+							When("the StoragePolicyMutability feature is disabled", func() {
+								BeforeEach(func() {
+									pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+										config.Features.StoragePolicyMutability = false
+									})
+									vm.Spec.VolumeAttributesClassName = vacEncrypted.Name
+								})
+								It("should return an error", func() {
+									Expect(err).To(MatchError(ContainSubstring("capability is not enabled")))
+									Expect(configSpec.Crypto).To(BeNil())
+								})
+							})
 						})
 						When("the vm has a vtpm but not encrypted storage class", func() {
 							BeforeEach(func() {
@@ -857,6 +1159,40 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 							Expect(ok).To(BeTrue())
 							Expect(cryptoSpec.CryptoKeyId.KeyId).To(Equal(provider1Key1ID))
 							Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+						})
+
+						// The VMIM, not this reconciler, encrypts an existing VM that is under a
+						// VolumeAttributesClass whose storage policy is encrypted, with the resolved
+						// key, unless the VM has a vTPM. See reconcileArgs.underVAC.
+						When("the vm is under a VolumeAttributesClass whose storage policy is encrypted but the StorageClass's is not", func() {
+							BeforeEach(func() {
+								pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+									config.Features.StoragePolicyMutability = true
+								})
+								vm.Spec.StorageClass = storageClass1.Name
+								vm.Spec.VolumeAttributesClassName = vacEncrypted.Name
+							})
+							It("should not encrypt the vm", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeNil())
+								Expect(configSpec.Crypto).To(BeNil())
+							})
+
+							When("the vm has a vtpm", func() {
+								BeforeEach(func() {
+									moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+										&vimtypes.VirtualTPM{},
+									}
+								})
+								It("should encrypt the vm with the key of the EncryptionClass", func() {
+									Expect(err).ToNot(HaveOccurred())
+									Expect(conditions.Get(vm, vmopv1.VirtualMachineEncryptionSynced)).To(BeNil())
+									cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecEncrypt)
+									Expect(ok).To(BeTrue())
+									Expect(cryptoSpec.CryptoKeyId.KeyId).To(Equal(provider1Key1ID))
+									Expect(cryptoSpec.CryptoKeyId.ProviderId.Id).To(Equal(provider1ID))
+								})
+							})
 						})
 
 						When("the vm is powered on", func() {
@@ -1462,6 +1798,226 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 				})
 			})
 
+			// A VM that is under a VolumeAttributesClass is recrypted to the key this
+			// reconciler resolves, as a VM that is not, and no storage profile is
+			// written. A VMIM that moves the VM to another datastore keeps the VM's
+			// current key, which can leave the VM with a key other than the resolved
+			// one. The recrypt waits until the VMIM is done, i.e. until
+			// status.volumeAttributesClassName is the VolumeAttributesClass in
+			// spec.volumeAttributesClassName. See reconcileArgs.vacChangeInProgress.
+			When("the vm is under a VolumeAttributesClass and has a key other than the resolved key", func() {
+
+				// expectRecrypt asserts that the vm and its disk are recrypted with
+				// the given key, and that no storage profile is written.
+				expectRecrypt := func(providerID, keyID string) {
+					GinkgoHelper()
+					Expect(err).ToNot(HaveOccurred())
+					cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+					Expect(ok).To(BeTrue())
+					Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(providerID))
+					Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(keyID))
+					Expect(configSpec.DeviceChange).To(HaveLen(1))
+					devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+					Expect(devSpec).ToNot(BeNil())
+					Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+					Expect(devSpec.Backing).ToNot(BeNil())
+					Expect(devSpec.Backing.Crypto).To(Equal(configSpec.Crypto))
+					Expect(devSpec.Profile).To(BeEmpty())
+				}
+
+				// expectNoRecrypt asserts that neither the vm nor its disk is
+				// recrypted.
+				expectNoRecrypt := func() {
+					GinkgoHelper()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(configSpec.Crypto).To(BeNil())
+					Expect(configSpec.DeviceChange).To(BeEmpty())
+				}
+
+				BeforeEach(func() {
+					pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+						config.Features.StoragePolicyMutability = true
+					})
+
+					// The VolumeAttributesClass's storage policy is encrypted and the
+					// StorageClass's is not, so the VM's storage policy is the
+					// VolumeAttributesClass's.
+					vm.Spec.StorageClass = storageClass1.Name
+					vm.Spec.VolumeAttributesClassName = vacEncrypted.Name
+
+					// The VM and its disk have the key of another provider than the
+					// one of the VM's EncryptionClass, as they would after a VMIM
+					// moved the VM to another datastore and kept the key.
+					moVM.Config.KeyId = &vimtypes.CryptoKeyId{
+						KeyId: provider2Key1ID,
+						ProviderId: &vimtypes.KeyProviderId{
+							Id: provider2ID,
+						},
+					}
+					moVM.Config.Hardware.Device = []vimtypes.BaseVirtualDevice{
+						&vimtypes.VirtualDisk{
+							VirtualDevice: vimtypes.VirtualDevice{
+								Key: 2000,
+								Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+									VirtualDeviceFileBackingInfo: vimtypes.VirtualDeviceFileBackingInfo{
+										FileName: "[datastore1] my-vm/my-vm.vmdk",
+									},
+									KeyId: &vimtypes.CryptoKeyId{
+										KeyId: provider2Key1ID,
+										ProviderId: &vimtypes.KeyProviderId{
+											Id: provider2ID,
+										},
+									},
+								},
+							},
+						},
+					}
+				})
+
+				When("the VolumeAttributesClass in status is the one in the spec", func() {
+					BeforeEach(func() {
+						vm.Status.VolumeAttributesClassName = vacEncrypted.Name
+					})
+					It("should recrypt the vm with the key of the EncryptionClass", func() {
+						expectRecrypt(provider1ID, provider1Key1ID)
+					})
+				})
+
+				// The VolumeAttributesClass in status is only recorded after a VMIM is
+				// done, so it is empty for a VM that was never moved.
+				When("the VolumeAttributesClass in status is empty", func() {
+					BeforeEach(func() {
+						vm.Status.VolumeAttributesClassName = ""
+					})
+					It("should recrypt the vm with the key of the EncryptionClass", func() {
+						expectRecrypt(provider1ID, provider1Key1ID)
+					})
+				})
+
+				When("the VolumeAttributesClass in status is not the one in the spec", func() {
+					BeforeEach(func() {
+						vm.Status.VolumeAttributesClassName = vacPlain.Name
+					})
+					It("should not recrypt the vm or its disk", func() {
+						expectNoRecrypt()
+					})
+
+					// The recrypt is only held back, not given up, so the vm is recrypted
+					// as soon as the VMIM is done and the VolumeAttributesClass in status
+					// is the one in the spec.
+					When("the change is then done", func() {
+						It("should recrypt the vm with the key of the EncryptionClass", func() {
+							expectNoRecrypt()
+
+							vm.Status.VolumeAttributesClassName = vacEncrypted.Name
+							configSpec = &vimtypes.VirtualMachineConfigSpec{}
+							err = r.Reconcile(ctx, k8sClient, vimClient, vm, moVM, configSpec)
+
+							expectRecrypt(provider1ID, provider1Key1ID)
+						})
+					})
+				})
+
+				// A VM that is not under a VolumeAttributesClass has no change to wait
+				// for, whatever its status says.
+				When("the vm is not under a VolumeAttributesClass", func() {
+					BeforeEach(func() {
+						vm.Spec.StorageClass = storageClass2.Name
+						vm.Spec.VolumeAttributesClassName = ""
+						vm.Status.VolumeAttributesClassName = vacPlain.Name
+					})
+					It("should recrypt the vm with the key of the EncryptionClass", func() {
+						expectRecrypt(provider1ID, provider1Key1ID)
+					})
+				})
+
+				When("the key of the EncryptionClass is of the same provider but another key", func() {
+					BeforeEach(func() {
+						moVM.Config.KeyId = &vimtypes.CryptoKeyId{
+							KeyId: provider1Key2ID,
+							ProviderId: &vimtypes.KeyProviderId{
+								Id: provider1ID,
+							},
+						}
+						moVM.Config.Hardware.Device[0].(*vimtypes.VirtualDisk).
+							Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).KeyId = moVM.Config.KeyId
+					})
+
+					When("the VolumeAttributesClass in status is the one in the spec", func() {
+						BeforeEach(func() {
+							vm.Status.VolumeAttributesClassName = vacEncrypted.Name
+						})
+						It("should recrypt the vm with the key of the EncryptionClass", func() {
+							expectRecrypt(provider1ID, provider1Key1ID)
+						})
+					})
+
+					When("the VolumeAttributesClass in status is not the one in the spec", func() {
+						BeforeEach(func() {
+							vm.Status.VolumeAttributesClassName = vacPlain.Name
+						})
+						It("should not recrypt the vm or its disk", func() {
+							expectNoRecrypt()
+						})
+					})
+				})
+
+				When("there is no EncryptionClass and the default key provider is another provider", func() {
+					BeforeEach(func() {
+						vm.Spec.Crypto = nil
+						Expect(cryptoManager.MarkDefault(ctx, provider1ID)).To(Succeed())
+					})
+
+					When("the VolumeAttributesClass in status is the one in the spec", func() {
+						BeforeEach(func() {
+							vm.Status.VolumeAttributesClassName = vacEncrypted.Name
+						})
+						It("should recrypt the vm with the default key provider", func() {
+							// The key is generated on demand when the provider is the default.
+							expectRecrypt(provider1ID, "")
+						})
+					})
+
+					When("the VolumeAttributesClass in status is not the one in the spec", func() {
+						BeforeEach(func() {
+							vm.Status.VolumeAttributesClassName = vacPlain.Name
+						})
+						It("should not recrypt the vm or its disk", func() {
+							expectNoRecrypt()
+						})
+					})
+				})
+
+				// A vTPM encrypts the VM whatever its storage policy is, and the vm is
+				// recrypted, and held back from it, in the same way.
+				When("the VolumeAttributesClass's storage policy is not encrypted and the vm has a vtpm", func() {
+					BeforeEach(func() {
+						vm.Spec.VolumeAttributesClassName = vacPlain.Name
+						moVM.Config.Hardware.Device = append(
+							moVM.Config.Hardware.Device,
+							&vimtypes.VirtualTPM{})
+					})
+
+					When("the VolumeAttributesClass in status is the one in the spec", func() {
+						BeforeEach(func() {
+							vm.Status.VolumeAttributesClassName = vacPlain.Name
+						})
+						It("should recrypt the vm with the key of the EncryptionClass", func() {
+							expectRecrypt(provider1ID, provider1Key1ID)
+						})
+					})
+
+					When("the VolumeAttributesClass in status is not the one in the spec", func() {
+						BeforeEach(func() {
+							vm.Status.VolumeAttributesClassName = vacEncrypted.Name
+						})
+						It("should not recrypt the vm or its disk", func() {
+							expectNoRecrypt()
+						})
+					})
+				})
+			})
+
 			When("reconciling FCDs", func() {
 				var (
 					pvc           *corev1.PersistentVolumeClaim
@@ -1668,6 +2224,352 @@ var _ = Describe("Reconcile", Label(testlabels.Crypto), func() {
 					It("should not encrypt the FCD", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(configSpec.DeviceChange).To(BeEmpty())
+					})
+				})
+
+				// The PVC's own storage policy decides whether or not to encrypt
+				// the FCD. It comes from the PVC's VolumeAttributesClass, which
+				// takes precedence over the PVC's StorageClass, when the PVC
+				// specifies one and the StoragePolicyMutability capability is
+				// enabled.
+				When("PVC specifies a VolumeAttributesClass", func() {
+					BeforeEach(func() {
+						pvc.Annotations = map[string]string{
+							pkgconst.PVCEncryptionClassNameAnnotation: fcdEncClass.Name,
+						}
+					})
+
+					When("the StoragePolicyMutability feature is enabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.StoragePolicyMutability = true
+							})
+						})
+
+						When("the VolumeAttributesClass's storage policy is encrypted and the StorageClass's is not", func() {
+							BeforeEach(func() {
+								pvc.Spec.StorageClassName = ptr.To(storageClass1.Name)
+								pvc.Spec.VolumeAttributesClassName = ptr.To(vacEncrypted.Name)
+							})
+							// The VMIM, not this reconciler, encrypts the FCD of a PVC that is under a
+							// VolumeAttributesClass and applies the PVC's storage policy, so no key is
+							// applied and no storage profile is written.
+							It("should not encrypt the FCD or write a storage profile", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(BeEmpty())
+							})
+
+							// The FCD is skipped before its key is resolved, since there is no key to
+							// apply, so a key that cannot be resolved is not an error.
+							When("the PVC's EncryptionClass does not exist", func() {
+								BeforeEach(func() {
+									pvc.Annotations = map[string]string{
+										pkgconst.PVCEncryptionClassNameAnnotation: "non-existent-enc-class",
+									}
+								})
+								It("should not return an error", func() {
+									Expect(err).ToNot(HaveOccurred())
+									Expect(configSpec.DeviceChange).To(BeEmpty())
+								})
+							})
+
+							When("there is no default key provider and the PVC has no EncryptionClass", func() {
+								BeforeEach(func() {
+									pvc.Annotations = nil
+								})
+								It("should not return an error", func() {
+									Expect(err).ToNot(HaveOccurred())
+									Expect(configSpec.DeviceChange).To(BeEmpty())
+								})
+							})
+						})
+
+						When("the VolumeAttributesClass's storage policy is not encrypted and the StorageClass's is", func() {
+							BeforeEach(func() {
+								pvc.Spec.StorageClassName = ptr.To(storageClass2.Name)
+								pvc.Spec.VolumeAttributesClassName = ptr.To(vacPlain.Name)
+							})
+							It("should not encrypt the FCD", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(BeEmpty())
+							})
+						})
+
+						When("the PVC does not specify a StorageClass", func() {
+							BeforeEach(func() {
+								pvc.Spec.StorageClassName = nil
+								pvc.Spec.VolumeAttributesClassName = ptr.To(vacEncrypted.Name)
+							})
+							It("should not encrypt the FCD or write a storage profile", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(BeEmpty())
+							})
+						})
+
+						When("the FCD is encrypted with a different key", func() {
+							BeforeEach(func() {
+								pvc.Spec.StorageClassName = ptr.To(storageClass1.Name)
+								pvc.Spec.VolumeAttributesClassName = ptr.To(vacEncrypted.Name)
+
+								disk := moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+								disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).KeyId = &vimtypes.CryptoKeyId{
+									KeyId: provider1Key1ID,
+									ProviderId: &vimtypes.KeyProviderId{
+										Id: provider1ID,
+									},
+								}
+							})
+							It("should recrypt the FCD", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(HaveLen(1))
+								devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+								Expect(devSpec).ToNot(BeNil())
+								cryptoSpec, ok := devSpec.Backing.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+								Expect(ok).To(BeTrue())
+								Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(provider2Key1ID))
+								Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(provider2ID))
+							})
+						})
+
+						When("the VolumeAttributesClass does not exist", func() {
+							BeforeEach(func() {
+								pvc.Spec.StorageClassName = ptr.To(storageClass2.Name)
+								pvc.Spec.VolumeAttributesClassName = ptr.To(vacEncrypted.Name + fakeString)
+							})
+							It("should return an error", func() {
+								Expect(err).To(HaveOccurred())
+								Expect(apierrors.IsNotFound(err)).To(BeTrue())
+								Expect(err).To(MatchError(ContainSubstring(*pvc.Spec.VolumeAttributesClassName)))
+								Expect(configSpec.DeviceChange).To(BeEmpty())
+							})
+						})
+					})
+
+					// The VolumeAttributesClass of a PVC is not considered when
+					// the capability is not enabled, so the PVC's StorageClass
+					// decides.
+					When("the StoragePolicyMutability feature is disabled", func() {
+						When("only the VolumeAttributesClass's storage policy is encrypted", func() {
+							BeforeEach(func() {
+								pvc.Spec.StorageClassName = ptr.To(storageClass1.Name)
+								pvc.Spec.VolumeAttributesClassName = ptr.To(vacEncrypted.Name)
+							})
+							It("should not encrypt the FCD", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(BeEmpty())
+							})
+						})
+
+						When("only the StorageClass's storage policy is encrypted", func() {
+							BeforeEach(func() {
+								pvc.Spec.StorageClassName = ptr.To(storageClass2.Name)
+								pvc.Spec.VolumeAttributesClassName = ptr.To(vacPlain.Name)
+							})
+							It("should encrypt the FCD with the StorageClass's storage policy", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(HaveLen(1))
+								devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+								Expect(devSpec).ToNot(BeNil())
+								_, ok := devSpec.Backing.Crypto.(*vimtypes.CryptoSpecEncrypt)
+								Expect(ok).To(BeTrue())
+								Expect(devSpec.Profile).To(HaveLen(1))
+								profileSpec, ok := devSpec.Profile[0].(*vimtypes.VirtualMachineDefinedProfileSpec)
+								Expect(ok).To(BeTrue())
+								Expect(profileSpec.ProfileId).To(Equal(simulator.DefaultEncryptionProfileID))
+							})
+						})
+
+						When("the VolumeAttributesClass does not exist", func() {
+							BeforeEach(func() {
+								pvc.Spec.StorageClassName = ptr.To(storageClass2.Name)
+								pvc.Spec.VolumeAttributesClassName = ptr.To(vacEncrypted.Name + fakeString)
+							})
+							It("should not return an error", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(configSpec.DeviceChange).To(HaveLen(1))
+							})
+						})
+					})
+				})
+
+				// An FCD of a PVC that is under a VolumeAttributesClass is recrypted to
+				// the PVC's key, as an FCD of a PVC that is not, and no storage profile
+				// is written. The recrypt waits until the PVC's change to the
+				// VolumeAttributesClass is done, i.e. until
+				// status.currentVolumeAttributesClassName is the VolumeAttributesClass in
+				// spec.volumeAttributesClassName. See isPVCVACChangeInProgress.
+				When("PVC is under a VolumeAttributesClass and its FCD has a key other than the PVC's key", func() {
+
+					// expectFCDRecrypt asserts that the FCD is recrypted with the given
+					// key, and that no storage profile is written.
+					expectFCDRecrypt := func(providerID, keyID string) {
+						GinkgoHelper()
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec.DeviceChange).To(HaveLen(1))
+						devSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+						Expect(devSpec).ToNot(BeNil())
+						Expect(devSpec.Operation).To(Equal(vimtypes.VirtualDeviceConfigSpecOperationEdit))
+						Expect(devSpec.Device.GetVirtualDevice().Key).To(Equal(fcdDiskKey))
+						Expect(devSpec.Backing).ToNot(BeNil())
+						cryptoSpec, ok := devSpec.Backing.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+						Expect(ok).To(BeTrue())
+						Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(providerID))
+						Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(keyID))
+						Expect(devSpec.Profile).To(BeEmpty())
+					}
+
+					expectNoFCDRecrypt := func() {
+						GinkgoHelper()
+						Expect(err).ToNot(HaveOccurred())
+						Expect(configSpec.DeviceChange).To(BeEmpty())
+					}
+
+					BeforeEach(func() {
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.StoragePolicyMutability = true
+						})
+
+						// The VolumeAttributesClass's storage policy is encrypted and the
+						// StorageClass's is not, so the PVC's storage policy is the
+						// VolumeAttributesClass's.
+						pvc.Spec.StorageClassName = ptr.To(storageClass1.Name)
+						pvc.Spec.VolumeAttributesClassName = ptr.To(vacEncrypted.Name)
+						pvc.Annotations = map[string]string{
+							pkgconst.PVCEncryptionClassNameAnnotation: fcdEncClass.Name,
+						}
+
+						// The FCD has the key of another provider than the one of the
+						// PVC's EncryptionClass, as it would after a VMIM moved the VM to
+						// another datastore and kept the key.
+						disk := moVM.Config.Hardware.Device[1].(*vimtypes.VirtualDisk)
+						disk.Backing.(*vimtypes.VirtualDiskFlatVer2BackingInfo).KeyId = &vimtypes.CryptoKeyId{
+							KeyId: provider1Key1ID,
+							ProviderId: &vimtypes.KeyProviderId{
+								Id: provider1ID,
+							},
+						}
+					})
+
+					When("the PVC's current VolumeAttributesClass is the one in its spec", func() {
+						BeforeEach(func() {
+							pvc.Status.CurrentVolumeAttributesClassName = ptr.To(vacEncrypted.Name)
+						})
+						It("should recrypt the FCD with the key of the PVC's EncryptionClass", func() {
+							expectFCDRecrypt(provider2ID, provider2Key1ID)
+						})
+					})
+
+					// The current VolumeAttributesClass is not set for a PVC that nothing
+					// has moved, so it is treated as in sync.
+					When("the PVC has no current VolumeAttributesClass", func() {
+						BeforeEach(func() {
+							pvc.Status.CurrentVolumeAttributesClassName = nil
+						})
+						It("should recrypt the FCD with the key of the PVC's EncryptionClass", func() {
+							expectFCDRecrypt(provider2ID, provider2Key1ID)
+						})
+					})
+
+					When("the PVC's current VolumeAttributesClass is not the one in its spec", func() {
+						BeforeEach(func() {
+							pvc.Status.CurrentVolumeAttributesClassName = ptr.To(vacPlain.Name)
+						})
+						It("should not recrypt the FCD", func() {
+							expectNoFCDRecrypt()
+						})
+					})
+
+					When("the PVC has no EncryptionClass and there is a default key provider", func() {
+						BeforeEach(func() {
+							pvc.Annotations = nil
+							Expect(cryptoManager.MarkDefault(ctx, provider3ID)).To(Succeed())
+						})
+
+						When("the PVC's current VolumeAttributesClass is the one in its spec", func() {
+							BeforeEach(func() {
+								pvc.Status.CurrentVolumeAttributesClassName = ptr.To(vacEncrypted.Name)
+							})
+							It("should recrypt the FCD with the default key provider", func() {
+								// The key is generated on demand when the provider is the default.
+								expectFCDRecrypt(provider3ID, "")
+							})
+						})
+
+						When("the PVC's current VolumeAttributesClass is not the one in its spec", func() {
+							BeforeEach(func() {
+								pvc.Status.CurrentVolumeAttributesClassName = ptr.To(vacPlain.Name)
+							})
+							It("should not recrypt the FCD", func() {
+								expectNoFCDRecrypt()
+							})
+						})
+					})
+
+					// Another VolumeAttributesClass in status is only a change in progress
+					// for a PVC that is under a VolumeAttributesClass, so the PVC's
+					// StorageClass decides when the capability is not enabled.
+					When("the StoragePolicyMutability feature is disabled", func() {
+						BeforeEach(func() {
+							pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+								config.Features.StoragePolicyMutability = false
+							})
+							pvc.Spec.StorageClassName = ptr.To(storageClass2.Name)
+							pvc.Status.CurrentVolumeAttributesClassName = ptr.To(vacPlain.Name)
+						})
+						It("should recrypt the FCD with the key of the PVC's EncryptionClass", func() {
+							expectFCDRecrypt(provider2ID, provider2Key1ID)
+						})
+					})
+
+					When("the PVC does not specify a VolumeAttributesClass", func() {
+						BeforeEach(func() {
+							pvc.Spec.StorageClassName = ptr.To(storageClass2.Name)
+							pvc.Spec.VolumeAttributesClassName = nil
+							pvc.Status.CurrentVolumeAttributesClassName = ptr.To(vacPlain.Name)
+						})
+						It("should recrypt the FCD with the key of the PVC's EncryptionClass", func() {
+							expectFCDRecrypt(provider2ID, provider2Key1ID)
+						})
+					})
+
+					// The vm and the PVC each wait for their own change, since each is
+					// moved to its VolumeAttributesClass on its own.
+					When("the vm is under a VolumeAttributesClass and has a key other than the resolved key", func() {
+						BeforeEach(func() {
+							vm.Spec.StorageClass = storageClass1.Name
+							vm.Spec.VolumeAttributesClassName = vacEncrypted.Name
+							moVM.Config.KeyId = &vimtypes.CryptoKeyId{
+								KeyId: provider2Key1ID,
+								ProviderId: &vimtypes.KeyProviderId{
+									Id: provider2ID,
+								},
+							}
+						})
+
+						When("the vm's change is in progress and the PVC's is done", func() {
+							BeforeEach(func() {
+								vm.Status.VolumeAttributesClassName = vacPlain.Name
+								pvc.Status.CurrentVolumeAttributesClassName = ptr.To(vacEncrypted.Name)
+							})
+							It("should recrypt the FCD but not the vm", func() {
+								Expect(configSpec.Crypto).To(BeNil())
+								expectFCDRecrypt(provider2ID, provider2Key1ID)
+							})
+						})
+
+						When("the vm's change is done and the PVC's is in progress", func() {
+							BeforeEach(func() {
+								vm.Status.VolumeAttributesClassName = vacEncrypted.Name
+								pvc.Status.CurrentVolumeAttributesClassName = ptr.To(vacPlain.Name)
+							})
+							It("should recrypt the vm but not the FCD", func() {
+								expectNoFCDRecrypt()
+								cryptoSpec, ok := configSpec.Crypto.(*vimtypes.CryptoSpecShallowRecrypt)
+								Expect(ok).To(BeTrue())
+								Expect(cryptoSpec.NewKeyId.ProviderId.Id).To(Equal(provider1ID))
+								Expect(cryptoSpec.NewKeyId.KeyId).To(Equal(provider1Key1ID))
+							})
+						})
 					})
 				})
 

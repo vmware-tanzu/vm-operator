@@ -33,6 +33,8 @@ sequenceDiagram
     VMOp->>VMOp: remove VirtualMachineInfraMigrationReady, keep the field status.volumeAttributesClassName
 ```
 
+The migration also applies the encryption that its target storage policy requires, with the key VM Operator resolves, for the VM home and for each attached PVC that specifies `spec.volumeAttributesClassName`. A detached PVC has its own migration resource and is handled by CSI. So, for an existing VirtualMachine that specifies `spec.volumeAttributesClassName`, VM Operator no longer encrypts it, or writes a storage policy on its disks, because that storage policy is encrypted: the migration does both for the VM home and PVC-backed disks, and repeating them would duplicate its work and could race with it. A disk with no PVC, such as a fast-deploy disk, is not covered by the migration, so it is left as it is. VM Operator still encrypts for a vTPM, still takes whether the VirtualMachine is encrypted from the VolumeAttributesClass's storage policy, and re-keys the VM home and attached PVC disks to the key it resolves once the migration is complete, since a migration to another datastore keeps the current key.
+
 The behavior is inert unless the `StoragePolicyMutability` capability is enabled for the Supervisor.
 
 The `VirtualMachineInfraMigration` `v1alpha4` CRD is guaranteed to be installed when the `StoragePolicyMutability` capability is enabled.
@@ -54,6 +56,10 @@ The `VirtualMachineInfraMigration` `v1alpha4` CRD is guaranteed to be installed 
 - If the VirtualMachine is created after the migration's `Ready` condition was set, the condition MUST still be mirrored once the VirtualMachine exists.
 - When the `VirtualMachineInfraMigration` is deleted, VM Operator MUST remove the `VirtualMachineInfraMigrationReady` condition from the VirtualMachine, because it would otherwise describe a resource that no longer exists, and this includes a migration that was deleted while VM Operator was not running. It MUST NOT clear `status.volumeAttributesClassName` in any case, because that field describes what the VirtualMachine is configured to, not the migration.
 - When the capability is disabled, VM Operator MUST NOT start the controller and MUST NOT require the `VirtualMachineInfraMigration` API to be present.
+- For an existing VirtualMachine that specifies `spec.volumeAttributesClassName`, and for the disk of an attached PVC that specifies it, VM Operator MUST NOT encrypt the VirtualMachine or the disk because the storage policy of the VolumeAttributesClass is encrypted, and MUST NOT write a storage policy on its disks, since the migration does both for the VM home and PVC-backed disks. A disk with no PVC is not covered by the migration, and is left as it is. It MUST still encrypt a VirtualMachine for a vTPM, as under a StorageClass. A VirtualMachine that is being created is not affected, and is encrypted from its storage policy as before.
+- Whether a VirtualMachine or an attached PVC is encrypted MUST be taken from the storage policy of its VolumeAttributesClass when it specifies one, and otherwise from its StorageClass, so that a VirtualMachine the migration encrypted is not reported as invalid for lacking an encrypted StorageClass or a vTPM. `spec.crypto.encryptionClassName` MUST be validated against that storage policy. An error resolving the VolumeAttributesClass MUST be returned, not ignored.
+- VM Operator MUST re-key an encrypted VM home, and the disk of an encrypted attached PVC, whose key differs from the one VM Operator resolves, and MUST NOT write a storage policy when it does. The key is resolved as without a VolumeAttributesClass: for the VM home, the EncryptionClass in `spec.crypto.encryptionClassName`, else the default key provider when `spec.crypto.useDefaultKeyProvider` is true; for a PVC, the EncryptionClass in its `csi.vsphere.encryption-class` annotation, else the default key provider. The VirtualMachine's EncryptionClass does not apply to its PVCs.
+- VM Operator MUST NOT re-key the VM home or a PVC disk while its change to its VolumeAttributesClass is in progress, that is while the class it is observed to have (`status.volumeAttributesClassName` for the VirtualMachine, `status.currentVolumeAttributesClassName` for the PVC) is not empty and is not the one in its spec. An empty observed class counts as in sync, since nothing records one for an object that was created with a VolumeAttributesClass and never migrated, so the first migration of an object to a class is not held. Each object waits for its own change, and is re-keyed once its observed class is recorded.
 
 ## Non-goals
 
@@ -64,6 +70,11 @@ The `VirtualMachineInfraMigration` `v1alpha4` CRD is guaranteed to be installed 
 - Updating `status.volumes[].conditions[]`. The migration has no per-volume status, so there is nothing to mirror.
 - Patching the VirtualMachine's spec, including `spec.volumeAttributesClassName`.
 - Any VirtualMachine API surface beyond the mirrored `Ready` condition and `status.volumeAttributesClassName`.
+- Reporting `VirtualMachineEncryptionSynced` from the migration. While a re-key is held the condition is not touched and still reports from the crypto state. This is tracked by vmop-4465.
+- Encrypting or re-keying a detached PVC. CSI does it, from the PVC's own migration resource.
+- Encrypting a disk that has no PVC, such as a fast-deploy disk, for a VirtualMachine under a VolumeAttributesClass. The migration does not cover it either, and the mobility operator's design lists that as a limitation, so it is left as it is.
+- Assigning the namespace's default EncryptionClass to a VirtualMachine created with an encrypted VolumeAttributesClass on a StorageClass that is not encrypted. The mobility operator's design applies the default class only to objects created on an encrypted StorageClass.
+- Checks on a PVC's VolumeAttributesClass in the VirtualMachine webhooks.
 - E2E coverage. It will be added after all the components are ready, and is tracked by vmop-4499.
 
 ---
@@ -88,5 +99,18 @@ As a DevOps user, I want the VirtualMachine to tell me the state of its infrastr
 ### CSP admin: rollout safety
 
 1. With the capability disabled, VM Operator starts and runs on a Supervisor that has no `VirtualMachineInfraMigration` CRD installed.
+2. For a VirtualMachine or a PVC that does not specify a VolumeAttributesClass, encryption and re-keying are unchanged and follow the StorageClass. While the capability is disabled, a PVC's `spec.volumeAttributesClassName` is ignored.
+
+### DevOps user: encryption under a VolumeAttributesClass
+
+As a DevOps user, I want a VirtualMachine that specifies `spec.volumeAttributesClassName` to stay encrypted with the key I chose, without VM Operator repeating what the migration does.
+
+1. Given an encrypted VirtualMachine with no vTPM, on a StorageClass that is not encrypted, whose `spec.volumeAttributesClassName` names a class with an encrypted storage policy, `kubectl get vm vm -o jsonpath='{.status.conditions[?(@.type=="VirtualMachineEncryptionSynced")].status}'` returns `True`, not `False` with the reason `InvalidState`.
+2. Given an existing VirtualMachine with no vTPM that is not encrypted, with such a `spec.volumeAttributesClassName`, VM Operator does not encrypt it or write a storage policy on its disks. The same holds for an unencrypted disk of an attached PVC that specifies such a class.
+3. Given the same VirtualMachine with a vTPM, or one that adds a vTPM, VM Operator encrypts it as it does under a StorageClass.
+4. Given a new VirtualMachine created with such a `spec.volumeAttributesClassName`, it is encrypted at creation as before.
+5. Given an encrypted VirtualMachine whose key differs from the one VM Operator resolves, for example after the migration moved it to another datastore and kept its key, or after the DevOps user changed `spec.crypto.encryptionClassName`, and whose `status.volumeAttributesClassName` is empty or the class in its spec, VM Operator re-keys it, and its disks, to the resolved key and writes no storage policy. The same holds for the disk of an encrypted attached PVC, from its `status.currentVolumeAttributesClassName`.
+6. Given a `status.volumeAttributesClassName` that is another class than the one in the spec, VM Operator does not re-key the VirtualMachine until the migration completes and the class is recorded. The same holds for an attached PVC.
+7. Given a `spec.crypto.encryptionClassName` and a `spec.volumeAttributesClassName` whose storage policy is not encrypted, the request is rejected with `requires spec.volumeAttributesClassName specify an encryption storage policy`. Without a `spec.volumeAttributesClassName`, the message for a StorageClass that is not encrypted is unchanged.
 
 ---

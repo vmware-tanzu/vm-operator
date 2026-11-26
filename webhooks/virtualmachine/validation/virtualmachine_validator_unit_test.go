@@ -189,6 +189,42 @@ func doValidateWithMsg(msgs ...string) func(admission.Response) {
 	}
 }
 
+// doValidateOnlyMsg is like doValidateWithMsg, but it also asserts that the
+// reason is not any longer than the messages, i.e. no other validation error
+// was reported, such as the same problem a second time under a different field.
+func doValidateOnlyMsg(msgs ...string) func(admission.Response) {
+	return func(response admission.Response) {
+		reasons := string(response.Result.Reason)
+		for _, m := range msgs {
+			ExpectWithOffset(1, reasons).To(ContainSubstring(m))
+			ExpectWithOffset(1, strings.Count(reasons, m)).To(Equal(1))
+			reasons = strings.Replace(reasons, m, "", 1)
+		}
+		ExpectWithOffset(1, strings.Trim(reasons, ", ")).To(BeEmpty())
+	}
+}
+
+// markStoragePolicyEncrypted records on the StoragePolicy for the profile ID
+// whether or not the storage policy is encrypted, regardless of whether the
+// profile ID comes from a StorageClass or a VolumeAttributesClass. The
+// StorageClass that is used to do so is not created since only its name and UID
+// are used to own the StoragePolicy.
+func markStoragePolicyEncrypted(
+	ctx *unitValidatingWebhookContext,
+	profileID string,
+	encrypted bool) {
+
+	GinkgoHelper()
+
+	sc := builder.DummyStorageClassWithID(profileID)
+	sc.Name = "owner-of-" + profileID
+	Expect(kubeutil.MarkEncryptedStorageClass(
+		ctx,
+		ctx.Client,
+		*sc,
+		encrypted)).To(Succeed())
+}
+
 // doTestWithContext runs a table-style validating webhook test using the provided ctx.
 // It calls ValidateUpdate when ctx.oldVM is set, otherwise ValidateCreate.
 //
@@ -1564,6 +1600,148 @@ func unitTestsValidateCreate() {
 			},
 		),
 	)
+
+	// The storage policy that decides whether or not a VM may specify an
+	// EncryptionClass comes from the VolumeAttributesClass when the VM
+	// specifies one, otherwise from the StorageClass.
+	Context("spec.crypto with spec.volumeAttributesClassName", func() {
+		const (
+			scProfileID  = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+			vacProfileID = "c1d3a5b7-9e2f-4a68-8b0d-7f6e5d4c3b2a"
+		)
+
+		// setupVMWithVAC creates the StorageClass and the VolumeAttributesClass
+		// the VM specifies, and records whether or not the storage policy of
+		// each is encrypted. The VolumeAttributesClass's policy is associated
+		// with the VM's namespace. The VM specifies an EncryptionClass.
+		setupVMWithVAC := func(
+			ctx *unitValidatingWebhookContext,
+			scEncrypted, vacEncrypted bool) {
+
+			sc := builder.DummyStorageClassWithID(scProfileID)
+			Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+			markStoragePolicyEncrypted(ctx, scProfileID, scEncrypted)
+
+			vac := builder.DummyVolumeAttributesClassWithID(vacProfileID)
+			Expect(ctx.Client.Create(ctx, vac)).To(Succeed())
+			markStoragePolicyEncrypted(ctx, vacProfileID, vacEncrypted)
+
+			Expect(ctx.Client.Create(ctx, builder.DummyStoragePolicyQuota(
+				vac.Name+"-storagepolicyquota",
+				ctx.vm.Namespace,
+				vacProfileID))).To(Succeed())
+
+			ctx.vm.Spec.StorageClass = sc.Name
+			ctx.vm.Spec.VolumeAttributesClassName = vac.Name
+			ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+				EncryptionClassName: fake,
+			}
+			ctx.vm.Spec.Volumes = nil
+		}
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.BringYourOwnEncryptionKey = true
+				config.Features.PodVMOnStretchedSupervisor = true
+				config.Features.StoragePolicyMutability = true
+			})
+		})
+
+		DescribeTable("create", doTest,
+			Entry("allow spec.crypto.encryptionClassName when only the VolumeAttributesClass's storage policy is encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, false, true)
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("disallow spec.crypto.encryptionClassName when only the StorageClass's storage policy is encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, true, false)
+					},
+					validate: doValidateOnlyMsg(
+						`spec.crypto.encryptionClassName: Invalid value: "fake": requires spec.volumeAttributesClassName specify an encryption storage policy`),
+				},
+			),
+			Entry("disallow spec.crypto.encryptionClassName when neither storage policy is encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, false, false)
+					},
+					validate: doValidateOnlyMsg(
+						`spec.crypto.encryptionClassName: Invalid value: "fake": requires spec.volumeAttributesClassName specify an encryption storage policy`),
+				},
+			),
+			Entry("allow spec.crypto.encryptionClassName when both storage policies are encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, true, true)
+					},
+					expectAllowed: true,
+				},
+			),
+			// A VolumeAttributesClass that cannot be resolved to a storage
+			// policy blocks the VM both on spec.volumeAttributesClassName, where
+			// it is invalid, and on spec.crypto.encryptionClassName, which
+			// cannot be validated without the VM's storage policy.
+			Entry("disallow when the VolumeAttributesClass is not found",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, true, true)
+						ctx.vm.Spec.VolumeAttributesClassName += "-not-found"
+					},
+					validate: doValidateOnlyMsg(
+						`spec.volumeAttributesClassName: Invalid value: "dummy-vac-not-found": volumeattributesclasses.storage.k8s.io "dummy-vac-not-found" not found`,
+						`spec.crypto.encryptionClassName: Internal error: failed to get storage policy ID from VolumeAttributesClass "dummy-vac-not-found": volumeattributesclasses.storage.k8s.io "dummy-vac-not-found" not found`),
+				},
+			),
+			Entry("disallow when the VolumeAttributesClass has no storage policy ID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, true, true)
+
+						var vac storagev1.VolumeAttributesClass
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{
+							Name: ctx.vm.Spec.VolumeAttributesClassName,
+						}, &vac)).To(Succeed())
+						vac.Parameters = nil
+						Expect(ctx.Client.Update(ctx, &vac)).To(Succeed())
+					},
+					validate: doValidateOnlyMsg(
+						`spec.volumeAttributesClassName: Invalid value: "dummy-vac": VolumeAttributesClass "dummy-vac" does not have "storagePolicyID" parameter`,
+						`spec.crypto.encryptionClassName: Internal error: failed to get storage policy ID from VolumeAttributesClass "dummy-vac": VolumeAttributesClass "dummy-vac" does not have "storagePolicyID" parameter`),
+				},
+			),
+			Entry("disallow when the StoragePolicyMutability feature is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, true, true)
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.StoragePolicyMutability = false
+						})
+					},
+					validate: doValidateOnlyMsg(
+						`spec.volumeAttributesClassName: Invalid value: "dummy-vac": VolumeAttributesClass "dummy-vac" object is specified but capability is not enabled`,
+						`spec.crypto.encryptionClassName: Internal error: failed to get storage policy ID from VolumeAttributesClass "dummy-vac": VolumeAttributesClass "dummy-vac" object is specified but capability is not enabled`),
+				},
+			),
+			Entry("disallow when the StoragePolicyMutability feature is disabled and the VolumeAttributesClass's storage policy is not encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, true, false)
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.StoragePolicyMutability = false
+						})
+					},
+					validate: doValidateOnlyMsg(
+						`spec.volumeAttributesClassName: Invalid value: "dummy-vac": VolumeAttributesClass "dummy-vac" object is specified but capability is not enabled`,
+						`spec.crypto.encryptionClassName: Internal error: failed to get storage policy ID from VolumeAttributesClass "dummy-vac": VolumeAttributesClass "dummy-vac" object is specified but capability is not enabled`),
+				},
+			),
+		)
+	})
 
 	Context("Annotations", func() {
 		annotationPath := field.NewPath("metadata", "annotations")
@@ -11399,6 +11577,163 @@ func unitTestsValidateUpdate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.crypto.encryptionClassName: Invalid value: "fake": requires spec.storageClass specify an encryption storage class`),
+				},
+			),
+		)
+	})
+
+	// The storage policy that decides whether or not a VM may specify an
+	// EncryptionClass comes from the VolumeAttributesClass when the VM
+	// specifies one, otherwise from the StorageClass.
+	Context("spec.crypto with spec.volumeAttributesClassName", func() {
+		const (
+			scProfileID  = "4e3c2717-1d2c-400f-a3ac-1e75d67820b9"
+			vacProfileID = "c1d3a5b7-9e2f-4a68-8b0d-7f6e5d4c3b2a"
+		)
+
+		// setupVMWithVAC creates the StorageClass and the VolumeAttributesClass
+		// the VM specifies, and records whether or not the storage policy of
+		// each is encrypted. Both the VM and its old copy specify the same
+		// StorageClass and VolumeAttributesClass, so neither changes. The VM
+		// specifies an EncryptionClass.
+		setupVMWithVAC := func(
+			ctx *unitValidatingWebhookContext,
+			scEncrypted, vacEncrypted bool) {
+
+			sc := builder.DummyStorageClassWithID(scProfileID)
+			Expect(ctx.Client.Create(ctx, sc)).To(Succeed())
+			markStoragePolicyEncrypted(ctx, scProfileID, scEncrypted)
+
+			vac := builder.DummyVolumeAttributesClassWithID(vacProfileID)
+			Expect(ctx.Client.Create(ctx, vac)).To(Succeed())
+			markStoragePolicyEncrypted(ctx, vacProfileID, vacEncrypted)
+
+			ctx.oldVM.Spec.StorageClass = sc.Name
+			ctx.oldVM.Spec.VolumeAttributesClassName = vac.Name
+			ctx.vm.Spec.StorageClass = sc.Name
+			ctx.vm.Spec.VolumeAttributesClassName = vac.Name
+			ctx.vm.Spec.Crypto = &vmopv1.VirtualMachineCryptoSpec{
+				EncryptionClassName: fake,
+			}
+			ctx.vm.Spec.Volumes = nil
+		}
+
+		BeforeEach(func() {
+			pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+				config.Features.BringYourOwnEncryptionKey = true
+				config.Features.PodVMOnStretchedSupervisor = true
+				config.Features.StoragePolicyMutability = true
+			})
+		})
+
+		DescribeTable("update", doTest,
+			Entry("allow spec.crypto.encryptionClassName when only the VolumeAttributesClass's storage policy is encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, false, true)
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("disallow spec.crypto.encryptionClassName when only the StorageClass's storage policy is encrypted",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, true, false)
+					},
+					validate: doValidateOnlyMsg(
+						`spec.crypto.encryptionClassName: Invalid value: "fake": requires spec.volumeAttributesClassName specify an encryption storage policy`),
+				},
+			),
+
+			// The VM's storage policy is needed to validate the EncryptionClass,
+			// and an error resolving it is not swallowed. So the VM cannot be
+			// updated while its unchanged VolumeAttributesClass cannot be
+			// resolved to a storage policy, even though the
+			// VolumeAttributesClass itself is not validated when it is
+			// unchanged.
+			Entry("disallow an unchanged VolumeAttributesClass when the StoragePolicyMutability feature is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, false, true)
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.StoragePolicyMutability = false
+						})
+					},
+					validate: doValidateOnlyMsg(
+						`spec.crypto.encryptionClassName: Internal error: failed to get storage policy ID from VolumeAttributesClass "dummy-vac": VolumeAttributesClass "dummy-vac" object is specified but capability is not enabled`),
+				},
+			),
+			Entry("disallow an unchanged VolumeAttributesClass that no longer exists",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, false, true)
+						Expect(ctx.Client.Delete(ctx, &storagev1.VolumeAttributesClass{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: ctx.vm.Spec.VolumeAttributesClassName,
+							},
+						})).To(Succeed())
+					},
+					validate: doValidateOnlyMsg(
+						`spec.crypto.encryptionClassName: Internal error: failed to get storage policy ID from VolumeAttributesClass "dummy-vac": volumeattributesclasses.storage.k8s.io "dummy-vac" not found`),
+				},
+			),
+			Entry("disallow an unchanged VolumeAttributesClass that no longer has a storage policy ID",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, false, true)
+
+						var vac storagev1.VolumeAttributesClass
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{
+							Name: ctx.vm.Spec.VolumeAttributesClassName,
+						}, &vac)).To(Succeed())
+						vac.Parameters = nil
+						Expect(ctx.Client.Update(ctx, &vac)).To(Succeed())
+					},
+					validate: doValidateOnlyMsg(
+						`spec.crypto.encryptionClassName: Internal error: failed to get storage policy ID from VolumeAttributesClass "dummy-vac": VolumeAttributesClass "dummy-vac" does not have "storagePolicyID" parameter`),
+				},
+			),
+			Entry("disallow setting a VolumeAttributesClass when the StoragePolicyMutability feature is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, true, true)
+						ctx.oldVM.Spec.VolumeAttributesClassName = ""
+						pkgcfg.SetContext(ctx, func(config *pkgcfg.Config) {
+							config.Features.StoragePolicyMutability = false
+						})
+					},
+					validate: doValidateOnlyMsg(
+						`spec.volumeAttributesClassName: Invalid value: "dummy-vac": VolumeAttributesClass "dummy-vac" object is specified but capability is not enabled`,
+						`spec.crypto.encryptionClassName: Internal error: failed to get storage policy ID from VolumeAttributesClass "dummy-vac": VolumeAttributesClass "dummy-vac" object is specified but capability is not enabled`),
+				},
+			),
+			Entry("allow setting a VolumeAttributesClass whose storage policy is encrypted when the StorageClass's is not",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, false, true)
+						ctx.oldVM.Spec.VolumeAttributesClassName = ""
+
+						Expect(ctx.Client.Create(ctx, builder.DummyStoragePolicyQuota(
+							ctx.vm.Spec.VolumeAttributesClassName+"-storagepolicyquota",
+							ctx.vm.Namespace,
+							vacProfileID))).To(Succeed())
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("disallow setting a VolumeAttributesClass whose storage policy is not encrypted when the VM specifies an EncryptionClass",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						setupVMWithVAC(ctx, true, false)
+						ctx.oldVM.Spec.VolumeAttributesClassName = ""
+
+						Expect(ctx.Client.Create(ctx, builder.DummyStoragePolicyQuota(
+							ctx.vm.Spec.VolumeAttributesClassName+"-storagepolicyquota",
+							ctx.vm.Namespace,
+							vacProfileID))).To(Succeed())
+					},
+					validate: doValidateOnlyMsg(
+						`spec.crypto.encryptionClassName: Invalid value: "fake": requires spec.volumeAttributesClassName specify an encryption storage policy`),
 				},
 			),
 		)

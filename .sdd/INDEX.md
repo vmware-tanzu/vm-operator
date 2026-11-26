@@ -48,7 +48,7 @@ Each spec lives under `specs/NNN-slug/`. Standard artifacts: `spec.md` (behavior
 | 015 | [vmclass-v2](specs/015-vmclass-v2/) | Flex VM Classes (`VirtualMachineClass` v2) — range-based classes, `governs`, zones, `externalID`, reserved profiles; replaces `VirtualMachineConfigPolicy`; design in WIKI page 3118085463 | In Progress | vmop-4034, vmop-4038, vmop-4039, vmop-4040, vmop-4041, vmop-4201, vmop-4312 |
 | 016 | [byo-network-interface](specs/016-byo-network-interface/) | Bring Your Own Network Interface CR | In Progress | vmop-2530 |
 | 017 | [e2e-isolated-testbeds](specs/017-e2e-isolated-testbeds/) | E2E Support for Isolated Testbeds | In Progress | vmop-4430 |
-| 018 | [vmim-infra-migration-status](specs/018-vmim-infra-migration-status/) | VirtualMachineInfraMigration Status on VirtualMachine | Draft | vmop-3432 |
+| 018 | [vmim-infra-migration-status](specs/018-vmim-infra-migration-status/) | VirtualMachineInfraMigration Status on VirtualMachine, and VM and attached PVC encryption under a VolumeAttributesClass | Draft | vmop-3432 |
 | 019 | [dhcp-overrides](specs/019-dhcp-overrides/) | CloudInit DHCP Route Overrides | Draft | TBD |
 
 ### Finding the right spec

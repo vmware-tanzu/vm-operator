@@ -49,6 +49,10 @@ var (
 		APIVersion: vpcv1alpha1.SchemeGroupVersion.String(),
 		Kind:       "SubnetSet",
 	}
+	vpcSubnetNetworkTypeMeta = metav1.TypeMeta{
+		APIVersion: vpcv1alpha1.SchemeGroupVersion.String(),
+		Kind:       "Subnet",
+	}
 )
 
 var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), func() {
@@ -1799,6 +1803,114 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", Label(testlabels.VCSim), f
 						Expect(subnetPort.Spec.InterfaceIPType).To(Equal(vpcv1alpha1.IPAddressTypeIPv4))
 						Expect(subnetPort.Spec.StaticIPAllocationType).To(Equal(vpcv1alpha1.StaticIPAllocationTypeIPv4IPv6))
 					})
+				})
+			})
+		})
+
+		Context("VPC PortSettingName", func() {
+			const portSettingName = "my-port-setting"
+
+			getSubnetPort := func() *vpcv1alpha1.SubnetPort {
+				subnetPort := &vpcv1alpha1.SubnetPort{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+						Namespace: vm.Namespace,
+					},
+				}
+				ExpectWithOffset(1, ctx.Client.Get(ctx, client.ObjectKeyFromObject(subnetPort), subnetPort)).To(Succeed())
+				return subnetPort
+			}
+
+			reconcileNetworkInterfaces := func() {
+				_, err := network.CreateAndWaitForNetworkInterfaces(
+					vmCtx,
+					ctx.Client,
+					ctx.VCClient.Client,
+					ctx.Finder,
+					nil,
+					networkSpec)
+				ExpectWithOffset(1, err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+			}
+
+			BeforeEach(func() {
+				networkSpec.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name:    interfaceName,
+						Network: &common.PartialObjectRef{Name: networkName, TypeMeta: vpcSubnetNetworkTypeMeta},
+					},
+				}
+			})
+
+			When("interfaceSpec has a PortSettingName", func() {
+				BeforeEach(func() {
+					networkSpec.Interfaces[0].PortSettingName = portSettingName
+				})
+
+				It("sets PortSettingName on the SubnetPort", func() {
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+
+					subnetPort := getSubnetPort()
+					Expect(subnetPort.Spec.Subnet).To(Equal(networkName))
+					Expect(subnetPort.Spec.PortSettingName).To(Equal(portSettingName))
+				})
+			})
+
+			When("interfaceSpec has no PortSettingName", func() {
+				It("leaves PortSettingName unset on the SubnetPort", func() {
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+					Expect(getSubnetPort().Spec.PortSettingName).To(BeEmpty())
+				})
+			})
+
+			When("the SubnetPort already has a different PortSettingName", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, &vpcv1alpha1.SubnetPort{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.VPCCRName(vm.Name, networkName, interfaceName),
+							Namespace: vm.Namespace,
+						},
+						Spec: vpcv1alpha1.SubnetPortSpec{
+							Subnet:          networkName,
+							PortSettingName: "old-port-setting",
+						},
+					})
+				})
+
+				When("interfaceSpec has a PortSettingName", func() {
+					BeforeEach(func() {
+						networkSpec.Interfaces[0].PortSettingName = portSettingName
+					})
+
+					It("updates PortSettingName on the SubnetPort", func() {
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+						Expect(getSubnetPort().Spec.PortSettingName).To(Equal(portSettingName))
+					})
+				})
+
+				When("interfaceSpec has no PortSettingName", func() {
+					It("clears PortSettingName on the SubnetPort", func() {
+						Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+						Expect(getSubnetPort().Spec.PortSettingName).To(BeEmpty())
+					})
+				})
+			})
+
+			When("interfaceSpec is changed after the SubnetPort is created", func() {
+				It("follows the interface through set, change and removal", func() {
+					Expect(err).To(MatchError(network.ErrNetworkInterfaceNotReady))
+					Expect(getSubnetPort().Spec.PortSettingName).To(BeEmpty())
+
+					networkSpec.Interfaces[0].PortSettingName = portSettingName
+					reconcileNetworkInterfaces()
+					Expect(getSubnetPort().Spec.PortSettingName).To(Equal(portSettingName))
+
+					networkSpec.Interfaces[0].PortSettingName = "other-port-setting"
+					reconcileNetworkInterfaces()
+					Expect(getSubnetPort().Spec.PortSettingName).To(Equal("other-port-setting"))
+
+					networkSpec.Interfaces[0].PortSettingName = ""
+					reconcileNetworkInterfaces()
+					Expect(getSubnetPort().Spec.PortSettingName).To(BeEmpty())
 				})
 			})
 		})

@@ -15,6 +15,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha6/common"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
 	pkgconst "github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/constants/testlabels"
@@ -83,6 +84,17 @@ func intgTests() {
 			testlabels.Webhook,
 		),
 		intgTestsValidateIPAMModesImmutability,
+	)
+	Describe(
+		"CEL: portSettingName and externalRef",
+		Label(
+			testlabels.Create,
+			testlabels.EnvTest,
+			testlabels.API,
+			testlabels.Validation,
+			testlabels.Webhook,
+		),
+		intgTestsValidatePortSettingNameExternalRef,
 	)
 }
 
@@ -687,6 +699,37 @@ func intgTestsValidateIPAMModesImmutability() {
 			ctx.vm.Spec.Network.Interfaces = ctx.vm.Spec.Network.Interfaces[:1]
 			Expect(ctx.Client.Update(ctx, ctx.vm)).To(Succeed())
 		})
+	})
+}
+
+func intgTestsValidatePortSettingNameExternalRef() {
+	var (
+		ctx *intgValidatingWebhookContext
+	)
+
+	BeforeEach(func() {
+		ctx = newIntgValidatingWebhookContext()
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	It("rejects portSettingName together with externalRef", func() {
+		iface := &ctx.vm.Spec.Network.Interfaces[0]
+		iface.Network = nil
+		iface.ExternalRef = &vmopv1common.LocalObjectRef{
+			APIVersion: "crd.nsx.vmware.com/v1alpha1",
+			Kind:       "SubnetPort",
+			Name:       "my-subnetport",
+		}
+		iface.PortSettingName = "my-port-setting"
+
+		createErr := ctx.Client.Create(ctx, ctx.vm)
+		Expect(apierrors.IsInvalid(createErr)).To(BeTrue(), "%v", createErr)
+		Expect(createErr.Error()).To(ContainSubstring(
+			`spec.network.interfaces[0]: Invalid value: "object": portSettingName and externalRef are mutually exclusive`))
 	})
 }
 

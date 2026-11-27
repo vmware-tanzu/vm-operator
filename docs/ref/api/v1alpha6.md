@@ -2624,6 +2624,19 @@ provider or vCenter.
 
 Please note this field is only supported when the Network API Group is
 crd.nsx.vmware.com. |
+| `portSettingName` _string_ | PortSettingName is the name of the SubnetPortSetting, in the VM's
+namespace, that is applied to the VPC SubnetPort backing this interface.
+The value is set as the SubnetPort's spec.portSettingName.
+
+When this field is unset, the SubnetPort's spec.portSettingName is also
+unset, which selects the default port setting. Removing the field from
+an interface therefore reverts the interface to the default.
+
+Please note this field is only supported when the Network API Group is
+crd.nsx.vmware.com and the Network Kind is Subnet. It is not supported
+for a SubnetSet, which includes the default network used when Network
+is not specified. It is mutually exclusive with ExternalRef, since an
+externally owned SubnetPort is not modified by VM Operator. |
 | `addresses` _string array_ | Addresses is an optional list of IP4 or IP6 addresses to assign to this
 interface.
 

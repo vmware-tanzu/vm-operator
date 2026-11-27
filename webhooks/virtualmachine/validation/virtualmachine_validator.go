@@ -1166,6 +1166,10 @@ func (v validator) validateNetworkInterfaceExternalRef(
 		allErrs = append(allErrs, field.Forbidden(p, "macAddr and externalRef are mutually exclusive"))
 	}
 
+	if interfaceSpec.PortSettingName != "" {
+		allErrs = append(allErrs, field.Forbidden(p, "portSettingName and externalRef are mutually exclusive"))
+	}
+
 	allErrs = append(allErrs, v.validateExternalRefKind(p, ref, providerTypes)...)
 
 	return allErrs
@@ -1323,6 +1327,23 @@ func (v validator) validateNetworkInterfaceSpec(
 			allErrs = append(allErrs, field.Invalid(interfacePath.Child("macAddr"), interfaceSpec.MACAddr,
 				fmt.Sprintf("macAddr is available only with the following network providers: %s",
 					strings.Join(macAddressSupportNetworkGroups, ","))))
+		}
+	}
+
+	// The portSettingName field is not allowed with an ExternalRef.
+	if interfaceSpec.PortSettingName != "" && interfaceSpec.ExternalRef == nil {
+		p := interfacePath.Child("portSettingName")
+
+		// Ports setting is only supported on VPC Subnets.
+		switch {
+		case networkGV.Group != vpcv1alpha1.GroupVersion.Group:
+			allErrs = append(allErrs, field.Invalid(p, interfaceSpec.PortSettingName,
+				fmt.Sprintf("portSettingName is available only with the following network providers: %s",
+					vpcv1alpha1.GroupVersion.Group)))
+		case networkKind != "Subnet":
+			allErrs = append(allErrs, field.Invalid(p, interfaceSpec.PortSettingName,
+				fmt.Sprintf("portSettingName is available only with the following network kinds: %s",
+					"Subnet")))
 		}
 	}
 

@@ -2757,6 +2757,7 @@ func autoConvert_v1alpha6_VirtualMachineNetworkInterfaceSpec_To_v1alpha2_Virtual
 	// WARNING: in.ExternalRef requires manual conversion: does not exist in peer-type
 	out.GuestDeviceName = in.GuestDeviceName
 	out.MACAddr = in.MACAddr
+	// WARNING: in.PortSettingName requires manual conversion: does not exist in peer-type
 	out.Addresses = *(*[]string)(unsafe.Pointer(&in.Addresses))
 	if err := v1.Convert_Pointer_bool_To_bool(&in.DHCP4, &out.DHCP4, s); err != nil {
 		return err

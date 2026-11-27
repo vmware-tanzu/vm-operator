@@ -773,6 +773,26 @@ spec:
 
 If `spec.network.interfaces` is not specified when deploying a VM, a default network interface is added unless `spec.network.disabled` is `true`.
 
+#### VPC Port Setting
+
+An interface that is connected to a VPC `Subnet` may name the `SubnetPortSetting` to apply to its port with the optional field `spec.network.interfaces[].portSettingName`, ex.:
+
+```yaml
+network:
+  interfaces:
+  - name: eth0
+    network:
+      apiVersion: crd.nsx.vmware.com/v1alpha1
+      kind:       Subnet
+      name:       my-subnet
+    portSettingName: my-port-setting
+```
+
+VM Operator sets the value as `spec.portSettingName` of the `SubnetPort` it creates for the interface, and NSX Operator applies the named port setting. Please note:
+
+* The field is rejected unless the interface's network is a VPC `Subnet`. A `SubnetSet` is not supported, which includes the namespace's default network that is used when `network` is not specified, so the `network` must be set explicitly with `kind: Subnet`.
+* The field is mutually exclusive with `externalRef`, since VM Operator does not modify an externally owned `SubnetPort`.
+
 #### Network Adapter Type
 
 The `VirtualMachineClass` used to deploy a VM determines the type for the VM's network adapters. If the number of interfaces for a `VirtualMachine` exceeds the number of interfaces in a `VirtualMachineClass`, the `VirtualVmxnet3` type is used for the additional interfaces. For example, consider the following `VirtualMachineClass` that specifies two different network interfaces:

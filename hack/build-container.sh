@@ -12,7 +12,7 @@ set -x
 
 
 usage() {
-    echo "Usage: $(basename "${0}") -i image -t imageTag -v version [-n buildNumber] [-c commit] [-b branch] [-V imageVersion] [-o outFile] [-B baseImage] [-C cri]"
+    echo "Usage: $(basename "${0}") -i image -t imageTag -v version [-n buildNumber] [-c commit] [-b branch] [-V imageVersion] [-o outFile] [-B baseImage] [-C cri] [-f Dockerfile]"
     exit 1
 }
 
@@ -37,12 +37,27 @@ init_podman_build_flags() {
 
 init_build_flags() {
     BUILD_FLAGS+=(-t "${IMAGE}":"${IMAGE_TAG}")
-    BUILD_FLAGS+=(-t "${IMAGE}":"${BUILD_NUMBER}")
-    BUILD_FLAGS+=(-t "${IMAGE}":"${IMAGE_VERSION}")
-    BUILD_FLAGS+=(--build-arg BUILD_BRANCH="${BUILD_BRANCH}")
-    BUILD_FLAGS+=(--build-arg BUILD_COMMIT="${BUILD_COMMIT}")
-    BUILD_FLAGS+=(--build-arg BUILD_NUMBER="${BUILD_NUMBER}")
-    BUILD_FLAGS+=(--build-arg BUILD_VERSION="${BUILD_VERSION}")
+
+    if [ -n "${BUILD_NUMBER:-}" ]; then
+        BUILD_FLAGS+=(-t "${IMAGE}":"${BUILD_NUMBER}")
+        BUILD_FLAGS+=(--build-arg BUILD_NUMBER="${BUILD_NUMBER}")
+    fi
+
+    if [ -n "${BUILD_BRANCH:-}" ]; then
+        BUILD_FLAGS+=(--build-arg BUILD_BRANCH="${BUILD_BRANCH}")
+    fi
+
+    if [ -n "${BUILD_COMMIT:-}" ]; then
+        BUILD_FLAGS+=(--build-arg BUILD_COMMIT="${BUILD_COMMIT}")
+    fi
+
+    if [ -n "${BUILD_VERSION:-}" ]; then
+        BUILD_FLAGS+=(--build-arg BUILD_VERSION="${BUILD_VERSION}")
+    fi
+
+    if [ -n "${IMAGE_VERSION:-}" ]; then
+        BUILD_FLAGS+=(-t "${IMAGE}":"${IMAGE_VERSION}")
+    fi
 
     if [ -n "${BASE_IMAGE:-}" ]; then
         BUILD_FLAGS+=(--build-arg BASE_IMAGE="${BASE_IMAGE}")
@@ -56,6 +71,8 @@ init_build_flags() {
         echo "unsupported cri: '${CRI_BIN}'" 1>&2
         exit 1
     fi
+
+    BUILD_FLAGS+=(-f "${IN_FILE}")
 
     if [ -n "${ADDITIONAL_CRI_BUILD_FLAGS:-}" ]; then
         BUILD_FLAGS+=(${ADDITIONAL_CRI_BUILD_FLAGS:-})
@@ -91,7 +108,7 @@ fi
 GOOS=linux
 GOARCH="${GOARCH:-${GOHOSTARCH}}"
 
-while getopts ":i:t:n:c:b:v:V:o:B:C:" opt ; do
+while getopts ":i:t:n:c:b:v:V:o:B:C:f:" opt ; do
     case $opt in
         "i" ) IMAGE="${OPTARG}" ;;
         "t" ) IMAGE_TAG="${OPTARG}" ;;
@@ -100,6 +117,7 @@ while getopts ":i:t:n:c:b:v:V:o:B:C:" opt ; do
         "n" ) BUILD_NUMBER="${OPTARG}" ;;
         "v" ) BUILD_VERSION="${OPTARG}" ;;
         "V" ) IMAGE_VERSION="${OPTARG}" ;;
+        "f" ) IN_FILE="${OPTARG}" ;;
         "o" ) OUT_FILE="${OPTARG}" ;;
         "B" ) BASE_IMAGE="${OPTARG}" ;;
         "C" ) CRI_BIN="${OPTARG}" ;;
@@ -121,6 +139,7 @@ if [ -z "${CRI_BIN:-}" ]; then
     CRI_BIN="$(command -v podman 2>/dev/null || command -v docker 2>/dev/null)"
 fi
 
+IN_FILE="${IN_FILE:-Dockerfile}"
 BUILD_NUMBER="${BUILD_NUMBER:-0}"
 BUILD_COMMIT="${BUILD_COMMIT:-$(git rev-parse HEAD)}"
 BUILD_BRANCH="${BUILD_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"

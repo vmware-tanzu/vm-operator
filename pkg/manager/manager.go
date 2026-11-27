@@ -163,6 +163,10 @@ func New(ctx context.Context, opts Options) (Manager, error) {
 		LeaderElectionID:        opts.LeaderElectionID,
 		LeaderElectionNamespace: opts.PodNamespace,
 		NewCache:                opts.NewCache,
+
+		RetryPeriod:   &opts.RetryPeriod,
+		RenewDeadline: &opts.RenewDeadline,
+		LeaseDuration: &opts.LeaseDuration,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to create manager: %w", err)

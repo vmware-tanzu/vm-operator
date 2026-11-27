@@ -1051,9 +1051,11 @@ e2e-image-remove: ## Remove E2E test container image
 #   FLAKE_ATTEMPTS         - Number of retry attempts for flaky tests
 #   E2E_PREBUILT_BINARY    - Path to `go test -c` output (default: $(ROOT_DIR)e2e-tests)
 #   E2E_ARTIFACT_FOLDER    - Directory for test artifacts/logs (default: /tmp/test_logs)
+#   E2E_FILES_MIRROR_URL   - Base URL of a files mirror for E2E downloads (default: unset, public sites only)
 #   E2E_ARGS               - Override all e2e binary arguments (e.g. from CI pipelines)
 
 E2E_PREBUILT_BINARY ?= $(ROOT_DIR)e2e-tests
+E2E_FILES_MIRROR_URL ?=
 
 .PHONY: test-e2e
 test-e2e: ## Run e2e tests (auto-detect: prebuilt binary if available, else ginkgo)
@@ -1069,6 +1071,7 @@ test-e2e-prebuilt: ## Run e2e tests using precompiled binary
 	@ROOT_DIR=$(ROOT_DIR) \
 	    E2E_PREBUILT_BINARY=$(E2E_PREBUILT_BINARY) \
 	    E2E_ARTIFACT_FOLDER=$(E2E_ARTIFACT_FOLDER) \
+	    E2E_FILES_MIRROR_URL=$(E2E_FILES_MIRROR_URL) \
 	    ./hack/e2e/run-e2e.sh prebuilt
 
 .PHONY: test-e2e-ginkgo
@@ -1077,6 +1080,7 @@ test-e2e-ginkgo: ## Run e2e tests using ginkgo CLI (compile + run)
 	@ROOT_DIR=$(ROOT_DIR) \
 	    GINKGO_BIN=$(GINKGO) \
 	    E2E_ARTIFACT_FOLDER=$(E2E_ARTIFACT_FOLDER) \
+	    E2E_FILES_MIRROR_URL=$(E2E_FILES_MIRROR_URL) \
 	    ./hack/e2e/run-e2e.sh ginkgo
 
 .PHONY: e2e-smoke

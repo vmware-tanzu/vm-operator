@@ -796,7 +796,7 @@ func Convert_v1alpha6_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 
 	out.Volumes = nil
 	for i := range in.Volumes {
-		if in.Volumes[i].Type != vmopv1.VolumeTypeClassic {
+		if in.Volumes[i].Type != vmopv1.VolumeTypeClassic && in.Volumes[i].Type != vmopv1.VolumeTypeVirtualMachineSnapshotDisk {
 
 			// Only down-convert volume statuses if the volume is managed.
 			var vol VirtualMachineVolumeStatus
@@ -1035,11 +1035,12 @@ func restore_v1alpha6_VirtualMachineVolumes(dst, src *vmopv1.VirtualMachine) {
 			v.SharingMode = srcVol.SharingMode
 			v.UnitNumber = srcVol.UnitNumber
 			v.Removable = srcVol.Removable
+			v.VirtualMachineSnapshotDisk = srcVol.VirtualMachineSnapshotDisk
 		}
 
 		// Filter out the boot-disk-size volume added on downgrade or any other
-		// volume that was not a PVC or did not have the target ID in spec.
-		if v.PersistentVolumeClaim != nil ||
+		// volume that has neither a volume source nor a target ID in spec.
+		if v.PersistentVolumeClaim != nil || v.VirtualMachineSnapshotDisk != nil ||
 			(v.ControllerType != "" &&
 				v.ControllerBusNumber != nil &&
 				v.UnitNumber != nil) {

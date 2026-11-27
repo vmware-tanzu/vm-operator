@@ -73,6 +73,49 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(apiequality.Semantic.DeepEqual(spokeBefore, spokeAfter)).To(BeTrue(), cmp.Diff(spokeBefore, spokeAfter))
 	}
 
+	for name, withTargetID := range map[string]bool{
+		"snapshot volume without target ID": false,
+		"snapshot volume with target ID":    true,
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			hub := &vmopv1.VirtualMachine{
+				Spec: vmopv1.VirtualMachineSpec{
+					Volumes: []vmopv1.VirtualMachineVolume{
+						{
+							Name: "snapshot-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								VirtualMachineSnapshotDisk: &vmopv1.VirtualMachineSnapshotDiskSpec{
+									Name: "snapshot", DiskID: "disk",
+								},
+							},
+						},
+						{
+							Name: "pvc-volume",
+							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "claim",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			if withTargetID {
+				hub.Spec.Volumes[0].ControllerType = vmopv1.VirtualControllerTypeSCSI
+				hub.Spec.Volumes[0].ControllerBusNumber = ptrOf(int32(1))
+				hub.Spec.Volumes[0].UnitNumber = ptrOf(int32(0))
+			}
+			spoke := &vmopv1a1.VirtualMachine{}
+			after := &vmopv1.VirtualMachine{}
+			g.Expect(spoke.ConvertFrom(hub)).To(Succeed())
+			g.Expect(spoke.ConvertTo(after)).To(Succeed())
+			g.Expect(after.Spec.Volumes).To(Equal(hub.Spec.Volumes))
+		})
+	}
+
 	t.Run("VirtualMachine hub-spoke-hub", func(t *testing.T) {
 		g := NewWithT(t)
 

@@ -350,7 +350,13 @@ type VirtualMachineHardwareSpec struct {
 
 	// IDEControllers describes the desired list of IDE controllers for the VM.
 	//
-	// Defaults to two IDE controllers, with bus 0 and bus 1.
+	// IDE controllers are platform default devices and are not defaulted when
+	// the VM is created. Instead, this field is populated from the IDE
+	// controllers that exist on the underlying vSphere VM, ex. two IDE
+	// controllers, with bus 0 and bus 1, on x86 VMs, and none on ARM VMs,
+	// which do not support IDE controllers.
+	//
+	// Once populated, IDE controllers may not be added or removed.
 	IDEControllers []IDEControllerSpec `json:"ideControllers,omitempty"`
 
 	// +optional

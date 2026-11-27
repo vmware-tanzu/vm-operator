@@ -16,6 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -1392,40 +1393,32 @@ func controllerValidationTests() {
 		})
 	})
 
-	Context("IDE Controller Count Validation", func() {
-		When("creating a VM without IDE controllers", func() {
-			BeforeEach(func() {
+	Context("IDE Controller Validation", func() {
+		// validateUpdate converts ctx.vm and ctx.oldVM and runs update validation.
+		validateUpdate := func() admission.Response {
+			var err error
+			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+			Expect(err).ToNot(HaveOccurred())
+			ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+			Expect(err).ToNot(HaveOccurred())
+			return ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+		}
+
+		ideControllers := func(busNumbers ...int32) []vmopv1.IDEControllerSpec {
+			ctrls := []vmopv1.IDEControllerSpec{}
+			for _, b := range busNumbers {
+				ctrls = append(ctrls, vmopv1.IDEControllerSpec{BusNumber: b})
+			}
+			return ctrls
+		}
+
+		DescribeTable("creating a VM",
+			func(ctrls []vmopv1.IDEControllerSpec) {
 				ctx.oldVM = nil
 				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					IDEControllers: []vmopv1.IDEControllerSpec{},
+					IDEControllers: ctrls,
 				}
-			})
 
-			It("should deny the creation", func() {
-				var err error
-				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
-				Expect(err).ToNot(HaveOccurred())
-				ctx.WebhookRequestContext.OldObj = nil
-
-				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("ideControllers"))
-				Expect(string(response.Result.Reason)).To(ContainSubstring("must have exactly 2 controllers"))
-			})
-		})
-
-		When("creating a VM with correct number of IDE controllers", func() {
-			BeforeEach(func() {
-				ctx.oldVM = nil
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					IDEControllers: []vmopv1.IDEControllerSpec{
-						{BusNumber: 0},
-						{BusNumber: 1},
-					},
-				}
-			})
-
-			It("should allow the creation", func() {
 				var err error
 				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 				Expect(err).ToNot(HaveOccurred())
@@ -1433,59 +1426,75 @@ func controllerValidationTests() {
 
 				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
-			})
-		})
+			},
+			// IDE controllers are backfilled from the vSphere VM, so a VM may
+			// be created without them, e.g. an ARM VM.
+			Entry("without IDE controllers should be allowed", ideControllers()),
+			Entry("with IDE controllers should be allowed", ideControllers(0, 1)),
+		)
 
-		When("updating a VM to remove IDE controllers", func() {
-			BeforeEach(func() {
+		DescribeTable("updating an upgraded VM",
+			func(oldCtrls, newCtrls []vmopv1.IDEControllerSpec, privileged, expectAllowed bool) {
 				ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					IDEControllers: []vmopv1.IDEControllerSpec{
-						{BusNumber: 0},
-						{BusNumber: 1},
-					},
+					IDEControllers: oldCtrls,
 				}
 				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					IDEControllers: []vmopv1.IDEControllerSpec{},
+					IDEControllers: newCtrls,
 				}
-			})
+				ctx.IsPrivilegedAccount = privileged
 
-			It("should be denied", func() {
-				var err error
-				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
-				Expect(err).ToNot(HaveOccurred())
-				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
-				Expect(err).ToNot(HaveOccurred())
+				response := validateUpdate()
+				Expect(response.Allowed).To(Equal(expectAllowed))
+				if !expectAllowed {
+					Expect(string(response.Result.Reason)).To(ContainSubstring("ideControllers"))
+					Expect(string(response.Result.Reason)).To(ContainSubstring(
+						"IDE controllers are determined by the platform and may not be added or removed"))
+				}
+			},
+			Entry("unchanged with IDE controllers should be allowed",
+				ideControllers(0, 1), ideControllers(0, 1), false, true),
+			Entry("unchanged without IDE controllers should be allowed",
+				ideControllers(), ideControllers(), false, true),
+			Entry("reordered IDE controllers should be allowed",
+				ideControllers(0, 1), ideControllers(1, 0), false, true),
+			Entry("removing IDE controllers should be denied",
+				ideControllers(0, 1), ideControllers(), false, false),
+			Entry("removing one IDE controller should be denied",
+				ideControllers(0, 1), ideControllers(0), false, false),
+			Entry("adding IDE controllers should be denied",
+				ideControllers(), ideControllers(0, 1), false, false),
+			Entry("adding IDE controllers by privileged user should be allowed",
+				ideControllers(), ideControllers(0, 1), true, true),
+			Entry("removing IDE controllers by privileged user should be allowed",
+				ideControllers(0, 1), ideControllers(), true, true),
+		)
 
-				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeFalse())
-				Expect(string(response.Result.Reason)).To(ContainSubstring("ideControllers"))
-				Expect(string(response.Result.Reason)).To(ContainSubstring("must have exactly 2 controllers"))
-			})
-		})
-
-		When("updating a VM with no IDE controllers to add IDE controllers", func() {
+		When("the update is the schema upgrade backfill", func() {
 			BeforeEach(func() {
-				ctx.oldVM.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					IDEControllers: []vmopv1.IDEControllerSpec{},
-				}
-				ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
-					IDEControllers: []vmopv1.IDEControllerSpec{
-						{BusNumber: 0},
-						{BusNumber: 1},
-					},
-				}
+				// The old VM has not been upgraded yet.
+				delete(ctx.oldVM.Annotations, pkgconst.UpgradedToFeatureVersionAnnotationKey)
+				// The schema upgrade is performed by the VM Operator service
+				// account. Leave IsPrivilegedAccount false to verify the IDE
+				// controller check is skipped because the old VM has not been
+				// upgraded, rather than because of the privileged bypass.
+				ctx.IsPrivilegedAccount = false
+				ctx.UserInfo.Username = fmt.Sprintf("system:serviceaccount:%s:%s",
+					ctx.Namespace, ctx.ServiceAccountName)
 			})
 
-			It("should allow the update", func() {
-				var err error
-				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
-				Expect(err).ToNot(HaveOccurred())
-				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
-				Expect(err).ToNot(HaveOccurred())
+			DescribeTable("should allow the backfilled IDE controllers",
+				func(newCtrls []vmopv1.IDEControllerSpec) {
+					ctx.oldVM.Spec.Hardware = nil
+					ctx.vm.Spec.Hardware = &vmopv1.VirtualMachineHardwareSpec{
+						IDEControllers: newCtrls,
+					}
 
-				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-				Expect(response.Allowed).To(BeTrue())
-			})
+					response := validateUpdate()
+					Expect(response.Allowed).To(BeTrue())
+				},
+				Entry("when the vSphere VM has IDE controllers, e.g. x86", ideControllers(0, 1)),
+				Entry("when the vSphere VM has no IDE controllers, e.g. ARM", ideControllers()),
+			)
 		})
 	})
 

@@ -27,6 +27,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha6"
 	infrav1 "github.com/vmware-tanzu/vm-operator/external/infra/api/v1alpha1"
 	pkgcfg "github.com/vmware-tanzu/vm-operator/pkg/config"
+	pkgerr "github.com/vmware-tanzu/vm-operator/pkg/errors"
 	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/kube/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/ptr"
@@ -625,6 +626,7 @@ var _ = Describe("GetPVCZoneConstraints", func() {
 
 			_, err := kubeutil.GetPVCZoneConstraints(storageClasses, pvcs)
 			Expect(err).To(MatchError("PVC pending-pvc is not bound"))
+			Expect(pkgerr.IsNoRequeueError(err)).To(BeTrue())
 		})
 	})
 

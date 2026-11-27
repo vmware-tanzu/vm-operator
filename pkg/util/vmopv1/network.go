@@ -32,6 +32,11 @@ const (
 	// provided host name exceeds 15 characters and the guest is Windows.
 	ErrInvalidHostNameWindows = "host name may not exceed 15 characters for Windows"
 
+	// ErrInvalidHostNameWindowsDigits is returned by ValidateHostAndDomainName
+	// if the provided host name consists only of digits and the guest is
+	// Windows. A Windows computer name may not be composed entirely of digits.
+	ErrInvalidHostNameWindowsDigits = "host name may not consist only of digits for Windows"
+
 	// ErrInvalidHostAndDomainName is returned by ValidateHostAndDomainName if
 	// the provided host name and domain name, combined, exceed 255 characters.
 	ErrInvalidHostAndDomainName = "host name and domain name combined exceed 255 characters"
@@ -79,9 +84,19 @@ func ValidateHostAndDomainName(vm vmopv1.VirtualMachine) *field.Error {
 	isWindowsVM := strings.HasPrefix(vm.Spec.GuestID, "win") ||
 		(vm.Spec.Bootstrap != nil && vm.Spec.Bootstrap.Sysprep != nil)
 
-	if isWindowsVM && len(hostName) > 15 {
-		return field.Invalid(
-			hostNameField, hostName, ErrInvalidHostNameWindows)
+	if isWindowsVM {
+		if len(hostName) > 15 {
+			return field.Invalid(
+				hostNameField, hostName, ErrInvalidHostNameWindows)
+		}
+
+		// A Windows computer name may not be composed entirely of digits.
+		// Guest customization rejects such a name, so reject it here instead
+		// of letting the VM fail to customize later.
+		if isAllDigits(hostName) {
+			return field.Invalid(
+				hostNameField, hostName, ErrInvalidHostNameWindowsDigits)
+		}
 	}
 
 	if domainName != "" && !util.IsValidDomainName(domainName) {
@@ -97,4 +112,18 @@ func ValidateHostAndDomainName(vm vmopv1.VirtualMachine) *field.Error {
 	}
 
 	return nil
+}
+
+// isAllDigits reports whether s is non-empty and consists only of ASCII
+// digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

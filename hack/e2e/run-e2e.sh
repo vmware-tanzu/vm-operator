@@ -28,6 +28,8 @@
 #   GINKGO_BIN          - Path to the ginkgo executable (for ginkgo mode).
 #   E2E_PREBUILT_BINARY - Path to the compiled test binary (for prebuilt mode).
 #   E2E_ARTIFACT_FOLDER - Directory to store test results/logs.
+#   E2E_FILES_MIRROR_URL - Optional base URL of a files mirror for E2E downloads
+#                         (e.g. the Jenkins package). Unset uses public sites.
 #   TEST_CALLBACK_URL   - Optional HTTP endpoint to POST the overall result to
 #                         once the run completes. No-op when unset.
 ################################################################################
